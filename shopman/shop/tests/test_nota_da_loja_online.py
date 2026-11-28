@@ -18,7 +18,7 @@ from shopman.orderman.models import Directive, Order
 
 from shopman.shop.services import customer_tax_id
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "pdv")]
 
 CPF = "52998224725"
 OUTRO_CPF = "11144477735"

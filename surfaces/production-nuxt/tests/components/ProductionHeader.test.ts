@@ -49,7 +49,7 @@ const OperatorPageHeaderStub = defineComponent({
 const stubs = {
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorLiveStatus: {
-    props: ["tone", "time", "label"],
+    props: ["tone", "time", "label", "shortLabel"],
     template: '<span data-live :data-tone="tone">{{ label }}</span>',
   },
   OperatorSuiteSearch: {
@@ -117,7 +117,7 @@ describe("ProductionHeader — teclas", () => {
   it("entrega os grupos de teclas da Produção à ajuda do kit", () => {
     expect(provideShortcuts).toHaveBeenCalledOnce();
     const groups = provideShortcuts.mock.calls[0]![0] as Array<{ title: string }>;
-    expect(groups.map((group) => group.title)).toContain("QC e timer");
+    expect(groups.map((group) => group.title)).toContain("Finalização e timer");
   });
 });
 
@@ -125,7 +125,7 @@ describe("ProductionHeader — o ⋯ como dados", () => {
   it("as ações da tela vêm antes de Atualizar, que leva a tecla R", () => {
     wrapper?.unmount();
     const onSelect = vi.fn();
-    wrapper = mountHeader({ title: "Fechamento", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
+    wrapper = mountHeader({ title: "Finalização", actions: [{ label: "Lote avulso", icon: "i-lucide-plus", onSelect }] });
     expect(headerActions.map((action) => action.label)).toEqual(["Lote avulso", "Atualizar"]);
     expect(headerActions[1]!.kbds).toEqual(["R"]);
     headerActions[1]!.onSelect?.();
@@ -154,16 +154,35 @@ describe("ProductionHeader — toolbar e estado", () => {
 
   it("dado velho: o ao vivo fala por extenso", () => {
     wrapper?.unmount();
-    wrapper = mountHeader({ title: "Abertura", stale: true });
+    wrapper = mountHeader({ title: "Produção", stale: true });
     const live = wrapper.find("[data-status] [data-live]");
     expect(live.attributes("data-tone")).toBe("late");
     expect(live.text()).toBe("Sem atualizar");
   });
 
+  it("Ao vivo só com o canal da Produção aberto (WP-F15)", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Finalização", realtime: "polling", pollMs: 30_000 });
+    const live = wrapper.find("[data-status] [data-live]");
+    expect(live.attributes("data-tone")).toBe("calm");
+    expect(live.text()).toBe("Atualiza sozinho a cada 30 s");
+    wrapper.unmount();
+    wrapper = mountHeader({ title: "Finalização", realtime: "live", pollMs: 30_000 });
+    expect(wrapper.find("[data-status] [data-live]").text()).toBe("Ao vivo");
+  });
+
+  it("Django parado sem dado: Sem conexão", () => {
+    wrapper?.unmount();
+    wrapper = mountHeader({ title: "Finalização", offline: true, realtime: "live" });
+    const live = wrapper.find("[data-status] [data-live]");
+    expect(live.attributes("data-tone")).toBe("off");
+    expect(live.text()).toBe("Sem conexão");
+  });
+
   it("a tela acrescenta ao #status o que é dela (o anterior e o próximo do lote)", () => {
     wrapper?.unmount();
     wrapper = mountHeader(
-      { title: "Fechamento" },
+      { title: "Finalização" },
       { status: '<span data-record-nav>3 de 8</span>' },
     );
     const status = wrapper.find("[data-status]");

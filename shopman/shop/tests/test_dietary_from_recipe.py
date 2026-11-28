@@ -20,7 +20,11 @@ from shopman.craftsman.models import Recipe, RecipeItem
 from shopman.offerman.models import Product, ProductComponent
 
 from shopman.shop.services import attributes
-from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
+from shopman.shop.services.dietary_from_recipe import (
+    aggregate_dietary_from_recipe,
+    dietary_profiles_for_items,
+    recipe_may_overwrite_dietary_attributes,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -157,6 +161,48 @@ class TestAggregateDietaryFromRecipe:
 
         assert changed is False
         assert attributes.get(product, "alergenos") == ["leite"]
+
+    def test_overwrite_policy_covers_each_field_and_provenance(self):
+        empty = _make_product(sku="VAZIO")
+        assert recipe_may_overwrite_dietary_attributes(empty) is True
+
+        derived = _make_product(sku="DERIVADO")
+        attributes.set(derived, "alergenos", ["glúten"], source="recipe")
+        attributes.set(derived, "dieta", ["100% vegetal"], source="recipe")
+        assert recipe_may_overwrite_dietary_attributes(derived) is True
+
+        manual_diet = _make_product(sku="DIETA-MANUAL")
+        attributes.set(manual_diet, "dieta", ["vegetariano"], source="manual")
+        assert recipe_may_overwrite_dietary_attributes(manual_diet) is False
+
+        mixed = _make_product(sku="MISTO-MANUAL")
+        attributes.set(mixed, "alergenos", ["glúten"], source="recipe")
+        attributes.set(mixed, "dieta", ["vegetariano"], source="manual")
+        assert recipe_may_overwrite_dietary_attributes(mixed) is False
+
+    def test_material_fields_override_recipe_snapshot_independently(self):
+        from shopman.buyman.models import Material
+
+        recipe = _recipe(sku="PRECEDENCIA")
+        item = _item(
+            recipe,
+            "INS-ATUAL",
+            allergens=["glúten"],
+            diet="vegan",
+        )
+        Material.objects.create(
+            sku=item.input_sku,
+            name="Insumo atual",
+            unit="kg",
+            metadata={"allergens": ["leite"]},
+        )
+
+        profiles, missing = dietary_profiles_for_items([item])
+
+        assert missing == []
+        assert profiles == [
+            IngredientDietary(allergens=("leite",), diet="vegan")
+        ]
 
     def test_bundle_is_skipped(self):
         child = _make_product(sku="PAO-SIMPLES")

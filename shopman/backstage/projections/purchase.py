@@ -15,8 +15,9 @@ from statistics import median
 from typing import Any
 
 from django.apps import apps
-from django.db.models import Sum
+from django.db.models import Exists, OuterRef, Q, Sum
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.purchase_policy import PurchasePolicy, resolve_purchase_policy
 from shopman.shop.services.sku_records import SkuRoles, sku_roles_map
@@ -60,6 +61,25 @@ class OpensIntoProjection:
     unit: str
     quantity: str
     shelfLifeDays: int | None
+
+
+@dataclass(frozen=True)
+class InternalRequestProjection:
+    """Uma solicitação da Produção ainda aberta: o insumo faltou para um lote.
+
+    Quem não opera o Compras não pede ao fornecedor; deixa a solicitação no
+    cadastro de compra (`purchase.internal_requests`), e o "Comprar" a mostra.
+    """
+
+    workOrderRef: str
+    product: str
+    quantity: float
+    unit: str
+    quantityDisplay: str
+    requestedByName: str
+    requestedAt: str
+    #: A frase pronta da tela, na voz da casa: "Diofer pediu às 14h05: falta 300 g para o lote de Brioche."
+    line: str
 
 
 @dataclass(frozen=True)
@@ -109,6 +129,9 @@ class MaterialProjection:
     eans: tuple[str, ...] = ()
     #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
     revision: str = ""
+    #: Solicitações abertas da Produção (falta de insumo num lote). Enquanto
+    #: existem, o insumo entra no "Comprar" com pelo menos o que falta.
+    internalRequests: tuple[InternalRequestProjection, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,8 +170,15 @@ class SupplierProjection:
     isActive: bool
     lastDeliveryAt: str
     paymentTerm: str
+    #: Fornecedor de confiança pode pular a revisão humana do pedido.
+    #: False é o padrão seguro, inclusive para cadastros antigos.
+    sendDirectly: bool
     #: Versão otimista do cadastro. Editar/duplicar recusa rascunho antigo.
     revision: str = ""
+    #: O pedido de compra tem por onde sair (e-mail ou telefone, pela mesma regra
+    #: do envio). Sem isto a tela só descobria a falta depois de confirmar o
+    #: pedido, num aviso que sumia (beta 05/11, CMP-09).
+    canReceiveOrder: bool = True
 
 
 @dataclass(frozen=True)
@@ -284,29 +314,138 @@ class ReceiptHistoryProjection:
 
 @dataclass(frozen=True)
 class PurchaseProjection:
-    materials: tuple[MaterialProjection, ...]
-    suppliers: tuple[SupplierProjection, ...]
+    materials: tuple[MaterialProjection, ...] | PurchaseListProjection
+    suppliers: tuple[SupplierProjection, ...] | PurchaseListProjection
     conversions: tuple[MaterialConversionProjection, ...]
     costs: tuple[SupplierMaterialCostProjection, ...]
     purchaseRequestStatuses: dict[str, str]
     activeReceipt: ActiveReceiptProjection
     #: Os últimos recebimentos, do mais novo para o mais velho.
     receiptHistory: tuple[ReceiptHistoryProjection, ...]
+    #: Na leitura paginada, TODOS os insumos ativos, fora da página e do filtro.
+    #: A página serve à tabela da Base; receber, custear, comprar e o Painel
+    #: trabalham sobre a base inteira. Sem isto a farinha (página 2) não podia
+    #: ser recebida (beta 05/11, CMP-01). ``None`` quando a lista já é inteira.
+    activeMaterials: tuple[MaterialProjection, ...] | None = None
+    #: O mesmo para os fornecedores ativos (a página dos fornecedores andava
+    #: junto com a dos insumos e sumia na página 2).
+    activeSuppliers: tuple[SupplierProjection, ...] | None = None
 
 
-def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseProjection:
+@dataclass(frozen=True)
+class PurchaseListProjection:
+    items: tuple[Any, ...]
+    total: int
+    has_next: bool
+    page: int
+    page_size: int
+    query: str
+    order: str
+
+
+MAX_PURCHASE_PAGE_SIZE = 100
+
+
+def _page(value: Any, default: int) -> int:
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def build_purchase(
+    *,
+    active_receipt: dict[str, Any] | None = None,
+    paginate: bool = False,
+    page: int = 1,
+    page_size: int = 30,
+    query: str = "",
+    order: str = "name",
+    material_filters: dict[str, list[str]] | None = None,
+    supplier_filters: dict[str, list[str]] | None = None,
+) -> PurchaseProjection:
     """Build the full purchase operator projection."""
     Material = apps.get_model("buyman", "Material")
     Supplier = apps.get_model("buyman", "Supplier")
     MaterialConversion = apps.get_model("buyman", "MaterialConversion")
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
-    material_rows = list(Material.objects.all().order_by("-is_active", "sku"))
-    supplier_rows = list(
-        Supplier.objects.prefetch_related("contacts").order_by("-is_active", "name", "ref")
-    )
-    skus = [material.sku for material in material_rows]
-    supplier_refs = [supplier.ref for supplier in supplier_rows]
+    page = _page(page, 1)
+    page_size = min(MAX_PURCHASE_PAGE_SIZE, _page(page_size, 30))
+    query = query.strip()
+    material_filters = material_filters or {}
+    supplier_filters = supplier_filters or {}
+
+    material_archived = material_filters.get("archive") == ["archived"]
+    material_qs = Material.objects.filter(is_active=not material_archived)
+    if query:
+        material_qs = material_qs.filter(
+            Q(sku__icontains=query)
+            | Q(name__icontains=query)
+            | Q(metadata__purchase__category__icontains=query)
+        )
+    if categories := material_filters.get("category"):
+        material_qs = material_qs.filter(metadata__purchase__category__in=categories)
+    material_orders = {
+        "name": ("name", "sku"),
+        "-name": ("-name", "sku"),
+        "sku": ("sku",),
+        "-sku": ("-sku",),
+        "status": ("-is_active", "name", "sku"),
+        "-status": ("is_active", "name", "sku"),
+    }
+    material_order = order if order in material_orders else "name"
+    material_qs = material_qs.order_by(*material_orders[material_order])
+
+    supplier_archived = supplier_filters.get("archive") == ["archived"]
+    supplier_qs = Supplier.objects.filter(is_active=not supplier_archived).prefetch_related("contacts")
+    if query:
+        supplier_qs = supplier_qs.filter(
+            Q(ref__icontains=query) | Q(name__icontains=query) | Q(trade_name__icontains=query)
+        )
+    contacts = supplier_filters.get("contact", [])
+    if contacts and set(contacts) != {"with", "without"}:
+        with_contact = contacts == ["with"]
+        SupplierContact = apps.get_model("buyman", "SupplierContact")
+        # Mesmo critério de SupplierContact.pick(..., SALES), usado na ficha:
+        # uma pessoa comercial ou geral ativa. A central é fallback de envio,
+        # não uma pessoa comercial; financeiro/qualidade não recebem compras.
+        order_contacts = SupplierContact.objects.filter(
+            supplier_id=OuterRef("pk"), is_active=True,
+            role__in=(SupplierContact.Role.SALES, SupplierContact.Role.GENERAL),
+        )
+        supplier_qs = supplier_qs.alias(has_order_contact=Exists(order_contacts)).filter(
+            has_order_contact=with_contact,
+        )
+    supplier_orders = {
+        "name": ("name", "ref"),
+        "-name": ("-name", "ref"),
+        "ref": ("ref",),
+        "-ref": ("-ref",),
+        "status": ("-is_active", "name", "ref"),
+        "-status": ("is_active", "name", "ref"),
+    }
+    supplier_order = order if order in supplier_orders else "name"
+    supplier_qs = supplier_qs.order_by(*supplier_orders[supplier_order])
+
+    material_total = material_qs.count()
+    supplier_total = supplier_qs.count()
+    offset = (page - 1) * page_size
+    material_rows = list(material_qs[offset : offset + page_size] if paginate else material_qs)
+    supplier_rows = list(supplier_qs[offset : offset + page_size] if paginate else supplier_qs)
+    # A base inteira de trabalho: na leitura paginada, todos os ativos entram junto
+    # da página (a projeção de cada um é calculada uma vez só).
+    active_material_rows: list[Any] = []
+    active_supplier_rows: list[Any] = []
+    if paginate:
+        active_material_rows = list(Material.objects.filter(is_active=True).order_by("name", "sku"))
+        active_supplier_rows = list(
+            Supplier.objects.filter(is_active=True).prefetch_related("contacts").order_by("name", "ref")
+        )
+    all_material_rows = _unique_by(active_material_rows + material_rows, "sku")
+    all_supplier_rows = _unique_by(active_supplier_rows + supplier_rows, "ref")
+    skus = [material.sku for material in all_material_rows]
+    supplier_refs = [supplier.ref for supplier in all_supplier_rows]
 
     policy = _purchase_policy()
     stock_on_hand = _stock_on_hand_map(skus)
@@ -319,21 +458,24 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     recipes = _recipes_map(skus)
     last_delivery = _last_delivery_map(supplier_refs)
     lead_times = _lead_time_map(skus, policy=policy)
-    approximate_stock = _approximate_stock_skus(material_rows, policy=policy)
+    approximate_stock = _approximate_stock_skus(all_material_rows, policy=policy)
     roles = sku_roles_map(skus)
     sale_prices = _sale_price_map(skus)
-    material_by_sku = {material.sku: material for material in material_rows}
-    net_contents = _net_contents_kg([material.sku for material in material_rows if material.unit == "un"])
+    material_by_sku = {material.sku: material for material in all_material_rows}
+    net_contents = _net_contents_kg([material.sku for material in all_material_rows if material.unit == "un"])
     last_delivery_expiry = _last_delivery_expiry_map(
-        [material.sku for material in material_rows if material.shelf_life_days is not None]
+        [material.sku for material in all_material_rows if material.shelf_life_days is not None]
     )
     sale_suggestions = _sale_suggestions(
         [sku for sku in skus if not (roles.get(sku) and (roles[sku].sellable or roles[sku].produced))]
     )
 
-    suppliers = tuple(_supplier_projection(supplier, last_delivery.get(supplier.ref, "")) for supplier in supplier_rows)
-    materials = tuple(
-        _material_projection(
+    supplier_by_ref = {
+        supplier.ref: _supplier_projection(supplier, last_delivery.get(supplier.ref, ""))
+        for supplier in all_supplier_rows
+    }
+    projected_by_sku = {
+        material.sku: _material_projection(
             material,
             stock_on_hand=stock_on_hand.get(material.sku, Decimal("0")),
             daily_use=daily_use.get(material.sku, Decimal("0")),
@@ -349,8 +491,10 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
             net_content_kg=net_contents.get(material.sku, ""),
             last_delivery_expiry=last_delivery_expiry.get(material.sku, ""),
         )
-        for material in material_rows
-    )
+        for material in all_material_rows
+    }
+    suppliers = tuple(supplier_by_ref[supplier.ref] for supplier in supplier_rows)
+    materials = tuple(projected_by_sku[material.sku] for material in material_rows)
     conversions = tuple(
         MaterialConversionProjection(
             id=str(row.pk),
@@ -381,20 +525,60 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     )
     statuses = {
         material.sku: status
-        for material in material_rows
+        for material in all_material_rows
         if (status := _purchase_request_status(material)) in REQUEST_STATUSES
     }
 
-    default_supplier_ref = supplier_rows[0].ref if supplier_rows else ""
     return PurchaseProjection(
-        materials=materials,
-        suppliers=suppliers,
+        materials=(
+            PurchaseListProjection(
+                items=materials,
+                total=material_total,
+                has_next=offset + len(materials) < material_total,
+                page=page,
+                page_size=page_size,
+                query=query,
+                order=material_order,
+            )
+            if paginate
+            else materials
+        ),
+        suppliers=(
+            PurchaseListProjection(
+                items=suppliers,
+                total=supplier_total,
+                has_next=offset + len(suppliers) < supplier_total,
+                page=page,
+                page_size=page_size,
+                query=query,
+                order=supplier_order,
+            )
+            if paginate
+            else suppliers
+        ),
         conversions=conversions,
         costs=costs,
         purchaseRequestStatuses=statuses,
-        activeReceipt=_active_receipt(active_receipt, default_supplier_ref=default_supplier_ref),
+        activeReceipt=_active_receipt(active_receipt),
         receiptHistory=_receipt_history(),
+        activeMaterials=(
+            tuple(projected_by_sku[material.sku] for material in active_material_rows) if paginate else None
+        ),
+        activeSuppliers=(
+            tuple(supplier_by_ref[supplier.ref] for supplier in active_supplier_rows) if paginate else None
+        ),
     )
+
+
+def _unique_by(rows: list[Any], attr: str) -> list[Any]:
+    seen: set[str] = set()
+    unique = []
+    for row in rows:
+        key = getattr(row, attr)
+        if key not in seen:
+            seen.add(key)
+            unique.append(row)
+    return unique
 
 
 #: Quantos recebimentos a tela mostra. O suficiente para responder "essa nota já
@@ -431,8 +615,8 @@ def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
                 lines=int(corpo.get("lines") or 0),
                 totalCostQ=int(corpo.get("total_cost_q") or 0),
                 operator=str(corpo.get("operator") or ""),
-                receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
-                receivedAtTime=timezone.localtime(linha.created_at).strftime("%H:%M"),
+                receivedAtDisplay=format_local(linha.created_at, "%d/%m {clock}"),
+                receivedAtTime=format_clock(linha.created_at),
                 receivedToday=timezone.localtime(linha.created_at).date() == timezone.localdate(),
             )
         )
@@ -473,6 +657,14 @@ def _material_projection(
         replenish_at=replenish_at,
         shelf_life_days=material.shelf_life_days,
     )
+    internal_requests = _internal_requests(meta, unit=material.unit)
+    # A solicitação da Produção é o piso da reposição até o insumo chegar: o que
+    # faltou num lote entra no "Comprar" mesmo acima do mínimo, com pelo menos o que
+    # falta, e continua lá com o pedido enviado ("Aguardando entrega"). A linha da
+    # solicitação só aparece enquanto ela está aberta.
+    requested = _internal_requested_floor(meta, unit=material.unit)
+    if requested > suggested:
+        suggested = requested.to_integral_value(rounding=ROUND_CEILING)
     correction_factor = (
         Decimal("1") / weighted_usable_factor
         if weighted_usable_factor is not None and weighted_usable_factor > 0
@@ -518,7 +710,70 @@ def _material_projection(
         lastDeliveryExpiry=last_delivery_expiry,
         eans=tuple(str(code) for code in (meta.get("eans") or ()) if str(code).strip()),
         revision=material.updated_at.isoformat() if material.updated_at else "",
+        internalRequests=internal_requests,
     )
+
+
+def _internal_requested_floor(meta: dict[str, Any], *, unit: str) -> Decimal:
+    """Quanto a Produção pediu e ainda não chegou (abertas e já pedidas ao fornecedor)."""
+    total = Decimal("0")
+    for entry in meta.get("internal_requests") or ():
+        if not isinstance(entry, dict) or entry.get("status") not in ("open", "ordered"):
+            continue
+        if str(entry.get("unit") or unit) != unit:
+            continue
+        try:
+            quantity = Decimal(str(entry.get("quantity") or "0"))
+        except (InvalidOperation, ValueError):
+            continue
+        if quantity > 0:
+            total += quantity
+    return total
+
+
+def _internal_requests(meta: dict[str, Any], *, unit: str) -> tuple[InternalRequestProjection, ...]:
+    """As solicitações abertas da Produção, da mais antiga para a mais nova."""
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.backstage.projections.production import _preparation_measure
+
+    rows: list[InternalRequestProjection] = []
+    today = timezone.localdate()
+    for entry in meta.get("internal_requests") or ():
+        if not isinstance(entry, dict) or entry.get("status") != "open":
+            continue
+        try:
+            quantity = Decimal(str(entry.get("quantity") or "0"))
+        except (InvalidOperation, ValueError):
+            continue
+        if quantity <= 0:
+            continue
+        item_unit = str(entry.get("unit") or unit)
+        display = _preparation_measure(quantity, item_unit)
+        product = str(entry.get("product") or "").strip()
+        name = str(entry.get("requested_by_name") or "").strip() or "A Produção"
+        at = parse_datetime(str(entry.get("requested_at") or ""))
+        if at is None:
+            when = ""
+        elif timezone.localtime(at).date() == today:
+            when = format_local(at, " às {clock}")
+        else:
+            when = format_local(at, " em %d/%m às {clock}")
+        target = f" para o lote de {product}" if product else ""
+        rows.append(
+            InternalRequestProjection(
+                workOrderRef=str(entry.get("work_order_ref") or ""),
+                product=product,
+                quantity=_number(quantity),
+                unit=item_unit,
+                quantityDisplay=display,
+                requestedByName=name,
+                requestedAt=at.isoformat() if at else "",
+                line=f"{name} pediu{when}: falta {display}{target}.",
+            )
+        )
+    rows.sort(key=lambda row: row.requestedAt)
+    return tuple(rows)
 
 
 def _opens_into(material, material_by_sku: dict) -> OpensIntoProjection | None:
@@ -691,18 +946,30 @@ def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
         isActive=bool(supplier.is_active),
         lastDeliveryAt=_meta_str(meta, "last_delivery_at", "lastDeliveryAt") or last_delivery_at,
         paymentTerm=_meta_str(meta, "payment_term", "paymentTerm") or "A combinar",
+        sendDirectly=meta.get("send_directly") is True,
         revision=supplier.updated_at.isoformat() if supplier.updated_at else "",
+        canReceiveOrder=_supplier_can_receive_order(supplier),
     )
 
 
-def _active_receipt(active_receipt: dict[str, Any] | None, *, default_supplier_ref: str) -> ActiveReceiptProjection:
+def _supplier_can_receive_order(supplier) -> bool:
+    # A mesma regra que escolhe o canal no envio: a tela não pode prometer um
+    # envio que o servidor vai recusar. Import tardio: o service importa esta projeção.
+    from shopman.backstage.services.purchase import PurchaseError, _supplier_dispatch_route
+
+    try:
+        _supplier_dispatch_route(supplier)
+    except PurchaseError:
+        return False
+    return True
+
+
+def _active_receipt(active_receipt: dict[str, Any] | None) -> ActiveReceiptProjection:
+    # O rascunho nasce SEM fornecedor: quem diz o fornecedor é a NF lida ou o
+    # operador. O primeiro da ordem alfabética entrava sozinho e aparecia no
+    # cabeçalho de Receber como se alguém o tivesse escolhido (beta 05/11, CMP-06/CMP-10).
     data = dict(active_receipt or {})
-    if active_receipt is None:
-        supplier_ref = default_supplier_ref
-    elif "supplierRef" in data or "supplier_ref" in data:
-        supplier_ref = str(data.get("supplierRef", data.get("supplier_ref", "")) or "")
-    else:
-        supplier_ref = default_supplier_ref
+    supplier_ref = str(data.get("supplierRef", data.get("supplier_ref", "")) or "")
     return ActiveReceiptProjection(
         mode=str(data.get("mode") or "invoice"),
         supplierRef=supplier_ref,

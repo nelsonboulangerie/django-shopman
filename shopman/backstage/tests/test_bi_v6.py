@@ -24,9 +24,12 @@ from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
 from shopman.offerman.models import Collection, CollectionItem, Product
 from shopman.orderman.models import Order, OrderItem
+from shopman.stockman import Hold, HoldStatus, Move, Position, Quant
+from shopman.stockman.models import Batch
 
 from shopman.backstage.models import DayClosing, PlanCarryNote, ShelfOutage
 from shopman.backstage.projections.bi_over_short import build_bi_over_short
+from shopman.backstage.projections.bi_production import build_bi_production
 from shopman.backstage.projections.bi_sales import build_bi_sales
 
 pytestmark = pytest.mark.django_db
@@ -287,11 +290,12 @@ def test_live_cost_is_recipe_times_preferred_material_cost(shop):
     backend = RecipeCostBackend()
 
     # Sem custo de algum insumo: None, nunca zero.
-    SupplierMaterialCost.objects.create(supplier=supplier, material=flour, cost_q=1, is_preferred=True)
+    SupplierMaterialCost.objects.create(supplier=supplier, material=flour, cost_q=1000, is_preferred=True)
     assert backend.get_cost("CUSTO1") is None
 
-    # Farinha 1 centavo/g × 1000 g = 1000; manteiga 6 centavos/g × 500 g = 3000; ÷ 10.
-    SupplierMaterialCost.objects.create(supplier=supplier, material=butter, cost_q=6, is_preferred=True)
+    # Insumo em g sem embalagem tem custo por kg (CMP-07): farinha R$ 10/kg × 1000 g
+    # = 1000; manteiga R$ 60/kg × 500 g = 3000; ÷ 10.
+    SupplierMaterialCost.objects.create(supplier=supplier, material=butter, cost_q=6000, is_preferred=True)
     assert backend.get_cost("CUSTO1") == 400
     assert backend.get_cost("SEM-FICHA") is None
 
@@ -321,3 +325,207 @@ def test_order_history_filters_by_product_including_the_counter(client, shop, da
     assert [row["ref"] for row in history["items"]] == [counter.ref]
     assert history["sku"] == "HIST1"
     assert history["sku_name"] == "Croissant"
+
+
+
+def _finished_stock(wo, batch):
+    position, _ = Position.objects.get_or_create(ref="bi-batches", defaults={"name": "Vitrine"})
+    quant, _ = Quant.objects.get_or_create(sku=wo.output_sku, batch=batch, position=position)
+    Move.objects.create(
+        quant=quant,
+        delta=wo.finished,
+        kind=Move.Kind.MAKE,
+        reason=f"Recebido de produção: Finalização do lote: {wo.ref}",
+    )
+    return quant
+
+
+def _attach_sale_holds(order, day, allocations):
+    entries = []
+    for quant, qty in allocations:
+        hold = Hold.objects.create(
+            sku=quant.sku,
+            quant=quant,
+            quantity=qty,
+            target_date=day,
+            status=HoldStatus.FULFILLED,
+            metadata={"reference": f"order:{order.ref}"},
+        )
+        Move.objects.create(quant=quant, delta=-qty, kind=Move.Kind.SELL, reason=f"Entrega hold:{hold.pk}")
+        entries.append({"sku": quant.sku, "hold_id": f"hold:{hold.pk}", "qty": str(qty)})
+    Order.objects.filter(pk=order.pk).update(data={"hold_ids": entries})
+
+
+def _lot_batch(quant, expiry):
+    Batch.objects.create(ref=quant.batch, sku=quant.sku, expiry_date=expiry)
+
+
+def _freeze_cost(wo, day, total_q, gaps=()):
+    WorkOrder.objects.filter(pk=wo.pk).update(meta={"cost_snapshot": {
+        "frozen_at": datetime.combine(day, time(6, 30), tzinfo=timezone.get_current_timezone()).isoformat(),
+        "total_q": total_q,
+        "unit_cost_q": total_q // int(wo.finished) if total_q is not None else None,
+        "output_quantity": str(wo.finished),
+        "lines": [],
+        "gaps": list(gaps),
+    }})
+
+
+def test_batch_margin_is_the_whole_batch_once_the_lot_expires(day):
+    recipe = _recipe("BIMARGIN", "Pão da casa")
+    complete = _lot(recipe, day, 10)
+    incomplete = _lot(recipe, day, 10)
+    old = _lot(recipe, day - timedelta(days=1), 10)
+    _freeze_cost(complete, day, 1800)
+    _freeze_cost(incomplete, day, None, ["Farinha sem preço de compra."])
+    first_stock = _finished_stock(complete, "bi-margin-first")
+    second_stock = _finished_stock(incomplete, "bi-margin-second")
+    _lot_batch(first_stock, day)
+    _lot_batch(second_stock, day)
+    sale = _sale(day, time(9), recipe.output_sku, 5)
+    OrderItem.objects.filter(order=sale).update(line_total_q=4001)
+    _attach_sale_holds(sale, day, [(first_stock, 3), (second_stock, 2)])
+    cancelled = _sale(day, time(10), recipe.output_sku, 1)
+    _attach_sale_holds(cancelled, day, [(first_stock, 1)])
+    Order.objects.filter(pk=cancelled.pk).update(status=Order.Status.CANCELLED)
+    _sale(day, time(11), recipe.output_sku, 4)
+
+    report = build_bi_production(date_from=old.target_date, date_to=day)
+    rows = {row.ref: row for row in report.batch_margins}
+    first = rows[complete.ref]
+    # Venceu ontem com 7 sobrando: a margem é a da fornada inteira, sobra incluída.
+    assert (first.lot_status, first.revenue_q, first.total_q, first.margin_q) == ("closed", 2401, 1800, 601)
+    assert (first.traced_quantity, first.output_quantity, first.sells_until) == ("3", "10", day.isoformat())
+    second = rows[incomplete.ref]
+    assert (second.cost_status, second.revenue_q, second.total_q, second.margin_q) == (
+        "incomplete", 1600, None, None,
+    )
+    assert second.gaps == ("Farinha sem preço de compra.",)
+    assert (rows[old.ref].cost_status, rows[old.ref].lot_status, rows[old.ref].margin_q) == (
+        "missing", "untraceable", None,
+    )
+
+
+def test_batch_margin_waits_while_the_lot_is_on_sale(day):
+    recipe = _recipe("BIOPEN", "Bolo")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(wo, "bi-margin-open")
+    today = timezone.localdate()
+    _lot_batch(quant, today)  # vale até hoje: ainda em venda
+    sale = _sale(day, time(9), recipe.output_sku, 3)
+    _attach_sale_holds(sale, day, [(quant, 3)])
+
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.sells_until, row.revenue_q, row.margin_q) == ("open", today.isoformat(), 3000, None)
+
+
+def test_batch_margin_counts_the_sale_of_the_next_day(day):
+    recipe = _recipe("BINEXT", "Pão do dia seguinte")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    quant = _finished_stock(wo, "bi-margin-next")
+    today = timezone.localdate()
+    _lot_batch(quant, today)
+    sale = _sale(today, time(9), recipe.output_sku, 10)
+    _attach_sale_holds(sale, today, [(quant, 10)])
+
+    # Esgotou hoje, na validade: encerrou, e a venda de hoje entra na fornada de ontem.
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.traced_quantity, row.revenue_q, row.margin_q) == ("closed", "10", 10000, 8200)
+
+
+def test_expired_lot_without_sales_is_the_whole_cost_lost(day):
+    recipe = _recipe("BILOST", "Brioche")
+    wo = _lot(recipe, day, 10)
+    _freeze_cost(wo, day, 1800)
+    _lot_batch(_finished_stock(wo, "bi-margin-lost"), day)
+
+    row = build_bi_production(date_from=day, date_to=day).batch_margins[0]
+    assert (row.lot_status, row.revenue_q, row.margin_q) == ("closed", 0, -1800)
+
+
+def test_batch_margin_is_the_same_whatever_the_date_filter(day):
+    """#3427: encomenda de R$ 100 criada na quinta, atendida pela fornada de sábado (custo R$ 30).
+
+    Antes, a venda vinha dos pedidos CRIADOS na janela: filtrando só sábado a
+    fornada mostrava -R$ 30, e filtrando de quinta a sábado, +R$ 70. A venda é
+    achada pela baixa do lote: +R$ 70 nos dois.
+    """
+    recipe = _recipe("BIPREORDER", "Bolo de encomenda")
+    saturday = day
+    thursday = day - timedelta(days=2)
+    wo = _lot(recipe, saturday, 1)
+    _freeze_cost(wo, saturday, 3000)
+    quant = _finished_stock(wo, "bi-margin-preorder")
+    _lot_batch(quant, saturday)
+    preorder = _sale(thursday, time(15), recipe.output_sku, 1)
+    OrderItem.objects.filter(order=preorder).update(line_total_q=10000)
+    _attach_sale_holds(preorder, saturday, [(quant, 1)])
+
+    for date_from in (saturday, thursday):
+        row = build_bi_production(date_from=date_from, date_to=saturday).batch_margins[0]
+        assert (row.ref, row.lot_status, row.revenue_q, row.margin_q) == (wo.ref, "closed", 10000, 7000), date_from
+
+
+def test_a_preorder_is_a_sale_of_the_agreed_day_not_of_the_day_it_was_made(day):
+    """#3427 (dono, 23/11): a venda entra no B.I. pelo dia combinado.
+
+    A encomenda feita na quinta para sábado soma no sábado e não na quinta; o
+    pedido sem data combinada soma no dia em que foi feito. O troco do balcão
+    continua pelo dia em que o pedido foi feito (quando o dinheiro entrou).
+    """
+    from shopman.backstage.bi.canonical import local_window, read_sales
+    from shopman.backstage.bi.sources import orderman
+
+    saturday = day
+    thursday = day - timedelta(days=2)
+    preorder = _sale(thursday, time(15), "BIAGREED", 1)
+    Order.objects.filter(pk=preorder.pk).update(data={"delivery_date": saturday.isoformat()})
+    walk_in = _sale(thursday, time(16), "BIAGREED", 2)
+
+    on_saturday = read_sales(saturday, saturday)
+    on_thursday = read_sales(thursday, thursday)
+    assert [(s.key, s.day) for s in on_saturday.sales] == [(preorder.pk, saturday)]
+    assert [(s.key, s.day) for s in on_thursday.sales] == [(walk_in.pk, thursday)]
+    assert {line.sale_key for line in on_saturday.lines()} == {preorder.pk}
+
+    by_created, _ = orderman.read_sales(local_window(thursday, thursday), by_created=True)
+    assert {s.key for s in by_created} == {preorder.pk, walk_in.pk}
+
+
+def test_a_sale_split_between_two_batches_adds_up_to_the_cent(day):
+    """#3427: uma linha atendida por dois lotes de dias diferentes; consultados
+    separadamente, as duas parcelas somam o valor da linha até o último centavo."""
+    recipe = _recipe("BISPLIT", "Pão dividido")
+    yesterday = day - timedelta(days=1)
+    first = _lot(recipe, yesterday, 5)
+    second = _lot(recipe, day, 5)
+    first_stock = _finished_stock(first, "bi-margin-split-a")
+    second_stock = _finished_stock(second, "bi-margin-split-b")
+    sale = _sale(day, time(9), recipe.output_sku, 3)
+    OrderItem.objects.filter(order=sale).update(line_total_q=10001)
+    _attach_sale_holds(sale, day, [(first_stock, 2), (second_stock, 1)])
+
+    first_row = next(r for r in build_bi_production(date_from=yesterday, date_to=yesterday).batch_margins
+                     if r.ref == first.ref)
+    second_row = next(r for r in build_bi_production(date_from=day, date_to=day).batch_margins
+                      if r.ref == second.ref)
+    assert first_row.revenue_q + second_row.revenue_q == 10001
+    assert (first_row.traced_quantity, second_row.traced_quantity) == ("2", "1")
+
+
+def test_batch_margin_does_not_attribute_sales_from_a_shared_daily_batch(day):
+    recipe = _recipe("BISHARED", "Baguete")
+    first = _lot(recipe, day - timedelta(days=1), 5)
+    second = _lot(recipe, day, 5)
+    quant = _finished_stock(first, "bi-margin-shared")
+    _finished_stock(second, quant.batch)
+    _freeze_cost(second, day, 900)
+    sale = _sale(day, time(9), recipe.output_sku, 2)
+    _attach_sale_holds(sale, day, [(quant, 2)])
+
+    rows = build_bi_production(date_from=day, date_to=day).batch_margins
+    assert [(row.ref, row.revenue_q) for row in rows] == [(second.ref, 0)]
+    # Lote que o estoque não separa: sem margem, nunca o custo inteiro como prejuízo.
+    assert (rows[0].lot_status, rows[0].margin_q) == ("untraceable", None)

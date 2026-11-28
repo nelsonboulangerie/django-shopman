@@ -9,7 +9,7 @@ import uuid
 import pytest
 from django.test import RequestFactory
 from shopman.doorman.models.device_trust import TrustedDevice
-from shopman.doorman.protocols.customer import AuthCustomerInfo
+from shopman.doorman.protocols.identity import IdentityView
 from shopman.doorman.views.devices import DeviceListView, DeviceRevokeView
 
 pytestmark = pytest.mark.django_db
@@ -27,11 +27,10 @@ def _make_request(method="get", customer_id=None, cookies=None):
         request = factory.get("/")
 
     if customer_id:
-        request.customer = AuthCustomerInfo(
-            uuid=customer_id,
+        request.customer = IdentityView(
+            subject_id=customer_id,
             name="Test",
-            phone="5543999990001",
-            email=None,
+            handles=(),
             is_active=True,
         )
     else:

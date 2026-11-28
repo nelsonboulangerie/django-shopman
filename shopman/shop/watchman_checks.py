@@ -7,9 +7,12 @@ small public protocol without creating a dependency in the opposite direction.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 
 from shopman.watchman.contracts import CheckContext, CheckResult, Scope, Status
+
+logger = logging.getLogger(__name__)
 
 LegacyCheck = Callable[[], tuple[str, str | None]]
 
@@ -114,4 +117,118 @@ class QueueCheck:
             _check_queue(),
             healthy="workers and durable queue are current",
             remediation="Inspect worker heartbeats and the oldest queued directives.",
+        )
+
+
+class IfoodPollingCheck:
+    id = "ifood_polling"
+    description = "The iFood order poller answered within the last 2 minutes."
+    scopes = frozenset({Scope.DIAGNOSTIC})
+    timeout_seconds = 2.0
+
+    def run(self, context: CheckContext) -> CheckResult:
+        from shopman.shop.services import ifood_poll_health as health
+
+        state = health.current()
+        limit = int(health.STALE_AFTER.total_seconds())
+        if state.state == health.DISABLED:
+            return CheckResult(
+                id=self.id,
+                status=Status.SKIPPED,
+                summary="iFood direct integration is not configured",
+            )
+        if state.state == health.UNKNOWN:
+            return CheckResult(
+                id=self.id,
+                status=Status.UNKNOWN,
+                summary="process-local cache cannot see the poller heartbeat",
+            )
+        if state.state == health.FRESH:
+            return CheckResult(
+                id=self.id,
+                status=Status.PASS,
+                summary="iFood poller is answering",
+                evidence={"age_seconds": state.age_seconds, "limit_seconds": limit},
+            )
+        evidence = {"limit_seconds": limit}
+        if state.state == health.STALE:
+            evidence["age_seconds"] = state.age_seconds
+            evidence["last_success"] = state.last_success.isoformat()
+            summary = f"no successful iFood poll for {state.age_seconds}s"
+        else:
+            summary = "no successful iFood poll was ever recorded"
+        return CheckResult(
+            id=self.id,
+            status=Status.FAIL,
+            summary=summary,
+            evidence=evidence,
+            remediation=(
+                "Inspect the ifood-poll-worker component (ifood_poll --watch) and iFood OAuth; "
+                "iFood cancels orders not accepted within 8 minutes."
+            ),
+        )
+
+
+class CourierWebhooksCheck:
+    """A TaOn tem os dois avisos desta casa cadastrados: status e posição (F7b).
+
+    Lê ``list_webhooks`` do serviço padrão da casa (``delivery_services.courier_backend``)
+    e confere que há um cadastro de cada tipo apontando para o endpoint deste
+    deployment. Sem o de posição, o Gestor só vê a posição pela batida do
+    ``courier.sync`` (a cada minuto). Só leitura: cadastrar é
+    ``manage.py machine_register_webhook``. A URL cadastrada leva o token do webhook,
+    por isso a evidência diz os tipos e a contagem, nunca a URL.
+    """
+
+    id = "courier_webhooks"
+    description = "The delivery service has this deployment's status and position webhooks registered."
+    scopes = frozenset({Scope.DIAGNOSTIC})
+    #: A listagem pode pedir o token e depois listar, cada chamada com até 15 s.
+    timeout_seconds = 40.0
+
+    KINDS = ("status", "posicao")
+
+    def run(self, context: CheckContext) -> CheckResult:
+        from django.urls import reverse
+
+        from shopman.shop.services import delivery_services
+
+        backend = delivery_services.courier_backend()
+        list_webhooks = getattr(backend, "list_webhooks", None)
+        configured = getattr(backend, "is_configured", None)
+        if list_webhooks is None or configured is None or not configured():
+            return CheckResult(
+                id=self.id,
+                status=Status.SKIPPED,
+                summary="no delivery service with webhooks is configured",
+            )
+        try:
+            items = list_webhooks()
+        except Exception as exc:
+            logger.warning("watchman.courier_webhooks listing_failed error=%s", type(exc).__name__)
+            return CheckResult(
+                id=self.id,
+                status=Status.UNKNOWN,
+                summary="the delivery service did not answer the webhook listing",
+                evidence={"error": type(exc).__name__},
+                remediation="Run manage.py machine_register_webhook <public base> --list and read the answer.",
+            )
+        path = reverse("webhooks:machine-webhook")
+        ours = [item for item in items if path in str(item.get("url") or "")]
+        kinds = sorted({str(item.get("tipo") or item.get("type") or "") for item in ours} - {""})
+        missing = [kind for kind in self.KINDS if kind not in kinds]
+        evidence = {"registered": len(items), "pointing_here": len(ours), "kinds": kinds}
+        if missing:
+            return CheckResult(
+                id=self.id,
+                status=Status.FAIL,
+                summary=f"webhook not registered for: {', '.join(missing)}",
+                evidence={**evidence, "missing": missing},
+                remediation="Register it with manage.py machine_register_webhook <public base>.",
+            )
+        return CheckResult(
+            id=self.id,
+            status=Status.PASS,
+            summary="status and position webhooks are registered",
+            evidence=evidence,
         )

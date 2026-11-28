@@ -12,7 +12,7 @@ function entry(pk: number, over: Partial<KDSHistoryEntryProjection> = {}): KDSHi
   return {
     ticket: { pk, order_ref: `BAL-261013-0${pk}`, customer_name: "", is_preorder: false } as KDSTicketProjection,
     state: "done",
-    items_summary: "1x Croque",
+    items_summary: "1× Croque",
     steps: ["recebido 21:40", "Pronto 21:51 Rafael (tela)"],
     undone: [],
     prep_display: "11 min",

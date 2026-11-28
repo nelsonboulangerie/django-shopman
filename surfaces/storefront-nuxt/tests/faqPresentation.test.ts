@@ -36,7 +36,7 @@ describe('faqContactLinks', () => {
     })
     expect(links.map(link => [link.kind, link.value, link.href])).toEqual([
       ['whatsapp', 'Falar no WhatsApp', 'https://wa.me/554333231997'],
-      ['phone', '+55 43 3323-1997', 'tel:+554333231997'],
+      ['phone', '(43) 3323-1997', 'tel:+554333231997'],
       ['email', 'nelson@boulangerie.com.br', 'mailto:nelson@boulangerie.com.br']
     ])
   })
@@ -50,6 +50,13 @@ describe('faqContactLinks', () => {
       ['whatsapp', 'Falar no WhatsApp', 'https://wa.me/loja'],
       ['phone', '(43) 3323-1997', 'tel:+554333231997'],
       ['email', 'loja@x.com', 'mailto:loja@x.com']
+    ])
+  })
+
+  it('LOJA-07: o telefone do cadastro do site aparece formatado, nunca cru', () => {
+    const links = faqContactLinks({ business: { telephone: '+554333231997', email: '' }, shop: null })
+    expect(links.map(link => [link.kind, link.value, link.href])).toEqual([
+      ['phone', '(43) 3323-1997', 'tel:+554333231997']
     ])
   })
 

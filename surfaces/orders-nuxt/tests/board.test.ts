@@ -2,14 +2,19 @@ import { fixtureActions } from "./support/orderActions";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildRidesLabel,
+  alertMessageWithSchedule,
+  schedulePromise,
   appendTag,
   bulkableRefs,
   changeBackSuggestionQ,
   dispatchAsksChange,
   cardAffordances,
-  channelLabel,
   channelOptions,
   elapsedLabel,
+  equipmentOutLabel,
+  MAX_RIDE_STOPS,
+  equipmentOutLine,
   flattenZones,
   lucideIcon,
   fulfillmentCounts,
@@ -49,11 +54,10 @@ const card = (
   ref: "WEB-20260625-0007",
   status: "accepted",
   status_label: "Confirmado",
-  status_color: "",
   channel_ref: "web",
+  channel_name: "Loja online",
   channel_icon: "language",
   customer_name: "Ana",
-  created_at_display: "08:00",
   created_at_iso: "",
   server_now_iso: "",
   elapsed_seconds: 30,
@@ -61,49 +65,40 @@ const card = (
   items_summary: "2× Pão · 1× Café",
   items_count: 3,
   total_display: "R$ 15,00",
-  fulfillment_icon: "storefront",
   fulfillment_label: "Retirada",
   fulfillment_type: "pickup",
   can_confirm: false,
   can_advance: true,
   next_status: "preparing",
-  next_action_label: "Iniciar preparo",
   payment_method: "cash",
   payment_method_label: "Dinheiro",
   ifood_cancellation_notice: "",
-  ifood_pickup_code: "",
   ifood_schedule_label: "",
   ifood_remote_ahead_label: "",
   ifood_negotiations: [],
   payment_status: "pending",
   payment_pending: true,
   can_settle_delivery_cash: false,
-  fiscal_status_label: "",
   fiscal_status: "",
-  has_kitchen_note: false,
   has_customer_note: false,
   is_gift: false,
   gift_has_recipient: false,
   assigned_operator: "",
   awaiting_work_orders: [],
-  change_for_q: 0,
   change_out_suggested_q: 0,
   change_out_q: 0,
   change_back_pending: false,
-  change_back_q: 0,
   change_label: "",
   equipment_options: [],
-  equipment_out: [],
   equipment_label: "",
   equipment_back_pending: false,
   dispatch_needs_machine: false,
   trip_with: [],
   courier_return_orders: [],
   courier_return_lines: [],
-  revisions: {},
   actions: fixtureActions({
     can_advance: true,
-    next_action_label: "Iniciar preparo",
+    advance_label: "Iniciar preparo",
     ...over,
   }),
   ...over,
@@ -130,19 +125,15 @@ describe("deadlineTone", () => {
   const now = Date.parse("2026-09-19T18:50:00Z");
   const em = (seconds: number) => new Date(now + seconds * 1000).toISOString();
 
-  it("fica vermelho no último minuto", () => {
-    expect(deadlineTone(em(60), now)).toBe("late");
-    expect(deadlineTone(em(5), now)).toBe("late");
-  });
-
-  it("avisa em âmbar nos três minutos finais", () => {
-    expect(deadlineTone(em(61), now)).toBe("warning");
+  it("avisa em âmbar nos três minutos finais, sem chamar futuro de atraso", () => {
+    expect(deadlineTone(em(5), now)).toBe("warning");
+    expect(deadlineTone(em(60), now)).toBe("warning");
     expect(deadlineTone(em(180), now)).toBe("warning");
   });
 
   it("fica calmo com folga", () => {
-    expect(deadlineTone(em(181), now)).toBe("ok");
-    expect(deadlineTone(em(3600), now)).toBe("ok");
+    expect(deadlineTone(em(181), now)).toBe("neutral");
+    expect(deadlineTone(em(3600), now)).toBe("neutral");
   });
 
   it("prazo vencido é o mais urgente que existe, não some", () => {
@@ -150,17 +141,17 @@ describe("deadlineTone", () => {
   });
 
   it("sem prazo ou com data ilegível não pinta alarme", () => {
-    expect(deadlineTone("", now)).toBe("muted");
-    expect(deadlineTone("amanhã cedo", now)).toBe("muted");
+    expect(deadlineTone("", now)).toBe("neutral");
+    expect(deadlineTone("amanhã cedo", now)).toBe("neutral");
   });
 });
 
 describe("timerTone", () => {
   it("maps timer_class to urgency", () => {
-    expect(timerTone("timer-ok")).toBe("ok");
+    expect(timerTone("timer-ok")).toBe("neutral");
     expect(timerTone("timer-warning")).toBe("warning");
     expect(timerTone("timer-urgent")).toBe("late");
-    expect(timerTone("timer-muted")).toBe("muted");
+    expect(timerTone("timer-muted")).toBe("neutral");
   });
 });
 
@@ -236,7 +227,7 @@ describe("zonesView", () => {
   });
 
   // O pedido do iFood já entregue com negociação aberta não está em etapa nenhuma: no
-  // quadro em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
+  // painel em abas (celular, tablet em pé) ele ganha a aba "Negociação", senão some.
   it("a aba Negociação junta só o que está fora das etapas, e some sem nenhum", () => {
     expect(negotiationZoneView(queue())).toBeNull();
     const zone = negotiationZoneView({
@@ -252,6 +243,52 @@ describe("zonesView", () => {
     expect(zone?.count).toBe(1);
     expect(zoneEmptyText("negotiation")).toBe(
       "Nenhuma negociação do iFood esperando resposta.",
+    );
+  });
+});
+
+describe("schedulePromise — a encomenda se anuncia (WP-G01)", () => {
+  it("outro dia: a palavra Encomenda à frente da frase do servidor", () => {
+    expect(
+      schedulePromise({ schedule_label: "Amanhã · A partir das 15h", schedule_state: "future" }),
+    ).toEqual({
+      label: "Encomenda · Amanhã · A partir das 15h",
+      color: "neutral",
+      icon: "i-lucide-calendar-clock",
+      state: "future",
+    });
+  });
+
+  it("hoje com hora combinada: a hora, sem a palavra Encomenda", () => {
+    expect(
+      schedulePromise({ schedule_label: "Hoje · 14h às 14h30", schedule_state: "today" })?.label,
+    ).toBe("Hoje · 14h às 14h30");
+  });
+
+  it("vencida: o nome próprio do passado, em vermelho", () => {
+    const promise = schedulePromise({
+      schedule_label: "Era para ontem · A partir das 15h",
+      schedule_state: "overdue",
+    });
+    expect(promise?.label).toBe("Era para ontem · A partir das 15h");
+    expect(promise?.color).toBe("error");
+  });
+
+  it("sem combinado, nada", () => {
+    expect(schedulePromise({ schedule_label: "", schedule_state: "" })).toBeNull();
+    expect(schedulePromise({ schedule_label: "Amanhã · A partir das 15h", schedule_state: "" })).toBeNull();
+  });
+
+  it("o sino diz a mesma frase do cartão antes do texto do aviso", () => {
+    expect(
+      alertMessageWithSchedule({
+        message: "O pedido T09 espera aceite.",
+        order_schedule_label: "Amanhã · A partir das 15h",
+        order_schedule_state: "future",
+      }),
+    ).toBe("Encomenda · Amanhã · A partir das 15h. O pedido T09 espera aceite.");
+    expect(alertMessageWithSchedule({ message: "O pedido T09 espera aceite." })).toBe(
+      "O pedido T09 espera aceite.",
     );
   });
 });
@@ -308,6 +345,24 @@ describe("cardAffordances", () => {
     expect(pickup?.label).toBe("Receber na retirada");
     expect(delivery?.label).toBe("Acertar entrega");
   });
+  // Beta 05/11 (PDV2-03): "Bloqueado" e "Iniciar preparo" no mesmo cartão.
+  it("o avanço travado diz o que espera, não o verbo que não acontece", () => {
+    const blocked = card({
+      advance_block_label: "Aguardando o dia da encomenda…",
+      advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado.",
+      actions: [
+        {
+          ref: "advance", label: "Iniciar preparo", enabled: false,
+          reason: "Encomenda para uma data futura.", priority: "primary",
+          kind: "mutation", href: "", method: "POST", payload_schema: {},
+          idempotency: "required", confirmation: {},
+        },
+      ],
+    });
+    const advance = cardAffordances(blocked).find((a) => a.ref === "advance");
+    expect(advance?.label).toBe("Aguardando o dia da encomenda");
+    expect(advance?.disabled).toBe(true);
+  });
 });
 
 describe("matchesQuery", () => {
@@ -334,22 +389,31 @@ describe("matchesQuery", () => {
   });
 });
 
-describe("channelLabel", () => {
-  it("maps known channels and capitalises unknowns", () => {
-    expect(channelLabel("web")).toBe("Loja online");
-    expect(channelLabel("ifood")).toBe("iFood");
-    expect(channelLabel("pdv")).toBe("PDV");
-    expect(channelLabel("kiosk")).toBe("Kiosk");
-    expect(channelLabel("")).toBe("—");
+describe("o nome do canal é o do servidor (WP-G09)", () => {
+  it("o filtro usa o nome que o cartão traz, sem tabela de nomes na tela", () => {
+    const opts = channelOptions([
+      card({ channel_ref: "balcao-2", channel_name: "Balcão da praça" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+    ]);
+    expect(opts.map((option) => option.label)).toEqual(["Balcão da praça", "Loja online"]);
+  });
+
+  it("a planilha leva o mesmo nome, e pedido sem canal não ganha travessão", () => {
+    const rows = [
+      { card: card({ channel_ref: "", channel_name: "" }), zoneKey: "prep" as const, zoneTitle: "Em preparo" },
+    ];
+    const csv = rowsToCsv(rows);
+    expect(csv).not.toContain("—");
+    expect(csv).toContain("Em preparo;;Ana");
   });
 });
 
 describe("channelOptions", () => {
   it("returns distinct channels with counts, sorted by label", () => {
     const opts = channelOptions([
-      card({ channel_ref: "web" }),
-      card({ channel_ref: "web" }),
-      card({ channel_ref: "ifood" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+      card({ channel_ref: "web", channel_name: "Loja online" }),
+      card({ channel_ref: "ifood", channel_name: "iFood" }),
     ]);
     expect(opts).toEqual([
       { ref: "ifood", label: "iFood", count: 1 },
@@ -360,7 +424,7 @@ describe("channelOptions", () => {
 
 describe("matchesChannel", () => {
   it("treats empty/all as match-all, else exact", () => {
-    const c = card({ channel_ref: "whatsapp" });
+    const c = card({ channel_ref: "whatsapp", channel_name: "WhatsApp" });
     expect(matchesChannel(c, "")).toBe(true);
     expect(matchesChannel(c, "all")).toBe(true);
     expect(matchesChannel(c, "whatsapp")).toBe(true);
@@ -416,18 +480,21 @@ describe("triageCards", () => {
       card({
         ref: "A",
         channel_ref: "web",
+        channel_name: "Loja online",
         customer_name: "Ana",
         elapsed_seconds: 10,
       }),
       card({
         ref: "B",
         channel_ref: "ifood",
+        channel_name: "iFood",
         customer_name: "Ana",
         elapsed_seconds: 99,
       }),
       card({
         ref: "C",
         channel_ref: "web",
+        channel_name: "Loja online",
         customer_name: "Bia",
         elapsed_seconds: 50,
       }),
@@ -601,14 +668,20 @@ describe("rowsToCsv", () => {
   });
   // A planilha em português lê a vírgula como decimal: o separador é ponto e vírgula,
   // e a marca de ordem de bytes abre o UTF-8 com acento certo (o escritor do kit,
-  // `readingCsvText`, o mesmo do "Exportar CSV deste quadro").
+  // `readingCsvText`, o mesmo do "Exportar CSV deste painel").
   it("sai como a planilha em português lê: ';' entre colunas, vírgula no valor, BOM", () => {
     const csv = rowsToCsv([
-      { card: card({ ref: "A", total_display: "R$ 1.234,50" }), zoneKey: "intake" as const, zoneTitle: "Entrada" },
+      {
+        card: card({ ref: "A", total_display: "R$ 1.234,50" }),
+        zoneKey: "intake" as const,
+        zoneTitle: "Entrada",
+      },
     ]);
     expect(csv.startsWith("﻿")).toBe(true);
     const [header, line] = csv.slice(1).split("\n");
-    expect(header).toBe("Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente");
+    expect(header).toBe(
+      "Código;Situação;Canal;Cliente;Itens;Total;Tempo;Atendente",
+    );
     expect(line!.split(";")).toHaveLength(8);
     expect(line).toContain(";R$ 1.234,50;");
   });
@@ -684,6 +757,29 @@ describe("confirmationRemainingLabel", () => {
       "0:00",
     );
   });
+  // Beta 06/11 (F8, PIXEXP-11, SMS-18): o aceite que vence 5 ou 60 min depois
+  // da abertura saía "cancela sozinho em 252:11". M:SS só na última hora.
+  it("de uma hora para cima, horas e minutos, nunca minutos:segundos", () => {
+    const now = Date.parse("2026-11-06T05:17:49Z");
+    expect(confirmationRemainingLabel("2026-11-06T09:30:00Z", now)).toBe(
+      "4h12",
+    );
+    expect(confirmationRemainingLabel("2026-11-06T06:17:49Z", now)).toBe(
+      "1h00",
+    );
+    expect(confirmationRemainingLabel("2026-11-06T06:17:48Z", now)).toBe(
+      "59:59",
+    );
+  });
+  it("prazo de dias diz os dias", () => {
+    const now = Date.parse("2026-11-06T05:00:00Z");
+    expect(confirmationRemainingLabel("2026-11-07T09:30:00Z", now)).toBe(
+      "28h30",
+    );
+    expect(confirmationRemainingLabel("2026-11-09T06:00:00Z", now)).toBe(
+      "3 dias",
+    );
+  });
 });
 
 describe("realtimeIndicator — honestidade do tempo-real", () => {
@@ -737,9 +833,20 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
       card({ ref: "PIX-1", can_confirm: false, can_advance: false }),
     ]);
     const after = queue([
-      card({ ref: "PIX-1", can_confirm: false, can_advance: true }),
+      card({ ref: "PIX-1", can_confirm: false, can_advance: true, attention: "dispatch" }),
     ]);
     expect(newlyTreatableOrderRefs(before, after)).toEqual(["PIX-1"]);
+  });
+
+  // Decisão do dono (21/11/2026, #2758 item 3): o som segue o "Precisa de você" da Fila,
+  // que o servidor decide (`attention`), e não mais o gesto disponível na tela.
+  it("o som segue o Precisa de você: toca o que pede alguém, cala o que só anda", () => {
+    const cozinhaTrabalhando = card({ ref: "PREP-1", status: "preparing", can_advance: true, attention: "" });
+    const semEstoque = card({ ref: "NEW-1", can_confirm: false, can_advance: false, attention: "blocked" });
+    const negociacao = card({ ref: "IFD-1", can_confirm: false, can_advance: false, attention: "negotiation" });
+    const promessa = card({ ref: "RISK-1", can_confirm: false, can_advance: false, attention: "promise" });
+    const refs = [...treatableOrderRefs(queue([cozinhaTrabalhando, semEstoque, negociacao, promessa]))];
+    expect(refs).toEqual(["NEW-1", "IFD-1", "RISK-1"]);
   });
 
   it("created sem mudança real de tratabilidade não produz aviso", () => {
@@ -758,6 +865,7 @@ describe("aviso de pedido tratável — nasce da projection canônica", () => {
       can_confirm: true,
       can_advance: true,
       is_preorder: true,
+      attention: "confirm",
     });
     const before = {
       ...queue([]),
@@ -867,10 +975,73 @@ describe("situationAfterContinua: a situação depois de “<REF> continua” (d
     expect(situationAfterContinua("Pronto")).toBe("pronto");
   });
   it("“Saiu para entrega” é verbo: entra como o nome do estado, entre aspas, sem apelido", () => {
-    expect(situationAfterContinua("Saiu para entrega")).toBe("em “Saiu para entrega”");
+    expect(situationAfterContinua("Saiu para entrega")).toBe(
+      "em “Saiu para entrega”",
+    );
   });
   it("sem rótulo, sem situação", () => {
     expect(situationAfterContinua("")).toBe("");
     expect(situationAfterContinua(undefined)).toBe("");
+  });
+});
+
+describe("maquininhas na rua", () => {
+  it("conta no rótulo e diz com qual pedido cada uma está", () => {
+    expect(equipmentOutLabel(1)).toBe("1 maquininha na rua");
+    expect(equipmentOutLabel(2)).toBe("2 maquininhas na rua");
+    expect(
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "Maria",
+        out_at: "2026-10-28T17:20:00Z",
+        shared_with: [],
+      }),
+    ).toBe("Pedido A47 · Maria · saiu às 14h20");
+    expect(
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "",
+        out_at: "",
+        shared_with: [],
+      }),
+    ).toBe("Pedido A47");
+    // A maquininha da corrida com várias paradas: todos os pedidos dela.
+    expect(
+      equipmentOutLine({
+        order_ref: "WEB-A47",
+        customer_name: "Maria",
+        out_at: "",
+        shared_with: ["WEB-B12", "WEB-C03"],
+      }),
+    ).toBe("Pedidos A47, B12 e C03 · Maria");
+  });
+});
+
+describe("uma corrida para várias entregas", () => {
+  it("o Painel leva às Entregas dizendo quantas a casa sugere", () => {
+    expect(MAX_RIDE_STOPS).toBe(4);
+    expect(buildRidesLabel(0)).toBe("Montar corridas");
+    expect(buildRidesLabel(1)).toBe("Montar corridas (1 sugerida)");
+    expect(buildRidesLabel(2)).toBe("Montar corridas (2 sugeridas)");
+  });
+});
+
+// Prontos em duas partes (dono, 13/11/2026): "A coletar" e "Saiu para entrega".
+describe("exitRows", () => {
+  it("o que espera no balcão primeiro, o que está na rua depois, um rótulo por parte", async () => {
+    const { exitRows } = await import("../app/presentation/board");
+    const rows = exitRows([
+      { ref: "R1", status: "dispatched" },
+      { ref: "B1", status: "ready" },
+      { ref: "B2", status: "ready" },
+      { ref: "R2", status: "dispatched" },
+    ] as never);
+    expect(rows.map((r) => [r.card.ref, r.heading])).toEqual([
+      ["B1", "A coletar"],
+      ["B2", ""],
+      ["R1", "Saiu para entrega"],
+      ["R2", ""],
+    ]);
+    expect(exitRows([{ ref: "R1", status: "dispatched" }] as never)[0]!.heading).toBe("Saiu para entrega");
   });
 });

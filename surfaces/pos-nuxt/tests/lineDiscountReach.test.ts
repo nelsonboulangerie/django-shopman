@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   discountReachText,
-  draftDiscountReach,
+  draftDiscountOutcome,
+  lineDiscountCompact,
   lineDiscountDetail,
   lineDiscountFact,
   lineDiscountReach,
@@ -60,27 +61,59 @@ describe("alcance do desconto da linha", () => {
     expect(lineDiscountFact(item())).toBe("");
   });
 
-  it("sem o eco do servidor, a conta do kernel sobre a etiqueta", () => {
+  it("sem o eco do servidor a tela não faz a conta do motor: sem número", () => {
     const line = item({ price_q: 690, discount: { type: "fixed", value: 1.5, reason: "cortesia" } });
-    expect(lineDiscountFact(line)).toBe(`−${R(150)} por unidade · −${R(450)} na linha`);
+    expect(lineDiscountReach(line)).toBeNull();
+    // E com o eco a caminho (desconto recém-aplicado), o número velho não fala.
+    const pending = item({
+      list_price_q: 690, charged_price_q: 590, price_pending: true,
+      discount: { type: "fixed", value: 2, reason: "cortesia" },
+    });
+    expect(lineDiscountFact(pending)).toBe("");
   });
 
-  it("o rascunho do editor: R$ por unidade × quantidade, teto na etiqueta", () => {
+  it("o rascunho do editor fala o que a REVISÃO do servidor deu à linha", () => {
     const line = item({ list_price_q: 690 });
-    const fixed = draftDiscountReach(line, "fixed", 1)!;
-    expect(discountReachText(fixed)).toBe(`${R(100)} por unidade · ${R(300)} na linha`);
-    const capped = draftDiscountReach(line, "fixed", 10)!;
-    expect(capped.perUnitQ).toBe(690);
-    expect(capped.lineQ).toBe(2070);
-    const pct = draftDiscountReach(line, "percent", 10)!;
-    expect(discountReachText(pct)).toBe(`10% · ${R(207)} na linha`);
-    expect(draftDiscountReach(line, "fixed", 0)).toBeNull();
+    const fixed = draftDiscountOutcome(line, "fixed", 1, { list_price_q: 690, charged_price_q: 590 });
+    expect(fixed?.kind === "reach" && discountReachText(fixed.reach)).toBe(`${R(100)} por unidade · ${R(300)} na linha`);
+    // O teto é do motor: R$ 10,00 numa linha de R$ 6,90 cobra zero, e a tela repete.
+    const capped = draftDiscountOutcome(line, "fixed", 10, { list_price_q: 690, charged_price_q: 0 });
+    expect(capped?.kind === "reach" && capped.reach.lineQ).toBe(2070);
+    // O arredondamento é do motor (R$ 6,21 → 69 por unidade), não da tela.
+    const pct = draftDiscountOutcome(line, "percent", 10, { list_price_q: 690, charged_price_q: 621 });
+    expect(pct?.kind === "reach" && discountReachText(pct.reach)).toBe(`10% · ${R(207)} na linha`);
+    expect(draftDiscountOutcome(line, "fixed", 0, { list_price_q: 690, charged_price_q: 690 })).toBeNull();
+  });
+
+  it("o rascunho que o motor descartaria diz quem venceu", () => {
+    const line = item({ list_price_q: 600 });
+    const outcome = draftDiscountOutcome(line, "percent", 10, {
+      list_price_q: 600, charged_price_q: 510, manual_discount_discarded: true,
+      pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+    });
+    expect(outcome).toEqual({ kind: "discarded", winner: "Semana do Pão" });
   });
 
   it("peça pesada: o valor na linha segue o peso, sem 'por unidade'", () => {
     const line = item({ qty: 0.5, list_price_q: 4000, weighed: { weight_g: 500 } as POSCartItem["weighed"] });
-    const pct = draftDiscountReach(line, "percent", 10)!;
-    expect(pct.multiUnit).toBe(false);
-    expect(discountReachText(pct)).toBe(`10% · ${R(200)} na linha`);
+    const pct = draftDiscountOutcome(line, "percent", 10, { list_price_q: 4000, charged_price_q: 3600 });
+    expect(pct?.kind === "reach" && pct.reach.multiUnit).toBe(false);
+    expect(pct?.kind === "reach" && discountReachText(pct.reach)).toBe(`10% · ${R(200)} na linha`);
+  });
+});
+
+describe("selo da linha fechada", () => {
+  // Beta test de 05/11/2026 (PDV-17): o nome da promoção só existia no aria-label.
+  it("promoção automática diz o nome", () => {
+    const line = item({
+      qty: 2, list_price_q: 900, charged_price_q: 765,
+      pricing_discount: { label: "Semana do Pão", percent: 15, amount_q: 135 },
+    } as Partial<POSCartItem>);
+    expect(lineDiscountCompact(line)).toBe(`Semana do Pão −15% · −${R(270)} na linha`);
+  });
+
+  it("desconto manual fica só com o alcance", () => {
+    const line = item({ qty: 1, list_price_q: 690, charged_price_q: 590, discount: { type: "fixed", value: 1, reason: "cortesia" } });
+    expect(lineDiscountCompact(line, [{ ref: "cortesia", label: "Cortesia" }])).toBe(`−${R(100)}`);
   });
 });

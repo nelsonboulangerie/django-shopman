@@ -10,10 +10,10 @@ from django.shortcuts import redirect, render
 from django.utils.translation import gettext_lazy as _
 from django.views import View
 
-from ..conf import get_doorman_settings
+from ..conf import get_adapter, get_doorman_settings
 from ..models import VerificationCode
 from ..services.verification import AuthService
-from ..utils import get_client_ip, normalize_phone, safe_redirect_url
+from ..utils import get_client_ip, safe_redirect_url
 
 logger = logging.getLogger("shopman.doorman.views.verification_code")
 
@@ -26,8 +26,8 @@ class VerificationCodeRequestView(View):
         Renders code_request.html form
 
     POST /doorman/code/request
-        Form data: target=... (legacy alias: phone)
-        JSON data: {"target": "..."} (legacy alias: phone)
+        Form data: target=...
+        JSON data: {"target": "..."}
 
     On success (form): Redirects to code-verify
     On success (JSON): Returns {"success": true, "target": "..."}
@@ -42,7 +42,6 @@ class VerificationCodeRequestView(View):
         context = {
             "next": request.GET.get("next", ""),
             "target": "",
-            "phone": "",
         }
         return render(request, self.get_template_name(), context)
 
@@ -55,19 +54,19 @@ class VerificationCodeRequestView(View):
         if is_json:
             try:
                 data = json.loads(request.body)
-                target_raw = data.get("target") or data.get("phone", "")
+                target_raw = data.get("target", "")
             except json.JSONDecodeError:
                 return JsonResponse({"error": "Invalid JSON"}, status=400)
         else:
-            target_raw = request.POST.get("target") or request.POST.get("phone", "")
+            target_raw = request.POST.get("target", "")
 
         if not target_raw:
             error = str(_("Por favor, informe seu identificador de acesso."))
             if is_json:
                 return JsonResponse({"error": error}, status=400)
-            return render(request, template_name, {"error": error, "target": "", "phone": ""})
+            return render(request, template_name, {"error": error, "target": ""})
 
-        target = normalize_phone(target_raw)
+        target = get_adapter().login_handle(target_raw).value
         if not target:
             error = str(_("Identificador de acesso inválido."))
             if is_json:
@@ -75,7 +74,7 @@ class VerificationCodeRequestView(View):
             return render(
                 request,
                 template_name,
-                {"error": error, "target": target_raw, "phone": target_raw},
+                {"error": error, "target": target_raw},
             )
 
         # Request code
@@ -92,12 +91,12 @@ class VerificationCodeRequestView(View):
             return render(
                 request,
                 template_name,
-                {"error": result.error, "target": target_raw, "phone": target_raw},
+                {"error": result.error, "target": target_raw},
             )
 
         # Success
         if is_json:
-            return JsonResponse({"success": True, "target": target, "phone": target})
+            return JsonResponse({"success": True, "target": target})
 
         # Store target and next URL in session
         request.session["auth_target"] = target
@@ -119,8 +118,8 @@ class VerificationCodeVerifyView(View):
         Renders code_verify.html form
 
     POST /doorman/code/verify
-        Form data: target=..., code=... (legacy alias: phone)
-        JSON data: {"target": "...", "code": "..."} (legacy alias: phone)
+        Form data: target=..., code=...
+        JSON data: {"target": "...", "code": "..."}
 
     On success (form): Redirects to LOGIN_REDIRECT_URL
     On success (JSON): Returns {"success": true, "customer_id": "..."}
@@ -132,10 +131,10 @@ class VerificationCodeVerifyView(View):
         return settings.TEMPLATE_CODE_VERIFY
 
     def get(self, request):
-        target = request.session.get("auth_target") or request.session.get("auth_phone")
+        target = request.session.get("auth_target")
         if not target:
             return redirect("doorman:code-request")
-        return render(request, self.get_template_name(), {"target": target, "phone": target})
+        return render(request, self.get_template_name(), {"target": target})
 
     def post(self, request):
         template_name = self.get_template_name()
@@ -146,17 +145,12 @@ class VerificationCodeVerifyView(View):
         if is_json:
             try:
                 data = json.loads(request.body)
-                target = data.get("target") or data.get("phone", "")
+                target = data.get("target", "")
                 code = data.get("code", "")
             except json.JSONDecodeError:
                 return JsonResponse({"error": "Invalid JSON"}, status=400)
         else:
-            target = (
-                request.POST.get("target")
-                or request.POST.get("phone")
-                or request.session.get("auth_target", "")
-                or request.session.get("auth_phone", "")
-            )
+            target = request.POST.get("target") or request.session.get("auth_target", "")
             code = request.POST.get("code", "")
 
         # Validate input
@@ -167,10 +161,10 @@ class VerificationCodeVerifyView(View):
             return render(
                 request,
                 template_name,
-                {"error": error, "target": target, "phone": target},
+                {"error": error, "target": target},
             )
 
-        target = normalize_phone(target) or target
+        target = get_adapter().login_handle(target).value
 
         # Verify code
         result = AuthService.verify_for_login(target, code, request)
@@ -190,7 +184,6 @@ class VerificationCodeVerifyView(View):
                 {
                     "error": result.error,
                     "target": target,
-                    "phone": target,
                     "attempts_remaining": result.attempts_remaining,
                 },
             )
@@ -200,14 +193,13 @@ class VerificationCodeVerifyView(View):
 
         # Clear session data
         request.session.pop("auth_target", None)
-        request.session.pop("auth_phone", None)
 
         # Success
         if is_json:
             return JsonResponse(
                 {
                     "success": True,
-                    "customer_id": str(result.customer.uuid),
+                    "customer_id": str(result.customer.subject_id),
                 }
             )
 

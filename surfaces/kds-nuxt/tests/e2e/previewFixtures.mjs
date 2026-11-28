@@ -16,7 +16,7 @@ function ticket(overrides) {
     channel_icon: "language",
     customer_name: "",
     fulfillment_icon: "storefront",
-    created_at_display: "08:00",
+    created_at_display: "8h",
     elapsed_seconds: 120,
     target_seconds: 900,
     timer_class: "timer-ok",
@@ -116,14 +116,14 @@ export const PREP_TICKETS = [
     test_order_label: "Pedido de teste do iFood",
     items: [item("1", "Baguete tradicional (NÃO ENTREGAR)")],
   }),
-  // P2-16: encomenda das 15h. O ticket nasce às 00:05 (despertador da encomenda); o
+  // P2-16: encomenda das 15h. O ticket nasce às 0h05 (despertador da encomenda); o
   // prazo é a hora combinada, e o relógio diz "para 15h" em vez de 8h25 corridas.
   ticket({
     pk: 108,
     order_ref: "WEB-260919-0102",
     customer_name: "Café Parisiense",
     is_preorder: true,
-    created_at_display: "00:05",
+    created_at_display: "0h05",
     elapsed_seconds: 30300,
     due_time_display: "retira a partir das 15h",
     due_clock_display: "15h",
@@ -187,7 +187,7 @@ export const CANCELLED_TICKETS = [
     status: "cancelled",
     status_label: "Cancelado",
     is_cancelled: true,
-    cancelled_at_display: "08:22",
+    cancelled_at_display: "8h22",
     elapsed_seconds: 300,
     items: [item("1", "Croque monsieur"), item("2", "Suco de laranja 300 ml")],
   }),
@@ -212,8 +212,8 @@ export const HISTORY_ENTRIES = [
   historyEntry(
     { pk: 151, order_ref: "BAL-260921-0129", items: [item("2", "Croque monsieur"), item("1", "Café coado grande")] },
     {
-      items_summary: "2x Croque monsieur, 1x Café coado grande",
-      steps: ["recebido 08:12", "iniciado 08:13 Rafael", "Pronto 08:21 Rafael (tela)"],
+      items_summary: "2× Croque monsieur, 1× Café coado grande",
+      steps: ["recebido 8h12", "iniciado 8h13 Rafael", "Pronto 8h21 Rafael (tela)"],
       prep_display: "8 min",
       can_reopen: true,
     },
@@ -228,7 +228,7 @@ export const HISTORY_ENTRIES = [
     },
     {
       items_summary: "6x Croissant de manteiga, 1x Quiche lorraine",
-      steps: ["recebido 07:40", "iniciado 07:44 Ana", "Pronto 08:02 Ana (tela)"],
+      steps: ["recebido 7h40", "iniciado 7h44 Ana", "Pronto 8h02 Ana (tela)"],
       undone: ["Pronto 07:58 Ana (tela) → desfeito 08:00 Rafael"],
       prep_display: "18 min",
       can_reopen: true,
@@ -238,7 +238,7 @@ export const HISTORY_ENTRIES = [
     { pk: 153, order_ref: "IFD-260921-4811", channel_icon: "fastfood", items: [item("1", "Pain au chocolat")] },
     {
       items_summary: "1x Pain au chocolat",
-      steps: ["recebido 07:31", "iniciado 07:32 Rafael", "Pronto 07:36 Rafael (tela)"],
+      steps: ["recebido 7h31", "iniciado 7h32 Rafael", "Pronto 7h36 Rafael (tela)"],
       prep_display: "4 min",
       reopen_block_reason: "Pedido despachado: não volta à cozinha. Para refazer, peça pelo PDV ou pelo Gestor.",
     },
@@ -255,7 +255,7 @@ export const HISTORY_ENTRIES = [
     {
       state: "cancelled",
       items_summary: "1x Tartine de abacate",
-      steps: ["recebido 07:20", "Cancelado 07:24", "ciente 07:25 Ana"],
+      steps: ["recebido 7h20", "Cancelado 7h24", "ciente 7h25 Ana"],
     },
   ),
 ];
@@ -267,7 +267,7 @@ export const PREVIEW_INDEX = {
     // cada uma pelo nome, e a Saída vira o atalho para o Gestor.
     { ref: "cafes", name: "Cafés", type: "prep", type_display: "Preparo", active_count: CHANGED_TICKETS.length },
     { ref: "lanches", name: "Lanches", type: "prep", type_display: "Preparo", active_count: 0 },
-    { ref: "encomendas", name: "Encomendas", type: "picking", type_display: "Separação", active_count: 1 },
+    { ref: "picking", name: "Separação", type: "picking", type_display: "Separação", active_count: 1 },
     { ref: "saida", name: "Saída", type: "expedition", type_display: "Saída", active_count: 3 },
   ],
 };

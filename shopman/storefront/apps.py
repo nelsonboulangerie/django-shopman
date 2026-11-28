@@ -29,6 +29,36 @@ class StorefrontConfig(AppConfig):
         registry.register_directive_handler(StockAlertDeliveryHandler())
         # "Medir agora" do placar das intenções (Admin): a medição roda no worker.
         registry.register_directive_handler(IntentPilotMeasureHandler())
+        # "Vou verificar" (WP-05): a equipe responde ou assume pelo cartão do sino, no
+        # backstage, que não importa superfície; a Concierge se registra na porta do shop.
+        from shopman.shop import concierge_verification
+        from shopman.storefront.concierge import faq_promotion, verification
+        from shopman.storefront.concierge.service import give_back_by_alert
+
+        concierge_verification.register(
+            answer=verification.answer, take_over=verification.take_over, promote_faq=faq_promotion.promote,
+            give_back=give_back_by_alert,
+        )
+        # O B.I. mostra fala de cliente (a seção IA): só pelo redator da Concierge.
+        from shopman.shop import concierge_reading
+        from shopman.storefront.concierge.observation_privacy import redact_observation_text
+
+        concierge_reading.register(redact=lambda text: redact_observation_text(text).text)
+        # Número que muda de dono (D3): a conversa daquele número se desliga do
+        # cadastro que o perdeu, na mesma transação que o tirou.
+        from shopman.shop.services import auth as auth_service
+        from shopman.storefront.concierge.service import detach_reassigned_number
+
+        auth_service.on_number_left(detach_reassigned_number)
+        # Loja viva (#2784): o canal da loja tem vitrine pública. O shop só calcula o
+        # estado público do SKU (e publica ``shelf-<canal>``) para canal registrado aqui.
+        from shopman.shop.services import public_shelf
+        from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+
+        public_shelf.register_public_channel(STOREFRONT_CHANNEL_REF)
+        from shopman.storefront.continuum import CatalogStructureRefreshHandler
+
+        registry.register_directive_handler(CatalogStructureRefreshHandler())
 
         # Stock-back alerts: react to Stockman Move arrivals to notify waiters.
         from django.db.models.signals import post_save
@@ -43,10 +73,24 @@ class StorefrontConfig(AppConfig):
             weak=False,
         )
 
-        # Continuum 0.2: só marca a read model pública como suja. A reconstrução
-        # continua usando ``build_catalog`` e acontece no próximo shadow/snapshot;
-        # falha do cache nunca muda a resposta canônica do menu.
+        # Entrar com a sacola cheia reprecifica a sacola (#3235): no login, que é
+        # comando, e nunca no GET da sacola ou do checkout.
+        from django.contrib.auth.signals import user_logged_in
+
+        from shopman.storefront.cart import reprice_cart_on_login
+
+        user_logged_in.connect(
+            reprice_cart_on_login,
+            dispatch_uid="storefront.cart.reprice_on_login",
+            weak=False,
+        )
+
+        # Continuum 0.2: a escrita no catálogo marca a read model pública como
+        # suja e põe a reconstrução na fila do worker (``build_catalog`` dentro
+        # do ``CatalogStructureRefreshHandler``). O GET do snapshot e o shadow do
+        # menu só leem; falha do cache nunca muda a resposta canônica do menu.
         from django.db.models.signals import m2m_changed, post_delete
+        from shopman.guestman.models import PriceTierAdvantage
         from shopman.offerman.models import (
             Collection,
             CollectionItem,
@@ -59,6 +103,8 @@ class StorefrontConfig(AppConfig):
         from shopman.storefront.continuum import schedule_catalog_structure_dirty
 
         for model in (
+            # A coleção exclusiva de grupo sai do snapshot público quando nasce.
+            PriceTierAdvantage,
             Product,
             Listing,
             ListingItem,

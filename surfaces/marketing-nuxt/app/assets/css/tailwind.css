@@ -58,7 +58,7 @@
     U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
-/* Envelope de acessibilidade do Marketing (piloto do ADR-026): alvo de toque de
+/* Envelope de acessibilidade do Marketing (piloto do ADR-038): alvo de toque de
    44px e foco de 3px visíveis. Some no `@layer base` da base compartilhada. */
 @layer base {
   :where(button, a[href], [role="button"]) {

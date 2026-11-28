@@ -35,7 +35,6 @@ export CSRF_TRUSTED_ORIGINS="${CSRF_TRUSTED_ORIGINS:-http://localhost:${DJANGO_P
 export AUTH_DEFAULT_DOMAIN="${AUTH_DEFAULT_DOMAIN:-shopman-ci.example}"
 export DOORMAN_ACCESS_LINK_API_KEY="${DOORMAN_ACCESS_LINK_API_KEY:-ci-doorman-access-link-key}"
 export EFI_WEBHOOK_TOKEN="${EFI_WEBHOOK_TOKEN:-ci-efi-webhook-token}"
-export IFOOD_WEBHOOK_TOKEN="${IFOOD_WEBHOOK_TOKEN:-ci-ifood-webhook-token}"
 export MANYCHAT_API_TOKEN="${MANYCHAT_API_TOKEN:-ci-manychat-api-token}"
 export MANYCHAT_WEBHOOK_SECRET="${MANYCHAT_WEBHOOK_SECRET:-ci-manychat-webhook-secret}"
 # CI has no real payment credentials — mock adapters with the explicit staging

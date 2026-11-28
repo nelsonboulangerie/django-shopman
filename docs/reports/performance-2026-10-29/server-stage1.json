@@ -1,0 +1,100 @@
+{
+  "candidate_sha256": "e19f66240633f22ef931df5ab441bed18e49791326954a81047adea2b93d2edc",
+  "captured_utc": "2026-10-29T17:56:32.043998+00:00",
+  "read_only": true,
+  "pdp_batch_read": false,
+  "catalog": {
+    "samples": {
+      "before": [
+        {
+          "ms": 210.37,
+          "queries": 34
+        },
+        {
+          "ms": 228.82,
+          "queries": 34
+        },
+        {
+          "ms": 204.56,
+          "queries": 34
+        },
+        {
+          "ms": 228.32,
+          "queries": 34
+        }
+      ],
+      "after": [
+        {
+          "ms": 244.39,
+          "queries": 32
+        },
+        {
+          "ms": 207.87,
+          "queries": 32
+        },
+        {
+          "ms": 243.89,
+          "queries": 32
+        },
+        {
+          "ms": 212.23,
+          "queries": 32
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 219.34,
+      "after": 228.06
+    },
+    "json_equal": true,
+    "sha256": "47edba4a3ed597f154d6bd3f447c65a5c7894d1f190c8f07a52f6aabe0d4588d",
+    "bytes": 56719
+  },
+  "pdp": {
+    "samples": {
+      "before": [
+        {
+          "ms": 139.11,
+          "queries": 27
+        },
+        {
+          "ms": 118.3,
+          "queries": 27
+        },
+        {
+          "ms": 131.38,
+          "queries": 27
+        },
+        {
+          "ms": 134.61,
+          "queries": 27
+        }
+      ],
+      "after": [
+        {
+          "ms": 115.0,
+          "queries": 25
+        },
+        {
+          "ms": 114.28,
+          "queries": 25
+        },
+        {
+          "ms": 114.71,
+          "queries": 25
+        },
+        {
+          "ms": 113.89,
+          "queries": 25
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 133.0,
+      "after": 114.5
+    },
+    "json_equal": true,
+    "sha256": "6bad7d0d312b41c06bd5a6b5745694f5eb5f8f9e3bb3e673e52a639a145eacfa",
+    "bytes": 2967
+  }
+}

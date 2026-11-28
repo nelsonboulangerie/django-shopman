@@ -15,15 +15,15 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "nuxi typecheck && npm run typecheck:functions",
-    "typecheck:functions": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types @cloudflare/workers-types functions/api/status.ts",
+    "typecheck:functions": "tsc --ignoreConfig --noEmit --strict --skipLibCheck --target ES2022 --module ESNext --moduleResolution Bundler --lib ES2022 --types @cloudflare/workers-types functions/api/status.ts functions/api/watchman-readiness.ts",
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@nuxt/icon": "^2.5.1",
+    "@nuxt/icon": "^2.6.2",
     "@tailwindcss/vite": "^4.3.3",
     "@vite-pwa/nuxt": "1.1.1",
     "@vueuse/nuxt": "^14.4.0",
-    "nuxt": "^4.5.2",
+    "nuxt": "4.6.4",
     "tailwindcss": "^4.3.0",
     "vue": "^3.5.43",
     "vue-router": "^5.4.0"
@@ -34,14 +34,27 @@
     "@nuxt/eslint": "^1.17.0",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "vue-tsc": "^3.3.12"
   },
   "overrides": {
+    "@nuxt/kit": "4.6.4",
+    "@nuxt/schema": "4.6.4",
     "esbuild": "^0.28.2",
     "js-yaml": "^4.3.2",
-    "svgo": "^4.1.0"
+    "svgo": "^4.1.0",
+    "glob": "^14.0.3",
+    "minimatch": "^11.0.4",
+    "@eslint/config-array": {
+      "minimatch": "^11.0.4"
+    },
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "^11.0.4"
+    },
+    "eslint": {
+      "minimatch": "^11.0.4"
+    }
   }
 }

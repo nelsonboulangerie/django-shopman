@@ -2,10 +2,11 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava do CONJUNTO MÍNIMO da suíte (dono, 08/10/2026, PR #1539; laudo em
-// docs/plans/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
+// docs/plans/completed/WP-BI-CANON-LAUDO.md, seção F). O tema do kit fixa o default de cada
 // peça; esta trava conta o que foge do conjunto escrito na chamada e só deixa a
 // conta CAIR. Cada número abaixo é o que existia quando o conjunto foi aprovado:
 // migrar um uso baixa o teto (atualize o número para o novo valor); um uso NOVO fora
@@ -51,7 +52,9 @@ const CEILING: Record<string, Partial<Record<Rule, number>>> = {
     // que sobravam são as ações do aviso de descarte do `OperatorReasonDialog`.
     badgeVariant: 12,
     cardVariant: 1,
-    alertOutsideSet: 14,
+    // 15: a faixa invertida (`OperatorBand`, dono 13/11/2026) é `neutral` + `outline`
+    // por desenho; a gravidade vai no ícone e na ação.
+    alertOutsideSet: 15,
     // Inclui duas exceções declaradas: o chip `4xl` (`text-[12px]/none` no
     // app.config) e o rótulo da barra inferior (`text-[10px]/3` em `presentation/tabBar.ts`, o desenho das duas barras de baixo),
     // que é o valor do exemplo oficial "With bottom tab bar" do NavigationMenu (dono,
@@ -86,7 +89,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (full.endsWith(".vue") || full.endsWith(".ts")) found.push(full);
@@ -193,7 +196,7 @@ function count(dir: string): Record<Rule, number> {
 }
 
 describe("conjunto mínimo da suíte: nenhum uso novo fora do conjunto", () => {
-  for (const dir of [...OPERATOR_SURFACES, "operator-kit"]) {
+  for (const dir of [...OPERATOR_KIT_SURFACES, "operator-kit"]) {
     it(`${dir} não passa do teto de nenhuma regra`, () => {
       const current = count(dir);
       const ceiling = CEILING[dir] ?? {};

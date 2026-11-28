@@ -8,7 +8,8 @@ and if valid, the user can login without OTP.
 Security:
 - Cookie is HttpOnly, Secure (in production), SameSite=Lax.
 - Token in DB stored as HMAC digest (never plaintext).
-- TTL-based expiration.
+- Vence depois de ``DEVICE_TRUST_TTL_DAYS`` SEM USO: cada uso renova o registro e o
+  cookie (``renew_cookies``, chamado pelo ``DeviceTrustRenewalMiddleware``).
 - Can be revoked per-customer.
 """
 
@@ -18,6 +19,8 @@ import logging
 import re
 import uuid
 from typing import TYPE_CHECKING
+
+from django.db import transaction
 
 from ..conf import doorman_settings
 from ..models.device_trust import SubjectType, TrustedDevice
@@ -30,6 +33,9 @@ logger = logging.getLogger("shopman.doorman.device_trust")
 
 # Cookie name for device trust token
 COOKIE_NAME_ATTR = "DEVICE_TRUST_COOKIE_NAME"
+
+#: Onde o request guarda os cookies a reemitir: ``{nome do cookie: token}``.
+RENEWALS_ATTR = "_doorman_trust_renewals"
 
 
 class DeviceTrustService:
@@ -76,12 +82,15 @@ class DeviceTrustService:
         if not raw_token:
             return False
 
-        device = TrustedDevice.verify_token(raw_token)
+        device = TrustedDevice.find_valid_token(raw_token)
         if device is None:
             return False
 
         if device.subject_type != subject_type or device.subject_id != str(subject_id):
             return False
+
+        device.touch()
+        cls.mark_renewal(request, cls.cookie_name_for(subject_type, subject_id), raw_token)
 
         logger.info(
             "Device trust verified",
@@ -123,25 +132,17 @@ class DeviceTrustService:
             ip_address=ip,
         )
 
-        # Set cookie
-        cookie_name = cls.cookie_name_for(subject_type, subject_id)
-        max_age = doorman_settings.DEVICE_TRUST_TTL_DAYS * 86400
-        response.set_cookie(
-            cookie_name,
-            raw_token,
-            max_age=max_age,
-            httponly=True,
-            secure=doorman_settings.USE_HTTPS,
-            samesite="Lax",
-        )
+        cls._set_cookie(response, cls.cookie_name_for(subject_type, subject_id), raw_token)
 
-        # Signal
-        device_trusted.send(
-            sender=cls,
-            device=device,
-            subject_type=subject_type,
-            subject_id=str(subject_id),
-            request=request,
+        # ADR-025: anúncio depois do COMMIT (o dispositivo só é confiável se a linha gravou).
+        transaction.on_commit(
+            lambda: device_trusted.send(
+                sender=cls,
+                device=device,
+                subject_type=subject_type,
+                subject_id=str(subject_id),
+                request=request,
+            )
         )
 
         logger.info(
@@ -157,13 +158,77 @@ class DeviceTrustService:
         return device
 
     @classmethod
-    def revoke_device(cls, request: HttpRequest, response: HttpResponse) -> None:
-        """Revoke the trusted device from the current request and clear cookie."""
-        cookie_name = doorman_settings.DEVICE_TRUST_COOKIE_NAME
+    def _set_cookie(cls, response: HttpResponse, cookie_name: str, raw_token: str) -> None:
+        response.set_cookie(
+            cookie_name,
+            raw_token,
+            max_age=doorman_settings.DEVICE_TRUST_TTL_DAYS * 86400,
+            httponly=True,
+            secure=doorman_settings.USE_HTTPS,
+            samesite="Lax",
+        )
+
+    @classmethod
+    def mark_renewal(cls, request: HttpRequest, cookie_name: str, raw_token: str) -> None:
+        """Pede que a resposta deste request reemita o cookie com o prazo cheio.
+
+        Quem confere a confiança (``check``, ou quem chama ``TrustedDevice.verify_token``
+        com o cookie na mão) quase nunca tem a resposta: ela nasce depois, na view. O
+        registro já foi renovado no ``touch``; sem isto, o NAVEGADOR apagaria o cookie no
+        prazo da emissão, e a renovação do banco seria de um token que ninguém mais tem.
+        """
+        renewals = getattr(request, RENEWALS_ATTR, None)
+        if renewals is None:
+            renewals = {}
+            setattr(request, RENEWALS_ATTR, renewals)
+        renewals[cookie_name] = raw_token
+
+    @classmethod
+    def renew_cookies(cls, request: HttpRequest, response: HttpResponse) -> HttpResponse:
+        """Reemite os cookies de confiança usados neste request, com o prazo cheio.
+
+        Não toca num cookie que a própria resposta já escreveu: ``trust`` acabou de
+        emitir um token novo, ou ``revoke_device``/``delete_cookie`` acabou de apagá-lo,
+        e a decisão da view vale mais que a renovação.
+
+        A resposta passa a ``Cache-Control: private``: ela carrega um token de
+        dispositivo, e um cache compartilhado que a guardasse entregaria esse token a
+        outro navegador.
+        """
+        renewals = getattr(request, RENEWALS_ATTR, None)
+        if not renewals or not doorman_settings.DEVICE_TRUST_ENABLED:
+            return response
+        renewed = False
+        for cookie_name, raw_token in renewals.items():
+            if cookie_name in response.cookies:
+                continue
+            cls._set_cookie(response, cookie_name, raw_token)
+            renewed = True
+        if renewed:
+            from django.utils.cache import patch_cache_control
+
+            patch_cache_control(response, private=True)
+        return response
+
+    @classmethod
+    def revoke_device(
+        cls,
+        request: HttpRequest,
+        response: HttpResponse,
+        *,
+        subject_type: str,
+        subject_id,
+    ) -> None:
+        """Revoke only the request token belonging to the named subject."""
+        cookie_name = cls.cookie_name_for(subject_type, subject_id)
         raw_token = request.COOKIES.get(cookie_name)
         if raw_token:
-            device = TrustedDevice.verify_token(raw_token)
-            if device:
+            device = TrustedDevice.find_valid_token(raw_token)
+            if (
+                device
+                and device.subject_type == subject_type
+                and device.subject_id == str(subject_id)
+            ):
                 device.revoke()
                 logger.info(
                     "Device trust revoked",

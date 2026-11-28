@@ -3,6 +3,8 @@ import { useReadMetadata } from "./useReadMetadata";
 import type {
   CustomerGroupDetailResponse,
   CustomerGroupListResponse,
+  CustomerGroupMembersPayload,
+  CustomerGroupMembersResponse,
   CustomerGroupMutationPayload,
   CustomerGroupMutationResponse,
 } from "~/types/customerGroups";
@@ -43,6 +45,22 @@ export function updateCustomerGroup(
 ) {
   return $fetch<CustomerGroupMutationResponse>(`${BASE}/${encodeURIComponent(ref)}/`, {
     method: "PATCH",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: payload,
+  });
+}
+
+/**
+ * Põe ou tira vários clientes de um grupo numa ida. A mesma chave de intenção
+ * repete a mesma resposta; o servidor ignora quem já estava como o gesto pede.
+ */
+export function changeCustomerGroupMembers(
+  ref: string,
+  payload: CustomerGroupMembersPayload,
+  idempotencyKey: string,
+) {
+  return $fetch<CustomerGroupMembersResponse>(`${BASE}/${encodeURIComponent(ref)}/members/`, {
+    method: "POST",
     headers: { "Idempotency-Key": idempotencyKey },
     body: payload,
   });

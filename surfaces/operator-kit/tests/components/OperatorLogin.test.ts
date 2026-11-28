@@ -5,15 +5,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import OperatorLogin from "../../app/components/OperatorLogin.vue";
 import OperatorLoginForm from "../../app/components/OperatorLoginForm.vue";
 
-const { fetchMock, refreshSession, resetSession } = vi.hoisted(() => ({
+const { fetchMock, refreshSession, resetSession, rememberSignedIn } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
   refreshSession: vi.fn(),
   resetSession: vi.fn(),
+  rememberSignedIn: vi.fn(),
 }));
 
 mockNuxtImport("$fetch", () => fetchMock);
 mockNuxtImport("refreshNuxtData", () => refreshSession);
-mockNuxtImport("useOperatorSession", () => () => ({ reset: resetSession }));
+mockNuxtImport("useOperatorSession", () => () => ({ reset: resetSession, rememberSignedIn }));
 
 const mounted: VueWrapper[] = [];
 
@@ -31,6 +32,7 @@ beforeEach(() => {
   fetchMock.mockReset();
   refreshSession.mockReset().mockResolvedValue(undefined);
   resetSession.mockReset();
+  rememberSignedIn.mockReset();
 });
 
 afterEach(() => {
@@ -39,7 +41,15 @@ afterEach(() => {
 });
 
 describe("OperatorLogin", () => {
-  it("abre com foco em Usuário, campos acessíveis e submit bloqueado", async () => {
+  it("a página de login ocupa a largura do pai flex e centraliza o cartão (beta 05/11, CEN-09)", async () => {
+    const wrapper = await mountLogin({ mode: "page" });
+    const page = wrapper.get("[data-operator-login-page]");
+    expect(page.classes()).toEqual(
+      expect.arrayContaining(["w-full", "flex-1", "place-items-center"]),
+    );
+  });
+
+  it("abre com foco em Usuário e campos acessíveis", async () => {
     const wrapper = await mountLogin();
     const form = wrapper.getComponent(OperatorLoginForm);
     const inputs = form.findAll("input");
@@ -59,7 +69,28 @@ describe("OperatorLogin", () => {
     expect(form.get('label[for="operator-login-password"]').text()).toBe(
       "Senha",
     );
-    expect(form.get('button[type="submit"]').attributes("disabled")).toBe("");
+  });
+
+  // Beta 05/11 (CEN-15): o Entrar apagado com os campos vazios não dizia nada.
+  it("Entrar com campo vazio diz o que falta, marca só esse campo e não chama o servidor", async () => {
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    const submit = form.get('button[type="submit"]');
+    expect(submit.attributes("disabled")).toBeUndefined();
+
+    await form.get("form").trigger("submit");
+    await flushPromises();
+    expect(form.get("[data-operator-login-error]").text()).toBe("Informe usuário e senha.");
+
+    await form.findAll("input")[0]!.setValue("ana");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+    expect(form.get("[data-operator-login-error]").text()).toBe("Informe a senha.");
+    const [usuario, senha] = form.findAll("input");
+    expect(usuario!.attributes("aria-invalid")).not.toBe("true");
+    expect(senha!.attributes("aria-invalid")).toBe("true");
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("submete uma vez, apara só o usuário e anuncia sucesso", async () => {
@@ -90,6 +121,9 @@ describe("OperatorLogin", () => {
 
     expect(refreshSession).toHaveBeenCalledWith("operator-session");
     expect(resetSession).toHaveBeenCalledOnce();
+    // A aba lembra que alguém entrou: se a sessão cair logo depois, o login que
+    // voltar diz que ela terminou (#3194).
+    expect(rememberSignedIn).toHaveBeenCalledOnce();
     expect(wrapper.emitted("success")).toHaveLength(1);
   });
 
@@ -215,7 +249,9 @@ describe("OperatorLogin", () => {
   });
 
   it("login recusado: o erro é anunciado e descreve OS DOIS campos, sem perder o que foi digitado", async () => {
-    fetchMock.mockRejectedValueOnce(new Error("unauthorized"));
+    // A recusa do servidor tem status (403). Erro SEM status é "sem resposta", e
+    // esse não marca os campos (ver o teste da demora, abaixo).
+    fetchMock.mockRejectedValueOnce({ status: 403, data: {} });
     const wrapper = await mountLogin();
     const form = wrapper.getComponent(OperatorLoginForm);
     await form.get("#operator-login-username").setValue("gestora");
@@ -239,5 +275,50 @@ describe("OperatorLogin", () => {
       expect(description).toContain(message);
     }
     expect(form.get<HTMLInputElement>("#operator-login-username").element.value).toBe("gestora");
+  });
+
+  // #3194 (P2-15 do plano de excelência do PDV): com o Django lento, o BFF devolvia
+  // ao login a frase de quem grava dinheiro ("Confira se a operação aconteceu antes
+  // de repetir"), marcava usuário e senha como errados e o texto saía três vezes
+  // (o alerta e a descrição de cada campo). Medido na pilha viva, Django parado 40 s.
+  it("demora do servidor: frase de login, campos sem culpa e o texto uma vez só", async () => {
+    fetchMock.mockRejectedValueOnce({
+      status: 504,
+      data: {
+        detail: "A resposta demorou demais. Confira se a operação aconteceu antes de repetir.",
+        error: { code: "upstream_timeout" },
+      },
+    });
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    await form.get("#operator-login-username").setValue("joyce");
+    await form.get("#operator-login-password").setValue("certa");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+
+    const message = "O sistema demorou para responder e você não entrou. Tente entrar de novo.";
+    expect(form.get("#operator-login-error").text()).toBe(message);
+    for (const id of ["operator-login-username", "operator-login-password"]) {
+      expect(form.get(`#${id}`).attributes("aria-invalid")).not.toBe("true");
+    }
+    const page = (document.body.textContent ?? "").split(message).length - 1;
+    expect(page).toBe(1);
+    expect(rememberSignedIn).not.toHaveBeenCalled();
+    expect(form.get<HTMLInputElement>("#operator-login-password").element.value).toBe("certa");
+  });
+
+  it("sem resposta nenhuma (rede): diz que não entrou e não culpa os campos", async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    const wrapper = await mountLogin();
+    const form = wrapper.getComponent(OperatorLoginForm);
+    await form.get("#operator-login-username").setValue("joyce");
+    await form.get("#operator-login-password").setValue("certa");
+    await form.get("form").trigger("submit");
+    await flushPromises();
+
+    expect(form.get("#operator-login-error").text()).toBe(
+      "O sistema não respondeu e você não entrou. Tente entrar de novo.",
+    );
+    expect(form.get("#operator-login-username").attributes("aria-invalid")).not.toBe("true");
   });
 });

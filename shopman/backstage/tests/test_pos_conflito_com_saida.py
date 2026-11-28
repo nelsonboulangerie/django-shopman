@@ -247,7 +247,7 @@ class POSConflitoComSaidaTests(TestCase):
         É o rótulo que o próprio PDV escreve quando cria um cadastro sem nome
         informado. Uma tela que decidisse "sem rosto" por `name` vazio trataria
         essa ficha como gente — e é exatamente o engano que a régua do servidor
-        (`_should_refresh_name`, a mesma que autoriza escrever nome por cima)
+        (`should_refresh_name`, a mesma que autoriza escrever nome por cima)
         evita. Duas definições divergiriam aqui.
         """
         ana = self._customer("CUST-LABEL-A", "Ana", "Prado", phone="+5543999990011")

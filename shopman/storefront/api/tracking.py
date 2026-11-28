@@ -25,7 +25,6 @@ from shopman.storefront.services import orders as order_service
 from .actions import retry_after_action
 from .projections import projection_data
 from .serializers import (
-    CancellationRequestInputSerializer,
     DetailSerializer,
     OrderTrackingSerializer,
 )
@@ -61,12 +60,14 @@ def _alert_low_rating(order, rating: int, comment: str) -> None:
     de observabilidade já loga e engole exceções, mas o try aqui blinda o import.
     """
     try:
+        from shopman.shop.adapters.alert import LOW_RATING_COMMENT_MARK
         from shopman.shop.services.observability import create_operator_alert
 
         trimmed = (comment or "").strip()
         message = f"Pedido {order.ref} recebeu nota {rating}/5."
         if trimmed:
-            message += f" Comentário: {trimmed[:200]}"
+            # A marca é a mesma que a exclusão do titular corta (#2359).
+            message += f"{LOW_RATING_COMMENT_MARK}{trimmed[:200]}"
         create_operator_alert(
             type="low_rating",
             severity="warning",
@@ -92,6 +93,47 @@ def _rate_limited_response(detail: str = "Muitas tentativas. Aguarde um instante
     )
 
 
+#: O que cada ação recusada ao link do aviso pede, na frase da recusa.
+_LOGIN_REQUIRED_DETAIL = {
+    "cancel": "Para cancelar o pedido, entre com seu telefone.",
+    "rate": "Para avaliar o pedido, entre com seu telefone.",
+    "reorder": "Para pedir de novo, entre com seu telefone.",
+    "waitlist_confirm": "Para confirmar a vaga, entre com seu telefone.",
+}
+
+
+def login_required_response(ref: str, gesture: str) -> Response:
+    """403 para quem abriu o pedido só pelo link do aviso (DEV-2026-093).
+
+    Dialeto canônico ``{detail, field, errors}``, mais o convite: ``login_url`` leva a
+    ``/entrar`` e volta ao mesmo pedido. A tela já esconde estas ações; a recusa aqui
+    é a trava do servidor, para o link encaminhado nunca cancelar o pedido de outro.
+    """
+    from urllib.parse import urlencode
+
+    from shopman.storefront.api.actions import action_payload
+
+    login_url = f"/entrar?{urlencode({'next': f'/pedido/{ref}'})}"
+    return Response(
+        {
+            "detail": _LOGIN_REQUIRED_DETAIL.get(gesture, "Para continuar, entre com seu telefone."),
+            "error_code": "login_required",
+            "login_url": login_url,
+            "actions": [
+                action_payload(
+                    ref="sign_in",
+                    kind="navigation",
+                    label="Entrar com meu telefone",
+                    priority="primary",
+                    href=login_url,
+                    idempotency="none",
+                ),
+            ],
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> bool:
     return bool(is_ratelimited(
         request=request,
@@ -103,8 +145,8 @@ def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> 
     ))
 
 
-def _tracking_payload(order) -> dict:
-    proj = build_order_tracking(order)
+def _tracking_payload(order, access_mode: str = "full") -> dict:
+    proj = build_order_tracking(order, access_mode=access_mode)
     data = projection_data(proj)
     fulfillments = (*proj.delivery_fulfillments, *proj.pickup_fulfillments)
     data["ref"] = proj.order_ref
@@ -128,6 +170,21 @@ def _tracking_payload(order) -> dict:
         }
         for f in fulfillments
     ]
+    # Momento yoin: o pedido GARANTIDO, não a primeira visita. Quem acabou de
+    # fechar o pedido é a tela que sabe (o checkout marca no navegador); aqui
+    # sai só se já dá para comemorar. Enquanto falta pagar, não: seria festejar
+    # um pedido que ainda pode expirar, e a comemoração tem de sobrar para a
+    # volta do cliente depois de pagar. Pedido morto também não: confete sobre
+    # tela de cancelamento.
+    payment_due = order_service.payment_is_due(order)
+    # A tela pede a conferência do pagamento (POST ``payment/check/``) só
+    # enquanto este for verdadeiro.
+    data["payment_due"] = payment_due
+    data["placement_secured"] = not (order.status in {"cancelled", "returned"} or payment_due)
+    # Enviar o resumo não depende do momento: é mais útil com o pedido pronto
+    # do que trinta segundos depois do checkout. É texto, não link: o link do
+    # pedido só abre para quem o fez.
+    data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Enviar resumo")
     return data
 
 
@@ -161,7 +218,7 @@ class OrderTrackingView(ServerTimingMixin, APIView):
             return _rate_limited_response("Muitas consultas de tracking. Aguarde um instante.")
 
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -176,41 +233,198 @@ class OrderTrackingView(ServerTimingMixin, APIView):
                 status=404,
             )
 
-        order_service.resolve_timeouts_if_due(order)
-        # ⚠️ A VOLTA DO CARTÃO PASSA POR AQUI, e por muito tempo não passava.
-        # O `success_url` do Stripe devolve o cliente para esta tela, e ela lia
-        # só o Payman — que só sabe o que o webhook contou. Webhook atrasado é
-        # corrida (o cliente chega antes); webhook quebrado é dano permanente.
-        # Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
-        # Agora a própria leitura pergunta ao gateway (throttled) e liquida.
-        order_service.reconcile_payment_with_gateway_if_due(order)
-        # Fusão PAYMENT-TRACKING-MERGE: o acompanhamento é onde o cliente paga,
-        # então é aqui que o intent de pagamento nasce (recovery/idempotente, o
-        # mesmo que a antiga tela de pagamento fazia). Sem isto, o Pix de
-        # `timing=post_commit` nunca ganharia código para mostrar inline.
-        order_service.ensure_payment_intent(order)
-        data = _tracking_payload(order)
-        # Momento yoin: comemorar não precisa ocupar layout. `just_placed` é
-        # consumido UMA vez, no primeiro acesso depois do checkout, e a tela
-        # celebra com confete — sem cartaz fixo competindo com o acompanhamento.
-        # O yoin marca o pedido GARANTIDO, não a primeira visita. Enquanto falta
-        # pagar, a flag NÃO é consumida: comemorar ali seria festejar um pedido
-        # que ainda pode expirar — e, como o consumo é de uso único, a
-        # comemoração se perderia justamente no momento em que ela faz sentido
-        # (a volta do cliente depois de pagar).
-        # Também não se comemora pedido morto: se ele foi cancelado antes da
-        # primeira visita (prazo do Pix vencido, recusa da loja), o cliente
-        # chegaria numa tela de cancelamento com confete caindo.
-        pedido_morto = order.status in {"cancelled", "returned"}
-        if order_service.payment_is_due(order) or pedido_morto:
-            data["just_placed"] = False
-        else:
-            data["just_placed"] = order_service.consume_just_placed(request, ref)
-        # Compartilhar não depende do momento: é mais útil com o pedido pronto
-        # do que trinta segundos depois do checkout.
-        data["share_cta"] = _copy_title("CONFIRMATION_SHARE_CTA", "Compartilhar")
+        # Leitura não produz efeito (A8-1). O que esta tela já fez no GET mora
+        # agora no dono de cada efeito: o prazo vencido é a directive do worker
+        # (segundos); a cobrança nasce no aceite (lifecycle); a volta do cartão e
+        # o Pix que não ganhou código são o POST ``payment/check/`` que a tela
+        # chama quando o pedido deve pagamento, e o ``reconcile_payments`` do
+        # worker é a rede por baixo dos dois.
+        data = _tracking_payload(order, access_mode)
         serializer = OrderTrackingSerializer(data)
         return Response(serializer.data)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Open one order in this browser with the order link capability (no login)",
+        responses={200: OpenApiResponse(description="This browser now sees the order."), 404: DetailSerializer},
+    ),
+)
+class OrderCapabilityAccessView(APIView):
+    """POST /api/v1/tracking/{ref}/access/ ``{cap}``: o link do aviso abre o pedido.
+
+    O aviso leva ``/pedido/<ref>~<selo>`` (``shop.services.order_view_link``). A página
+    troca o selo aqui ANTES de ler o pedido: este navegador passa a ver ESTE pedido,
+    marcado na sessão como acesso só pela capacidade. Não loga, não cria usuário, não
+    abre a conta, a sacola nem o canal de tempo real (DEV-2026-093).
+
+    Selo inválido, adulterado, vencido, revogado ou de outro pedido, e pedido que não
+    existe: o mesmo 404, sem dizer qual.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-capability-access",
+            rate="30/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        cap = str((request.data or {}).get("cap") or "").strip()
+        if not order_service.grant_order_capability(request, ref, cap):
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response({"ok": True, "ref": ref}, status=status.HTTP_200_OK)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Check the order payment with the gateway and prepare what is missing",
+        responses={200: OrderTrackingSerializer, 404: DetailSerializer},
+    ),
+)
+class OrderPaymentCheckView(APIView):
+    """POST /api/v1/orders/{ref}/payment/check/ — conferir o pagamento agora.
+
+    O comando que a tela do acompanhamento dá quando o pedido deve pagamento
+    (ao abrir, ao voltar para a aba, e no "Tentar novamente"):
+
+    * **cartão/link**: pergunta ao gateway se pagou (com o intervalo mínimo de
+      ``GATEWAY_RECHECK_SECONDS``). A volta do Stripe cai aqui: o webhook pode
+      chegar depois do cliente, ou não chegar;
+    * **Pix/cartão sem cobrança pronta**: refaz a cobrança que o aceite não
+      conseguiu fechar (a Efí aceitou o PUT e falhou ao buscar o QR, ou o
+      provedor recusou na hora). ``payment.initiate`` é idempotente.
+
+    Era o GET que fazia isto, e leitura com efeito cobrava até de quem só
+    abria o link (prévia de mensagem, robô). O ``reconcile_payments`` do worker
+    continua sendo a rede para quem não está com a tela aberta.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-payment-check",
+            rate="30/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        order_service.check_payment(order)
+        serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Switch a declined card payment to Pix",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The order cannot switch to Pix now."),
+        },
+    ),
+)
+class OrderPaymentSwitchToPixView(APIView):
+    """POST /api/v1/orders/{ref}/payment/switch-to-pix/ — pagar com Pix depois da recusa.
+
+    O cartão recusado oferece, além de outro cartão, o Pix (decisão do dono,
+    beta 06/11, F3). A troca mata a cobrança do cartão no gateway e cria o Pix
+    no mesmo pedido (``payment.switch_declined_card_to_pix``). O cabeçalho
+    ``Idempotency-Key`` repetido devolve a mesma resposta; o pedido travado
+    garante que dois toques com chaves diferentes também troquem uma vez só.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-payment-switch",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(
+            request,
+            fallback=f"switch-to-pix:{ref}",
+        )
+
+        def execute_switch() -> tuple[dict, int]:
+            if not order_service.switch_declined_card_to_pix(order):
+                return (
+                    {
+                        "detail": _copy_message(
+                            "TRACKING_PIX_SWITCH_REFUSED",
+                            "Não deu para trocar para Pix agora. Atualize a página e confira o pagamento.",
+                        ),
+                        "error_code": "pix_switch_unavailable",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            order.refresh_from_db()
+            return dict(OrderTrackingSerializer(_tracking_payload(order, access_mode)).data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-payment-switch-to-pix:{ref}",
+                key=key,
+                execute=execute_switch,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "A troca para Pix já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
 
 
 def order_events_view(request, ref: str):
@@ -255,8 +469,11 @@ class OrderCancelView(APIView):
     """
     POST /api/v1/orders/{ref}/cancel/
 
-    Cancels an accessible order only when the canonical customer cancellation
-    policy allows it. Paid or uncertain payment states remain blocked.
+    O cliente cancela sozinho antes do preparo, pago ou não
+    (``policies/customer_cancellation``); o que entrou volta pelo próprio
+    cancelamento. Se a cozinha começou no mesmo instante, a régua decide sob o
+    lock do pedido e responde 409: o cliente volta à tela, que oferece falar com
+    o responsável.
     """
 
     permission_classes = [AllowAny]
@@ -273,7 +490,7 @@ class OrderCancelView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -288,6 +505,9 @@ class OrderCancelView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
+        if access_mode != order_service.ACCESS_FULL:
+            return login_required_response(order.ref, "cancel")
+
         key = remote_mutations.idempotency_key_from_request(
             request,
             fallback=f"cancel:{ref}",
@@ -297,9 +517,10 @@ class OrderCancelView(APIView):
             if not order_service.can_cancel(order) or not order_service.cancel(order):
                 return (
                     {
-                        "detail": (
-                            resolve_copy("KINTSUGI_CANCEL_REFUSED", moment="*", audience="*").message
-                            or "Seu pedido já está sendo preparado. Fale conosco para ajustar."
+                        "detail": _copy_message(
+                            "KINTSUGI_CANCEL_REFUSED",
+                            "O preparo acabou de começar, e o pedido não pode mais ser cancelado. "
+                            "Se algo não está certo, fale com o responsável.",
                         ),
                         "error_code": "order_not_cancellable",
                         "payment_status": order_service.payment_status(order),
@@ -307,7 +528,7 @@ class OrderCancelView(APIView):
                     status.HTTP_409_CONFLICT,
                 )
 
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -321,106 +542,6 @@ class OrderCancelView(APIView):
         except remote_mutations.RemoteMutationInProgress:
             return Response(
                 {"detail": "Cancelamento já está em andamento.", "error_code": "mutation_in_progress"},
-                status=status.HTTP_409_CONFLICT,
-            )
-        return Response(result.response_body, status=result.response_code)
-
-
-@extend_schema_view(
-    post=extend_schema(
-        tags=["tracking"],
-        summary="Request human review of order cancellation",
-        request=CancellationRequestInputSerializer,
-        responses={
-            200: OrderTrackingSerializer,
-            404: DetailSerializer,
-            409: OpenApiResponse(description="Cancellation request is no longer applicable."),
-        },
-    ),
-)
-class OrderCancellationRequestView(APIView):
-    """Record a self-service request without cancelling or refunding implicitly."""
-
-    permission_classes = [AllowAny]
-    authentication_classes = [SessionAuthentication]
-    serializer_class = CancellationRequestInputSerializer
-    throttle_classes = []
-
-    def post(self, request, ref: str):
-        if _request_is_rate_limited(
-            request,
-            group="storefront-api-order-cancellation-request",
-            rate="10/m",
-            method="POST",
-        ):
-            return _rate_limited_response()
-        try:
-            order = order_service.get_accessible_order(request, ref)
-        except Http404:
-            return Response(
-                {
-                    "detail": _copy_message(
-                        "TRACKING_NOT_FOUND_MESSAGE",
-                        "Confira o link do pedido ou fale com a equipe.",
-                    ),
-                },
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        serializer = CancellationRequestInputSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reason = serializer.validated_data["reason"]
-        try:
-            key = remote_mutations.idempotency_key_from_request(
-                request,
-                fallback=f"cancellation-request:{ref}",
-            )
-        except remote_mutations.RemoteMutationConflict as exc:
-            return Response(
-                {"detail": str(exc), "error_code": "idempotency_conflict"},
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        def execute_request() -> tuple[dict, int]:
-            from shopman.storefront.services import cancellation_requests
-
-            try:
-                cancellation_requests.request_cancellation(order, reason=reason)
-            except cancellation_requests.CancellationRequestUnavailable:
-                return (
-                    {
-                        "detail": "Este pedido já foi cancelado ou devolvido.",
-                        "error_code": "cancellation_request_not_applicable",
-                    },
-                    status.HTTP_409_CONFLICT,
-                )
-            order.refresh_from_db()
-            response = OrderTrackingSerializer(_tracking_payload(order))
-            return dict(response.data), status.HTTP_200_OK
-
-        try:
-            result = remote_mutations.run_idempotent_mutation(
-                scope=remote_mutations.mutation_scope("order-cancellation-request", ref),
-                key=key,
-                fingerprint=remote_mutations.mutation_fingerprint(
-                    {"order_ref": ref, "reason": reason}
-                ),
-                execute=execute_request,
-            )
-        except remote_mutations.RemoteMutationInProgress:
-            return Response(
-                {
-                    "detail": "A solicitação já está sendo registrada.",
-                    "error_code": "mutation_in_progress",
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-        except remote_mutations.RemoteMutationConflict:
-            return Response(
-                {
-                    "detail": "Esta tentativa pertence a outra solicitação. Atualize e tente novamente.",
-                    "error_code": "idempotency_conflict",
-                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)
@@ -460,7 +581,7 @@ class OrderWaitlistConfirmView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -496,7 +617,7 @@ class OrderWaitlistConfirmView(APIView):
                 )
 
             order.refresh_from_db()
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -548,7 +669,7 @@ class OrderConfirmReceiptView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -577,7 +698,7 @@ class OrderConfirmReceiptView(APIView):
                     },
                     status.HTTP_409_CONFLICT,
                 )
-            data = _tracking_payload(order)
+            data = _tracking_payload(order, access_mode)
             serializer = OrderTrackingSerializer(data)
             return dict(serializer.data), status.HTTP_200_OK
 
@@ -591,6 +712,179 @@ class OrderConfirmReceiptView(APIView):
         except remote_mutations.RemoteMutationInProgress:
             return Response(
                 {"detail": "Confirmação já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Pay the new payment with Pix instead of another card (card charge refused after acceptance)",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The order is not waiting for a new payment, or Pix is unavailable."),
+        },
+    ),
+)
+class OrderRepaymentPixView(APIView):
+    """POST /api/v1/orders/{ref}/payment/pix/: trocar o novo pagamento para Pix.
+
+    Só vale na espera do novo pagamento depois da cobrança de cartão recusada
+    (decisão do dono, 07/11). O serviço fecha a cobrança de cartão aberta antes
+    de abrir o Pix, pelo mesmo prazo (``payment.switch_repayment_to_pix``).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import payment as payment_service
+
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-repayment-pix",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(request, fallback=f"repayment-pix:{ref}")
+
+        def execute_switch() -> tuple[dict, int]:
+            try:
+                payment_service.switch_repayment_to_pix(order)
+            except payment_service.RepaymentSwitchRefused as refusal:
+                return {"detail": refusal.message, "error_code": refusal.code}, status.HTTP_409_CONFLICT
+            order.refresh_from_db()
+            serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
+            return dict(serializer.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-repayment-pix:{ref}",
+                key=key,
+                execute=execute_switch,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "A troca para Pix já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Ask the shop's manager to contact the customer (low rating, or cancel after preparation)",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="The rating does not offer a contact request."),
+        },
+    ),
+)
+class OrderContactRequestView(APIView):
+    """POST /api/v1/orders/{ref}/contact-request/: a ouvidoria.
+
+    ``origin``: ``rating`` (padrão, depois da nota baixa) ou ``cancellation`` (quis
+    cancelar com o preparo já começado).
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-contact-request",
+            rate="10/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        from shopman.shop.services import customer_contact
+
+        origin = str(request.data.get("origin") or customer_contact.ORIGIN_RATING).strip()
+        if origin not in customer_contact.ORIGINS:
+            return Response(
+                {"detail": "Origem do pedido de contato inválida.", "field": "origin"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            key = remote_mutations.idempotency_key_from_request(request, fallback=f"contact-request:{origin}:{ref}")
+        except remote_mutations.RemoteMutationConflict as exc:
+            return Response(
+                {"detail": str(exc), "error_code": "idempotency_conflict"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        def execute_request() -> tuple[dict, int]:
+            try:
+                customer_contact.request_contact(order, origin=origin)
+            except customer_contact.ContactRequestUnavailable:
+                return (
+                    {
+                        "detail": (
+                            "Este pedido não tem uma avaliação que peça contato."
+                            if origin == customer_contact.ORIGIN_RATING
+                            else "Este pedido ainda pode ser cancelado por aqui, ou já foi encerrado."
+                        ),
+                        "error_code": "contact_request_not_applicable",
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+            order.refresh_from_db()
+            response = OrderTrackingSerializer(_tracking_payload(order, access_mode))
+            return dict(response.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=remote_mutations.mutation_scope("order-contact-request", ref),
+                key=key,
+                fingerprint=remote_mutations.mutation_fingerprint({"order_ref": ref, "origin": origin}),
+                execute=execute_request,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "O pedido de contato já está sendo registrado.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except remote_mutations.RemoteMutationConflict:
+            return Response(
+                {
+                    "detail": "Esta tentativa pertence a outra solicitação. Atualize e tente novamente.",
+                    "error_code": "idempotency_conflict",
+                },
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)
@@ -624,7 +918,7 @@ class OrderRateView(APIView):
         ):
             return _rate_limited_response()
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Http404:
             return Response(
                 {
@@ -638,6 +932,9 @@ class OrderRateView(APIView):
                 },
                 status=status.HTTP_404_NOT_FOUND,
             )
+
+        if access_mode != order_service.ACCESS_FULL:
+            return login_required_response(order.ref, "rate")
 
         try:
             rating = int((request.data if hasattr(request, "data") else {}).get("rating"))
@@ -654,11 +951,9 @@ class OrderRateView(APIView):
 
         def execute_rate() -> tuple[dict, int]:
             nonlocal order
-            from shopman.shop.services.customer_orders import lock_customer_order
+            from shopman.shop.services.customer_orders import can_rate, lock_customer_order
             order = lock_customer_order(order.ref)
-            current_projection = build_order_tracking(order)
-            can_rate = any(action.ref == "rate_order" and action.enabled for action in current_projection.actions)
-            if not can_rate:
+            if not can_rate(order):
                 return (
                     {
                         "detail": "Este pedido ainda não pode ser avaliado.",
@@ -676,7 +971,7 @@ class OrderRateView(APIView):
                 _alert_low_rating(order, rating, comment)
             # Mesmo contrato de resposta das demais mutações (cancel/confirm):
             # o payload volta pelo serializer canônico, não como dict cru.
-            serializer = OrderTrackingSerializer(_tracking_payload(order))
+            serializer = OrderTrackingSerializer(_tracking_payload(order, access_mode))
             return dict(serializer.data), status.HTTP_200_OK
 
         try:

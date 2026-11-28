@@ -22,6 +22,13 @@ from shopman.shop.services import campaign_schedule as sched
 pytestmark = pytest.mark.django_db
 
 
+def _materialize_instance(command):
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    return command._instance_channels()
+
+
 @pytest.fixture
 def seeded():
     from config.management.commands.seed import Command
@@ -65,7 +72,7 @@ def test_seeded_owned_remote_channels_exercise_the_real_waitlist_and_delivery_ch
 
     command = Command()
     command.stdout = StringIO()
-    channels = command._seed_channels()
+    channels = _materialize_instance(command)
 
     for ref in ("web", "whatsapp"):
         config = ChannelConfig.for_channel(channels[ref])
@@ -221,10 +228,10 @@ def test_the_seeded_history_is_attributable_to_customers(db):
 
     command = Command()
     command.stdout = StringIO()
+    channels = _materialize_instance(command)
     command._seed_shop()
     products = command._seed_catalog()
     customers = command._seed_customers()
-    channels = command._seed_channels()
     command._seed_orders(products, customers, channels)
 
     total = Order.objects.count()
@@ -238,6 +245,15 @@ def test_the_seeded_history_is_attributable_to_customers(db):
     assert attributable > 0, "nenhum pedido atribuível: o público comportamental resolve zero"
     # A maioria do histórico é de cliente conhecido; o resto é balcão anônimo, legítimo.
     assert attributable > total // 2, f"só {attributable} de {total} atribuíveis"
+    # E o pedido do cliente leva o nome dele, como todo canal real grava (a loja, o que a
+    # pessoa digita; o PDV, o do cadastro). Sem o nome, o Histórico não achava a cliente
+    # pelo nome e a lista mostrava só o telefone (#2878, J7).
+    nameless = [
+        order.ref
+        for order in Order.objects.exclude(data__customer_ref=None).exclude(data__customer_ref="")
+        if not str(((order.data or {}).get("customer") or {}).get("name") or "").strip()
+    ]
+    assert nameless == [], f"pedidos de cliente sem o nome: {nameless[:5]}"
 
 
 def test_the_seeded_history_produces_favorites(db):
@@ -251,10 +267,11 @@ def test_the_seeded_history_produces_favorites(db):
 
     command = Command()
     command.stdout = StringIO()
+    channels = _materialize_instance(command)
     command._seed_shop()
     products = command._seed_catalog()
     customers = command._seed_customers()
-    command._seed_orders(products, customers, command._seed_channels())
+    command._seed_orders(products, customers, channels)
     InsightService.recalculate_all()
 
     with_history = [i for i in CustomerInsight.objects.all() if i.total_orders]

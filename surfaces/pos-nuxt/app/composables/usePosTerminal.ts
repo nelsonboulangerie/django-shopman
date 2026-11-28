@@ -1,5 +1,6 @@
 import type { Action, POSOperatorProjection, POSProjection, POSResponse, POSShiftSummaryProjection, POSTabProjection } from "~/types/pos";
 import { priceWindowRefreshDelayMs } from "~/presentation/catalog";
+import { mergeAvailability, type PosAvailabilityEntry } from "~/presentation/events";
 
 /** As comandas da última leitura da Projection, para o selo das Comandas no shell. */
 export function usePosTabsState() {
@@ -38,6 +39,33 @@ export function coalescePosRefresh(run: () => Promise<void>): Promise<void> {
       });
   }
   return refreshQueued;
+}
+
+/**
+ * Uma releitura dos selos por vez, e no máximo uma na fila. Uma venda avisa
+ * várias vezes (uma por SKU, e de novo na reserva e na baixa): sem isto, cada
+ * aviso virava uma leitura. Mesma mecânica de `coalescePosRefresh`, fila própria:
+ * a leitura dos selos não espera a inteira, nem a inteira espera a dos selos.
+ */
+let availabilityInFlight: Promise<void> | null = null;
+let availabilityQueued: Promise<void> | null = null;
+export function coalesceAvailabilityRefresh(run: () => Promise<void>): Promise<void> {
+  if (!import.meta.client) return run();
+  if (!availabilityInFlight) {
+    availabilityInFlight = Promise.resolve(run()).finally(() => {
+      availabilityInFlight = null;
+    });
+    return availabilityInFlight;
+  }
+  if (!availabilityQueued) {
+    availabilityQueued = availabilityInFlight
+      .catch(() => {})
+      .then(() => {
+        availabilityQueued = null;
+        return coalesceAvailabilityRefresh(run);
+      });
+  }
+  return availabilityQueued;
 }
 
 /**
@@ -84,6 +112,7 @@ export async function usePosTerminal() {
     scope?.run(() => watchPriceWindow(() => pos.value?.price_window?.next_change_at, refresh));
   }
   const operators = computed<POSOperatorProjection[]>(() => pos.value?.operators ?? []);
+  const station = computed(() => data.value?.station ?? null);
   const actions = computed<Action[]>(() => pos.value?.actions ?? []);
 
   /**
@@ -107,7 +136,35 @@ export async function usePosTerminal() {
     }
   }
 
-  return { data, pos, shift, tabs, operators, actions, pending, error, refresh, refreshTabs };
+  /**
+   * Relê SÓ os selos da grade (`?only=availability`) e os encaixa nos produtos da
+   * leitura atual. É a resposta ao aviso de estoque (SSE `/sse/stock`): outro
+   * balcão vendeu a última unidade e o tile vira "Esgotado" sem ninguém tocar.
+   * Preço, coleção e comandas não mudam com o estoque. Falhou, ou ainda não há
+   * leitura: a inteira.
+   */
+  function refreshAvailability() {
+    return coalesceAvailabilityRefresh(async () => {
+      if (!data.value?.pos) return refresh();
+      try {
+        const response = await $fetch<{ availability: PosAvailabilityEntry[] }>(
+          apiPath("/api/v1/backstage/pos/?only=availability"),
+          { credentials: "include", headers: requestHeaders },
+        );
+        const current = data.value?.pos;
+        if (!current || !Array.isArray(response?.availability)) return;
+        const products = mergeAvailability(current.products, response.availability);
+        if (products !== current.products) {
+          data.value = { ...data.value!, pos: { ...current, products: [...products] } };
+        }
+      } catch (failure) {
+        flagIfStationLocked(failure);
+        await refresh();
+      }
+    });
+  }
+
+  return { data, pos, shift, tabs, operators, actions, station, pending, error, refresh, refreshTabs, refreshAvailability };
 }
 
 const PRICE_WINDOW_RETRY_MS = 30_000;

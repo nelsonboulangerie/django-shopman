@@ -1,7 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import axe from "axe-core";
 
-import { expectOperatorLabelsFit } from "../../../operator-kit/visual/playwright";
+import {
+  expectOperatorLabelsFit,
+  waitForAnimationsToSettle,
+} from "../../../operator-kit/visual/playwright";
 
 // Alvo mínimo = altura `md` (32 px), decisão do dono de 09/10/2026; acima do piso
 // WCAG 2.2 AA (2.5.8, 24 px).
@@ -21,6 +24,8 @@ type AxeViolation = {
 };
 
 async function expectNoAxeViolations(page: Page, context: string) {
+  // O contraste se mede na cor final, não no meio da entrada do diálogo.
+  await waitForAnimationsToSettle(page);
   await page.addScriptTag({ content: axe.source });
   const violations = await page.evaluate(async () => {
     const result = await window.axe.run(document, {
@@ -215,7 +220,7 @@ test("relatório populado mantém os controles compostos com alvo de 32 px", asy
   await expect(page.getByText("Exportação cancelada.", { exact: true })).toBeVisible();
 });
 
-test("Fechamento abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
+test("Finalização abre a revisão de QC mantendo contexto", async ({ context, page }, testInfo) => {
   test.skip(
     Boolean(testInfo.project.metadata.board) ||
       testInfo.project.name === "chromium-mobile-manager",
@@ -226,7 +231,7 @@ test("Fechamento abre a revisão de QC mantendo contexto", async ({ context, pag
     .getByRole("button", { name: "Finalizar o lote de Pão francês" })
     .click();
   await expect(page.getByText("Pão francês", { exact: true }).first()).toBeVisible();
-  await expect(page.getByText("40 previstos", { exact: false })).toBeVisible();
+  await expect(page.getByText("Previsto: 40 un.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Voltar" })).toBeVisible();
   await expectNoAxeViolations(page, `QC aberto ${testInfo.project.name}`);
   await testInfo.attach(`qc-aberto-${testInfo.project.name}`, {
@@ -240,7 +245,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.clock.install({ time: new Date("2026-09-14T12:00:00-03:00") });
   await page.goto("/board");
-  await expect(page.getByRole("heading", { name: "Lotes" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Produção do dia" })).toBeVisible();
   expect(
     await page.evaluate(
       () => matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -286,7 +291,7 @@ test("reduced motion torna as palhetas instantâneas", async ({ context, page })
 for (const { route, endpoint, offset } of [
   { route: "/", endpoint: "/production/?", offset: 2 },
   { route: "/board", endpoint: "/production/forecast/?", offset: 2 },
-  // O Fechamento não anda para o futuro (não há lote para fechar): o dia é atrás.
+  // A Finalização não anda para o futuro (não há lote para fechar): o dia é atrás.
   { route: "/close", endpoint: "/production/qc/?", offset: -2 },
 ]) {
   test(`${route} usa o controle de período canônico sem depender de showPicker`, async ({
@@ -330,7 +335,7 @@ for (const { route, endpoint, offset } of [
         request.url().includes(endpoint) && request.url().includes(`date=${target}`),
     );
     const direction = offset > 0 ? "[data-period-next]" : "[data-period-prev]";
-    const step = page.locator(direction).first();
+    const step = page.locator(`${direction}:visible`).first();
     for (let i = 0; i < Math.abs(offset); i += 1) {
       await step.click();
     }
@@ -388,7 +393,7 @@ test("foco permanece distinguível em contraste forçado", async ({ context, pag
   await context.addCookies([authed]);
   for (const route of ["/", "/board", "/close"]) {
     await page.goto(route);
-    const periodButton = page.locator("[data-period-button]").first();
+    const periodButton = page.locator("[data-period-button]:visible").first();
     await periodButton.focus();
     await expect(periodButton).toBeFocused();
     const outline = await periodButton.evaluate((node) => {

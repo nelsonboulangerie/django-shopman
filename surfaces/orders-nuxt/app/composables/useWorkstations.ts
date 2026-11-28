@@ -72,6 +72,15 @@ export function useWorkstations() {
     );
   }
 
+  function renameDevice(ref_: string, deviceId: string, label: string) {
+    return run(`device:${deviceId}`, () =>
+      $fetch<WorkstationManageState>(
+        `${BASE}/${encodeURIComponent(ref_)}/devices/${encodeURIComponent(deviceId)}/`,
+        { method: "PATCH", body: { label } },
+      ),
+    );
+  }
+
   return {
     state: data,
     copy,
@@ -83,5 +92,6 @@ export function useWorkstations() {
     create,
     update,
     releaseDevice,
+    renameDevice,
   };
 }

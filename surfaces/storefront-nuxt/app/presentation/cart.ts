@@ -41,10 +41,12 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     unit_price_q: meta.price_q,
     total_price_q: meta.price_q * qty,
     price_display: meta.price_display,
-    total_display: formatCentavos(meta.price_q * qty),
     image_url: meta.image_url,
-    original_price_display: null,
     discount_label: null,
+    promo_price_display: null,
+    line_total_display: formatCentavos(meta.price_q * qty),
+    line_total_struck_display: null,
+    list_price_q: meta.price_q,
     is_available: true,
     availability_warning: null,
     available_qty: null,
@@ -59,16 +61,22 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     confirmation_deadline_display: null,
     planned_for_date: null,
     planned_for_notice: null,
+    earlier_available_date: null,
     notes: ''
   }
 }
 
+// A linha com promoção do produto é a que traz o cheio para riscar: nela o
+// total acompanha o unitário com desconto. Nas outras o total é o cheio, mesmo
+// quando um desconto de pedido foi rateado no preço cobrado (`unit_price_q`).
 function withQty (line: CartItemProjection, qty: number): CartItemProjection {
+  const hasPromo = line.line_total_struck_display != null
   return {
     ...line,
     qty,
     total_price_q: line.unit_price_q * qty,
-    total_display: formatCentavos(line.unit_price_q * qty)
+    line_total_display: formatCentavos((hasPromo ? line.unit_price_q : line.list_price_q) * qty),
+    line_total_struck_display: hasPromo ? formatCentavos(line.list_price_q * qty) : null
   }
 }
 
@@ -76,21 +84,78 @@ export function cartItemsCount (items: CartItemProjection[]): number {
   return items.reduce((total, line) => total + line.qty, 0)
 }
 
+// Nome do link da sacola para o leitor de tela: "Sacola" e, com itens, a contagem
+// que o selo mostra ("Sacola, 2 itens"). O selo é aria-hidden; o número vive aqui.
+// Um nome só para a barra de baixo (celular) e o cabeçalho (desktop), #2609.
+export function cartLinkName (cart: Pick<CartProjection, 'is_empty' | 'items_count'>): string {
+  if (cart.is_empty) return 'Sacola'
+  const count = cart.items_count
+  return `Sacola, ${count} ${count === 1 ? 'item' : 'itens'}`
+}
+
+// Preço por unidade da linha, na mesma dupla do cardápio: com promoção, o cheio
+// riscado (`original`) e o da promoção (`current`); sem promoção, só o cheio.
+export function linePrice (line: Pick<CartItemProjection, 'price_display' | 'promo_price_display'>): { original: string | null, current: string } {
+  const promo = line.promo_price_display?.trim()
+  return promo && promo !== line.price_display
+    ? { original: line.price_display, current: promo }
+    : { original: null, current: line.price_display }
+}
+
+// O total da linha, na mesma dupla do unitário (decisão do dono 1, 16/11/2026):
+// com promoção do produto, o total com desconto (`current`) e o cheio para
+// riscar (`original`); sem promoção, só o total. A soma dos `current` é o
+// Subtotal do resumo.
+export function lineTotal (line: Pick<CartItemProjection, 'line_total_display' | 'line_total_struck_display'>): { original: string | null, current: string } {
+  const struck = line.line_total_struck_display?.trim()
+  return struck && struck !== line.line_total_display
+    ? { original: struck, current: line.line_total_display }
+    : { original: null, current: line.line_total_display }
+}
+
+// A nota sob o Subtotal: quanto as promoções de produto já abateram nas linhas.
+// Informa, não subtrai: o Subtotal já é a soma das linhas com desconto.
+export function promoSavingsNote (cart: Pick<CartProjection, 'promo_savings_display'>): string {
+  const saved = cart.promo_savings_display?.trim()
+  return saved ? `Já com ${saved} de desconto em promoções.` : ''
+}
+
+// O sinal do desconto no resumo: "R$ 2,00" → "- R$ 2,00".
+export function discountDisplay (amount: string): string {
+  const value = amount.trim()
+  if (!value) return ''
+  return value.startsWith('-') ? value : `- ${value}`
+}
+
 // Planned-hold (AVAILABILITY-PLAN §8): a linha ou aguarda confirmação da
 // produção planejada ('awaiting') ou o estoque materializou e o cliente
 // precisa confirmar antes do TTL ('ready'). Timeouts são transparentes:
 // deadline explícito + countdown vivo.
 
+// 'reserved': a linha segura reserva planejada, mas o pedido não entra em fila
+// na data em que ele vai sair (data anterior com saldo, ou pedido para depois
+// da fornada). Mesma regra de `reviewWaitlist`: sem aviso de espera, e a linha
+// também não aparece como indisponível. Quando o item fica pronto é a promessa
+// da linha que diz (`cartLinePromise`), não este estado.
 export type CartLineHold = {
-  kind: 'awaiting' | 'ready'
+  kind: 'awaiting' | 'ready' | 'reserved'
   deadlineIso: string | null
   deadlineDisplay: string | null
-  plannedForNotice: string | null
 }
 
 type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
+  & Partial<Pick<CartItemProjection, 'planned_for_date' | 'earlier_available_date'>>
 
-export function lineHoldState (line: HoldFields): CartLineHold | null {
+/** O estado de reserva da linha na sacola. `deliveryDate` é a data em que o
+ *  pedido vai sair: na sacola, ainda sem escolha, é o piso que o checkout vai
+ *  pré-selecionar (`cartBatchFloor`). A espera segue a MESMA regra da revisão
+ *  (`reviewWaitlist`): a espera não pode aparecer na sacola e sumir no
+ *  "Finalizar" para a mesma data (beta 09/11). */
+export function lineHoldState (
+  line: HoldFields,
+  deliveryDate: string = '',
+  today: string = new Date().toLocaleDateString('en-CA')
+): CartLineHold | null {
   // ⚠️ Havia aqui um `if (line.is_made_to_order) return null`, e ele passou a
   // ESCONDER FILA DE VERDADE quando os dois eixos foram separados.
   //
@@ -101,21 +166,29 @@ export function lineHoldState (line: HoldFields): CartLineHold | null {
   // duas coisas. Calar a espera porque o item é preparado na hora tiraria da
   // tela justamente o "quando".
   if (line.is_ready_for_confirmation) {
-    return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
+    return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display }
   }
-  if (line.is_awaiting_confirmation) return { kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: line.planned_for_notice ?? null }
+  if (line.is_awaiting_confirmation) {
+    const wait = reviewWaitlist({ ...line, planned_for_date: line.planned_for_date ?? null }, deliveryDate, today)
+    return { kind: wait ? 'awaiting' : 'reserved', deadlineIso: null, deadlineDisplay: null }
+  }
   return null
 }
 
 /** Lista de espera na REVISÃO do pedido: a história inteira (badge + data
- *  prevista + "avisamos quando ficarem prontos") só vale quando o pedido é
- *  para o MESMO dia da fornada que o hold da sacola espera. Pedido AGENDADO
- *  para outra data não tem fila: o commit re-ancora a reserva na data com
- *  prioridade de pedido (WP-C) — badge de espera ali contradiria o "Quando".
- *  Retorna null (sem história de espera) ou o notice da fornada (pode ser
- *  string vazia quando não há data prevista a mostrar). */
+ *  prevista + "avisamos quando ficarem prontos") vale quando o pedido é para o
+ *  MESMO dia da fornada que o hold da sacola espera. Pedido agendado para
+ *  DEPOIS da fornada não tem fila: o commit re-ancora a reserva na data com
+ *  prioridade de pedido (WP-C), e o badge de espera contradiria o "Quando".
+ *  Pedido para ANTES da fornada (retirar hoje o pão de quarta) não cala: a
+ *  data prevista fica à vista, porque é ela que diz que o "Quando" está errado
+ *  (o servidor recusa esse pedido). A exceção é a data anterior que já tem
+ *  saldo para a linha (`earlier_available_date`): aí o pedido leva o pão dessa
+ *  data, sem fila. Retorna null (sem história de espera) ou o
+ *  notice da fornada (pode ser string vazia quando não há data a mostrar). */
 export function reviewWaitlist (
-  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>,
+  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>
+    & Partial<Pick<CartItemProjection, 'earlier_available_date'>>,
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
@@ -124,8 +197,57 @@ export function reviewWaitlist (
   // para decidir. Quem manda calar aqui é a DATA, não a natureza do item.
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
-  if (deliveryDate && deliveryDate !== batchDate) return null
+  if (deliveryDate && deliveryDate > batchDate) return null
+  const earlier = line.earlier_available_date || ''
+  if (earlier && (deliveryDate || today) >= earlier && (deliveryDate || today) < batchDate) return null
   return { notice: line.planned_for_notice || '' }
+}
+
+/** A primeira data em que a sacola inteira pode sair, com o item que a segura.
+ *  Um pedido, uma data: o pedido não pode ser para antes dela. Por linha vale
+ *  a fornada que ela espera, ou a data anterior que já tem saldo para ela
+ *  (`earlier_available_date`). `null` quando nenhuma linha segura o pedido
+ *  para depois de hoje. */
+export function cartBatchFloor (
+  items: Array<Pick<CartItemProjection, 'name' | 'planned_for_date'> & Partial<Pick<CartItemProjection, 'earlier_available_date'>>>,
+  today: string = new Date().toLocaleDateString('en-CA')
+): { date: string, name: string } | null {
+  let floor: { date: string, name: string } | null = null
+  for (const item of items) {
+    const date = item.earlier_available_date || item.planned_for_date || ''
+    if (date > today && (!floor || date > floor.date)) floor = { date, name: item.name }
+  }
+  return floor
+}
+
+const BATCH_WEEKDAYS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado']
+
+/** "amanhã, 10/11" / "na quarta, 11/11" / "no sábado, 14/11". */
+export function batchDayPhrase (date: string, today: string = new Date().toLocaleDateString('en-CA')): string {
+  const [year, month, day] = date.split('-').map(Number)
+  if (!year || !month || !day) return ''
+  const stamp = `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+  const value = new Date(year, month - 1, day)
+  const [ty, tm, td] = today.split('-').map(Number)
+  const tomorrow = new Date(ty || year, (tm || month) - 1, (td || day) + 1)
+  if (value.getTime() === tomorrow.getTime()) return `amanhã, ${stamp}`
+  const weekday = value.getDay()
+  const article = weekday === 0 || weekday === 6 ? 'no' : 'na'
+  return `${article} ${BATCH_WEEKDAYS[weekday]}, ${stamp}`
+}
+
+/** Por que as datas antes da fornada estão desabilitadas, numa frase:
+ *  "Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar." */
+export function cartBatchFloorReason (
+  floor: { date: string, name: string } | null,
+  fulfillmentType: string,
+  today: string = new Date().toLocaleDateString('en-CA')
+): string {
+  if (!floor || floor.date <= today) return ''
+  const when = batchDayPhrase(floor.date, today)
+  if (!when) return ''
+  const verb = fulfillmentType === 'delivery' ? 'receber' : 'retirar'
+  return `${floor.name} sai ${when}. Antes disso, não dá para ${verb}.`
 }
 
 export function holdCountdown (deadlineIso: string | null | undefined, nowMs: number): { totalSeconds: number, display: string } | null {
@@ -157,6 +279,63 @@ export function cartHoldBanner (cart: Pick<CartProjection, 'has_ready_for_confir
   }
   if (cart.has_awaiting_confirmation_items) return { kind: 'awaiting' }
   return null
+}
+
+// Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): a sacola
+// diz até quando guarda os itens, numa linha calma no alto da página, junto de
+// quando o pedido fica pronto (as duas respondem "quando"). Sem
+// cronômetro: a hora vem pronta do servidor, no formato da casa, e cada gesto na
+// sacola a renova (a resposta da mutação já traz a hora nova).
+//
+// - 'held': há reserva com prazo correndo. "Guardamos seus itens até 19h18."
+// - 'lapsed': o prazo passou. Com a cliente olhando a tela, a sacola foi relida, e
+//   as linhas já dizem o que continua disponível; a frase só explica o que houve.
+//   Quem abre a sacola depois do prazo lê a mesma frase, com a hora que o servidor
+//   publica (`reservation_lapsed_display`, #2767).
+//
+// Sacola vazia, ou só com item de fornada futura (reserva sem relógio): nada.
+export type CartReservationNotice = { kind: 'held' | 'lapsed', text: string }
+
+type ReservationFields = Pick<CartProjection, 'is_empty' | 'reserved_until_iso' | 'reserved_until_display'>
+  & Partial<Pick<CartProjection, 'reservation_lapsed_display'>>
+
+/** O instante em que a reserva vence, em ms; null sem prazo ou com prazo ilegível. */
+export function reservationDeadlineMs (cart: Pick<CartProjection, 'reserved_until_iso'>): number | null {
+  if (!cart.reserved_until_iso) return null
+  const deadline = Date.parse(cart.reserved_until_iso)
+  return Number.isNaN(deadline) ? null : deadline
+}
+
+/**
+ * `serverNowMs` é o agora da tela já alinhado ao relógio do servidor; 0 enquanto
+ * a tela ainda não tem relógio (no servidor e na hidratação), e aí o prazo que
+ * veio com a sacola vale como está. `lapsedDisplay` é a hora da reserva que a tela
+ * viu vencer, guardada pela página depois de reler a sacola; sem ela, vale a hora
+ * que o servidor publica da reserva vencida. `shownElsewhereIso`
+ * é um prazo que a tela já diz em outro lugar (o aviso "Tudo pronto! Confirme
+ * até..."): o mesmo prazo não é dito duas vezes.
+ */
+export function cartReservationNotice (
+  cart: ReservationFields,
+  serverNowMs: number,
+  lapsedDisplay: string | null = null,
+  shownElsewhereIso: string | null = null
+): CartReservationNotice | null {
+  if (cart.is_empty) return null
+  const deadline = reservationDeadlineMs(cart)
+  if (deadline !== null && cart.reserved_until_display) {
+    if (deadline > serverNowMs) {
+      if (shownElsewhereIso && Date.parse(shownElsewhereIso) === deadline) return null
+      return { kind: 'held', text: `Guardamos seus itens até ${cart.reserved_until_display}.` }
+    }
+    return { kind: 'lapsed', text: reservationLapsedText(cart.reserved_until_display) }
+  }
+  const lapsed = lapsedDisplay || cart.reservation_lapsed_display
+  return lapsed ? { kind: 'lapsed', text: reservationLapsedText(lapsed) } : null
+}
+
+function reservationLapsedText (display: string): string {
+  return `A reserva valia até ${display} e já venceu. A sacola mostra o que continua disponível.`
 }
 
 // Cor segue a semântica do estado (semáforo): "tudo pronto" é positivo (success);

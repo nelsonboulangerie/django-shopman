@@ -1,11 +1,9 @@
 """A fila das filas da Central (SUITE-UX §4.1 e §6, UX-H1).
 
-A Central soma as filas dos papéis do operador e leva o ITEM EXATO para a linha de cada app
-(``next_item``, a pendência mais urgente dele): "Pedido K7Q2 para aceitar", "Pedido F15
-atrasado", "Lote de Croissant passou do tempo". Cada item traz o essencial da decisão, a hora
-que importa (há quanto espera, ou quanto falta) e um gesto que abre o lugar exato no app
-certo. A lista inteira não viaja mais no JSON (dono, 09/10/2026: "Precisa de você" saiu da
-Central); dela sai só ``total_count``.
+A Central soma as filas dos papéis do operador: "Pedido K7Q2 para aceitar", "Pedido F15
+atrasado", "Lote de Croissant passou do tempo". Nenhum item viaja no JSON da Central (dono,
+09/10/2026: "Precisa de você" saiu; #2134: a linha do app virou um número só, e o detalhe
+mora dentro do app); da fila sai só ``total_count``.
 
 **Só fontes que já existem.** Nada aqui é regra nova: cada fonte é a mesma leitura que o app
 de destino já faz, recortada para o que pede alguém agora.
@@ -37,6 +35,7 @@ roda isolada e, se quebrar, sai do resultado com um aviso no log.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
@@ -44,13 +43,15 @@ from urllib.parse import quote, urlencode
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage import permissions
 
 logger = logging.getLogger(__name__)
 
-#: Meta do aceite: o card do Gestor fica urgente aos 4 minutos (`order_queue._timer_class`).
-ACCEPT_TARGET_SECONDS = 240
+#: Meta do aceite: o card do Gestor fica urgente aos 80% do prazo (`order_queue._timer_class`),
+#: 4 min no prazo de 5 do pedido do dia.
+ACCEPT_TARGET_SHARE = 0.8
 
 #: Quanto à frente a Central olha as encomendas de retirada do PDV.
 PREORDER_HORIZON = timedelta(hours=1)
@@ -98,6 +99,14 @@ class HubAppStatusProjection:
     """A linha de estado do bloco de um app, que concorda com a fila."""
 
     attention: str = ""  # o que pede alguém ("1 para aceitar"), pintado de âmbar
+    #: O número no canto do ícone do app na Central (dono, 04/11/2026). Critério, numa
+    #: frase: **quantas coisas estão paradas esperando um gesto de quem está operando,
+    #: agora, que esta pessoa pode resolver.** Movimento e informação não contam (ativos,
+    #: lotes finalizados, caixa aberto, pedido a caminho), e nem o que espera outra pessoa
+    #: (a encomenda de retirada espera o cliente; a compra espera o fornecedor). Conta:
+    #: pedido para aceitar e aviso do Gestor; pedido atrasado na estação; lote que passou
+    #: do tempo e aviso da Produção; decisão do Marketing. A soma das partes que contam.
+    attention_count: int = 0
     summary: str = ""  # o resto, calmo ("11 ativos")
     #: O estado bom e sabido ("Caixa aberto", "Aberta"): ponto verde quando nada pede alguém.
     positive: str = ""
@@ -105,8 +114,7 @@ class HubAppStatusProjection:
 
 @dataclass(frozen=True)
 class HubQueueProjection:
-    """O que a Central recebe da fila: quantas pendências e o relógio do servidor (os
-    itens chegam pela linha de cada app, em ``next_item``)."""
+    """O que a Central recebe da fila: quantas pendências e o relógio do servidor."""
 
     total_count: int
     server_now: str
@@ -114,16 +122,15 @@ class HubQueueProjection:
 
 @dataclass(frozen=True)
 class HubQueueCollection:
-    """O resultado da coleta: a projeção da fila, a linha de estado de cada app, a
-    pendência mais urgente de cada app e a fila inteira, ordenada por urgência.
+    """O resultado da coleta: a projeção da fila, a linha de estado de cada app e a fila
+    inteira, ordenada por urgência.
 
-    ``items`` é interno (não viaja no JSON da Central): é dele que saem ``most_urgent`` e
-    ``total_count``, e é o que os testes leem para travar a ordem e a permissão por item.
+    ``items`` é interno (não viaja no JSON da Central): é dele que sai ``total_count``, e é
+    o que os testes leem para travar a ordem e a permissão por item.
     """
 
     queue: HubQueueProjection
     statuses: dict[str, HubAppStatusProjection]
-    most_urgent: dict[str, HubQueueItemProjection]
     items: tuple[HubQueueItemProjection, ...]
 
 
@@ -140,8 +147,12 @@ def _iso(value: datetime | None) -> str:
     return value.isoformat() if value else ""
 
 
+#: A hora como o cartão da encomenda a escreve ("9h", "12h45": `format_clock`).
+_CLOCK_RE = re.compile(r"^(\d{1,2})h(\d{2})?$")
+
+
 def _clock(value: datetime | None) -> str:
-    return timezone.localtime(value).strftime("%H:%M") if value else ""
+    return format_clock(value) if value else ""
 
 
 def _plural(count: int, singular: str, plural: str) -> str:
@@ -178,12 +189,38 @@ def _truncate(text: str, limit: int = 140) -> str:
 # ── Fontes ─────────────────────────────────────────────────────────────
 
 
+def _waits_outside_the_board(order) -> bool:
+    """A encomenda aceita que ainda não é trabalho do dia no Gestor.
+
+    Duas esperas, as mesmas do quadro: a de data futura, e a de HOJE que ainda
+    não chegou à hora de ir para a Cozinha (``lifecycle.awaits_kitchen_release``:
+    combinado − preparo − antecedência). Contar a segunda fazia a Central dizer
+    "3 ativos" com o quadro do Gestor vazio (dono, 18/11/2026: a encomenda que
+    espera mora em "Encomendas"). O agendado do iFood fica de fora da segunda
+    régua: ele segue o relógio do iFood e o quadro o mantém à vista.
+    """
+    from shopman.backstage.projections import order_queue
+    from shopman.shop import lifecycle
+    from shopman.shop.services import ifood_schedule
+
+    if order.status not in ("accepted", "preparing"):
+        return False
+    if order_queue._is_future_preorder(order):
+        return True
+    return (
+        order.status == "accepted"
+        and not ifood_schedule.is_scheduled(order)
+        and lifecycle.awaits_kitchen_release(order)
+    )
+
+
 def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None:
     """Gestor: pedido novo esperando aceite (a Entrada do quadro)."""
     from shopman.orderman.models import Order
 
     from shopman.backstage.projections import order_queue
     from shopman.backstage.projections.preorders import _channel_labels, _fallback_channel_label
+    from shopman.shop.policies.order_payment import awaits_online_payment
     from shopman.shop.services import order_composition
     from shopman.shop.services.pos_sales_mode import is_pos_counter_order
 
@@ -192,20 +229,26 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
         for order in Order.objects.filter(status__in=order_queue.ACTIVE_STATUSES).order_by("created_at")
         if not is_pos_counter_order(order)
     ]
-    # Encomenda de data futura vive em "Agendados", não é trabalho do dia (mesma régua do quadro).
-    today_work = [
-        order
-        for order in active
-        if not (order.status in ("new", "accepted", "preparing") and order_queue._is_future_preorder(order))
+    # Mesma régua do quadro: todo pedido novo espera aceite, inclusive a encomenda
+    # (60 min de prazo, dono 09/11); a encomenda já aceita que ainda não chegou à
+    # hora dela vive na lista "Encomendas" e não é trabalho do dia.
+    today_work = [order for order in active if not _waits_outside_the_board(order)]
+    # O pedido que espera o dinheiro online não é "para aceitar": ninguém consegue
+    # aceitá-lo até o Pix ou o cartão cair (DEV-2026-091). Ele volta a contar no
+    # instante em que o pagamento cai.
+    to_accept = [
+        order for order in today_work
+        if order.status == "new" and not awaits_online_payment(order)
     ]
-    to_accept = [order for order in today_work if order.status == "new"]
     deadlines = order_queue._confirmation_deadlines([order.ref for order in to_accept])
     channels = _channel_labels({order.channel_ref or "" for order in to_accept})
 
     for order in to_accept:
-        elapsed = (now - order.created_at).total_seconds()
-        slack = ACCEPT_TARGET_SECONDS - elapsed
-        deadline_iso, deadline_action = deadlines.get(order.ref) or order_queue._external_deadline(order) or ("", "")
+        # O prazo do aceite é o do timer do pedido (5 ou 60 min), como no cartão
+        # do Gestor: urgente aos 80% dele.
+        elapsed, window = order_queue._acceptance_clock(order, deadlines.get(order.ref), now)
+        slack = window * ACCEPT_TARGET_SHARE - elapsed
+        deadline_iso, deadline_action = (deadlines.get(order.ref) or order_queue._external_deadline(order) or ("", ""))[:2]
         deadline = _parse_iso(deadline_iso)
         due_label = ""
         if deadline is not None:
@@ -253,6 +296,7 @@ def _orders(user, base: str, label: str, now: datetime, out: _Collected) -> None
         out.statuses.get("gestor"),
         HubAppStatusProjection(
             attention=f"{len(to_accept)} para aceitar" if to_accept else "",
+            attention_count=len(to_accept),
             summary=_plural(len(today_work), "ativo", "ativos"),
         ),
     )
@@ -316,6 +360,7 @@ def _kds(user, base: str, label: str, now: datetime, out: _Collected) -> None:
 
     out.statuses["kds"] = HubAppStatusProjection(
         attention=_plural(late, "pedido atrasado", "pedidos atrasados") if late else "",
+        attention_count=late,
         summary=_plural(len(on_today), "pedido nas estações", "pedidos nas estações"),
     )
 
@@ -337,7 +382,10 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
     for card in open_pickups:
         if not card.window_start:
             continue
-        hour, minute = (int(part) for part in card.window_start.split(":"))
+        clock = _CLOCK_RE.match(card.window_start)
+        if clock is None:
+            continue
+        hour, minute = int(clock.group(1)), int(clock.group(2) or 0)
         starts_at = timezone.make_aware(datetime.combine(today, time(hour, minute)), tz)
         slack = (starts_at - now).total_seconds()
         if starts_at - now > PREORDER_HORIZON:
@@ -370,6 +418,8 @@ def _preorders(user, base: str, label: str, now: datetime, out: _Collected) -> N
     out.statuses["pos"] = _merge_status(
         out.statuses.get("pos"),
         HubAppStatusProjection(
+            # Fora do número da Central: a encomenda de retirada espera o CLIENTE chegar,
+            # não um gesto de quem opera (o critério está em `HubAppStatusProjection`).
             attention=f"{due_now} para retirar na próxima hora" if due_now else "",
             summary=_plural(len(open_pickups), "encomenda para retirar hoje", "encomendas para retirar hoje"),
         ),
@@ -425,6 +475,7 @@ def _production(user, base: str, label: str, now: datetime, out: _Collected) -> 
         out.statuses.get("production"),
         HubAppStatusProjection(
             attention=_plural(late, "lote passou do tempo", "lotes passaram do tempo") if late else "",
+            attention_count=late,
             # Todo bloco tem estado (prévia v4): dia sem lote também é um fato.
             summary=f"{finished} de {_plural(total, 'lote finalizado hoje', 'lotes finalizados hoje')}"
             if total
@@ -558,7 +609,7 @@ def _alerts(user, urls: dict[str, str], labels: dict[str, str], now: datetime, o
     for app, count in counts.items():
         out.statuses[app] = _merge_status(
             out.statuses.get(app),
-            HubAppStatusProjection(attention=_plural(count, "aviso", "avisos")),
+            HubAppStatusProjection(attention=_plural(count, "aviso", "avisos"), attention_count=count),
         )
 
 
@@ -593,6 +644,7 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
         out.statuses.get("marketing"),
         HubAppStatusProjection(
             attention=_plural(pending, "decisão", "decisões") if pending else "",
+            attention_count=pending,
             summary=_plural(decisions.active_campaign_count, "campanha ligada", "campanhas ligadas")
             if decisions.active_campaign_count
             else "Nenhuma campanha ligada",
@@ -601,7 +653,7 @@ def _marketing_status(user, base: str, label: str, now: datetime, out: _Collecte
 
 
 def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected) -> None:
-    """Compras: pedido enviado ao fornecedor e ainda aguardando entrega.
+    """Compras: solicitações abertas da Produção e pedidos aguardando entrega.
 
     A mesma marca que o quadro do Compras lê (``metadata.purchase.request_status``):
     ``sent`` é o pedido em aberto, que o recebimento ou o cancelamento encerram. Um
@@ -613,15 +665,26 @@ def _purchase_status(user, base: str, label: str, now: datetime, out: _Collected
 
     Material = apps.get_model("buyman", "Material")
     on_the_way: set[str] = set()
+    requested = 0
     for material in Material.objects.filter(is_active=True).only("sku", "metadata"):
+        meta = _purchase_meta(material)
         if _purchase_request_status(material) == "sent":
-            ref = str(_purchase_meta(material).get("request_ref") or "").strip()
+            ref = str(meta.get("request_ref") or "").strip()
             on_the_way.add(ref or f"sku:{material.sku}")
+        # A Produção solicitou e o Compras ainda não pediu ao fornecedor.
+        requested += sum(
+            1
+            for entry in meta.get("internal_requests") or ()
+            if isinstance(entry, dict) and entry.get("status") == "open"
+        )
+    parts = []
+    if requested:
+        parts.append(_plural(requested, "solicitação da Produção", "solicitações da Produção"))
+    if on_the_way:
+        parts.append(_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho"))
     out.statuses["purchase"] = HubAppStatusProjection(
         # Todo bloco tem estado (prévia v4): sem pedido, o estado calmo diz isso.
-        summary=_plural(len(on_the_way), "pedido a caminho", "pedidos a caminho")
-        if on_the_way
-        else "Nenhum pedido em andamento",
+        summary=" · ".join(parts) if parts else "Nenhum pedido em andamento",
     )
 
 
@@ -668,7 +731,7 @@ def _store_status(user, base: str, label: str, now: datetime, out: _Collected) -
     from shopman.shop.projections.channel_state import accepting_orders
     from shopman.shop.services.business_calendar import current_business_state, format_next_opening
 
-    channel_ref = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    channel_ref = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     state = current_business_state(now=now)
     local_now = timezone.localtime(now)
     day_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -715,6 +778,7 @@ def _merge_status(current: HubAppStatusProjection | None, extra: HubAppStatusPro
         return extra
     return HubAppStatusProjection(
         attention=" · ".join(part for part in (current.attention, extra.attention) if part),
+        attention_count=current.attention_count + extra.attention_count,
         summary=" · ".join(part for part in (current.summary, extra.summary) if part),
         positive=" · ".join(part for part in (current.positive, extra.positive) if part),
     )
@@ -771,12 +835,8 @@ def collect_hub_queue(
     ordered = tuple(
         sorted(out.items, key=lambda item: (item.slack_seconds, item.waiting_since or item.due_at, item.key))
     )
-    most_urgent: dict[str, HubQueueItemProjection] = {}
-    for item in ordered:
-        most_urgent.setdefault(item.app, item)
     return HubQueueCollection(
         queue=HubQueueProjection(total_count=len(ordered), server_now=_iso(now)),
         statuses=out.statuses,
-        most_urgent=most_urgent,
         items=ordered,
     )

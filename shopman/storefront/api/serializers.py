@@ -8,6 +8,18 @@ from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH
 
 class SetSkuQtySerializer(serializers.Serializer):
     qty = serializers.IntegerField(min_value=0, max_value=99)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), ``AAAA-MM-DD``. Opcional:
+    # sem ele a sacola segue a régua de sempre. Quem o confere é o serviço da sacola.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
+
+
+class CartDaySerializer(serializers.Serializer):
+    # O "Trocar" do dia (OC-33 B1): a sacola inteira passa para ``date``.
+    # ``without``: os SKUs com que a cliente aceitou seguir sem ("seguir sem ele").
+    date = serializers.CharField(max_length=10)
+    without = serializers.ListField(
+        child=serializers.CharField(max_length=64), required=False, default=list, max_length=99,
+    )
 
 
 class CartLineOptionSerializer(serializers.Serializer):
@@ -21,6 +33,8 @@ class AddCartLineSerializer(serializers.Serializer):
     sku = serializers.CharField(max_length=64)
     qty = serializers.IntegerField(min_value=1, max_value=99)
     options = CartLineOptionSerializer(many=True, required=False, default=list)
+    # O dia do "Para quando?" do cardápio (OC-33 B1), como em ``SetSkuQtySerializer``.
+    date = serializers.CharField(required=False, allow_blank=True, max_length=10)
 
 
 class CartLineNotesSerializer(serializers.Serializer):
@@ -75,11 +89,11 @@ class CheckoutSerializer(serializers.Serializer):
     # o preço recalculado calado. Medido no staging: a tela mostrava R$ 12,80, o
     # commit sem baseline fechou em R$ 13,60, com 201 e nenhum aviso.
     #
-    # Exigir é seguro porque o valor é só COMPARADO (`_ensure_total_matches`),
-    # nunca usado como preço — cliente não consegue ditar quanto paga; divergiu,
-    # o servidor recusa com `total_changed` e a pessoa reconfirma sobre o número
-    # certo. Superfícies com operador presente (PDV) commitam por outro caminho
-    # (`shop/services/pos.py`) e não passam por aqui.
+    # Exigir é seguro porque o valor é só COMPARADO pela decisão canônica do
+    # Orderman (`CommitService.validate_expected_total`), nunca usado como preço
+    # — cliente não consegue ditar quanto paga; divergiu, o servidor recusa com
+    # `total_changed` e a pessoa reconfirma sobre o número certo. Superfícies com
+    # operador presente (PDV) commitam por outro caminho (`shop/services/pos.py`).
     expected_total_q = serializers.IntegerField(required=True, min_value=0)
     expected_revision = serializers.IntegerField(required=True, min_value=0)
     # Omotenashi: lembrar as escolhas é o default; o cliente desmarca o toggle
@@ -110,6 +124,33 @@ class DetailSerializer(serializers.Serializer):
 # ── Catalog ──────────────────────────────────────────────────────────
 
 
+class PriceAdjustmentSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    label = serializers.CharField()
+    amount_q = serializers.IntegerField()
+    badge_label = serializers.CharField(allow_null=True)
+
+
+class PriceQuoteSerializer(serializers.Serializer):
+    qty = serializers.DecimalField(max_digits=12, decimal_places=3, coerce_to_string=True)
+    listing_ref = serializers.CharField(allow_null=True)
+    list_unit_price_q = serializers.IntegerField()
+    list_line_total_q = serializers.IntegerField()
+    final_unit_price_q = serializers.IntegerField()
+    final_line_total_q = serializers.IntegerField()
+    adjustments = PriceAdjustmentSerializer(many=True)
+
+
+class ReadyPromiseSerializer(serializers.Serializer):
+    """Quando o item fica pronto, escrito pelo servidor (``presentation/promise``)."""
+
+    kind = serializers.ChoiceField(choices=("ready", "batch", "preorder"))
+    date = serializers.CharField()
+    ready_at = serializers.CharField()
+    day_label = serializers.CharField()
+    text = serializers.CharField()
+
+
 class ProductListItemSerializer(serializers.Serializer):
     """Public product card — serializes a ``CatalogItemProjection`` directly.
 
@@ -122,11 +163,7 @@ class ProductListItemSerializer(serializers.Serializer):
     name = serializers.CharField()
     short_description = serializers.CharField(allow_blank=True)
     image_url = serializers.CharField(allow_null=True, required=False)
-    price_q = serializers.IntegerField(source="base_price_q", allow_null=True)
-    price_display = serializers.CharField(allow_blank=True)
-    has_promotion = serializers.BooleanField()
-    original_price_display = serializers.CharField(allow_null=True, required=False)
-    promotion_label = serializers.CharField(allow_null=True, required=False)
+    quote = PriceQuoteSerializer()
     unit_weight_label = serializers.CharField(allow_null=True, required=False)
     availability = serializers.CharField(source="availability.value")
     availability_label = serializers.CharField()
@@ -139,6 +176,9 @@ class ProductListItemSerializer(serializers.Serializer):
     # propósito — o motivo da indisponibilidade é do operador, nunca do cliente.
     is_notifiable = serializers.BooleanField()
     is_notify_subscribed = serializers.BooleanField()
+    # Quando fica pronto: a mesma promessa do cardápio, do produto e da sacola.
+    # ``null`` = nada a prometer (indisponível, ou sem dado para afirmar um dia).
+    promise = ReadyPromiseSerializer(allow_null=True)
 
 
 @extend_schema_serializer(component_name="StorefrontCollection")
@@ -151,7 +191,9 @@ class CollectionSerializer(serializers.Serializer):
 
 class AvailabilityResponseSerializer(serializers.Serializer):
     ok = serializers.BooleanField()
-    available_qty = serializers.CharField()
+    available_qty = serializers.CharField(allow_null=True)
+    orderable_ceiling = serializers.CharField(allow_null=True)
+    is_tracked = serializers.BooleanField(allow_null=True)
     badge_text = serializers.CharField()
     badge_class = serializers.CharField()
     is_bundle = serializers.BooleanField()
@@ -267,6 +309,8 @@ class OrderItemSerializer(serializers.Serializer):
     qty = serializers.IntegerField()
     unit_price_display = serializers.CharField()
     total_display = serializers.CharField()
+    # Valor cheio riscado ao lado (linha com promoção); vazio sem promoção.
+    full_total_display = serializers.CharField(allow_blank=True, required=False)
 
 
 class FulfillmentSerializer(serializers.Serializer):
@@ -292,6 +336,8 @@ class ActionSerializer(serializers.Serializer):
     payload_schema = serializers.DictField(required=False)
     idempotency = serializers.CharField(required=False)
     confirmation = serializers.DictField(required=False)
+    # O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais.
+    value = serializers.CharField(allow_blank=True, required=False)
 
 
 class OrderTrackingPromiseSerializer(serializers.Serializer):
@@ -332,23 +378,18 @@ class PickupInfoSerializer(serializers.Serializer):
     opening_hours = serializers.CharField()
     directions_label = serializers.CharField()
     directions_url = serializers.CharField(allow_null=True, required=False)
+    when_display = serializers.CharField(allow_null=True, required=False)
 
 
-class CancellationRequestProjectionSerializer(serializers.Serializer):
-    protocol = serializers.CharField()
-    requested_at_display = serializers.CharField()
-    title = serializers.CharField()
-    message = serializers.CharField()
+class CancellationContactProjectionSerializer(serializers.Serializer):
+    requested = serializers.BooleanField()
 
 
-class CancellationRequestInputSerializer(serializers.Serializer):
-    reason = serializers.CharField(
-        allow_blank=True,
-        required=False,
-        default="",
-        max_length=500,
-        trim_whitespace=True,
-    )
+class RatingFollowupProjectionSerializer(serializers.Serializer):
+    comment = serializers.CharField(allow_blank=True)
+    google_review_url = serializers.CharField(allow_blank=True)
+    contact_offered = serializers.BooleanField()
+    contact_requested = serializers.BooleanField()
 
 
 class OrderTrackingCopySerializer(serializers.Serializer):
@@ -377,7 +418,6 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     cancel_dialog_confirm = serializers.CharField()
     cancel_dialog_back = serializers.CharField()
     cancelled_reason_title = serializers.CharField()
-    refund_title = serializers.CharField()
     mock_payment_success_title = serializers.CharField()
     mock_payment_success_message = serializers.CharField()
     mock_payment_failed_title = serializers.CharField()
@@ -390,6 +430,17 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     rating_thanks = serializers.CharField()
     rating_thanks_title = serializers.CharField()
     rating_thanks_celebrate = serializers.CharField()
+    rating_contact_title = serializers.CharField()
+    rating_contact_message = serializers.CharField()
+    rating_contact_done = serializers.CharField()
+    cancellation_contact_title = serializers.CharField()
+    cancellation_contact_done_title = serializers.CharField()
+    cancellation_contact_message = serializers.CharField()
+    rating_google_title = serializers.CharField()
+    rating_google_share_title = serializers.CharField()
+    rating_google_message = serializers.CharField()
+    rating_google_cta = serializers.CharField()
+    rating_google_copied = serializers.CharField()
     page_meta_description = serializers.CharField()
     delivery_heading = serializers.CharField()
     stale_cta = serializers.CharField()
@@ -404,8 +455,6 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     card_security_note = serializers.CharField()
     waitlist_waiting_title = serializers.CharField()
     waitlist_waiting_message = serializers.CharField()
-    waitlist_confirm_title = serializers.CharField()
-    waitlist_confirm_message = serializers.CharField()
     waitlist_confirm_cta = serializers.CharField()
     waitlist_confirmed_title = serializers.CharField()
     waitlist_released_title = serializers.CharField()
@@ -419,6 +468,49 @@ class FiscalNoteSerializer(serializers.Serializer):
     url = serializers.CharField(allow_blank=True)
     link_label = serializers.CharField(allow_blank=True)
     note = serializers.CharField(allow_blank=True)
+
+
+class RetentionReceiptLineSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    qty_display = serializers.CharField()
+    value_display = serializers.CharField()
+    calculation_display = serializers.CharField()
+    retained_display = serializers.CharField()
+
+
+class RetentionReceiptRowSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    value_display = serializers.CharField()
+
+
+class RetentionReceiptSerializer(serializers.Serializer):
+    title = serializers.CharField()
+    issuer_lines = serializers.ListField(child=serializers.CharField())
+    order_line = serializers.CharField()
+    commitment_display = serializers.CharField(allow_blank=True)
+    closed_display = serializers.CharField(allow_blank=True)
+    lines = RetentionReceiptLineSerializer(many=True)
+    money_rows = RetentionReceiptRowSerializer(many=True)
+    retained_label = serializers.CharField()
+    retained_display = serializers.CharField()
+    nature = serializers.CharField()
+    not_fiscal = serializers.CharField()
+
+
+class TrackingDiscountLineSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    amount_display = serializers.CharField()
+
+
+class TrackingGiftSerializer(serializers.Serializer):
+    recipient_name = serializers.CharField(allow_blank=True)
+    message = serializers.CharField(allow_blank=True)
+
+
+class TrackingLoginInviteSerializer(serializers.Serializer):
+    message = serializers.CharField()
+    cta_label = serializers.CharField()
+    href = serializers.CharField()
 
 
 class OrderTrackingSerializer(serializers.Serializer):
@@ -450,13 +542,17 @@ class OrderTrackingSerializer(serializers.Serializer):
     payment_expired = serializers.BooleanField()
     payment_confirmed = serializers.BooleanField()
     payment_status_label = serializers.CharField(allow_null=True, required=False)
-    # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
+    # Cancelamento: motivo + o destino do dinheiro numa frase com o valor.
     cancellation_note = serializers.CharField(allow_blank=True, required=False)
-    refund_status_label = serializers.CharField(allow_null=True, required=False)
-    cancellation_request = CancellationRequestProjectionSerializer(allow_null=True, required=False)
+    cancellation_money_line = serializers.CharField(allow_blank=True, required=False)
+    # Antes de cancelar: o que acontece com o dinheiro (reserva do cartão, nada cobrado).
+    cancel_dialog_money_line = serializers.CharField(allow_blank=True, required=False)
+    cancellation_contact = CancellationContactProjectionSerializer(allow_null=True, required=False)
+    rating_followup = RatingFollowupProjectionSerializer(allow_null=True, required=False)
     # A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
     # pede e-mail). ``None`` enquanto não há nota.
     fiscal_note = FiscalNoteSerializer(allow_null=True, required=False)
+    retention_receipt = RetentionReceiptSerializer(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.
@@ -472,9 +568,22 @@ class OrderTrackingSerializer(serializers.Serializer):
     whatsapp_url = serializers.CharField(allow_blank=True, required=False)
     support_url = serializers.CharField(allow_blank=True, required=False)
     share_text = serializers.CharField(allow_blank=True, required=False)
-    # Momento yoin — só presentes no primeiro acesso depois do checkout.
-    just_placed = serializers.BooleanField(required=False, default=False)
+    # Momento yoin: o pedido já pode ser comemorado (não deve pagamento, não
+    # morreu). Quem sabe que ele ACABOU de ser fechado é o navegador do checkout.
+    placement_secured = serializers.BooleanField(required=False, default=False)
+    # O pedido deve pagamento agora: a tela pede ``orders/<ref>/payment/check/``.
+    payment_due = serializers.BooleanField(required=False, default=False)
     share_cta = serializers.CharField(allow_blank=True, required=False)
+    # O Resumo: a conta inteira e o que o cliente informou no checkout.
+    subtotal_display = serializers.CharField(allow_blank=True, required=False)
+    discount_lines = TrackingDiscountLineSerializer(many=True, required=False)
+    schedule_display = serializers.CharField(allow_null=True, required=False)
+    gift = TrackingGiftSerializer(allow_null=True, required=False)
+    tax_id_display = serializers.CharField(allow_blank=True, required=False)
+    customer_notes = serializers.CharField(allow_blank=True, required=False)
+    delivery_address = serializers.CharField(allow_blank=True, required=False)
+    access_mode = serializers.CharField(required=False, default="full")
+    login_invite = TrackingLoginInviteSerializer(allow_null=True, required=False)
     is_debug = serializers.BooleanField()
     last_updated_iso = serializers.CharField()
     last_updated_display = serializers.CharField()

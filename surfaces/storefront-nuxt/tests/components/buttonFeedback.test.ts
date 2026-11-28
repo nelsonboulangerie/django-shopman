@@ -44,4 +44,43 @@ describe('UiButton — feedback imediato e bloqueio acessível', () => {
     await wrapper.trigger('click')
     expect(onClick).not.toHaveBeenCalled()
   })
+  // DEV-2026-094: o clique que devolve promessa deixa o botão ocupado sozinho.
+  it('clique assíncrono: gira, trava e ignora o toque repetido até assentar', async () => {
+    let release!: () => void
+    const onClick = vi.fn(() => new Promise<void>((resolve) => { release = resolve }))
+    const wrapper = await mountSuspended(UiButton, { props: { onClick, text: 'Salvar' } })
+
+    await wrapper.trigger('click')
+    await nextTick()
+    expect(wrapper.attributes('aria-busy')).toBe('true')
+    expect(wrapper.attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('Aguarde.')
+    await wrapper.trigger('click')
+    expect(onClick).toHaveBeenCalledTimes(1)
+
+    release()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await nextTick()
+    expect(wrapper.attributes('aria-busy')).toBeUndefined()
+    expect(wrapper.attributes('disabled')).toBeUndefined()
+  })
+
+  it('a promessa recusada também solta o botão', async () => {
+    const onClick = vi.fn(() => Promise.reject(new Error('falhou')))
+    const wrapper = await mountSuspended(UiButton, { props: { onClick, text: 'Salvar' } })
+    await wrapper.trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await nextTick()
+    expect(wrapper.attributes('aria-busy')).toBeUndefined()
+  })
+
+  it('clique síncrono não deixa o botão ocupado', async () => {
+    const onClick = vi.fn()
+    const wrapper = await mountSuspended(UiButton, { props: { onClick, text: 'Abrir' } })
+    await wrapper.trigger('click')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    await nextTick()
+    expect(wrapper.attributes('aria-busy')).toBeUndefined()
+    expect(wrapper.attributes('disabled')).toBeUndefined()
+  })
 })

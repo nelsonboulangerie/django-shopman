@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import Mock
 
 import pytest
+from shopman.orderman.models import Order
 
 from shopman.backstage.services import orders
 from shopman.backstage.services.exceptions import OrderError
+from shopman.shop.services import operator_orders
 
 
 def test_find_order_delegates(monkeypatch):
@@ -16,6 +18,14 @@ def test_find_order_delegates(monkeypatch):
 
     assert orders.find_order("ABC") == "order"
     core.assert_called_once_with("ABC")
+
+
+@pytest.mark.django_db
+def test_operator_order_query_finds_the_public_reference_and_nothing_else():
+    order = Order.objects.create(ref="ORDER-QUERY-1", channel_ref="web", status="accepted", total_q=0)
+
+    assert operator_orders.find_order(order.ref) == order
+    assert operator_orders.find_order("ORDER-QUERY-MISSING") is None
 
 
 def test_confirm_order_delegates(monkeypatch):
@@ -40,7 +50,8 @@ def test_reject_order_validates_reason(monkeypatch):
         reason="sem estoque",
         actor="operator:ana",
         rejected_by="ana",
-        cancellation_code="",
+        reason_key="",
+        internal_note="",
     )
 
 
@@ -51,6 +62,8 @@ def test_advance_order_surfaces_specific_reason(monkeypatch):
         raise ValueError("Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo.")
 
     monkeypatch.setattr(orders.operator_orders, "advance_order", fail)
+    # A régua do lote lê a promessa de um pedido de verdade; aqui o pedido é dublê.
+    monkeypatch.setattr("shopman.backstage.projections.order_queue.batch_wait_refusal", lambda order: "")
 
     with pytest.raises(OrderError) as exc_info:
         orders.advance_order("order", actor="operator:ana")
@@ -82,7 +95,6 @@ def test_cancel_order_delegates(monkeypatch):
         "order",
         reason="O cliente pediu",
         actor="admin:ana",
-        cancellation_code="",
         reason_key="customer_request",
         internal_note="ligou às 10h",
     )

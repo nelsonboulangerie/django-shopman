@@ -27,6 +27,7 @@ class TestProduct:
         )
         assert product.sku == "BAGUETE"
         assert product.base_price_q == 500
+        assert product.is_active is True
         assert product.is_published is True
         assert product.is_sellable is True
 
@@ -65,6 +66,23 @@ class TestProduct:
         sellable = Product.objects.sellable()
         assert sellable.count() == 1
         assert sellable.first().sku == "P1"
+
+    def test_active_and_archived_are_explicit_complementary_paths(self, db):
+        Product.objects.create(sku="ACTIVE", name="Ativo")
+        Product.objects.create(sku="ARCHIVED", name="Arquivado", is_active=False)
+
+        assert list(Product.objects.active().values_list("sku", flat=True)) == ["ACTIVE"]
+        assert list(Product.objects.archived().values_list("sku", flat=True)) == ["ARCHIVED"]
+
+    def test_available_for_sale_requires_all_three_independent_states(self, db):
+        Product.objects.create(sku="AVAILABLE", name="Disponível")
+        Product.objects.create(sku="ARCHIVED", name="Arquivado", is_active=False)
+        Product.objects.create(sku="HIDDEN", name="Oculto", is_published=False)
+        Product.objects.create(sku="PAUSED", name="Pausado", is_sellable=False)
+
+        assert list(Product.objects.available_for_sale().values_list("sku", flat=True)) == [
+            "AVAILABLE"
+        ]
 
     def test_is_bundle_property(self, db):
         product = Product.objects.create(sku="SINGLE", name="Single")

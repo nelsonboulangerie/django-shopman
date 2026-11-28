@@ -28,6 +28,7 @@ from shopman.orderman.exceptions import CommitError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
 from shopman.shop.services.account import anonymize_customer
@@ -68,6 +69,7 @@ def _order_for(customer, *, channel_ref="web", origin="whatsapp"):
         handle_ref=customer.phone,
         items=[{"sku": "CROIS-01", "qty": 2, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer": {
                 "ref": customer.ref,
                 "name": f"{FIRST_NAME} {LAST_NAME}",
@@ -87,6 +89,8 @@ def _order_for(customer, *, channel_ref="web", origin="whatsapp"):
         session_key=session.session_key,
         channel_ref=channel_ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session.session_key, channel_ref),
+        channel_config={},
     )
     order = Order.objects.get(ref=result.order_ref)
     if not order.handle_ref:
@@ -258,10 +262,9 @@ def test_exclusao_limpa_texto_pessoal_das_tres_copias_do_meta_do_item():
     assert _sweep(tuple(sentinels.values())) == []
 
 
-def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
+def test_exportacao_e_exclusao_alinham_eventos_do_pedido():
     import json
 
-    from shopman.backstage.models import OperatorAlert
     from shopman.storefront.services.account_export import build_account_export
 
     customer = _customer()
@@ -274,17 +277,15 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
         "session_to": "PII-SESSION-TO-REF",
         "session_text": "PII-SESSION-FREE-TEXT",
     }
-    protocol = "SC-20260916-KEEP1234"
-
     note_event = order.emit_event(
         "operator_comment",
         actor="operator:test",
         payload={"note": sentinels["order_note"], "operational_code": "handover"},
     )
     reason_event = order.emit_event(
-        "customer_cancellation_requested",
+        "order_rescheduled",
         actor="customer:self-service",
-        payload={"protocol": protocol, "reason": sentinels["order_reason"]},
+        payload={"to_date": "2026-11-10", "reason": sentinels["order_reason"]},
     )
     renamed_event = session.emit_event(
         "tab_renamed",
@@ -306,26 +307,8 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
             "sku": "CROIS-01",
         },
     )
-    alert = OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
-        severity="warning",
-        audience="orders",
-        order_ref=order.ref,
-        message=(
-            f"O cliente solicitou análise de cancelamento do pedido {order.ref}. "
-            f"Protocolo {protocol}. Abra o pedido para decidir o cancelamento e eventual estorno. "
-            f"Motivo informado: {sentinels['order_reason']}"
-        ),
-    )
-    OperatorAlert.objects.create(
-        type="payment_failed",
-        severity="error",
-        order_ref=order.ref,
-        message="alerta operacional fora do footprint de cancelamento",
-    )
     before = _sweep((sentinels["order_reason"],))
     assert any("orderman_orderevent.payload" in hit for hit in before)
-    assert any("backstage_operatoralert.message" in hit for hit in before)
 
     artifact = build_account_export(customer)
     exported = json.load(artifact)
@@ -333,10 +316,7 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
     order_events = {row["type"]: row for row in exported["order_events"]}
     session_events = {row["type"]: row for row in exported["order_session_events"]}
     assert order_events["operator_comment"]["payload"] == {"note": sentinels["order_note"]}
-    assert order_events["customer_cancellation_requested"]["payload"] == {
-        "protocol": protocol,
-        "reason": sentinels["order_reason"],
-    }
+    assert order_events["order_rescheduled"]["payload"] == {"reason": sentinels["order_reason"]}
     assert session_events["tab_renamed"]["payload"] == {
         "from_ref": sentinels["session_from"],
         "to_ref": sentinels["session_to"],
@@ -349,11 +329,6 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
         "text": sentinels["session_text"],
         "message": sentinels["session_text"],
     }
-    assert len(exported["order_cancellation_alerts"]) == 1
-    exported_alert = exported["order_cancellation_alerts"][0]
-    assert exported_alert["protocol"] == protocol
-    assert exported_alert["reason"] == sentinels["order_reason"]
-    assert "message" not in exported_alert
 
     anonymize_customer(customer)
 
@@ -361,13 +336,10 @@ def test_exportacao_e_exclusao_alinham_eventos_e_alerta_de_cancelamento():
     reason_event.refresh_from_db()
     renamed_event.refresh_from_db()
     free_text_event.refresh_from_db()
-    alert.refresh_from_db()
     assert note_event.payload == {"operational_code": "handover"}
-    assert reason_event.payload == {"protocol": protocol}
+    assert reason_event.payload == {"to_date": "2026-11-10"}
     assert renamed_event.payload == {"count": 2}
     assert free_text_event.payload == {"sku": "CROIS-01"}
-    assert protocol in alert.message
-    assert "Motivo informado:" not in alert.message
     assert _sweep(tuple(sentinels.values())) == []
 
 
@@ -433,6 +405,7 @@ def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
         handle_ref=customer.phone,
         items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer_ref": customer.ref,
             "customer": {"ref": customer.ref, "phone": customer.phone},
         },
@@ -445,6 +418,8 @@ def test_commit_recusa_sessao_antiga_de_customer_inativo() -> None:
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
 
     assert caught.value.code == "customer_inactive"
@@ -471,6 +446,7 @@ def test_commit_recusa_ref_e_telefone_de_clientes_diferentes() -> None:
         handle_ref=phone_owner.phone,
         items=[{"sku": "CROIS-01", "qty": 1, "unit_price_q": 500, "line_id": "L1"}],
         data={
+            "payment": {"method": "cash"},
             "customer_ref": referenced.ref,
             "customer": {"ref": referenced.ref, "phone": phone_owner.phone},
         },
@@ -481,6 +457,8 @@ def test_commit_recusa_ref_e_telefone_de_clientes_diferentes() -> None:
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
 
     assert caught.value.code == "customer_identity_mismatch"
@@ -513,6 +491,33 @@ def test_a_loja_apaga_o_que_e_dela():
 
     assert not CustomerFavorite.objects.filter(customer_ref=customer.ref).exists()
     assert not StockAlertSubscription.objects.filter(contact_phone=PHONE).exists()
+
+
+def test_o_comentario_da_nota_baixa_sai_tambem_do_aviso_do_operador():
+    """#2359: o aviso ``low_rating`` copiava o comentário da cliente, e a exclusão não o tocava.
+
+    O pedido perdia o comentário (``customer_rating.comment``), mas o texto livre da
+    titular seguia no ``OperatorAlert``, que ela nunca vê e o Admin lista. A nota fica
+    (é métrica da loja); o comentário sai, como sai do pedido.
+    """
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.services.customer_orders import save_customer_rating
+    from shopman.storefront.api.tracking import _alert_low_rating
+
+    comment = "Demorou demais, falei com o Joaquim na porta"
+    customer = _customer()
+    order = _order_for(customer)
+    save_customer_rating(order, rating=2, comment=comment)
+    _alert_low_rating(order, 2, comment)
+
+    alert = OperatorAlert.objects.get(type="low_rating", order_ref=order.ref)
+    assert comment in alert.message, "controle positivo: o aviso tem de levar o comentário antes da exclusão"
+
+    anonymize_customer(customer)
+
+    assert _sweep((comment,)) == [], "o comentário da titular sobreviveu à exclusão"
+    alert.refresh_from_db()
+    assert alert.message == f"Pedido {order.ref} recebeu nota 2/5."
 
 
 def test_rodar_duas_vezes_nao_estoura():

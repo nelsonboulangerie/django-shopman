@@ -5,7 +5,8 @@
 // existe para o operador. Os grupos seguem o fluxo da venda, e dentro do primeiro as
 // teclas seguem a ordem da TELA: navegação (F2 a F4), depois os três fatos do pedido
 // (F6 a F8), que são os três chips da barra do topo na mesma ordem em que aparecem:
-// quem compra, como recebe, quando quer. Só lista: quem executa é o handler da página.
+// quem compra, quando quer, como recebe (a ordem do funil da encomenda, #2754). Só
+// lista: quem executa é o handler da página.
 import type { ShortcutGroup } from "../../../operator-kit/app/presentation/suiteChrome";
 
 export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
@@ -16,8 +17,8 @@ export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
       { keys: ["F3", "/"], label: "Buscar produto" },
       { keys: ["F4"], label: "Abrir o pagamento / atualizar a revisão" },
       { keys: ["F6"], label: "Cliente (buscar, criar, associar)" },
-      { keys: ["F7"], label: "Recebimento (retirada ou entrega)" },
-      { keys: ["F8"], label: "Quando (hoje ou outra data)" },
+      { keys: ["F7"], label: "Quando (hoje ou outra data)" },
+      { keys: ["F8"], label: "Recebimento (no balcão: consumir aqui ou levar; na encomenda: retirada ou entrega)" },
       { keys: ["Esc"], label: "Sair do campo; depois, voltar (sai do pagamento; fecha diálogos)" },
       { keys: ["?"], label: "Esta ajuda" },
     ],
@@ -69,7 +70,7 @@ export const POS_SHORTCUT_GROUPS: ShortcutGroup[] = [
     title: "Na venda concluída",
     items: [
       { keys: ["F2"], label: "Nova venda (sempre)" },
-      { keys: ["Enter"], label: "Nova venda (sem troco a conferir nem PIX aguardando)" },
+      { keys: ["Enter"], label: "Nova venda (sem troco a conferir nem Pix aguardando)" },
     ],
   },
 ];

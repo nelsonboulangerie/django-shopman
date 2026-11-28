@@ -22,7 +22,15 @@ class AvailabilityPolicy(models.TextChoices):
 
 
 class ProductQuerySet(models.QuerySet):
-    """Custom QuerySet for Product with publication and sellability filters."""
+    """Caminhos canônicos de leitura do cadastro e dos estados efêmeros."""
+
+    def active(self):
+        """Produtos presentes nas listagens padrão."""
+        return self.filter(is_active=True)
+
+    def archived(self):
+        """Produtos arquivados, somente para leituras explícitas."""
+        return self.filter(is_active=False)
 
     def sellable(self):
         """Products that are commercially enabled."""
@@ -31,6 +39,10 @@ class ProductQuerySet(models.QuerySet):
     def published(self):
         """Products that are published in the base catalog."""
         return self.filter(is_published=True)
+
+    def available_for_sale(self):
+        """Produtos que podem ser expostos e vendidos agora."""
+        return self.active().published().sellable()
 
 
 class Product(models.Model):
@@ -146,6 +158,13 @@ class Product(models.Model):
     )
 
     # === PUBLICATION & SELLABILITY ===
+    is_active = models.BooleanField(
+        _("ativo"),
+        default=True,
+        db_index=True,
+        help_text=_("Arquivado sai das listas e da venda, sem alterar publicação nem vendabilidade."),
+    )
+
     is_published = models.BooleanField(
         _("publicado"),
         default=True,
@@ -166,13 +185,6 @@ class Product(models.Model):
         max_length=500,
         blank=True,
         help_text=_("URL da imagem principal do produto (ex: Unsplash, Cloudinary, S3)"),
-    )
-
-    # Batch production flag
-    is_batch_produced = models.BooleanField(
-        _("produção em lote"),
-        default=False,
-        help_text=_("Produzido em lotes (para Craftsman)"),
     )
 
     # Metadata
@@ -207,7 +219,7 @@ class Product(models.Model):
     # ``image_url`` matters for social/commerce catalogs (Google/Meta reject items
     # without an image); the social-PIM attributes live under ``metadata['social']``.
     _PROJECTABLE_FIELDS = (
-        "name", "short_description", "long_description", "is_published", "is_sellable", "image_url",
+        "name", "short_description", "long_description", "is_active", "is_published", "is_sellable", "image_url",
     )
     # ``metadata`` sub-keys whose change re-projects — the social-PIM data and the
     # image gallery. Comparing only these keys avoids re-syncing on internal churn
@@ -228,10 +240,13 @@ class Product(models.Model):
         if is_new:
             from shopman.offerman.signals import product_created
 
+            # ADR-025: escrita acoplada — o catalog_projection grava a outbox (sync + Directive)
+            # na mesma transação do produto; rollback do produto apaga a projeção junto.
             product_created.send(sender=self.__class__, instance=self, sku=self.sku)
         elif old is not None and self._projectable_changed(old):
             from shopman.offerman.signals import product_updated
 
+            # ADR-025: escrita acoplada — outbox do catalog_projection na transação do produto.
             product_updated.send(sender=self.__class__, instance=self, sku=self.sku)
 
     def _projectable_changed(self, old: dict) -> bool:
@@ -360,6 +375,21 @@ class Product(models.Model):
         if backend is None:
             return None
         return backend.get_cost(self.sku)
+
+    @property
+    def reference_cost_gap(self) -> str | None:
+        """Por que não há custo de referência, dito pelo provedor; None se há.
+
+        Só responde quando o provedor implementa ``CostGapExplainer``. Sem
+        provedor configurado não há lacuna a explicar: a coluna nem aparece.
+        """
+        from shopman.offerman.conf import get_cost_backend
+        from shopman.offerman.protocols.cost import CostGapExplainer
+
+        backend = get_cost_backend()
+        if backend is None or not isinstance(backend, CostGapExplainer):
+            return None
+        return backend.get_cost_gap(self.sku)
 
     @property
     def margin_percent(self) -> Decimal | None:

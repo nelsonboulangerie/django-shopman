@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
 from django.test import TestCase
 from shopman.orderman.models import Directive, Order
 
 from shopman.shop.services.cancel_reasons import cancel_reason
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.operator_orders import cancel_order, reject_order
+
+pytestmark = pytest.mark.channels("web")
 
 
 def _order(ref: str, status: str) -> Order:
@@ -32,7 +35,8 @@ class OperatorOrderContractTests(TestCase):
 
         reject_order(
             order,
-            reason="sem estoque",
+            reason="Acabou um item",
+            reason_key="out_of_stock",
             actor="operator:ana",
             rejected_by="ana",
         )
@@ -41,7 +45,7 @@ class OperatorOrderContractTests(TestCase):
         self.assertEqual(order.status, Order.Status.CANCELLED)
         directive = Directive.objects.get(topic="notification.send", payload__order_ref=order.ref)
         self.assertEqual(directive.payload["template"], "order_rejected")
-        self.assertEqual(directive.payload["reason"], "sem estoque")
+        self.assertEqual(directive.payload["reason"], "Acabou um item")
         self.assertEqual(directive.payload["rejected_by"], "ana")
         self.assertTrue(directive.payload["requires_active_notification"])
         self.assertEqual(directive.dedupe_key, f"notification.send:{order.ref}:order_rejected")
@@ -52,7 +56,8 @@ class OperatorOrderContractTests(TestCase):
         with self.assertRaises(ValueError):
             reject_order(
                 order,
-                reason="sem estoque",
+                reason="Acabou um item",
+                reason_key="out_of_stock",
                 actor="operator:ana",
                 rejected_by="ana",
             )
@@ -163,7 +168,7 @@ class CancellationReasonReachesCustomerTests(TestCase):
         order = _order("CONTRACT-REJECT-NODUP", Order.Status.NEW)
 
         with self.captureOnCommitCallbacks(execute=True):
-            reject_order(order, reason="Sem estoque", actor="operator:ana", rejected_by="ana")
+            reject_order(order, reason="Acabou um item", reason_key="out_of_stock", actor="operator:ana", rejected_by="ana")
 
         self.assertEqual(self._cancelled_notifications(order.ref), [])
         rejected = Directive.objects.filter(
@@ -172,4 +177,4 @@ class CancellationReasonReachesCustomerTests(TestCase):
             payload__template="order_rejected",
         )
         self.assertEqual(rejected.count(), 1)
-        self.assertEqual(rejected.first().payload.get("reason"), "Sem estoque")
+        self.assertEqual(rejected.first().payload.get("reason"), "Acabou um item")

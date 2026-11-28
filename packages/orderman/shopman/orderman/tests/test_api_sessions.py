@@ -8,7 +8,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 from shopman.orderman import registry
 from shopman.orderman.contrib.stock.resolvers import StockIssueResolver
-from shopman.orderman.models import Directive, IdempotencyKey, Session
+from shopman.orderman.models import Directive, Session
 
 
 class SessionApiTests(TestCase):
@@ -244,75 +244,25 @@ class SessionApiTests(TestCase):
         self.assertEqual(r.status_code, 400, r.data)
         self.assertEqual(r.data["code"], "missing_unit_price_q")
 
-    def test_commit_blocks_on_blocking_issues(self) -> None:
+    def test_commit_action_is_not_exposed(self) -> None:
         c = self._mk_channel(ref="pos")
         sess = Session.objects.create(
-            session_key="SESS-C2",
+            session_key="SESS-NO-COMMIT-API",
             channel_ref=c.ref,
             state="open",
             pricing_policy="internal",
             edit_policy="open",
-            rev=0,
-            items=[{"line_id": "L-1", "sku": "LATTE", "qty": 1, "unit_price_q": 1000, "meta": {}}],
-            data={
-                "checks": {},
-                "issues": [
-                    {
-                        "id": "ISS-1",
-                        "source": "stock",
-                        "code": "stock.insufficient",
-                        "blocking": True,
-                        "message": "Sem estoque",
-                        "context": {},
-                    }
-                ],
-            },
-        )
-
-        r = self.client.post(f"/api/sessions/{sess.session_key}/commit", {"channel_ref": "pos"}, format="json")
-        self.assertEqual(r.status_code, 400, r.data)
-        self.assertEqual(r.data["code"], "blocking_issues")
-
-    def test_commit_is_idempotent(self) -> None:
-        c = self._mk_channel(ref="pos")
-        sess = Session.objects.create(
-            session_key="SESS-IDEM",
-            channel_ref=c.ref,
-            state="open",
-            pricing_policy="internal",
-            edit_policy="open",
-            rev=0,
-            items=[{"line_id": "L-1", "sku": "LATTE", "qty": 1, "unit_price_q": 1000, "meta": {}}],
+            items=[],
             data={"checks": {}, "issues": []},
         )
 
-        idem = "IDEM-TEST-1"
-        r1 = self.client.post(
+        response = self.client.post(
             f"/api/sessions/{sess.session_key}/commit",
-            {"channel_ref": "pos", "idempotency_key": idem},
+            {"channel_ref": "pos"},
             format="json",
         )
-        self.assertEqual(r1.status_code, 201, r1.data)
-        self.assertEqual(r1.data["status"], "committed")
 
-        # Repetição com mesma chave
-        r2 = self.client.post(
-            f"/api/sessions/{sess.session_key}/commit",
-            {"channel_ref": "pos", "idempotency_key": idem},
-            format="json",
-        )
-        # Replay idempotente: retorna o mesmo corpo (e, por consequência, o mesmo status HTTP).
-        self.assertEqual(r2.status_code, 201, r2.data)
-        self.assertEqual(r2.data["status"], "committed")
-        self.assertEqual(r2.data["order_ref"], r1.data["order_ref"])
-
-        # Confirma que guardou o response no idem — escopo inclui a sessão
-        # (chave do cliente não pode colidir/vazar resultado de outra sessão).
-        self.assertTrue(
-            IdempotencyKey.objects.filter(
-                scope=f"commit:pos:{sess.session_key}", key=idem
-            ).exists()
-        )
+        self.assertEqual(response.status_code, 404)
 
     def test_resolve_delegates_by_source_and_applies_ops(self) -> None:
         c = self._mk_channel(ref="pos")

@@ -166,15 +166,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     # ficha do Vinagrete + o SEGUNDO café: `CAFE-GRAO` era genérico e escondia
     # dois blends de dois fornecedores (dono, 24/09) + 13 que as fichas reais
     # da casa usam (Ficha Técnica - Maysa, F2 do WP-FICHAS-REAIS-DA-CASA) + 4
-    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal).
-    # Os insumos (sem cadastro de venda) seguem 75; a revenda soma o cadastro de
+    # das montagens (manteiga com sal, wasabi, cornichon, flor de sal) + 3 das
+    # fichas dos itens da casa (dono, 21/11/2026, #2925): as duas castanhas do
+    # recheio do Campagne Passas & Castanhas e o sorvete de creme do Melon Iced
+    # Sando. Os insumos (sem cadastro de venda) são 78; a revenda soma o cadastro de
     # compra do mesmo SKU — um por item de `RESALE` e da Mercearia, e um por
     # caixa física das caixas presente (a embalagem entra pelo Compras).
     from config.management.commands.apply_grocery_catalog import GIFT_BOXES, GROCERY, OPENINGS
     from config.management.commands.apply_product_brands import RESALE
 
     vendaveis = set(Product.objects.values_list("sku", flat=True))
-    assert Material.objects.exclude(sku__in=vendaveis).count() == 75
+    assert Material.objects.exclude(sku__in=vendaveis).count() == 78
     # O tablete Président de 200 g se abre no insumo que a manteiga de wasabi já
     # usa: nenhum cadastro novo, nenhuma ficha mexida.
     for opening in OPENINGS:
@@ -452,7 +454,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         resolved_by="system:production-outcome-recorded",
     ).exists()
     assert OperatorAlert.objects.filter(type="production_stock_short", acknowledged=False).exists()
-    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "saida"}
+    assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"coffee", "snacks", "picking", "exit"}
     assert set(OperationChecklistTemplate.objects.values_list("ref", flat=True)) >= {
         "nelson-opening",
         "nelson-routine",
@@ -745,6 +747,24 @@ def test_nelson_seed_provisions_operators_with_pins(monkeypatch):
 
 
 @pytest.mark.django_db
+def test_nelson_seed_carries_the_concierge_keywords_the_owner_approved(monkeypatch):
+    """O seed grava as palavras-chave aprovadas (24/11/2026) como o ``--write`` gravou no ar:
+    só nos produtos publicados, o teste vê o que o cliente vê ("madalena" acha a Madeleine)
+    e o corte do dono vale."""
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    from shopman.offerman.models import Product
+
+    def words(sku):
+        return {tag.name for tag in Product.objects.get(sku=sku).keywords.all()}
+
+    assert {"madalena", "bolinho francês"} <= words("MDLN")
+    assert {"campagne oval", "pão oval"} <= words("CPG")
+    assert "italiano" not in words("CI")
+
+
+@pytest.mark.django_db
 def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
     monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
 
@@ -840,6 +860,45 @@ def test_seed_oven_history_never_touches_real_measurement():
         work_order_ref=work_order.ref,
         metadata__seed="nelson",
     ).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "instant",
+    [
+        datetime(2026, 10, 10, 18, 0, tzinfo=UTC),  # sábado, 15h da loja
+        # 22h30 da loja: em UTC já é domingo, e "ontem" pela data UTC seria o sábado.
+        datetime(2026, 10, 11, 1, 30, tzinfo=UTC),
+    ],
+    ids=["tarde", "noite-com-utc-virado"],
+)
+def test_o_seed_padrao_da_a_ana_um_pedido_concluido_ontem(monkeypatch, instant):
+    """A J7 do Gestor acha a Ana Ferreira pelo nome e amplia o período até o pedido
+    concluído de ontem. O histórico sorteia o cliente de cada pedido, e a sequência
+    mudava com a hora do seed: havia seed com pedido dela ontem e seed sem, e a
+    jornada caía ao acaso (#3295). Ontem é ontem no fuso da loja."""
+    monkeypatch.setattr("django.utils.timezone.now", lambda: instant)
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    yesterday = timezone.localdate() - timedelta(days=1)
+    dela = [
+        order
+        for order in Order.objects.filter(data__customer_ref="CLI-005", status=Order.Status.COMPLETED)
+        if timezone.localtime(order.created_at).date() == yesterday
+    ]
+    assert dela, f"o seed não deu à Ana pedido concluído em {yesterday:%d/%m}"
+    assert dela[0].data["customer"]["name"] == "Ana Ferreira"
+
+    # Os clientes da casa no seed já provaram o número: o código abre a conta
+    # deles (D4, OC-08). É por eles que o harness E2E entra (CLI-003, CLI-005).
+    from shopman.guestman.adapters.auth import IdentityResolver
+    from shopman.guestman.models import Customer
+
+    for ref in ("CLI-003", "CLI-005"):
+        cliente = Customer.objects.get(ref=ref)
+        resolvido = IdentityResolver().resolve("phone", cliente.phone)
+        assert resolvido is not None and resolvido.subject_id == cliente.uuid, ref
 
 
 @pytest.mark.django_db

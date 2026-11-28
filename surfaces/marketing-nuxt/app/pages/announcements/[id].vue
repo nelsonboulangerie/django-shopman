@@ -26,6 +26,7 @@ import {
   decisionOutcomeNotice,
   deliverySettled,
   marketingLoadError,
+  reviewCapabilityBlock,
   DELIVERY_TRACKING_POLICY,
 } from "~/presentation/marketingResult";
 // Um dono só para "WhatsApp fala com pessoa, o resto é mural": o card da revisão e a
@@ -419,6 +420,7 @@ const card = ref<{
 const decisionOpen = computed(
   () => announcement.value?.status === "pending_review",
 );
+const capabilityBlock = computed(() => reviewCapabilityBlock(resultActions.value));
 const canContinue = computed(() => Boolean(card.value?.canContinue) && !busy.value);
 const continueReason = computed(() => card.value?.continueBlockedReason ?? "");
 const continueAction = computed<OperatorActionBarAction>(() => ({
@@ -431,7 +433,8 @@ const continueAction = computed<OperatorActionBarAction>(() => ({
 }));
 const rejectAction = computed<OperatorActionBarAction>(() => ({
   label: "Recusar",
-  disabled: busy.value,
+  disabled: busy.value || Boolean(capabilityBlock.value.reject),
+  reason: capabilityBlock.value.reject,
   onSelect: () => card.value?.askToReject(),
 }));
 
@@ -439,16 +442,21 @@ const rejectAction = computed<OperatorActionBarAction>(() => ({
 const headerActions = computed<OperatorHeaderAction[]>(() => [
   ...(decisionOpen.value
     ? [
-        {
-          label: "Agendar para outra hora",
-          icon: "i-lucide-calendar-clock",
-          onSelect: () => card.value?.openScheduling(),
-        },
-        {
-          label: "Recusar com motivo",
-          icon: "i-lucide-circle-slash",
-          onSelect: () => card.value?.askToReject(),
-        },
+        // Quem não decide não recebe o gesto de decidir no ⋯ (ge:MKT-03).
+        ...(capabilityBlock.value.proceed
+          ? []
+          : [{
+              label: "Agendar para outra hora",
+              icon: "i-lucide-calendar-clock",
+              onSelect: () => card.value?.openScheduling(),
+            }]),
+        ...(capabilityBlock.value.reject
+          ? []
+          : [{
+              label: "Recusar com motivo",
+              icon: "i-lucide-circle-slash",
+              onSelect: () => card.value?.askToReject(),
+            }]),
       ]
     : []),
   { label: "Ver as campanhas", icon: "i-lucide-megaphone", to: "/settings/campaigns" },
@@ -490,7 +498,9 @@ useHead({ title: "Anúncio" });
             color="neutral"
             variant="outline"
             label="Recusar"
-            :disabled="busy"
+            :disabled="busy || Boolean(capabilityBlock.reject)"
+            :title="capabilityBlock.reject || undefined"
+            data-review-reject
             @click="card?.askToReject()"
           />
           <NuxtButton
@@ -639,6 +649,8 @@ useHead({ title: "Anúncio" });
               :platform-readiness="platformReadiness"
               :product-options="products"
               :busy="busy"
+              :reject-blocked-reason="capabilityBlock.reject"
+              :proceed-blocked-reason="capabilityBlock.proceed"
               :draft-owner="draftOwner"
               :shop-timezone="shopTimezone"
               :quiet-hours-suspended-for-local-simulation="

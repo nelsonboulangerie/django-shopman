@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, resendCooldown, resendWindowMs, welcomeNameFields, welcomeNameValue, type AuthErrorView } from '~/presentation/auth'
-import { authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
+import { LOCAL_PHONE_ERROR, LOGIN_ADULT_DECLARATION_LEAD, LOGIN_TERMS_LINK_LABEL, PENDING_CODE_STORAGE_KEY, WELCOME_PENDING_STORAGE_KEY, authErrorBelongsToPhoneField, authErrorKillsCode, authErrorOffersSupport, authErrorView, authStep, codeSentPrefix, otpValidUntilDisplay, pendingCodeFromCooldown, resendCooldown, resendWindowMs, restorePendingCode, welcomeNameFields, welcomeNameValue, type AuthErrorView, type PendingCode } from '~/presentation/auth'
+import { authPhoneIsComplete, authPhonePayload, maskPhoneInput, phoneDisplay, type AuthDeliveryMethod, type AuthPhoneRegion } from '~/utils/authPhone'
 import type { AuthSessionResponse, CopyEntryProjection, ShellResponse } from '~/types/shopman'
 import type { WhatsappClaimResponse } from '~/composables/useWhatsappReturn'
 
@@ -12,8 +12,6 @@ interface RequestCodeResponse {
   dev_console_hint: boolean
   code_expires_at?: string
   resend_after_seconds?: number
-  debug_otp_code?: string
-  debug_otp_expires_at?: string
 }
 
 interface VerifyResponse extends AuthSessionResponse {
@@ -29,15 +27,18 @@ const phone = ref('')
 const phoneRegion = ref<AuthPhoneRegion>('BR')
 const requestedPhone = ref('')
 // Login por WhatsApp: o start leve vive no PAI para pré-aquecer o deep link e o botão
-// abrir o app num toque. A mensagem enviada libera ESTE navegador no servidor, e a aba
-// entra sozinha quando a pessoa volta (useWhatsappReturn) — o link que a mensagem traz
-// é reserva. Ver useWhatsappVerify e WhatsAppVerifyClaimView.
+// abrir o app num toque. A resposta traz um botão: no celular, "Voltar à loja" entra no
+// navegador que ele abrir (nunca noutra aba); no computador, "Liberar o Chrome no
+// Windows" solta ESTA aba, que percebe a entrada sozinha (useWhatsappReturn). Ver
+// useWhatsappVerify e WhatsAppVerifyClaimView.
 const {
   code: waCode,
   message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
   status: waStatus,
+  returnMode: waReturnMode,
+  returnButton: waReturnButton,
   start: waStart,
   clear: waClear
 } = useWhatsappVerify()
@@ -45,10 +46,24 @@ const {
   state: waReturnState,
   waiting: waWaiting,
   checking: waChecking,
+  notArrived: waNotArrived,
+  awaitingRelease: waAwaitingRelease,
   arm: waArm,
   stop: waStop,
   checkNow: waCheckNow
 } = useWhatsappReturn(onWhatsappReturn)
+// Entrada pela chave deste aparelho (passkey). Só aparece onde a chave MORA: o navegador
+// lembra que ativou ou já entrou com ela (passkeyRememberedHere). Oferecer a todo mundo
+// levaria quem nunca ativou a um diálogo do sistema vazio. Decide-se no cliente, depois
+// de montar: no servidor não há navegador a perguntar.
+const {
+  signIn: passkeySignIn,
+  busy: passkeyBusy,
+  error: passkeyError,
+  passkeySupported,
+  passkeyRememberedHere
+} = usePasskey()
+const passkeyHere = ref(false)
 const codeDigits = ref<number[]>([])
 // Nasce VAZIO de propósito. Assumir 'WhatsApp' antes de o servidor dizer por
 // onde mandou já escrevia o canal errado na tela; quando o rótulo não vem, a
@@ -60,9 +75,6 @@ const error = ref<AuthErrorView | null>(null)
 // num dispositivo seu, e o switch continua ali para quem está num aparelho emprestado.
 const trustedDevice = ref(true)
 const devConsoleHint = ref(false)
-const debugOtpCode = ref('')
-const debugOtpExpiresAt = ref('')
-const showDebugOtp = ref(true)
 const verified = ref(false)
 // O gate de boas-vindas é SÓ o nome (`welcome_asks_name`). O convite de
 // novidades não é passo do login: sobe como sheet na página de destino
@@ -108,6 +120,12 @@ const step = computed(() => authStep({
 // para fora da tela.
 const { reveal } = useNextFocus(step)
 const code = computed(() => codeDigits.value.join('').slice(0, 6))
+// Android: o Chrome entrega o código do SMS (WebOTP) enquanto a etapa do código está na
+// tela; os 6 dígitos completos disparam a confirmação automática, como ao colar.
+const { listen: listenSmsCode } = useWebOtp(
+  computed(() => step.value === 'code'),
+  (smsCode) => { codeDigits.value = smsCode.split('').map(Number) }
+)
 const canVerifyCode = computed(() => code.value.length === 6 && !pending.value)
 const authCopy = computed(() => loginShell.value?.shell.auth_copy || null)
 // DDD padrão da loja (config): assume-se quando o cliente entra sem DDD, para o
@@ -117,8 +135,17 @@ const defaultDdd = computed(() => loginShell.value?.shell.public_config?.default
 const isCheckoutReturn = computed(() => /checkout|finalizar/.test(nextUrl.value))
 // Omotenashi aqui precisa ser factual: `next=/finalizar` não prova que existe sacola.
 // Só a projeção canônica do carrinho autoriza copy de "sacola guardada".
+// ⚠️ Na navegação pelo cliente vale a sacola VIVA (useCartState, a mesma do cabeçalho),
+// nunca a do shell: o `shopman-shell` é o cache da primeira carga, e quem pôs o item
+// depois chegava da sacola com 1 item e lia a frase neutra (#3271). Na carga pelo
+// servidor o shell é desta requisição, e o app.vue não semeia a sacola nas rotas de
+// login: o servidor e a hidratação leem o shell (a mesma resposta dos dois lados), e,
+// montada a página, a sacola é relida e passa a valer a viva.
+const nuxtApp = useNuxtApp()
+const { cart: liveCart, refreshCart } = useCartState()
+const cartFromShell = ref(import.meta.server || nuxtApp.isHydrating)
 const cartHasItems = computed(() => {
-  const cart = loginShell.value?.cart
+  const cart = cartFromShell.value ? loginShell.value?.cart : liveCart.value
   return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
 })
 // ⚠️ A copy da sacola pergunta pela SACOLA, não pela rota. Ela era
@@ -130,6 +157,8 @@ const cartHasItems = computed(() => {
 const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
+// Telefone inválido aparece sob o campo, enquanto o formulário do SMS está aberto.
+const phoneErrorInline = computed(() => authErrorBelongsToPhoneField(error.value) && step.value === 'phone' && revealPhone.value)
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Entre pelo WhatsApp')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
@@ -140,6 +169,7 @@ const stepDescription = computed(() => {
     // Vindo do checkout com sacola real: a sacola é o que importa dizer. Sem itens,
     // a copy fica neutra; origem/rota não pode virar contexto inventado.
     if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    if (route.query.motivo === 'favorito') return 'Entre para guardar seus favoritos.'
     if (isCheckoutReturn.value) return copyMessage(authCopy.value?.phone_subtitle, 'Sem senha, rápido e seguro.')
     return ''
   }
@@ -150,12 +180,27 @@ const stepDescription = computed(() => {
 // Admin). Respondem às duas queixas de quem chega pelo site: "pra que eu tenho que
 // fazer isso?" e "o que eu tenho que fazer?".
 const waWhy = computed(() => copyMessage(authCopy.value?.wa_why, 'Sem senha e sem código. A mensagem pronta confirma que o número é seu.'))
-const waSteps = computed(() => copyMessage(
+// A resposta do WhatsApp traz UM botão, e a tela o chama pelo mesmo nome: "Voltar à
+// loja" no celular (a entrada acontece no navegador que ele abrir) ou "Liberar o
+// Chrome" no computador (o toque solta esta aba). `{button}` marca o lugar na copy.
+const waButton = computed(() => waReturnButton.value || 'Voltar à loja')
+const withButton = (text: string) => text.replaceAll('{button}', waButton.value)
+const waSteps = computed(() => withButton(copyMessage(
   authCopy.value?.wa_steps,
-  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nVolte para esta tela. A entrada será automática'
-).split('\n').map(step => step.trim()).filter(Boolean))
-const waWaitingTitle = computed(() => copyTitle(authCopy.value?.wa_waiting, 'Mensagem enviada?'))
-const waWaitingMessage = computed(() => copyMessage(authCopy.value?.wa_waiting, 'Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.'))
+  'Toque em “Abrir o WhatsApp”\nEnvie a mensagem que já está pronta\nNa resposta, toque em “{button}”'
+)).split('\n').map(step => step.trim()).filter(Boolean))
+const waWaitingCopy = computed(() => waReturnMode.value === 'release_this_tab'
+  ? authCopy.value?.wa_waiting
+  : authCopy.value?.wa_waiting_phone)
+const waWaitingTitle = computed(() => copyTitle(waWaitingCopy.value, 'Mensagem enviada?'))
+const waWaitingMessage = computed(() => withButton(copyMessage(
+  waWaitingCopy.value,
+  waReturnMode.value === 'release_this_tab'
+    ? 'Na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.'
+    : 'Na resposta do WhatsApp, toque em “{button}”. A loja abre com você dentro.'
+)))
+// A mensagem chegou e falta o toque no botão da resposta (só no computador, #3271).
+const waArrivedMessage = computed(() => withButton('Agora, na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'O WhatsApp não abriu?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Mande a mensagem abaixo para {phone} no WhatsApp.'))
 const supportUrl = computed(() => withWhatsAppText(
@@ -164,23 +209,29 @@ const supportUrl = computed(() => withWhatsAppText(
 ))
 // A ajuda só aparece esperando algo: o código do SMS ou a volta do WhatsApp. Cada
 // espera tem a sua pergunta — no WhatsApp quem envia é a pessoa, não a loja.
-const supportHeading = computed(() => step.value === 'code' ? 'O código não chegou?' : 'Enviou e nada aconteceu?')
+// Com a mensagem já recebida (falta o toque em "Liberar", #3271), "Enviou e nada
+// aconteceu?" desmentiria o "Sua mensagem chegou" logo acima: o que pode faltar é a
+// resposta da loja no WhatsApp.
+const supportHeading = computed(() => {
+  if (step.value === 'code') return 'O código não chegou?'
+  if (waAwaitingRelease.value) return 'Não recebeu a resposta no WhatsApp?'
+  return 'Enviou e nada aconteceu?'
+})
 const phonePlaceholder = computed(() => phoneRegion.value === 'INTL' ? '+1 202 555 1234' : '(43) 98123-4567')
 const phoneAutocomplete = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'tel-national')
 const phoneInputMode = computed(() => phoneRegion.value === 'INTL' ? 'tel' : 'numeric')
 const regionToggleLabel = computed(() => phoneRegion.value === 'INTL' ? 'Usar número do Brasil' : 'Usar número internacional')
 const resendState = computed(() => resendCooldown(lastSentAtMs.value, nowMs.value, resendWindow.value))
-const debugOtpValidUntil = computed(() => otpValidUntilDisplay(debugOtpExpiresAt.value))
-const debugOtpDigits = computed(() => debugOtpCode.value.split(''))
 const codeValidUntil = computed(() => otpValidUntilDisplay(codeExpiresAt.value))
 const requestedPhoneDisplay = computed(() => phoneDisplay(requestedPhone.value))
 const canContinueWelcome = computed(() => !!welcomeNameValue(welcomeName.value) && !pending.value)
-// Saudação personalizada de retorno: "Bem-vindo de volta, {primeiro nome}!" quando
-// já sabemos o nome (recorrente); sem nome, cai em "Bem-vindo de volta!". O dado vem
+// Saudação personalizada de retorno: "Que bom te ver de novo, {primeiro nome}!" quando
+// já sabemos o nome (recorrente); sem nome, cai em "Que bom te ver de novo!". Voz
+// neutra: a loja não presume o gênero de quem entra (DEV-2026-085). O dado vem
 // da própria resposta de auth (customer_name → session.customerName).
 const greetName = computed(() => (session.customerName.value || '').trim().split(/\s+/)[0] || '')
 const momentTitle = computed(() => {
-  const base = copyTitle(authCopy.value?.auth_confirmed, 'Bem-vindo de volta')
+  const base = copyTitle(authCopy.value?.auth_confirmed, 'Que bom te ver de novo')
   return greetName.value ? `${base}, ${greetName.value}!` : `${base}!`
 })
 const momentMessage = computed(() => moment.value === 'recognized'
@@ -188,13 +239,21 @@ const momentMessage = computed(() => moment.value === 'recognized'
   : copyMessage(authCopy.value?.auth_confirmed, 'Identidade confirmada')
 )
 const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSaved.value
-  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo por 30 dias.')
+  ? copyMessage(authCopy.value?.device_trust_saved, 'Aparelho salvo. Cada entrada renova o prazo.')
   : ''
 )
+
+// Carga pelo servidor: a sacola é relida depois de montar e passa a valer a viva (o
+// cabeçalho ganha a mesma). Sem resposta, fica a do shell, que é desta carga.
+onMounted(() => {
+  if (!cartFromShell.value) return
+  void refreshCart().then(() => { cartFromShell.value = false }).catch(() => null)
+})
 
 onMounted(async () => {
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
+  passkeyHere.value = passkeySupported() && passkeyRememberedHere()
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client && waReturnState.value === 'idle') void waStart(nextUrl.value)
   // Passo do nome aberto já no setup (access link): não houve troca de passo, e
@@ -202,22 +261,70 @@ onMounted(async () => {
   // quem chega aqui ENTROU num passo cuja próxima ação é digitar o nome — o
   // campo recebe o foco como em qualquer outra troca.
   if (step.value === 'welcome') reveal('welcome')
-  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
-  // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
-  // antes de mostrar o passo de telefone a quem já entrou.
-  if (welcomeRequested.value && !welcomeNeeded.value) {
+  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador), ou o recarregar
+  // de quem estava no passo do nome (beta 06/11, SMS-16): o estado do cliente
+  // nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor antes
+  // de mostrar o passo de telefone a quem já entrou.
+  const welcomeWasPending = readStored(WELCOME_PENDING_STORAGE_KEY) != null
+  if ((welcomeRequested.value || welcomeWasPending) && !welcomeNeeded.value) {
     const auth = await $fetch<AuthSessionResponse>(apiPath('/api/auth/session/'), {
       credentials: 'include'
     }).catch(() => null)
     if (auth?.is_authenticated) {
       session.setFromAuthSession(auth)
-      if (auth.requires_welcome) enterWelcomeGateFromSession()
-      // Autenticado e sem nada a confirmar: o convite de boas-vindas já não vale;
-      // segue direto ao destino.
-      else await navigateTo(nextUrl.value)
+      if (auth.requires_welcome) {
+        enterWelcomeGateFromSession()
+        return
+      }
+      // Autenticado e sem nada a confirmar: o passo do nome já não vale.
+      forgetStored(WELCOME_PENDING_STORAGE_KEY)
+      // Só o convite (`?welcome=1`) segue direto ao destino. A marca sozinha pode
+      // ser de outra visita (o nome veio depois, pelo checkout), e quem chega
+      // logado direto em /entrar quer ver o login.
+      if (welcomeRequested.value) {
+        await navigateTo(nextUrl.value)
+        return
+      }
     }
+    forgetStored(WELCOME_PENDING_STORAGE_KEY)
+  }
+  // O código pedido antes do recarregamento ainda vale: a página volta ao passo
+  // de digitá-lo, com o "Reenviar" no relógio de antes (beta 06/11, SMS-08).
+  if (step.value === 'phone') {
+    const pending = restorePendingCode(readStored(PENDING_CODE_STORAGE_KEY), Date.now())
+    if (pending) applyPendingCode(pending)
+    else forgetStored(PENDING_CODE_STORAGE_KEY)
   }
 })
+
+// sessionStorage pode faltar (aba privada, cota, SSR): sem ele a página só
+// perde a memória entre recarregamentos, como antes.
+function readStored (key: string): string | null {
+  if (!import.meta.client) return null
+  try {
+    return window.sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function writeStored (key: string, value: string) {
+  if (!import.meta.client) return
+  try {
+    window.sessionStorage.setItem(key, value)
+  } catch {
+    // Sem armazenamento, o passo vive só na memória da página.
+  }
+}
+
+function forgetStored (key: string) {
+  if (!import.meta.client) return
+  try {
+    window.sessionStorage.removeItem(key)
+  } catch {
+    // Nada guardado, nada a esquecer.
+  }
+}
 
 onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer)
@@ -242,6 +349,8 @@ function syncPhoneFromInput (event: Event) {
   const masked = maskPhoneInput(input.value, phoneRegion.value)
   phone.value = masked
   if (input.value !== masked) input.value = masked
+  // Corrigiu o número: o aviso de telefone inválido sai junto (beta 05/11, LOJA-04).
+  if (authErrorBelongsToPhoneField(error.value)) error.value = null
 }
 
 function phoneValueFromEvent (event?: Event) {
@@ -270,28 +379,41 @@ function fetchErrorView (e: unknown, fallback: string, fallbackField?: string): 
   return authErrorView({
     status,
     detail: typeof data?.detail === 'string' ? data.detail : null,
-    field: (typeof data?.field === 'string' && data.field) || fallbackField || null
+    field: (typeof data?.field === 'string' && data.field) || fallbackField || null,
+    errorCode: typeof data?.error_code === 'string' ? data.error_code : null
   }, fallback)
 }
 
 function applyCodeDelivery (response: RequestCodeResponse, method: AuthDeliveryMethod) {
-  requestedPhone.value = response.phone
-  deliveryLabel.value = response.delivery_label
   devConsoleHint.value = !!response.dev_console_hint
-  codeExpiresAt.value = response.code_expires_at || ''
-  debugOtpCode.value = response.debug_otp_code || ''
-  debugOtpExpiresAt.value = response.debug_otp_expires_at || ''
-  showDebugOtp.value = true
-  lastDeliveryMethod.value = method
-  resendWindow.value = resendWindowMs(response.resend_after_seconds)
-  lastSentAtMs.value = Date.now()
+  applyPendingCode({
+    phone: response.phone,
+    deliveryMethod: method,
+    deliveryLabel: response.delivery_label,
+    codeExpiresAt: response.code_expires_at || '',
+    lastSentAtMs: Date.now(),
+    resendWindowMs: resendWindowMs(response.resend_after_seconds)
+  })
 }
 
-// Preenche o campo com o código de teste; o watcher de `code` confirma sozinho.
-function useDebugOtp () {
-  if (debugOtpCode.value.length !== 6 || step.value !== 'code') return
-  error.value = null
-  codeDigits.value = debugOtpCode.value.split('').map(Number)
+// Põe a página no passo do código e guarda o envio para o recarregamento.
+function applyPendingCode (pending: PendingCode) {
+  requestedPhone.value = pending.phone
+  deliveryLabel.value = pending.deliveryLabel
+  codeExpiresAt.value = pending.codeExpiresAt
+  lastDeliveryMethod.value = pending.deliveryMethod === 'sms' ? 'sms' : 'whatsapp'
+  resendWindow.value = pending.resendWindowMs
+  lastSentAtMs.value = pending.lastSentAtMs
+  if (pending.codeExpiresAt) writeStored(PENDING_CODE_STORAGE_KEY, JSON.stringify(pending))
+}
+
+// O servidor recusou um envio novo porque o último é recente. Se aquele código
+// ainda vale, a página vai ao passo de digitá-lo; o aviso diz quanto falta.
+function applyCooldown (e: unknown): boolean {
+  const pending = pendingCodeFromCooldown(httpError(e).data, Date.now())
+  if (!pending) return false
+  applyPendingCode(pending)
+  return true
 }
 
 async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
@@ -332,7 +454,29 @@ async function onWhatsappReturn (response: WhatsappClaimResponse) {
   await celebrateAndGo('confirmed')
 }
 
+// A chave assinou e o servidor abriu a sessão com identidade forte. Mesmo fim das outras
+// portas: nome, se faltar (o passo troca e o próximo foco leva ao campo); senão, a festa
+// do aparelho reconhecido. Cancelar não é erro: a tela fica como estava, WhatsApp abaixo.
+async function enterWithPasskey () {
+  if (passkeyBusy.value || pending.value) return
+  error.value = null
+  const response = await passkeySignIn()
+  if (!response) {
+    if (passkeyError.value) error.value = authErrorView({}, passkeyError.value)
+    return
+  }
+  waStop()
+  waClear()
+  verified.value = true
+  if (response.requires_welcome) {
+    enterWelcomeGate(response)
+    return
+  }
+  await celebrateAndGo('recognized')
+}
+
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
+  writeStored(WELCOME_PENDING_STORAGE_KEY, '1')
   welcomeNeeded.value = true
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
 }
@@ -341,6 +485,7 @@ function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
 // chega já autenticado pelo access link pula telefone e código — `verified`
 // vira true para a máquina de passos aterrissar direto em 'welcome'.
 function enterWelcomeGateFromSession () {
+  writeStored(WELCOME_PENDING_STORAGE_KEY, '1')
   verified.value = true
   welcomeNeeded.value = true
   welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
@@ -348,12 +493,14 @@ function enterWelcomeGateFromSession () {
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
   syncPhoneFromEvent(event)
+  if (!authPhoneIsComplete(phone.value, phoneRegion.value, defaultDdd.value)) {
+    error.value = authErrorView({ field: 'phone' }, LOCAL_PHONE_ERROR)
+    return
+  }
   pending.value = true
   error.value = null
   codeDigits.value = []
   devConsoleHint.value = false
-  debugOtpCode.value = ''
-  debugOtpExpiresAt.value = ''
   try {
     const devicePayload = authPhonePayload(phone.value, phoneRegion.value, undefined, defaultDdd.value)
     const trusted = await $fetch<VerifyResponse & { trusted?: boolean }>(apiPath('/api/auth/device-check/'), {
@@ -383,6 +530,7 @@ async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Eve
     })
     applyCodeDelivery(response, method)
   } catch (e) {
+    applyCooldown(e)
     error.value = fetchErrorView(e, 'Não foi possível enviar o código.')
   } finally {
     pending.value = false
@@ -403,8 +551,11 @@ async function resendCode () {
       body: payload
     })
     applyCodeDelivery(response, lastDeliveryMethod.value)
+    // O SMS novo traz outro código: a espera recomeça por ele.
+    void listenSmsCode()
     if (import.meta.client) useSonner.success('Enviamos um novo código.')
   } catch (e) {
+    applyCooldown(e)
     error.value = fetchErrorView(e, 'Não foi possível reenviar o código.')
   } finally {
     pending.value = false
@@ -427,6 +578,7 @@ async function verifyCode () {
       body: { phone: requestedPhone.value, code: code.value }
     })
     session.setFromAuthSession(response)
+    forgetStored(PENDING_CODE_STORAGE_KEY)
     if (trustedDevice.value) {
       const trustResponse = await $fetch<{ trusted?: boolean }>(apiPath('/api/auth/trust-device/'), {
         method: 'POST',
@@ -437,8 +589,6 @@ async function verifyCode () {
       trustSaved.value = !!trustResponse?.trusted
     }
     devConsoleHint.value = false
-    debugOtpCode.value = ''
-    debugOtpExpiresAt.value = ''
     verified.value = true
     if (response.requires_welcome) {
       enterWelcomeGate(response)
@@ -447,6 +597,16 @@ async function verifyCode () {
     await celebrateAndGo('confirmed')
   } catch (e) {
     error.value = fetchErrorView(e, 'Código inválido ou expirado.', 'code')
+    // Os dígitos errados não ficam no campo: o próximo palpite começa limpo.
+    codeDigits.value = []
+    if (authErrorKillsCode(error.value)) {
+      // O código morreu (venceu ou acabaram as tentativas): sai a validade que
+      // a tela ainda mostrava e o "Reenviar" libera já. O servidor não cobra
+      // espera de um código morto por tentativas (beta 06/11, SMS-07).
+      codeExpiresAt.value = ''
+      lastSentAtMs.value = null
+      forgetStored(PENDING_CODE_STORAGE_KEY)
+    }
   } finally {
     pending.value = false
   }
@@ -465,6 +625,7 @@ async function submitWelcome () {
       body: welcomeNameFields(name)
     })
     session.setIdentity({ name, requiresWelcome: false })
+    forgetStored(WELCOME_PENDING_STORAGE_KEY)
     await navigateTo(nextUrl.value)
   } catch (e) {
     error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')
@@ -475,18 +636,18 @@ async function submitWelcome () {
 
 // "Deixar para depois": o nome fica para outra hora; o gate não prende ninguém.
 async function skipWelcome () {
+  forgetStored(WELCOME_PENDING_STORAGE_KEY)
   session.setIdentity({ requiresWelcome: false })
   await navigateTo(nextUrl.value)
 }
 
 function returnToPhoneStep () {
+  forgetStored(PENDING_CODE_STORAGE_KEY)
   requestedPhone.value = ''
   codeDigits.value = []
   error.value = null
   devConsoleHint.value = false
   codeExpiresAt.value = ''
-  debugOtpCode.value = ''
-  debugOtpExpiresAt.value = ''
 }
 
 useSeoMeta({
@@ -514,8 +675,11 @@ useSeoMeta({
         <template v-else>
         <!-- Bloco de foco do passo (useNextFocus): o título viaja junto com os
              campos. `data-focus-target` aplica a régua única do Storefront —
-             exatamente a base visual da navbar (4rem + fio Brass de 6px). -->
-        <section :data-focus-target="step" class="shop-stack-block outline-none" tabindex="-1">
+             exatamente a base visual da navbar (4rem + fio Brass de 6px).
+             O respiro entre o cabeçalho e o título é do BLOCO, como no checkout
+             (o passo tem py-4): `-mt-4 pt-4` põe 16px acima do título sem mexer
+             no lugar dele na página parada. Sem isso o título encostava no fio. -->
+        <section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">
         <header>
           <h1 class="shop-title">{{ stepTitle }}</h1>
           <p v-if="stepDescription" class="mt-2 shop-muted">{{ stepDescription }}</p>
@@ -525,12 +689,44 @@ useSeoMeta({
           <UiAlertTitle>{{ error.title }}</UiAlertTitle>
           <UiAlertDescription>{{ error.message }}</UiAlertDescription>
         </UiAlert>
-        <UiAlert v-else-if="error" id="login-error" role="alert" variant="destructive">
+        <UiAlert v-else-if="error && !phoneErrorInline" id="login-error" role="alert" variant="destructive">
           <UiAlertTitle>{{ error.title }}</UiAlertTitle>
           <UiAlertDescription>{{ error.message }}</UiAlertDescription>
+          <!-- O código estava certo e a saída é falar com a loja: o botão mora no
+               próprio aviso, não no rodapé da página (beta 05/11, LOJA-03). -->
+          <UiButton
+            v-if="authErrorOffersSupport(error) && supportUrl"
+            :href="supportUrl"
+            target="_blank"
+            rel="noopener"
+            variant="outline"
+            icon="lucide:message-circle"
+            class="mt-3"
+            data-login-error-support
+          >
+            Falar com a loja
+          </UiButton>
         </UiAlert>
 
         <div v-if="step === 'phone'" class="shop-stack-block">
+          <!-- A chave deste aparelho, quando ela mora aqui: um toque e a confirmação do
+               próprio aparelho, sem mensagem nem código. Vem antes do WhatsApp porque é o
+               caminho mais curto; o WhatsApp continua logo abaixo para quem preferir. Some
+               enquanto a tela espera a volta do WhatsApp: ali o foco é a mensagem. -->
+          <UiButton
+            v-if="passkeyHere && !waWaiting"
+            type="button"
+            variant="outline"
+            size="lg"
+            icon="lucide:key-round"
+            class="w-full justify-center"
+            :loading="passkeyBusy"
+            data-login-passkey
+            @click="enterWithPasskey"
+          >
+            Entrar com a chave deste aparelho
+          </UiButton>
+
           <!-- Um caminho na frente: o porquê, três passos e um botão. Depois do toque,
                a mesma área vira a espera, e o plano B (envio manual) mora lá. -->
           <WhatsappVerifyPanel
@@ -542,6 +738,9 @@ useSeoMeta({
             :waiting="waWaiting"
             :return-state="waReturnState"
             :checking="waChecking"
+            :not-arrived="waNotArrived"
+            :awaiting-release="waAwaitingRelease"
+            :arrived-message="waArrivedMessage"
             :why="waWhy"
             :steps="waSteps"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Abrir o WhatsApp')"
@@ -598,11 +797,14 @@ useSeoMeta({
                   :autocomplete="phoneAutocomplete"
                   :placeholder="phonePlaceholder"
                   :maxlength="phoneRegion === 'INTL' ? 24 : 16"
+                  :aria-invalid="phoneErrorInline || undefined"
+                  :aria-describedby="phoneErrorInline ? 'login-phone-error' : undefined"
                   data-focus-control
                   @input="syncPhoneFromInput"
                 />
               </UiInputGroup>
-              <UiFieldDescription>Enviamos um código por SMS para este número.</UiFieldDescription>
+              <UiFieldError v-if="phoneErrorInline && error" id="login-phone-error" data-login-phone-error :errors="[error.message]" />
+              <UiFieldDescription v-else>Vamos enviar um código por SMS para este número.</UiFieldDescription>
             </UiField>
 
             <div class="grid gap-3">
@@ -629,46 +831,7 @@ useSeoMeta({
             <span class="whitespace-nowrap font-semibold tabular-nums">{{ requestedPhoneDisplay }}</span>.
           </p>
 
-          <UiAlert v-if="debugOtpCode && showDebugOtp" variant="warning" data-testid="debug-otp-alert" class="relative text-center">
-            <UiButton
-              type="button"
-              size="icon-sm"
-              variant="ghost"
-              icon="lucide:x"
-              aria-label="Ocultar código de teste"
-              class="absolute right-2 top-2"
-              @click="showDebugOtp = false"
-            />
-            <UiAlertTitle class="flex flex-col items-center gap-2 text-center">
-              <UiBadge variant="secondary" class="text-xs uppercase tracking-wide">Ambiente de teste</UiBadge>
-              <span>Código para entrar</span>
-            </UiAlertTitle>
-            <!-- !flex sobrescreve o `grid justify-items-start` do AlertDescription
-                 (que encolhia caixa/botão ao conteúdo e grudava à esquerda). -->
-            <UiAlertDescription class="!flex w-full flex-col">
-              <div class="mt-2 flex w-full flex-col gap-3">
-                <div
-                  class="flex w-full justify-center gap-3 rounded-lg border border-current/20 bg-current/5 py-3 font-mono text-3xl font-semibold tabular-nums"
-                  data-testid="debug-otp-code"
-                >
-                  <span v-for="(digit, index) in debugOtpDigits" :key="index">{{ digit }}</span>
-                </div>
-                <UiButton
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  icon="lucide:wand-sparkles"
-                  class="w-full justify-center"
-                  @click="useDebugOtp"
-                >
-                  Usar código de teste
-                </UiButton>
-              </div>
-              <p v-if="debugOtpValidUntil" class="mt-2 w-full text-center text-xs opacity-80">Válido até {{ debugOtpValidUntil }}.</p>
-            </UiAlertDescription>
-          </UiAlert>
-
-          <UiAlert v-else-if="devConsoleHint && !debugOtpCode" variant="warning">
+          <UiAlert v-if="devConsoleHint" variant="warning">
             <UiAlertTitle>Código no terminal local</UiAlertTitle>
             <UiAlertDescription>Leia o código no terminal onde o projeto está rodando.</UiAlertDescription>
           </UiAlert>
@@ -716,7 +879,7 @@ useSeoMeta({
             <div class="-mx-4 flex w-full items-center gap-4 border-y px-4 py-3 sm:mx-0 sm:px-0" data-login-trust>
               <div class="min-w-0 flex-1">
                 <p class="shop-body font-semibold">{{ copyTitle(authCopy?.device_trust_prompt, 'Salvar este aparelho?') }}</p>
-                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um aparelho seu. Por 30 dias, você entra sem código.') }}</p>
+                <p class="mt-0.5 shop-meta">{{ copyMessage(authCopy?.device_trust_prompt, 'Use só em um aparelho seu. Nas próximas entradas, você entra sem código.') }}</p>
               </div>
               <UiSwitch id="trusted-device" v-model="trustedDevice" />
             </div>
@@ -770,7 +933,9 @@ useSeoMeta({
              chamada: título, frase e botão centrados. -->
         <!-- Ajuda só onde alguém pode estar travado: esperando a mensagem ou o código.
              Na primeira tela ela era mais uma coisa a entender antes do botão. -->
-        <div v-if="supportUrl && (step === 'code' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
+        <!-- Com o conflito de identidade o botão já está no aviso de cima: o cartão
+             repetiria "Falar com a loja" duas vezes na mesma tela. -->
+        <div v-if="supportUrl && (step === 'code' || waWaiting) && !authErrorOffersSupport(error)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support>
           <p class="shop-item-title font-semibold">{{ supportHeading }}</p>
           <p class="mt-1 shop-muted">Fale com a loja e resolvemos juntos.</p>
           <UiButton

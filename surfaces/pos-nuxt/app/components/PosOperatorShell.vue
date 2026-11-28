@@ -18,27 +18,67 @@
 // precisa de "menos na tela do cliente", o lugar dela não é este arquivo.
 //
 import { refreshScopeForChannel } from "~/presentation/events";
+import { posSupportContext } from "~/presentation/supportContext";
 import { posCorridorRoute } from "~/presentation/sections";
 
 // Resiliência de rede (kit): reconciliação ao reconectar/reganhar foco — o tablet do
 // balcão que dormiu não fica com dados velhos. O <OfflineBanner> (auto-import do kit)
 // dá o aviso calmo enquanto offline.
-const { pos, refresh, refreshTabs } = await usePosTerminal();
+const { pos, refresh, refreshTabs, refreshAvailability } = await usePosTerminal();
 const { onReconnect } = useConnectivity();
-onReconnect(() => refresh());
 
 // Re-gate global de sessão (kit): um 401 no meio do turno (sessão expirada do
 // lado do Django) sobe a tela de senha em vez de o operador bater numa sessão
 // morta.
-const { expired: sessionExpired } = useOperatorSession();
+const { expired: sessionExpired, signedInHereBefore } = useOperatorSession();
+// A sessão que caiu logo depois de entrar (o login recarrega a página) voltava ao
+// login vazio, sem dizer por quê (P2-15, #3194). A marca é da aba e só existe no
+// cliente: lida ao montar, para o SSR e a hidratação desenharem o mesmo login.
+const signedInBefore = ref(false);
+onMounted(() => {
+  signedInBefore.value = signedInHereBefore();
+});
+const sessionEnded = computed(() => sessionExpired.value || signedInBefore.value);
 
 // Identidade do operador (PIN/crachá) pelo LOCK COMPARTILHADO do kit — o MESMO
 // `useOperatorLock` + `<OperatorLock>` dos outros 4 apps de operador.
 const OPERATOR_PERM = "cashman.operate_pos";
 // `refreshOperatorSession` e não `refresh`: `refresh` aqui já é o da Projection
 // do terminal (`usePosTerminal`, linha 17). São duas leituras diferentes.
-const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession, stationRef, mustChange, lock, operator } =
-  useOperatorLock(OPERATOR_PERM);
+const {
+  locked,
+  canIdentify,
+  sessionState,
+  sessionUnavailable,
+  refresh: refreshOperatorSession,
+  stationRef,
+  mustChange,
+  lock,
+  operator,
+} = useOperatorLock(OPERATOR_PERM);
+// Destravou: toda leitura feita com a tela travada voltou 403 `station_locked`, e
+// a tela ficava nesse erro com alguém já identificado ("Estação travada.
+// Identifique-se…" nas Encomendas) e o rail sem "Encomendas", que leu a recusa
+// como falta de permissão (beta 07/11). Ao destravar, relê tudo o que a tela lê.
+watch(locked, (now, before) => {
+  if (before && !now) void refreshNuxtData();
+});
+// O mesmo portão dos outros apps (beta 05/11, CEN-03). Sem ele, quem não opera o
+// caixa (a Cozinha, digitando o endereço) via a casca do PDV com "Não foi possível
+// ler as comandas agora", sem saída, e o servidor recebia o mesmo 403 em sequência.
+// Do portão o PDV usa só a recusa: a trava continua sobreposta à venda (ela não
+// derruba a tela por baixo), e a tela de senha tem a regra própria logo abaixo.
+const surface = computed(() =>
+  operatorSurfaceGate({
+    sessionState: sessionState.value,
+    canIdentify: canIdentify.value,
+    sessionUnavailable: sessionUnavailable.value,
+    locked: locked.value,
+    mustChange: mustChange.value,
+    harness: false,
+  }),
+);
+const forbidden = computed(() => surface.value.showForbidden);
 
 // Tempo real entre estações (ADR-016): pedido de troco, devolução pendente e
 // turno aberto/fechado feitos em OUTRA estação chegam por push; no evento,
@@ -47,14 +87,25 @@ const { locked, canIdentify, sessionUnavailable, refresh: refreshOperatorSession
 // O SSE só conecta com a estação identificada e desbloqueada (F3): no gate
 // (login/lock) os canais são negados e o EventSource entraria no ciclo de
 // reconexão com 400 — quem garante a tela ali é o poll de fallback.
-// O aviso de comanda relê só o quadro (`refreshTabs`); o do caixa, o poll e a
-// volta à aba relêem a projeção inteira.
+// O aviso de comanda relê só o quadro (`refreshTabs`); o de estoque, só os selos
+// da grade (`refreshAvailability`); produto pausado e mutação do canal, o do caixa,
+// o poll e a volta à aba relêem a projeção inteira.
+// Recusado não relê: a resposta seria o mesmo 403.
 const { realtime } = usePosEvents(
-  (channel) => (refreshScopeForChannel(channel?.path) === "tabs" ? refreshTabs() : refresh()),
-  { enabled: () => canIdentify.value && !locked.value },
+  (channel, event) => {
+    if (forbidden.value) return;
+    const scope = refreshScopeForChannel(channel?.path, event);
+    if (scope === "tabs") return refreshTabs();
+    if (scope === "availability") return refreshAvailability();
+    return refresh();
+  },
+  { enabled: () => canIdentify.value && !locked.value && !forbidden.value },
 );
 // O "ao vivo" dos cabeçalhos (camada da suíte) lê daqui: o estado do push e a hora
 // da última leitura da Projection.
+onReconnect(() => {
+  if (!forbidden.value) void refresh();
+});
 const live = usePosLiveState();
 watch(realtime, (value) => { live.value.realtime = value; }, { immediate: true });
 watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediate: true });
@@ -63,7 +114,7 @@ watch(pos, () => { live.value.lastRead = new Date().toISOString(); }, { immediat
 // qualquer tela do PDV e dá o pronto do ticket da estação sem tela (decisão do
 // dono, 26/09/2026). Só com alguém identificado — com a tela travada, as teclas
 // são do PIN/crachá, e o pronto precisa de um operador para assinar.
-useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value });
+useKitchenTicketScanner({ enabled: () => canIdentify.value && !locked.value && !forbidden.value });
 
 // Comanda pronta: a cozinha terminou tudo o que foi disparado e o balcão ouve, em
 // qualquer tela do PDV (decisão do dono, 13/10/2026). O selo e o topo são do quadro.
@@ -101,9 +152,18 @@ const needsLogin = computed(
   () => (!canIdentify.value && !sessionUnavailable.value) || sessionExpired.value,
 );
 
-const { sections, current, select } = usePosShell(pos);
+const { sections, switcherSections, current, select } = usePosShell(pos);
 const route = useRoute();
 const corridor = computed(() => posCorridorRoute(route.path));
+
+// O que o chamado leva junto: app, tela, posto e terminal. Refs, nunca PII.
+const supportContext = computed(() =>
+  posSupportContext({
+    route: route.path,
+    station: stationRef.value,
+    terminal: pos.value?.terminal_ref ?? "",
+  }),
+);
 
 </script>
 
@@ -133,13 +193,15 @@ const corridor = computed(() => posCorridorRoute(route.path));
       mode="page"
       large-fields
       icon="lucide:lock-keyhole"
-      :title="sessionExpired ? 'Sua sessão expirou' : 'Entre para operar o caixa'"
+      :title="sessionEnded ? 'Sua sessão terminou' : 'Entre para operar o caixa'"
       :description="
-        sessionExpired
-          ? 'Entre de novo para continuar de onde parou.'
+        sessionEnded
+          ? 'Entre de novo para continuar.'
           : 'Acesse com sua conta autorizada a operar o caixa.'
       "
     />
+
+    <OperatorSurfaceForbidden v-else-if="forbidden" :perm="OPERATOR_PERM" />
 
     <OperatorStationSetup
       v-else-if="stationSetup.offer.value"
@@ -158,8 +220,12 @@ const corridor = computed(() => posCorridorRoute(route.path));
       storage-key="pos"
       :sections="sections"
       :current="current"
+      :switcher-sections="switcherSections"
+      default-form="floor"
+      floor-bar
       label="Seções do PDV"
       :operator-name="operator?.name"
+      :support-context="supportContext"
       @select="select"
       @lock="lock()"
     >

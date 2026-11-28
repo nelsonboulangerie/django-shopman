@@ -12,8 +12,14 @@ test.describe("POS — gate de login (sessão de operador ausente)", () => {
     await expect(page.getByRole("button", { name: /Entrar/i })).toBeVisible();
   });
 
-  test("o botão Entrar começa desabilitado (sem usuário/senha)", async ({ page }) => {
+  // O Entrar não fica apagado esperando os campos: apagado, o toque não dizia o que
+  // faltava (beta 05/11, CEN-15). O toque diz, e marca só o campo vazio.
+  test("Entrar sem usuário e senha diz o que falta, sem sair da tela", async ({ page }) => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: /Entrar/i })).toBeDisabled();
+    const entrar = page.getByRole("button", { name: /Entrar/i });
+    await expect(entrar).toBeEnabled();
+    await entrar.click();
+    await expect(page.getByText("Informe usuário e senha.").first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Entre para operar o caixa/i })).toBeVisible();
   });
 });

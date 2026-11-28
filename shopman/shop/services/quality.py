@@ -18,7 +18,7 @@ def reviewed_saleable_quantity(work_order_ref: str, *, channel_ref: str) -> Deci
     """Return manager-reviewed quantity eligible for the canonical channel policy."""
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
 
-    from shopman.shop.projections.channel_policy import resolve_channel_policy
+    from shopman.shop.services.channel_policy import resolve_channel_policy
 
     work_order = WorkOrder.objects.filter(ref=work_order_ref).first()
     if work_order is None:

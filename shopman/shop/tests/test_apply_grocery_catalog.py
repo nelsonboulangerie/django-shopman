@@ -44,6 +44,14 @@ def _refs(sku: str) -> set[str]:
     return set(ListingItem.objects.filter(product__sku=sku).values_list("listing__ref", flat=True))
 
 
+def _live_refs(sku: str) -> set[str]:
+    """Onde o item VENDE: a regra remota pausa o vínculo, não apaga (beta 05/11, GES-02)."""
+    return set(
+        ListingItem.objects.filter(product__sku=sku, is_published=True, is_sellable=True)
+        .values_list("listing__ref", flat=True)
+    )
+
+
 # ── A tabela ──────────────────────────────────────────────────────────────
 
 
@@ -116,7 +124,8 @@ def test_cria_a_revenda_so_no_pdv(catalog):
     assert (dijon.name, dijon.base_price_q, dijon.unit, dijon.unit_weight_g) == (
         "Mostarda Dijon Maille 215g", 3500, "un", 215,
     )
-    assert dijon.is_sellable and not dijon.is_published
+    # Publicado: oculto sairia também do PDV (decisão do dono, 05/11, GES-10).
+    assert dijon.is_sellable and dijon.is_published
     # Mostarda preparada está na ST do PR (17.038.00): revenda com ST.
     # Importada, comprada de distribuidor no Brasil: origem 2.
     assert dijon.metadata["fiscal"] == {
@@ -173,7 +182,8 @@ def test_sem_foto_nao_entra_na_loja_online_e_sai_se_estiver(catalog):
 
     report = apply_grocery(apply=True)
 
-    assert _refs(DIJON) == {"pdv"}
+    assert _live_refs(DIJON) == {"pdv"}
+    assert _refs(DIJON) == {"pdv", "web"}, "pausa, não apaga"
     assert (DIJON, "web") in report["unlisted"]
 
 
@@ -384,7 +394,7 @@ def test_caixa_presente_e_produto_da_casa_so_no_pdv(catalog):
         caixa = Product.objects.get(sku=box.sku)
         assert (caixa.name, caixa.base_price_q) == (box.name, box.price_q)
         # Kit sem composição: cadastrado e listado no PDV, fora da venda.
-        assert not caixa.is_sellable and not caixa.is_published
+        assert not caixa.is_sellable and caixa.is_published
         assert "purchase" not in caixa.metadata
         assert get_social_attributes(caixa).gtin == ""
         assert _refs(box.sku) == {"pdv"}
@@ -432,7 +442,8 @@ def test_item_a_quilo_nao_vai_para_canal_remoto_nem_com_foto(catalog):
 
     report = apply_grocery(apply=True)
 
-    assert _refs(VALE_DO_TESTO) == {"pdv"}
+    assert _live_refs(VALE_DO_TESTO) == {"pdv"}
+    assert _refs(VALE_DO_TESTO) == {"pdv", "web"}, "pausa, não apaga"
     assert (VALE_DO_TESTO, "web") in report["unlisted"]
 
 

@@ -63,6 +63,9 @@ describe("a frase do ponto em leitura", () => {
       "Croissant: Sem diferença",
     );
     expect(divergingText(0, { ...overShort, zero: "Vendeu o que fez" }, String)).toBe("Vendeu o que fez");
+    // O ponto sem dado tem a palavra do quadro quando ele a dá (ge:BI-01).
+    expect(divergingText(null, overShort, String)).toBe("sem dado");
+    expect(divergingText(null, { ...overShort, missing: "Sem turno fechado" }, String)).toBe("Sem turno fechado");
   });
 
   it("usa o formato do consumidor", () => {

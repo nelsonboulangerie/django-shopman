@@ -4,14 +4,19 @@
 // only derives the view shape + the functional-color tone for the semaphore. No
 // time/SLA arithmetic (the backend owns elapsed/target/timer_class).
 import type { KDSBoardProjection, KDSChangeKind, KDSTicketProjection, KDSTimerClass } from "~/types/kds";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
 /** Functional tone for a ticket's urgency (cor só onde tem significado). */
-export type KDSTone = "ok" | "warning" | "late";
+export type KDSTone = TimeTone;
 
-export function ticketTone(timerClass: KDSTimerClass): KDSTone {
-  if (timerClass === "timer-late") return "late";
-  if (timerClass === "timer-warning") return "warning";
-  return "ok";
+export function ticketTone(timerClass: KDSTimerClass, status = ""): KDSTone {
+  if (status === "done") return timeTone("ready");
+  if (timerClass === "timer-late") return timeTone("late");
+  if (timerClass === "timer-warning") return timeTone("warning");
+  return timeTone("on_time");
 }
 
 /** Fill for the time-to-SLA bar by tone — o ÚNICO elemento de cor de urgência do
@@ -21,6 +26,7 @@ export function ticketTone(timerClass: KDSTimerClass): KDSTone {
 export function toneBar(tone: KDSTone): string {
   if (tone === "late") return "bg-red-500";
   if (tone === "warning") return "bg-amber-500";
+  if (tone === "ready") return "bg-success";
   return "bg-muted-foreground/30";
 }
 
@@ -37,7 +43,9 @@ export function toneNextSurface(tone: KDSTone): string {
     return "border-2 border-destructive bg-destructive/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--destructive)_15%,transparent)]";
   if (tone === "warning")
     return "border-2 border-warning bg-warning/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--warning)_15%,transparent)]";
-  return "border-2 border-primary bg-primary/5 shadow-[0_0_0_4px_color-mix(in_oklab,var(--primary)_12%,transparent)]";
+  if (tone === "ready")
+    return "border-2 border-success bg-success/8 shadow-[0_0_0_4px_color-mix(in_oklab,var(--success)_15%,transparent)]";
+  return "border-2 border-border bg-muted/40 shadow-[0_0_0_4px_color-mix(in_oklab,var(--foreground)_8%,transparent)]";
 }
 
 /** O relógio do card na v4 (`.tm`): o tempo contra a meta num número só. Atrasado é
@@ -46,6 +54,7 @@ export function toneNextSurface(tone: KDSTone): string {
 export function toneTimerChip(tone: KDSTone): string {
   if (tone === "late") return "border border-destructive bg-destructive text-destructive-foreground";
   if (tone === "warning") return "border border-warning/60 text-warning";
+  if (tone === "ready") return "border border-success/60 text-success";
   return "border border-border text-foreground";
 }
 
@@ -66,10 +75,11 @@ export function ticketPill(
   const tone = ticketTone(ticket.timer_class as KDSTimerClass);
   // O de agora já diz a posição no rótulo acima do código ("Agora"); a pílula diz só o
   // prazo, para "Próximo" não nomear dois tickets na mesma tela.
-  if (state.next) {
-    if (tone === "late") return { label: "Atrasado", tone: "destructive" };
-    if (tone === "warning") return { label: "Perto da meta", tone: "warning" };
-  }
+  // Atrasado vale para todo card, não só o de agora: o relógio vermelho com a pílula
+  // "Novo" ao lado se contradiziam (beta 05/11, KDS-15). O estado o botão já diz
+  // ("Iniciar preparo" / "Pronto").
+  if (tone === "late") return { label: "Atrasado", tone: "destructive" };
+  if (state.next && tone === "warning") return { label: "Perto da meta", tone: "warning" };
   if (ticket.status === "pending") return { label: "Novo", tone: "info" };
   if (ticket.status === "in_progress") return { label: "Em preparo", tone: "primary" };
   return null;
@@ -92,10 +102,11 @@ export function toneTimer(tone: KDSTone): string {
   if (tone === "late") return "border-red-500/40 bg-red-500/15 text-red-300";
   if (tone === "warning")
     return "border-amber-500/40 bg-amber-500/15 text-amber-300";
+  if (tone === "ready") return "border-success/40 bg-success/15 text-success";
   return "border-white/10 bg-white/5 text-muted-foreground";
 }
 
-const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, ok: 2 };
+const TONE_RANK: Record<KDSTone, number> = { late: 0, warning: 1, neutral: 2, ready: 3 };
 
 /** Segundos até o prazo do ticket (negativo quando passou): a hora combinada com o
  *  cliente quando há uma; sem ela, a meta da estação contada desde que o ticket
@@ -150,6 +161,31 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
     .sort((a, b) => b.qty - a.qty);
 }
 
+/**
+ * Quais chips do "A fazer" cabem numa linha, em ordem (os índices). Cabem os que
+ * cabem, INTEIROS: um nome longo que não cabe não esconde os curtos que vêm depois
+ * (beta 05/11, KDS-08: parar no primeiro que não cabia deixava 40% da linha vazia).
+ * `reserve` é o lugar do rótulo; `more` o do "+N itens", só descontado quando sobra algo.
+ */
+export function fitAllDayChips(
+  widths: number[],
+  available: number,
+  { reserve, more, gap }: { reserve: number; more: number; gap: number },
+): number[] {
+  const all = widths.map((_, index) => index);
+  if (!available) return all;
+  const total = widths.reduce((sum, value) => sum + value + gap, 0);
+  if (reserve + total <= available) return all;
+  let used = reserve + more;
+  const fit: number[] = [];
+  widths.forEach((value, index) => {
+    if (used + value + gap > available) return;
+    used += value + gap;
+    fit.push(index);
+  });
+  return fit;
+}
+
 // ── Os dois gestos da cozinha ───────────────────────────────────────────────
 // O card tem UM botão, e o botão diz o ato pelo nome: "Iniciar preparo" e
 // depois "Pronto W07". O ato de terminar se chama Pronto em todo tamanho (decisão
@@ -165,6 +201,23 @@ export function allDayCounts(cards: KDSTicketProjection[]): KDSAllDayCount[] {
  *  Durante o intervalo o rótulo já é "Pronto" — o que muda é só ele
  *  não aceitar o toque, e isso não pisca rótulo na cara de ninguém. */
 export const KDS_ARM_DELAY_MS = 900;
+
+/** A ação da base (celular) volta a esperar `KDS_ARM_DELAY_MS` antes de aceitar toque:
+ *  - quando o MESMO pedido passa de "pendente" a "em preparo" (o toque que iniciou não
+ *    pode, quicando, marcar Pronto);
+ *  - quando o pedido em foco TROCA por outro. A base fica no mesmo lugar: ao fim do
+ *    Desfazer o pedido sai e o seguinte assume o botão, e um toque atrasado no
+ *    "Desfazer 0131" marcava "Pronto 0138". Vale também para o pedido que entra no
+ *    topo da fila durante uma atualização.
+ *  O primeiro foco da tela (sem pedido anterior) nasce armado. */
+export function barNeedsArmDelay(
+  previous: { pk?: number | null; status?: string },
+  next: { pk?: number | null; status?: string },
+): boolean {
+  if (next.pk == null) return false;
+  if (previous.pk === next.pk) return previous.status === "pending" && next.status === "in_progress";
+  return previous.pk != null;
+}
 
 /** Janela de "Desfazer" do Pronto. O Pronto tem efeito fora da cozinha
  *  (o pedido vira PRONTO e o cliente é avisado), e o "Reabrir" não desavisa
@@ -340,11 +393,13 @@ export function fulfillmentLabel(fulfillmentIcon: string): string {
 /** A linha de baixo do código (prévia v4, nota 6): "Card sem canal, telefone nem
  *  cliente". A venda do dia diz só "Retirada"/"Entrega"; a encomenda diz "Encomenda"
  *  e o cliente, porque é com ele que a hora foi combinada ("Encomenda · Café
- *  Parisiense"). O nome do cliente nunca é telefone. */
+ *  Parisiense"). O nome do cliente nunca é telefone. A venda de balcão diz o que
+ *  o PDV marcou, "Consumir aqui" ou "Para levar" (#3193): no prato ou embalado. */
 export function ticketOverline(
-  ticket: Pick<KDSTicketProjection, "fulfillment_icon" | "is_preorder" | "customer_name" | "previous_tab_ref">,
+  ticket: Pick<KDSTicketProjection, "fulfillment_icon" | "is_preorder" | "customer_name" | "previous_tab_ref">
+    & Partial<Pick<KDSTicketProjection, "service_label">>,
 ): string {
-  if (!ticket.is_preorder) return fulfillmentLabel(ticket.fulfillment_icon);
+  if (!ticket.is_preorder) return ticket.service_label || fulfillmentLabel(ticket.fulfillment_icon);
   const name = (ticket.customer_name || "").trim();
   const showName = name && name !== ticket.previous_tab_ref && !looksLikePhone(name);
   return showName ? `Encomenda · ${name}` : "Encomenda";
@@ -357,9 +412,12 @@ function looksLikePhone(value: string): boolean {
 /** "iniciado por Rafael às 21:56 · retira às 22:30" (prévia v4, nota 7: "quem iniciou
  *  aparece no card"). Vazio quando não há nada a dizer. */
 export function ticketStartLine(
-  ticket: Pick<KDSTicketProjection, "started_by" | "started_at_display" | "due_time_display">,
+  ticket: Pick<KDSTicketProjection, "started_by" | "started_at_display" | "due_time_display"> &
+    Partial<Pick<KDSTicketProjection, "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
 ): string {
   const parts: string[] = [];
+  const waited = orderWaitLabel(ticket);
+  if (waited) parts.push(waited);
   if (ticket.started_by) {
     parts.push(
       ticket.started_at_display
@@ -368,7 +426,43 @@ export function ticketStartLine(
     );
   }
   if (ticket.due_time_display) parts.push(ticket.due_time_display);
-  return parts.join(" · ");
+  // A linha abre com maiúscula, como o "Iniciado por" do detalhe (beta 05/11, KDS-15).
+  const line = parts.join(" · ");
+  return line ? line.charAt(0).toUpperCase() + line.slice(1) : "";
+}
+
+/** Quanto o pedido esperou ANTES de chegar a esta tela para contar como contexto. */
+export const ORDER_WAIT_NOTICE_SECONDS = 5 * 60;
+
+/**
+ * "pedido há 33m": a idade do PEDIDO, quando ele chegou à cozinha bem depois de entrar
+ * (o pedido sem estação espera no Gestor até alguém iniciar o preparo). O relógio do
+ * card segue medindo o tempo de cozinha contra a meta; isto diz que o cliente já
+ * espera há mais tempo (beta 05/11, KDS-04). Vazio com hora combinada (a encomenda
+ * nasce de madrugada de propósito) e quando a diferença é pequena.
+ */
+export function orderWaitLabel(
+  ticket: Partial<Pick<KDSTicketProjection, "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
+): string {
+  const order = ticket.order_elapsed_seconds;
+  if (order == null || ticket.due_clock_display) return "";
+  if (order - (ticket.elapsed_seconds ?? 0) < ORDER_WAIT_NOTICE_SECONDS) return "";
+  return `pedido há ${elapsedLabel(order)}`;
+}
+
+/**
+ * O sobrescrito do detalhe: quando o ticket chegou à cozinha e, se for outra hora,
+ * quando o pedido entrou. Era o prefixo do código colado na hora ("WHATSAPP-261105-05/11
+ * ÀS 05:51"), que se lia como um código e passava a hora do ticket pela do pedido
+ * (beta 05/11, KDS-04 e KDS-16). O canal já está no ícone ao lado.
+ */
+export function ticketArrivalLine(
+  ticket: Pick<KDSTicketProjection, "created_at_display"> &
+    Partial<Pick<KDSTicketProjection, "order_created_at_display" | "order_elapsed_seconds" | "elapsed_seconds" | "due_clock_display">>,
+): string {
+  const kitchen = ticket.created_at_display ? `Na cozinha desde ${ticket.created_at_display}` : "";
+  const order = orderWaitLabel(ticket) && ticket.order_created_at_display ? `pedido às ${ticket.order_created_at_display}` : "";
+  return [kitchen, order].filter(Boolean).join(" · ");
 }
 
 /** Tickets que são ADICIONAL de um pedido que já passou por esta estação.
@@ -492,6 +586,7 @@ export function elapsedLabel(seconds: number): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;
   const h = Math.floor(m / 60);
+  if (h >= 24) return h % 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${Math.floor(h / 24)}d`;
   return m % 60 ? `${h}h ${m % 60}m` : `${h}h`;
 }
 

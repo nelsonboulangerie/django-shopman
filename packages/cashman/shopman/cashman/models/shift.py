@@ -57,8 +57,8 @@ class Shift(models.Model):
         related_name="shifts_opened",
         verbose_name=_("aberto por"),
         help_text=_(
-            "Quem abriu a gaveta e declarou o fundo de troco. NÃO é dono da custódia "
-            "nem responde sozinho pela diferença: quem agiu está em cada Entry."
+            "Quem abriu a gaveta e declarou o fundo de troco. Não é dono da custódia "
+            "nem responde sozinho pela diferença: quem agiu está em cada lançamento do turno."
         ),
     )
     opened_at = models.DateTimeField(_("aberto em"), default=timezone.now)
@@ -94,7 +94,9 @@ class Shift(models.Model):
     def __str__(self) -> str:
         # O terminal primeiro: a custódia é da gaveta, e é assim que o gerente a
         # procura ("o caixa do balcão"), não pelo nome de quem abriu.
-        return f"Caixa {self.terminal} · {self.opened_at:%d/%m/%Y %H:%M} [{self.get_status_display()}]"
+        from shopman.utils.formatting import format_local
+
+        return f"Caixa {self.terminal} · {format_local(self.opened_at)} [{self.get_status_display()}]"
 
     @property
     def is_open(self) -> bool:

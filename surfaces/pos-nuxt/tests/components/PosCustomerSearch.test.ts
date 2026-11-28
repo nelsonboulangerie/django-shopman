@@ -63,6 +63,22 @@ describe("PosCustomerSearch — Enter decide", () => {
     expect(wrapper.emitted("select")?.[0]).toEqual([second]);
   });
 
+  it("busca que FALHOU: diz que não buscou, não oferece cadastrar, e Enter busca de novo", async () => {
+    // P1-8: a lista vazia de um erro dizia "Nenhum cadastro encontrado" e
+    // oferecia cadastrar de novo quem já existe.
+    const wrapper = await mount({ error: "Não consegui buscar agora. Tente de novo." });
+    const input = await type(wrapper, "529.982.247-25");
+    vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick(); // o debounce acabou: a tela sai do "Buscando…"
+    expect(wrapper.find("[data-customer-search-error]").text()).toContain("Não consegui buscar agora. Tente de novo.");
+    expect(wrapper.text()).not.toContain("Nenhum cadastro");
+    const searchesBefore = wrapper.emitted("search")?.length ?? 0;
+    await input.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("resolveCpf")).toBeUndefined();
+    expect(wrapper.emitted("search")?.length).toBe(searchesBefore + 1);
+    expect(wrapper.emitted("search")?.at(-1)).toEqual(["529.982.247-25"]);
+  });
+
   it("0 resultados + CPF válido → emite resolveCpf com os dígitos", async () => {
     const wrapper = await mount();
     const input = await type(wrapper, "529.982.247-25");
@@ -193,5 +209,32 @@ describe("PosCustomerSearch — máscara e aviso de CPF", () => {
     await wrapper.vm.$nextTick();
     expect((input.element as HTMLInputElement).value).toBe("52998224724");
     expect(wrapper.text()).toContain("CPF inválido");
+  });
+});
+
+describe("PosCustomerSearch — a lista velha não fica pronta enquanto o termo novo busca", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("durante o debounce: Buscando…, sem lista e sem oferta de cadastro", async () => {
+    // Beta test de 05/11/2026: trocar "99444" por "maria" deixava "Café
+    // Parisiense" com o Enter pronto por uns segundos.
+    const wrapper = await mount({ results: [result({ ref: "CUST-C", name: "Café Parisiense" })] });
+    await type(wrapper, "maria");
+    expect(wrapper.text()).toContain("Buscando");
+    expect(wrapper.text()).not.toContain("Café Parisiense");
+    expect(wrapper.text()).not.toContain("Nenhum cadastro");
+  });
+
+  it("com a busca em voo: o mesmo estado, até a resposta chegar", async () => {
+    const wrapper = await mount();
+    await type(wrapper, "99444");
+    vi.advanceTimersByTime(400);
+    await wrapper.setProps({ busy: true });
+    expect(wrapper.text()).toContain("Buscando");
+    expect(wrapper.text()).not.toContain("Nenhum cadastro");
+    await wrapper.setProps({ busy: false, results: [result({ name: "Café Parisiense", phone: "+5543994444444" })] });
+    expect(wrapper.text()).toContain("Café Parisiense");
+    expect(wrapper.text()).toContain("(43) 99444-4444");
   });
 });

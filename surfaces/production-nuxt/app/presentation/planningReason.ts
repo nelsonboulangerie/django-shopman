@@ -7,7 +7,7 @@
 // e a falta de insumo; esta camada só escolhe as palavras e o que mostrar.
 //
 // Regra do sinal único (uma prioridade, nunca dois selos na linha):
-//   1. falta insumo: o número não sai do forno como está, e o fechamento vai
+//   1. falta insumo: o número não fica pronto como está, e a finalização vai
 //      recusar (mesma régua do guardrail). É o único que muda o que é possível.
 //   2. acabou cedo: esgotou em metade ou mais dos dias usados na conta. A
 //      procura é maior do que a venda mostrou.
@@ -18,6 +18,7 @@ import type {
   ProductionSuggestionProjection,
   SuggestionMaterialShortageProjection,
 } from "~/types/production";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export type SuggestionSignalKind = "material" | "soldout" | "leftover";
 
@@ -150,7 +151,12 @@ export function suggestionMath(
   const terms: ReasonTerm[] = [
     {
       value: display(s.projected),
-      label: days.many === "dias" ? "média de venda" : `média dos ${days.many}`,
+      // Segunda a sexta são femininas ("das sextas"); sábado e domingo, não
+      // (beta 05/11: "média dos quintas").
+      label:
+        days.many === "dias"
+          ? "média de venda"
+          : `média ${["sábados", "domingos"].includes(days.many) ? "dos" : "das"} ${days.many}`,
     },
   ];
   if (asNumber(s.committed) > 0) {
@@ -207,9 +213,9 @@ export function suggestionHistory(
   const recent = s.recent_days ?? [];
   const recentSoldout = recent.filter((day) => day.outcome === "soldout");
   if (recentSoldout.length > 0) {
-    // "acabou às 10:40 em 3 dos últimos 4 sábados" (v4 pino 3), com um ponto por dia.
+    // "acabou às 10h40 em 3 dos últimos 4 sábados" (v4 pino 3), com um ponto por dia.
     const time = medianTime(recentSoldout.map((day) => day.soldout_at).filter(Boolean));
-    const when = time ? ` às ${time}` : " antes de fechar";
+    const when = time ? ` às ${formatClock(time)}` : " antes de fechar";
     lines.push({
       kind: "soldout",
       text:
@@ -272,7 +278,7 @@ export function carriedNoteText(note: PlanCarryNoteProjection): string {
   if (note.verdict === "short") {
     const lost = asNumber(note.lost_estimate) > 0 ? `, ~${display(note.lost_estimate)} vendas perdidas` : "";
     return note.soldout_at
-      ? `${when} acabou às ${note.soldout_at}${lost}`
+      ? `${when} acabou às ${formatClock(note.soldout_at)}${lost}`
       : `${when} faltou${lost}`;
   }
   return `${when} sobraram ${display(note.leftover)} de ${display(note.made)} feitas`;

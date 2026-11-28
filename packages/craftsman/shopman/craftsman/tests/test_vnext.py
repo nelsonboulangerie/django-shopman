@@ -1100,12 +1100,6 @@ class TestProtocols:
 
         assert InventoryProtocol is not None
 
-    def test_catalog_protocol_importable(self):
-        from shopman.craftsman.protocols import CatalogProtocol, ProductInfoBackend
-
-        assert CatalogProtocol is not None
-        assert ProductInfoBackend is not None
-
     def test_demand_protocol_importable(self):
         from shopman.craftsman.protocols import DailyDemand, DemandProtocol
 
@@ -1130,32 +1124,12 @@ class TestProtocols:
         result = AvailabilityResult(all_available=False, materials=[status])
         assert result.all_available is False
 
-    def test_catalog_dataclasses(self):
-        from shopman.craftsman.protocols.catalog import ItemInfo
-
-        info = ItemInfo(ref="farinha", name="Farinha T55", unit="kg")
-        assert info.ref == "farinha"
-
     def test_demand_dataclasses(self):
         from shopman.craftsman.protocols.demand import DailyDemand
 
         dd = DailyDemand(date=date(2026, 2, 25), sold=Decimal("50"), wasted=Decimal("3"))
         assert dd.sold == Decimal("50")
         assert dd.soldout_at is None
-
-    def test_stock_module_reexport(self):
-        """protocols/stock.py re-exports from inventory."""
-        from shopman.craftsman.protocols.stock import InventoryProtocol, MaterialNeed
-
-        assert InventoryProtocol is not None
-        assert MaterialNeed is not None
-
-    def test_backward_compat_product_module(self):
-        """protocols/product.py still works as re-export."""
-        from shopman.craftsman.protocols.product import ProductInfo, ProductInfoBackend
-
-        assert ProductInfoBackend is not None
-        assert ProductInfo is not None
 
 
 # ── Inventory Protocol Wiring ─────────────────────────────────
@@ -1277,6 +1251,25 @@ class TestSuggest:
         assert suggestions[0].quantity == Decimal("156")
         assert suggestions[0].basis["committed"] == Decimal("30")
 
+    def test_committed_without_history_still_suggests(self, recipe, tomorrow, settings):
+        """Sem amostra, a encomenda sozinha sugere: prometido mais a margem (#2755)."""
+        from unittest.mock import MagicMock, patch
+
+        mock_backend = MagicMock()
+        mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("10")
+        settings.CRAFTSMAN = {"DEMAND_BACKEND": "test.MockDemandBackend"}
+
+        with patch("django.utils.module_loading.import_string", return_value=MagicMock(return_value=mock_backend)):
+            suggestions = craft.suggest(tomorrow, safety_pct=Decimal("0.20"))
+
+        assert len(suggestions) == 1
+        assert suggestions[0].quantity == Decimal("12")
+        basis = suggestions[0].basis
+        assert (basis["avg_demand"], basis["committed"], basis["sample_size"], basis["confidence"]) == (
+            Decimal("0"), Decimal("10"), 0, "",
+        )
+
     def test_soldout_extrapolation(self, recipe, tomorrow, settings):
         """Dia que esgotou mostra o estoque que havia, não a procura que houve.
 
@@ -1385,11 +1378,12 @@ class TestSuggest:
         assert suggestions[0].basis["soldout_days"] == 1
 
     def test_empty_history_skips_recipe(self, recipe, tomorrow, settings):
-        """Recipe with no history data is not included in suggestions."""
+        """Recipe with no history data and nothing committed is not suggested."""
         from unittest.mock import MagicMock, patch
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
 
         settings.CRAFTSMAN = {"DEMAND_BACKEND": "test.MockDemandBackend"}
@@ -1412,6 +1406,7 @@ class TestSuggest:
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = []
+        mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
 
         settings.CRAFTSMAN = {

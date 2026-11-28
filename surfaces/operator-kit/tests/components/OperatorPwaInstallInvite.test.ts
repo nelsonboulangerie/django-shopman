@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mountSuspended } from "@nuxt/test-utils/runtime";
+import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import type { VueWrapper } from "@vue/test-utils";
+import { nextTick } from "vue";
 import OperatorPwaInstallInvite from "../../app/components/OperatorPwaInstallInvite.vue";
 import { OPERATOR_APPS } from "../../appIdentity";
 import { installPlan, type InstallPlan } from "../../app/utils/installGuide";
@@ -32,6 +33,12 @@ const state = vi.hoisted(() => ({
   dismiss: vi.fn(),
   dismissAsDone: vi.fn(),
 }));
+
+const session = vi.hoisted(() => ({
+  value: { operator: { id: 1, username: "bia", name: "Bia" }, locked: false, authorized: true } as unknown,
+}));
+mockNuxtImport("useNuxtData", () => () => ({ data: session }));
+const INSIDE = { operator: { id: 1, username: "bia", name: "Bia" }, locked: false, authorized: true };
 
 const mounted: VueWrapper[] = [];
 
@@ -78,11 +85,47 @@ describe("OperatorPwaInstallInvite", () => {
     state.install.mockReset().mockResolvedValue(true);
     state.dismiss.mockReset();
     state.dismissAsDone.mockReset();
+    session.value = INSIDE;
   });
 
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
     document.body.innerHTML = "";
+  });
+
+  // Beta 05/11 (CEN-15): o convite cobria o login antes de alguém entrar.
+  it("não aparece no login, na trava nem no acesso negado: só dentro do app", async () => {
+    state.plan.value = PROMPT;
+    state.canInvite.value = true;
+    for (const fora of [
+      null,
+      { operator: null, locked: true, authorized: false },
+      { ...INSIDE, locked: true },
+      { ...INSIDE, authorized: false },
+    ]) {
+      session.value = fora;
+      await mountInvite();
+      expect(document.body.querySelector("[data-operator-pwa-install]")).toBeNull();
+      for (const wrapper of mounted.splice(0)) wrapper.unmount();
+      document.body.innerHTML = "";
+    }
+
+    session.value = INSIDE;
+    await mountInvite();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).not.toBeNull();
+  });
+
+  it("espera a oferta de vincular o dispositivo sair da tela (PDV2-25)", async () => {
+    state.plan.value = PROMPT;
+    state.canInvite.value = true;
+    const offerOpen = useState<boolean>("station-setup-offer-open", () => false);
+    offerOpen.value = true;
+    await mountInvite();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).toBeNull();
+    offerOpen.value = false;
+    await nextTick();
+    await nextTick();
+    expect(document.body.querySelector("[data-operator-pwa-install]")).not.toBeNull();
   });
 
   it("fica ausente quando não há caminho acionável aqui", async () => {
@@ -106,27 +149,26 @@ describe("OperatorPwaInstallInvite", () => {
     expect(document.body.textContent).toContain("Compartilhar");
     expect(document.body.textContent).toContain("Adicionar à Tela de Início");
     expect(document.body.textContent).toContain(
-      `Coloque ${POS.article} ${POS.label} na tela inicial`,
+      `Acesse ${POS.article} ${POS.label} direto da tela inicial do seu dispositivo.`,
     );
     expect(document.body.textContent).not.toContain("Instalar");
   });
 
-  it("chama o app pelo nome e diz o que ELE passa a fazer", async () => {
-    // Os oito diziam "Instale Shopman" e "Abra o caixa direto da tela inicial" — marca
-    // no lugar do app, e a copy do balcão no B.I., na Cozinha e no Marketing.
+  it("chama o app pelo nome, numa frase só", async () => {
+    // Os oito diziam "Instale Shopman": a marca no lugar do app. O título é a mensagem
+    // inteira (dono, 14/11), sem parágrafo de apoio.
     state.plan.value = PROMPT;
     state.canInvite.value = true;
     await mountInvite();
     expect(document.body.textContent).toContain(
-      `Instale ${POS.article} ${POS.label}`,
+      `Acesse ${POS.article} ${POS.label} direto da tela inicial do seu dispositivo.`,
     );
-    expect(document.body.textContent).toContain(POS.install);
     expect(document.body.textContent).not.toContain("Shopman");
 
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
     document.body.innerHTML = "";
     await mountInvite("kds", OPERATOR_APPS.kds);
-    expect(document.body.textContent).toContain("Instale a Cozinha");
+    expect(document.body.textContent).toContain("Acesse a Cozinha direto da tela inicial");
     expect(document.body.textContent).not.toContain("caixa");
   });
 

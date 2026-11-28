@@ -1,0 +1,380 @@
+{
+  "captured_at_utc": "2026-10-29T17:10:20.522987+00:00",
+  "method": "GET anônimo, sem cookies, sequencial, intervalo de 1 s; total HTTP, não TTFB",
+  "rows": [
+    {
+      "url": "https://www.nelsonboulangerie.com.br/produto/FENDU",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 2520.17,
+      "bytes": 104662,
+      "sha256": "8316e7fbaa3a9228b4f30e3270e8c8d575b18b6078c586af82bd96401ce545ef",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://www.nelsonboulangerie.com.br/produto/FENDU",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 1252.07,
+      "bytes": 104641,
+      "sha256": "149e8a053d1a01d0c8055fd5884f35d2eb1327c2d8421d7079b9bc47ee6a37f1",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://www.nelsonboulangerie.com.br/produto/FENDU",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 1409.4,
+      "bytes": 104641,
+      "sha256": "1ac2ee581b537a0bed2cd79f4351613111e6be3a58d483af2a5850f1ac06f9a2",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 1401.96,
+      "bytes": 4555,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=692.44, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=159.39, connect;dur=7.44;desc=\"1\", cache;dur=93.95;desc=\"4\", gc;dur=0.55;desc=\"1\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 1544.99,
+      "bytes": 4555,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=694.61, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=107.06, connect;dur=4.34;desc=\"1\", cache;dur=97.49;desc=\"4\", gc;dur=0.54;desc=\"1\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 1058.08,
+      "bytes": 4555,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=736.27, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=107.67, connect;dur=3.91;desc=\"1\", cache;dur=85.58;desc=\"4\", gc;dur=0.56;desc=\"1\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/recommendations/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 1156.72,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=629.66, availability;dur=84.86, personalization;dur=0.00, shadow;dur=0.00, db;dur=142.30, connect;dur=8.79;desc=\"1\", cache;dur=59.14;desc=\"4\", gc;dur=1.34;desc=\"3\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/recommendations/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 1065.65,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=743.79, availability;dur=91.24, personalization;dur=0.00, shadow;dur=0.00, db;dur=125.82, connect;dur=13.09;desc=\"1\", cache;dur=83.59;desc=\"4\", gc;dur=0.71;desc=\"2\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/recommendations/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 1166.25,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "private",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": "projection;dur=886.13, availability;dur=129.62, personalization;dur=0.00, shadow;dur=0.00, db;dur=197.27, connect;dur=8.98;desc=\"1\", cache;dur=79.92;desc=\"4\", gc;dur=2.31;desc=\"2\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/products/FENDU/recommendations/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 1334.46,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=120",
+        "CF-Cache-Status": "MISS",
+        "Age": null,
+        "Server-Timing": "projection;dur=755.77, availability;dur=97.26, personalization;dur=0.00, shadow;dur=0.00, db;dur=134.78, connect;dur=27.09;desc=\"1\", cache;dur=69.87;desc=\"4\", gc;dur=0.91;desc=\"2\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/products/FENDU/recommendations/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 133.36,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=120",
+        "CF-Cache-Status": "HIT",
+        "Age": "1",
+        "Server-Timing": "projection;dur=755.77, availability;dur=97.26, personalization;dur=0.00, shadow;dur=0.00, db;dur=134.78, connect;dur=27.09;desc=\"1\", cache;dur=69.87;desc=\"4\", gc;dur=0.91;desc=\"2\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/products/FENDU/recommendations/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 124.81,
+      "bytes": 4896,
+      "sha256": "051a5ecbb416e26f5d751d7227e30657c3f312de858c59b8d60b532d02d737e3",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=60, stale-while-revalidate=60, stale-if-error=120",
+        "CF-Cache-Status": "HIT",
+        "Age": "2",
+        "Server-Timing": "projection;dur=755.77, availability;dur=97.26, personalization;dur=0.00, shadow;dur=0.00, db;dur=134.78, connect;dur=27.09;desc=\"1\", cache;dur=69.87;desc=\"4\", gc;dur=0.91;desc=\"2\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/catalog/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 1988.36,
+      "bytes": 56731,
+      "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120",
+        "CF-Cache-Status": "MISS",
+        "Age": null,
+        "Server-Timing": "projection;dur=1011.66, availability;dur=229.86, personalization;dur=20.83, shadow;dur=0.00, db;dur=182.25, connect;dur=3.33;desc=\"1\", cache;dur=30.46;desc=\"3\", gc;dur=5.53;desc=\"10\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/catalog/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 148.64,
+      "bytes": 56731,
+      "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120",
+        "CF-Cache-Status": "HIT",
+        "Age": "1",
+        "Server-Timing": "projection;dur=1011.66, availability;dur=229.86, personalization;dur=20.83, shadow;dur=0.00, db;dur=182.25, connect;dur=3.33;desc=\"1\", cache;dur=30.46;desc=\"3\", gc;dur=5.53;desc=\"10\""
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/catalog/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 141.94,
+      "bytes": 56731,
+      "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+      "headers": {
+        "Cache-Control": "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120",
+        "CF-Cache-Status": "HIT",
+        "Age": "2",
+        "Server-Timing": "projection;dur=1011.66, availability;dur=229.86, personalization;dur=20.83, shadow;dur=0.00, db;dur=182.25, connect;dur=3.33;desc=\"1\", cache;dur=30.46;desc=\"3\", gc;dur=5.53;desc=\"10\""
+      }
+    },
+    {
+      "url": "https://central.boulangerie.com.br/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 563.45,
+      "bytes": 17314,
+      "sha256": "5eef950d55951f475a4aa52a43a8470da1da5a211c134373cc1e912d58e24988",
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://central.boulangerie.com.br/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 672.48,
+      "bytes": 17314,
+      "sha256": "5eef950d55951f475a4aa52a43a8470da1da5a211c134373cc1e912d58e24988",
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://central.boulangerie.com.br/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 572.38,
+      "bytes": 17314,
+      "sha256": "5eef950d55951f475a4aa52a43a8470da1da5a211c134373cc1e912d58e24988",
+      "headers": {
+        "Cache-Control": "private, no-store, max-age=0",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://mkt.boulangerie.com.br/",
+      "sample": 1,
+      "status": 200,
+      "total_ms": 2631.71,
+      "bytes": 12692,
+      "sha256": "24cd57228dc1af69ffe34e7a96471aa1b01f02c8a408c92182440f6e4f39033c",
+      "headers": {
+        "Cache-Control": "private, no-store",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://mkt.boulangerie.com.br/",
+      "sample": 2,
+      "status": 200,
+      "total_ms": 417.55,
+      "bytes": 12692,
+      "sha256": "5ffc6d887b9bf794ffb0fba7d861af9327715d9649526d167cb67a3c7e9a7dc5",
+      "headers": {
+        "Cache-Control": "private, no-store",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    },
+    {
+      "url": "https://mkt.boulangerie.com.br/",
+      "sample": 3,
+      "status": 200,
+      "total_ms": 448.78,
+      "bytes": 12692,
+      "sha256": "69fb9d28e9f874d2347ed398c6bc4bfc2d536f4b8986f6bb045ad4c33969bff8",
+      "headers": {
+        "Cache-Control": "private, no-store",
+        "CF-Cache-Status": "BYPASS",
+        "Age": null,
+        "Server-Timing": null
+      }
+    }
+  ],
+  "aborted": false,
+  "summary": [
+    {
+      "url": "https://www.nelsonboulangerie.com.br/produto/FENDU",
+      "n": 3,
+      "median_total_ms": 1409.4,
+      "maximum_total_ms": 2520.17,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "n": 3,
+      "median_total_ms": 1401.96,
+      "maximum_total_ms": 1544.99,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/recommendations/",
+      "n": 3,
+      "median_total_ms": 1156.72,
+      "maximum_total_ms": 1166.25,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/products/FENDU/recommendations/",
+      "n": 3,
+      "median_total_ms": 133.36,
+      "maximum_total_ms": 1334.46,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/public/catalog/",
+      "n": 3,
+      "median_total_ms": 148.64,
+      "maximum_total_ms": 1988.36,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://central.boulangerie.com.br/",
+      "n": 3,
+      "median_total_ms": 572.38,
+      "maximum_total_ms": 672.48,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    },
+    {
+      "url": "https://mkt.boulangerie.com.br/",
+      "n": 3,
+      "median_total_ms": 448.78,
+      "maximum_total_ms": 2631.71,
+      "statuses": [
+        200,
+        200,
+        200
+      ]
+    }
+  ]
+}

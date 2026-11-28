@@ -1,13 +1,13 @@
 """A régua da Concierge: quanto custou e quanto demorou cada resposta.
 
-Fatia 1 do estudo ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md`` (OBS0310-K). O
+Fatia 1 do estudo ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md`` (OBS0310-K). O
 cliente não vê nada mudar: o turno roda igual, e o que ele gastou fica gravado
 em ``ConversationMessage.usage`` do primeiro bloco da resposta (formato em
 ``docs/reference/data-schemas.md``, "Régua da Concierge").
 
 Um ``TurnMeter`` acompanha um turno:
 
-- ``stage(nome)`` cronometra uma etapa (``triage``, ``agent``, ``tools``);
+- ``stage(nome)`` cronometra uma etapa (``triage``, ``intents``, ``tools``);
 - ``wrap(cliente, etapa)`` devolve o cliente do modelo medido: cada
   ``messages.create`` soma tempo na etapa e tokens por (etapa, modelo),
   inclusive a ESCRITA de cache, que a conversa nunca gravou;
@@ -37,12 +37,12 @@ LAYER_COURTESY = "courtesy"  # C1: cortesia, frase da casa, sem modelo
 LAYER_CONTEXT = "context"  # memória: a casa resolveu ou perguntou pela conversa, sem modelo
 LAYER_MEDIA = "media"  # C1: mídia sem texto, mensagem fixa
 LAYER_TURN_LIMIT = "turn_limit"  # teto diário de turnos
-LAYER_AGENT = "agent"  # C6: o laço com o modelo e as ferramentas (o de hoje)
-LAYER_ERROR = "error"  # o agente falhou; mensagem de indisponível
+LAYER_ERROR = "error"  # o turno falhou; mensagem de indisponível
 LAYER_TEAM = "team"  # C7: a triagem mandou para a equipe ou outra mesa
-LAYER_AGENT_HANDOFF = "agent_handoff"  # o agente chamou a equipe
+LAYER_HANDOFF = "handoff"  # um caminho da casa chamou a equipe (memória, cancelamento, acréscimo)
 LAYER_HOUSE_RULE = "house_rule"  # regra da casa: frase fixa (R7, R8) ou resposta segurada (equipe)
 LAYER_INTENTS = "intents"  # intenções no plural: cada parte pelo executor da casa, uma resposta
+LAYER_FRAMEWORK = "framework"  # N9: o turno saiu pelo motor do framework, com molde da Nice
 
 
 def _int(value) -> int:
@@ -209,33 +209,21 @@ def stage_of(conversation, name: str):
     return meter.stage(name) if meter is not None else nullcontext()
 
 
-def triage_client_for(meter: TurnMeter, triage_client=None):
-    """O cliente da triagem, medido, com a MESMA regra de quando há modelo.
-
-    ``triage.decide`` cria o próprio cliente quando recebe ``None`` (e só se o
-    modelo estiver ligado). Aqui ele é criado do mesmo jeito para poder ser
-    medido; cliente injetado (teste, comando) é só embrulhado. Desligado, segue
-    ``None``: a regra local responde sem rede.
+def triage_contender_for(meter: TurnMeter, contender=None):
+    """O Jev da triagem, medido. ``None`` quando a chave ``triage_with_model`` está
+    desligada ou o Jev não está aprovado nesta loja: aí a regra local responde sem rede.
+    Contender injetado (teste, comando) é só embrulhado.
     """
-    from django.conf import settings
-
     from . import triage
 
-    if triage.classifier() == "jev":
-        meter.triage_classifier = "jev"
-        if triage_client is None and triage._model_toggle():
-            from .intent_benchmark import ContenderNotConfigured, JevContender
-
-            try:
-                triage_client = JevContender(timeout=10.0)
-            except ContenderNotConfigured:
-                return None
-        return meter.wrap_jev(triage_client)
-    meter.triage_classifier = "anthropic"
-    if triage_client is None:
-        if not triage._model_enabled():
+    meter.triage_classifier = "jev"
+    if contender is None:
+        if not triage.jev_enabled():
             return None
-        import anthropic
+        from .intent_benchmark import ContenderNotConfigured, JevContender
 
-        triage_client = anthropic.Anthropic(api_key=settings.AI_ASSIST_API_KEY, timeout=15.0, max_retries=1)
-    return meter.wrap(triage_client, "triage")
+        try:
+            contender = JevContender(timeout=10.0)
+        except ContenderNotConfigured:
+            return None
+    return meter.wrap_jev(contender)

@@ -7,10 +7,13 @@
 import type { OperatorOrderDetail } from "../../../operator-kit/app/types/orderDetail";
 import type { KeyedReason } from "../../../operator-kit/app/types/reason";
 import type { CourierChargeOutdated } from "../../../operator-kit/app/presentation/courierCharge";
+import type { CourierCancelState } from "../../../operator-kit/app/presentation/courierCancel";
 
-import type { POSManagerProjection, POSTabPayload } from "./pos";
+import type { POSManagerProjection, POSPaymentResultProjection, POSTabPayload } from "./pos";
 
 export type PreorderSituation =
+  /** Ninguém aceitou ainda (o "Novo" do Gestor, #3166). */
+  | "new"
   | "to_pay"
   | "paid"
   | "on_account"
@@ -71,11 +74,12 @@ export interface PreorderDay {
   day_display: string;
   is_today: boolean;
   orders_count: number;
-  total_q: number;
-  total_display: string;
+  /** As SOMAS do dia vêm `null` para quem não audita o caixa (D4: contagem cega). */
+  total_q: number | null;
+  total_display: string | null;
   /** Soma dos saldos "a receber" do dia (sem conta da casa, sem "a conferir"). */
-  to_receive_q: number;
-  to_receive_display: string;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   orders: PreorderCard[];
 }
 
@@ -85,10 +89,11 @@ export interface PreorderListResponse {
   date_to: string;
   today: string;
   count: number;
-  total_q: number;
-  total_display: string;
-  to_receive_q: number;
-  to_receive_display: string;
+  /** Somas do período: `null` para quem não audita o caixa, como no dia. */
+  total_q: number | null;
+  total_display: string | null;
+  to_receive_q: number | null;
+  to_receive_display: string | null;
   days: PreorderDay[];
   /** O teto do lote da Via Pedido (servidor). */
   max_batch: number;
@@ -149,16 +154,48 @@ export interface PreorderDetail extends OperatorOrderDetail {
   managers: POSManagerProjection[];
   /** Os motivos de cancelar: a lista única do backend, a mesma do Gestor (`cancel_reasons`). */
   cancel_reasons: KeyedReason[];
+  /**
+   * O que cancelar faz com o dinheiro, com o valor ("R$ 93,00 em dinheiro ficam a
+   * devolver no caixa."): a frase do Gestor (`order_queue._cancel_money_effect`).
+   * "" quando o servidor não sabe dizer.
+   */
+  cancel_money_effect?: string;
+  /**
+   * A promessa em risco (WP-G08, #2721 item 3): o MESMO fato do Gestor
+   * (`order_queue._pos_promise`), com uma saída só, "Resolver no Gestor". `null`
+   * quando a promessa está de pé.
+   */
+  promise?: PreorderPromise | null;
+}
+
+/** A promessa em risco vista do balcão: os itens em falta e o "Resolver" do Gestor. */
+export interface PreorderPromise {
+  state: string;
+  label: string;
+  items: { sku: string; at_risk: boolean; label: string; detail: string }[];
+  actions: { ref: string; label: string; href: string; enabled: boolean; reason: string }[];
 }
 
 /** O bloco da corrida — espelho do `CourierBlock` do Gestor (`orders-nuxt/types/orders.ts`). */
 export interface PreorderCourier {
   provider: string;
-  /** A letra da TaOn (D/G/P/U procurando, A/S aceita, E coletou, F entregue, N/C não concluída). */
+  /** A letra crua do serviço: só diz se há corrida. O estado é `ride_state`. */
   status: string;
+  /** O estado da corrida no vocabulário da casa (`RideState` do servidor). */
+  ride_state: string;
+  /** O nome do serviço da corrida como o cadastro diz. */
+  service_name: string;
   status_label: string;
   active: boolean;
-  driver: { name: string; phone: string; vehicle_plate: string; vehicle_model: string; vehicle_color?: string } | null;
+  driver: {
+    name: string;
+    phone: string;
+    vehicle_plate: string;
+    vehicle_model: string;
+    vehicle_color?: string;
+    /** A foto servida pelo servidor, só com a corrida viva (#3150); vazio = sem foto. */
+    photo_url?: string;
+  } | null;
   tracking_url: string;
   confirmation_code: string;
   attempts_count: number;
@@ -168,12 +205,19 @@ export interface PreorderCourier {
   delivery_eta_at?: string;
   /** Desde quando a TaOn não informa a corrida (vazio com a leitura em dia). */
   sync_since?: string;
+  /** O entregador desistiu e a TaOn procura outro para a MESMA corrida (`courier.reopen_view`). */
+  reopened_at?: string;
+  reopened_driver?: string;
+  /** `withdrew` (desistiu) ou `transfer` (a TaOn está trocando o entregador). */
+  reopened_reason?: string;
   error: { message: string; at: string } | null;
   can_dispatch: boolean;
   /** A última chamada ficou sem resposta da TaOn: "Chamar de novo" libera e chama outra. */
   can_dispatch_again?: boolean;
   /** A corrida pode ser cancelada (antes da coleta, régua da central). */
   can_cancel?: boolean;
+  /** O cancelamento pedido (`courier.cancel_state`): `pending`, `unknown` ou `failed`; vazio sem pedido. */
+  cancel_state?: CourierCancelState;
   /** O que a chamada pergunta: troco da gaveta e maquininha da casa. */
   custody?: { change_out_suggested_q: number; needs_machine: boolean; recorded: boolean };
   /** O pedido mudou depois da chamada e a corrida leva a cobrança antiga (`courier.charge_outdated`). */
@@ -192,6 +236,8 @@ export interface PreorderEquipmentOption {
 /** `GET /api/v1/backstage/pos/preorders/<ref>/` — o envelope de leitura do Gestor. */
 export interface PreorderDetailResponse {
   order: PreorderDetail;
+  /** A encomenda deve cartão: a tela pede `pos/preorders/<ref>/payment/check/` (POST). */
+  payment_check_due?: boolean;
   generated_at: string;
   contract_version: number;
 }
@@ -216,6 +262,14 @@ export interface PreorderHandOver {
    * pronto" do Gestor). A linha que o diálogo mostra; "" quando já está pronta.
    */
   kitchen_notice?: string;
+  /**
+   * O Pix do saldo cobrado no balcão (#2897) ainda pagável, no formato da venda
+   * (`_pos_payment_response`): a tela de Pagamento volta direto ao QR. `null`
+   * quando não há Pix do balcão vivo.
+   */
+  counter_pix?: POSPaymentResultProjection | null;
+  /** Por que o saldo não sai em Pix no balcão agora (a forma fica apagada); "" quando sai. */
+  pix_block_reason?: string;
 }
 
 export type CounterMethod = "cash" | "debit" | "credit";
@@ -368,4 +422,60 @@ export interface OrderEditResponse {
   changed: boolean;
   revision: number | null;
   preview: OrderEditPreview;
+}
+
+/**
+ * Trocar o item que falta (#2765): `GET pos/preorders/<ref>/swap/?sku=…`.
+ *
+ * O endereço que o Gestor abre leva só a intenção (`?swap=<sku>`); nome, preço,
+ * quantidade e alternativas vêm daqui, lidos na hora (`order_promise.alternatives_for`).
+ */
+export interface PreorderSwapOption {
+  sku: string;
+  name: string;
+  /** O verbo do diálogo "Resolver" do Gestor: "Trocar por Fendu". */
+  label: string;
+  /** O que o lote da data cobre: "10 livres para amanhã". */
+  available_display: string;
+  /** O que entra, na quantidade da linha: "4x Fendu". */
+  qty_label: string;
+  enabled: boolean;
+  reason: string;
+  total_before_q: number;
+  total_after_q: number;
+  difference_q: number;
+  total_before_display: string;
+  total_after_display: string;
+  /** "R$ 4,00 a mais", "R$ 2,00 a menos", "Mesmo total". */
+  difference_display: string;
+  /** O que acontece com a diferença, na frase da prévia da edição. */
+  money: string;
+  requires_manager_approval: boolean;
+  /** O que volta ao cliente quando a troca fica mais barata numa encomenda paga. */
+  refund_q: number;
+}
+
+export interface PreorderSwapItem {
+  sku: string;
+  name: string;
+  qty: string;
+  /** O que sai: "4x Baguete". */
+  qty_label: string;
+  /** A frase do aviso quando o item está em risco; vazia quando não está. */
+  fact: string;
+  /** `false`: a busca não pôde rodar. A tela não diz que não há alternativa. */
+  searched: boolean;
+  options: PreorderSwapOption[];
+  /** A busca rodou e não achou nada: "Nenhum produto parecido livre para amanhã." */
+  empty_phrase: string;
+}
+
+export interface PreorderSwapResponse {
+  order_ref: string;
+  base_revision: string;
+  expected_actor_id: number | null;
+  /** Por que a encomenda não se edita agora (pronta, NFC-e autorizada, iFood). */
+  refusal_code: string;
+  refusal: string;
+  items: PreorderSwapItem[];
 }

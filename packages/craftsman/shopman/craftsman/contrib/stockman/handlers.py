@@ -7,9 +7,15 @@ stockman write path for the stock ledger (there is no InventoryProtocol write
 backend — that seam is read-only, for ingredient-availability validation).
 
 - planned: Create planned Quant (future stock) for finished goods
+- started: Move the started quantity to the ``started`` Quant, and the
+  reservations with it
 - finished: Consume the recipe's ingredients (kind=MAKE) and realize the
   planned output into the saleable position (kind=MAKE)
 - voided: Cancel planned Quant for the WorkOrder
+
+Whenever quantity moves between the two production Quants of a SKU/date (the
+plain planned one and the ``started`` one), the reservations are re-seated by
+``StockPlanning.settle_holds`` — see :func:`_settle_production_holds`.
 
 All output and ingredient moves are emitted with ``Move.Kind.MAKE`` — the two
 legs (ingredients out, finished goods in) of a single production event.
@@ -22,7 +28,10 @@ from __future__ import annotations
 import logging
 from contextlib import contextmanager
 
+from django.apps import apps
+from django.db import transaction
 from django.dispatch import receiver
+from django.utils import timezone
 from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
 logger = logging.getLogger(__name__)
@@ -44,13 +53,8 @@ STOCK_REALIZED_KEY = "stock_realized_at"
 
 
 def _stockman_available() -> bool:
-    """Check if Stockman is installed."""
-    try:
-        from shopman.stockman.services.movements import StockMovements  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
+    """Check whether Stockman belongs to this Django installation."""
+    return apps.is_installed("shopman.stockman")
 
 
 @receiver(production_changed)
@@ -176,7 +180,6 @@ def _leg_lock(work_order):
     Em banco sem ``SELECT FOR UPDATE`` (SQLite de teste local) o lock é no-op —
     a serialização real vale onde a loja roda, no PostgreSQL.
     """
-    from django.db import transaction
     from shopman.craftsman.models import WorkOrder
 
     with transaction.atomic():
@@ -250,6 +253,47 @@ def _find_planned_quant(work_order, product_ref, date):
     if quant is None:
         quant = Quant.objects.filter(sku=product_ref, target_date=date, batch="").order_by("pk").first()
     return quant
+
+
+def _settle_production_holds(work_order, product_ref, date, *, planned_quant=None, started_quant=None):
+    """As reservas acompanham o saldo de produção quando a quantidade muda de lugar.
+
+    O plano de um SKU numa data mora em dois quants: o planejado sem lote e o
+    ``batch='started'`` (o que já entrou em produção). Cada reserva ancora em UM
+    deles, e o ``realize`` do fechamento só materializa as reservas do quant de
+    onde o lote sai. Antes, o início movia a QUANTIDADE para o ``started`` e
+    deixava as reservas no planejado: o lote fechava, o pão ia para a vitrine
+    sem reserva, e a encomenda ficava presa a um saldo zerado (a leitura a
+    ignorava e a baixa falhava). Medido em 18/11/2026, issue #2709.
+
+    Aqui a ponte só diz QUAIS são os dois saldos e em que ordem são servidos
+    (o lote aberto antes do só planejado). A regra de quem vai para onde é do
+    Stockman (``StockPlanning.settle_holds``): a mesma ordem de atendimento do
+    ``realize``, reserva inteira, 1 hold : 1 quant. Reserva que não cabe em
+    nenhum dos dois fica onde está; o cancelamento a solta e avisa o pedido
+    (``shop.handlers._stock_receivers.on_production_voided``).
+    """
+    from shopman.stockman.services.planning import StockPlanning
+    from shopman.stockman.services.queries import StockQueries
+
+    if planned_quant is None:
+        planned_quant = _find_planned_quant(work_order, product_ref, date)
+    if started_quant is None:
+        started_quant = StockQueries.get_quant(
+            product_ref,
+            target_date=date,
+            position=_resolve_position(work_order.position_ref),
+            batch=STARTED_BATCH,
+        )
+    moved = StockPlanning.settle_holds([started_quant, planned_quant])
+    if moved:
+        logger.info(
+            "Production holds re-seated: sku=%s target_date=%s moved=%s ref=%s",
+            product_ref,
+            date,
+            len(moved),
+            work_order.ref,
+        )
 
 
 def _handle_planned(work_order, product_ref, date):
@@ -344,6 +388,9 @@ def _handle_adjusted(work_order, product_ref, date, previous_quantity=None):
             new_total,
             reason=f"Ajuste WO {work_order.ref} (Δ {delta:+})",
         )
+        # O plano encolheu ou cresceu: a reserva que deixou de caber aqui vai
+        # para o lote aberto que a cobre, e a que estava sem lugar volta.
+        _settle_production_holds(work_order, product_ref, date, planned_quant=quant)
     logger.info(
         "Planned quant adjusted (delta): sku=%s qty=%s prev=%s target_date=%s ref=%s",
         product_ref,
@@ -361,6 +408,10 @@ def _handle_started(work_order, product_ref, date):
     The remaining quantity stays as plain planned supply. This lets Stockman
     distinguish what is merely planned from what is already expected because it
     effectively entered production.
+
+    The reservations follow the quantity (:func:`_settle_production_holds`):
+    the lot that opened is the first to be served. So does what was already
+    delivered against the plan (``StockPlanning.carry_deliveries``, #2724).
     """
     if not work_order or not date:
         logger.warning(
@@ -371,32 +422,52 @@ def _handle_started(work_order, product_ref, date):
         return
 
     from shopman.stockman.services.movements import StockMovements
-    from shopman.stockman.services.queries import StockQueries
+    from shopman.stockman.services.planning import StockPlanning
 
     started_qty = work_order.started_qty or work_order.quantity
     position = _resolve_position(work_order.position_ref)
 
-    planned_quant = StockQueries.get_quant(product_ref, target_date=date, position=position)
-    if planned_quant is None:
-        planned_quant = StockQueries.get_quant(product_ref, target_date=date)
+    # O mesmo achado das outras pernas (ajuste, cancelamento, fechamento): a WO
+    # já tem a posição NOVA quando o início é anunciado, e o plano mora na do
+    # plano. Procurar só na posição nova ou na nula não o achava, e o lote que
+    # abria em outra posição deixava o plano inteiro e ainda criava o saldo em
+    # produção: o estoque de produção dobrava (#2716).
+    planned_quant = _find_planned_quant(work_order, product_ref, date)
+
+    started_quant = StockMovements.receive(
+        quantity=started_qty,
+        sku=product_ref,
+        position=position,
+        target_date=date,
+        batch=STARTED_BATCH,
+        reason=f"Produção do lote: {work_order.ref}",
+        kind="make",  # Move.Kind.MAKE
+    )
 
     if planned_quant is not None:
+        # O que já foi entregue contra o plano entra em produção junto com a
+        # contribuição do lote (#2724). Sem isso o plano absorvia a entrega em
+        # silêncio, o saldo em produção nascia cheio e o balcão oferecia de
+        # novo o que já tinha saído. Vem ANTES do ajuste: o plano recebe de
+        # volta a entrega e só então perde a contribuição inteira.
+        StockPlanning.carry_deliveries(planned_quant, started_quant, limit=started_qty)
+        planned_quant.refresh_from_db()
         remaining_planned = max(planned_quant.quantity - started_qty, 0)
         StockMovements.adjust(
             planned_quant,
             remaining_planned,
             reason=f"Entrada em produção: {work_order.ref}",
         )
+        # Por último as reservas ainda ativas: o saldo em produção já desconta
+        # o que foi entregue, então só segue para ele o que ainda cabe.
+        _settle_production_holds(
+            work_order,
+            product_ref,
+            date,
+            planned_quant=planned_quant,
+            started_quant=started_quant,
+        )
 
-    StockMovements.receive(
-        quantity=started_qty,
-        sku=product_ref,
-        position=position,
-        target_date=date,
-        batch=STARTED_BATCH,
-        reason=f"Abertura de lote: {work_order.ref}",
-        kind="make",  # Move.Kind.MAKE
-    )
     logger.info(
         "Started supply materialized: sku=%s started=%s target_date=%s position=%s ref=%s",
         product_ref,
@@ -466,6 +537,17 @@ def _handle_voided(work_order, product_ref, date):
             new_quantity=new_started,
             reason=f"WO cancelada após início: {work_order.ref} (−{started_qty})",
         )
+    # O que este lote cobria pode caber no outro saldo de produção da data (o
+    # lote aberto de outra WO, ou o que segue planejado). Só o que não couber
+    # em nenhum fica sem lastro, e é isso que o cancelamento solta.
+    if quant is not None and started_quant is not None:
+        _settle_production_holds(
+            work_order,
+            product_ref,
+            date,
+            planned_quant=quant,
+            started_quant=started_quant,
+        )
     logger.info(
         "Planned/started quants cancelled: sku=%s target_date=%s ref=%s",
         product_ref,
@@ -482,20 +564,60 @@ def consumable_quants(sku: str):
     seja o mesmo. Com ``CONSUME_FROM_SALEABLE_POSITIONS`` ligado, a vitrine
     entra, sempre por último. Dentro de cada grupo: presente antes de futuro.
     """
-    from django.db.models import Case, F, IntegerField, Value, When
+    from datetime import date
+
+    from django.db.models import Case, DateField, F, IntegerField, Value, When
     from shopman.craftsman.conf import get_setting
+    from shopman.stockman.models.batch import Batch
     from shopman.stockman.services.queries import StockQueries
 
     quants = StockQueries.list_quants(sku, include_empty=False)
+    today = timezone.localdate()
+    batches = list(Batch.objects.filter(sku=sku).values_list("ref", "expiry_date"))
+    expired_refs = [ref for ref, expiry in batches if expiry is not None and expiry < today]
+    if expired_refs:
+        quants = quants.exclude(batch__in=expired_refs)
     if not get_setting("CONSUME_FROM_SALEABLE_POSITIONS"):
         quants = quants.exclude(position__is_saleable=True)
+    expiry_order = [
+        When(batch=ref, then=Value(expiry))
+        for ref, expiry in batches
+        if expiry is not None and expiry >= today
+    ]
     return quants.annotate(
         _shop_window=Case(
             When(position__is_saleable=True, then=Value(1)),
             default=Value(0),
             output_field=IntegerField(),
-        )
-    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "pk")
+        ),
+        _batch_expiry=Case(
+            *expiry_order,
+            default=Value(date.max),
+            output_field=DateField(),
+        ),
+    ).order_by("_shop_window", F("target_date").asc(nulls_first=True), "_batch_expiry", "pk")
+
+
+def _selected_ingredient_batches(work_order) -> dict[str, str]:
+    """Return the exact stock lot explicitly frozen for each ingredient.
+
+    Most ingredients keep using FEFO.  A formula deviation may, however,
+    identify the physical old-dough lot actually weighed by the operator.  In
+    that case consuming another lot would break the authorization trail even
+    if both lots share the same SKU.
+    """
+    snapshot = ((work_order.meta or {}).get("_recipe_snapshot") or {})
+    selected: dict[str, str] = {}
+    for item in snapshot.get("items") or []:
+        sku = str(item.get("input_sku") or "").strip()
+        batch_ref = str((item.get("meta") or {}).get("batch_ref") or "").strip()
+        if not sku or not batch_ref:
+            continue
+        previous = selected.get(sku)
+        if previous and previous != batch_ref:
+            raise ValueError(f"Ingrediente {sku} aponta para dois lotes diferentes.")
+        selected[sku] = batch_ref
+    return selected
 
 
 def _consume_materials(work_order, *, fail_closed: bool):
@@ -524,6 +646,7 @@ def _consume_materials(work_order, *, fail_closed: bool):
     from shopman.stockman.services.movements import StockMovements
 
     shortfalls = []
+    selected_batches = _selected_ingredient_batches(work_order)
     approved_shortage_by_sku: dict[str, Decimal] = {}
     for payload in WorkOrderEvent.objects.filter(
         work_order=work_order,
@@ -544,6 +667,9 @@ def _consume_materials(work_order, *, fail_closed: bool):
             continue
 
         quants = consumable_quants(item.item_ref)
+        selected_batch = selected_batches.get(item.item_ref)
+        if selected_batch:
+            quants = quants.filter(batch=selected_batch)
         for quant in quants:
             if remaining <= 0:
                 break
@@ -782,15 +908,18 @@ def _handle_finished(work_order, product_ref, date, *, fail_closed: bool = False
             shortfalls = _consume_materials(work_order, fail_closed=fail_closed)
             _stamp_leg(work_order, STOCK_CONSUMED_KEY)
 
-    # Anúncio FORA do lock (perna já commitada): a sub-baixa vira OperatorAlert no
-    # shop, que não pode ser importado daqui (core, ADR-001). Só quando o consume
-    # de fato rodou (guarda do carimbo) e faltou algo — re-run do sweeper não
-    # reanuncia, e o dedup de 12h no shop cobre a corrida.
+    # Anúncio depois do COMMIT (ADR-025): este receiver roda dentro do atomic do
+    # finish, então "fora do lock" ainda não é "commitado". A sub-baixa vira
+    # OperatorAlert no shop, que não pode ser importado daqui (core, ADR-001). Só
+    # quando o consume de fato rodou (guarda do carimbo) e faltou algo: re-run do
+    # sweeper não reanuncia, e o dedup de 12h no shop cobre a corrida.
     if shortfalls:
-        production_stock_shortfall.send(
-            sender=type(work_order),
-            work_order=work_order,
-            shortfalls=shortfalls,
+        transaction.on_commit(
+            lambda: production_stock_shortfall.send(
+                sender=type(work_order),
+                work_order=work_order,
+                shortfalls=shortfalls,
+            )
         )
 
     with _leg_lock(work_order):
@@ -951,7 +1080,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 to_position=to_position,
                 from_position=from_position,
                 from_batch=from_batch,
-                reason=f"Fechamento de lote: {work_order.ref}",
+                reason=f"Finalização do lote: {work_order.ref}",
                 to_batch=leg_batch,
                 to_quality_grade_ref=leg_grade_ref,
             )

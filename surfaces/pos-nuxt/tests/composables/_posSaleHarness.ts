@@ -16,7 +16,7 @@ export function makeProjection(overrides: Partial<POSProjection> = {}): POSProje
     collections: [],
     payment_methods: [
       { ref: "cash", label: "Dinheiro" },
-      { ref: "pix", label: "PIX" },
+      { ref: "pix", label: "Pix" },
       { ref: "card", label: "Cartão" },
     ],
     fulfillment_options: [
@@ -70,6 +70,9 @@ interface HarnessOptions {
  * expostas para o teste dirigir a Projection.
  */
 export function makeSale(opts: HarnessOptions = {}) {
+  // O "servidor ao alcance" do kit é estado do módulo (um por aba): o teste que
+  // simula o link caído não pode deixar o próximo começando sem conexão.
+  resetReachability();
   const posValue: Ref<POSProjection | null> = ref(
     opts.projection === undefined ? makeProjection() : opts.projection,
   );
@@ -86,7 +89,9 @@ export function makeSale(opts: HarnessOptions = {}) {
     action: { call: actionCall as <T = unknown>(...args: unknown[]) => Promise<T> },
     apiPath: (path: string) => path,
     requestHeaders: {} as Record<string, string>,
-    ordersUrl: computed(() => "http://gestor.test/"),
+    // O Gestor em dev: o irmão da casa no mesmo host (o kit abre o site DE FORA em
+    // nova aba; o app irmão segue a regra de sempre).
+    ordersUrl: computed(() => "http://127.0.0.1:3004/"),
   };
 
   const scope = effectScope();

@@ -261,8 +261,23 @@ def test_comprovante_de_movimento_de_OUTRA_GAVETA_e_recusado(operador_logado):
     )
     assert response.status_code == 400
 
-    # E a MESMA gaveta entrega — senão "recusa" poderia ser só quebra.
-    ok = client.get(
+    # Pedir pela URL a gaveta do pdv-2 não troca a estação: quem escolhe a
+    # gaveta é o dispositivo, a URL só confere (e aqui diverge).
+    divergente = client.get(
+        reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]),
+        {"terminal_ref": "pdv-2"},
+    )
+    assert divergente.status_code == 409, divergente.content
+
+    # E a ESTAÇÃO da mesma gaveta entrega — senão "recusa" poderia ser só quebra.
+    from django.test import Client
+
+    from shopman.backstage.tests.pos_test_runtime import bind_station
+
+    balcao_2 = Client()
+    balcao_2.force_login(get_user_model().objects.get(pk=client.session["_auth_user_id"]))
+    bind_station(balcao_2, "pdv-2")
+    ok = balcao_2.get(
         reverse("api-backstage-pos-cash-receipt", args=[alheio.pk]),
         {"terminal_ref": "pdv-2"},
     )

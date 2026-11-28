@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  commitmentChipLabel,
   dayContextLine,
   formatQty,
   formatQtyUnit,
@@ -48,8 +47,6 @@ function order(over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjec
     started_at_display: "",
     created_at_display: "",
     progress_pct: 0,
-    committed_qty: "6",
-    order_commitments: [],
     can_void: true,
     position_name: "",
     created_at_time: "",
@@ -101,37 +98,13 @@ describe("R07: número da bancada em português, com unidade", () => {
   });
 });
 
-describe("R05: a hora do compromisso no chip", () => {
-  it('"6 un. para 08:30" com a hora mais cedo; sem hora, só as unidades', () => {
-    const withTime = row({
-      planned_orders: [
-        order({
-          order_commitments: [
-            { ref: "P1", status: "", status_label: "", qty_required: "4", due_time: "12:00" },
-            { ref: "P2", status: "", status_label: "", qty_required: "2", due_time: "08:30" },
-          ],
-        }),
-      ],
-    });
-    expect(commitmentChipLabel(withTime)).toBe("6 un. para 08:30");
-    const noTime = row({
-      planned_orders: [
-        order({
-          order_commitments: [{ ref: "P1", status: "", status_label: "", qty_required: "6", due_time: "" }],
-        }),
-      ],
-    });
-    expect(commitmentChipLabel(noTime)).toBe("6 un.");
-  });
-});
-
-describe("R06: Planejado 15:12 · como sugerido", () => {
+describe("R06: Planejado 15h12 · como sugerido", () => {
   it("a hora é a do plano mais recente", () => {
     const rows = [
       row({ planned_qty: "20", planned_orders: [order({ created_at_time: "09:10" })] }),
       row({ planned_qty: "10", planned_orders: [order({ created_at_time: "15:12" })] }),
     ];
-    expect(latestPlanTime(rows)).toBe("15:12");
+    expect(latestPlanTime(rows)).toBe("15h12");
   });
 
   it("como sugerido só quando o planejado é o número da sugestão", () => {
@@ -157,7 +130,7 @@ describe("R04: ocasião e clima no cabeçalho do Planejamento", () => {
 });
 
 describe("R09: o desfecho de cada dia da amostra no Por quê", () => {
-  it('"Acabou às 10:40 em 3 dos últimos 4 sábados", com a nota da projeção', () => {
+  it('"Acabou às 10h40 em 3 dos últimos 4 sábados", com a nota da projeção', () => {
     const suggestion = {
       soldout_days: 3,
       sample_size: 8,
@@ -174,7 +147,7 @@ describe("R09: o desfecho de cada dia da amostra no Por quê", () => {
       ],
     } as unknown as ProductionSuggestionProjection;
     const [line] = suggestionHistory(suggestion, "2026-10-03");
-    expect(line!.text).toBe("Acabou às 10:40 em 3 dos últimos 4 sábados");
+    expect(line!.text).toBe("Acabou às 10h40 em 3 dos últimos 4 sábados");
     expect(line!.note).toBe("a projeção já soma o que deixou de vender");
   });
 });

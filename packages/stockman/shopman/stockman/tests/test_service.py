@@ -167,6 +167,31 @@ class TestStockIssue:
         assert exc.value.code == 'INSUFFICIENT_QUANTITY'
 
 
+class TestStockReceiveInto:
+    """Tests for stock.receive_into() — entrada num quant já localizado."""
+
+    def test_receive_into_credits_the_same_quant_and_returns_the_move(self, product, vitrine):
+        quant = stock.receive(Decimal('10'), product.sku, vitrine, reason='Entrada')
+        move = stock.receive_into(
+            Decimal('4'), quant, reason='Devolução', kind='return', metadata={'origin': 'teste'},
+        )
+
+        quant.refresh_from_db()
+        assert quant._quantity == Decimal('14')
+        assert move.quant_id == quant.pk
+        assert move.delta == Decimal('4')
+        assert move.kind == 'return'
+        assert move.metadata == {'origin': 'teste'}
+
+    def test_receive_into_rejects_non_positive_quantity(self, product, vitrine):
+        quant = stock.receive(Decimal('10'), product.sku, vitrine, reason='Entrada')
+
+        with pytest.raises(StockError) as exc:
+            stock.receive_into(Decimal('0'), quant, reason='Devolução')
+
+        assert exc.value.code == 'INVALID_QUANTITY'
+
+
 class TestStockHold:
     """Tests for stock.hold()."""
 

@@ -1,6 +1,7 @@
 # ADR-025 — O idioma dos eventos entre pacotes: anúncio depois do COMMIT
 
-**Status:** Proposto (rascunho para revisão do dono, 2026-08-19)
+**Status:** Proposto
+**Decisão:** rascunho para revisão do dono desde 2026-08-19
 **Data:** 2026-08-19
 **Escopo:** os sinais publicados pelos pacotes do Core (`payman`, `cashman`, `orderman`, `craftsman`, `stockman`, `guestman`, `offerman`, `doorman`) e quem os escuta no orquestrador
 **Origem:** achados P1 e P8 da auditoria do Payman (`auditoria-payman-2026-08-18.md`), com o mesmo tema já levantado na auditoria do Cashman

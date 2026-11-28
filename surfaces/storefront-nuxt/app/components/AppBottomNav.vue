@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { cartLinkName } from '~/presentation/cart'
 import { accountNavEntry } from '~/utils/accountNavEntry'
 
 const route = useRoute()
@@ -15,6 +16,13 @@ const items = computed(() => [
   { to: '/sacola', label: 'Sacola', icon: 'lucide:shopping-bag', showsCartBadge: true },
   { ...accountNavEntry(isAuthenticated.value, route.fullPath), showsCartBadge: false }
 ])
+
+// Nome acessível explícito: o rótulo visível com o contador da sacola junto, para o
+// leitor de tela ouvir "Sacola, 2 itens" em vez de um link sem nome (beta 05/11, LOJA-15).
+// O da sacola é o mesmo do cabeçalho (`cartLinkName`).
+function accessibleName (item: { label: string, showsCartBadge: boolean }) {
+  return item.showsCartBadge ? cartLinkName(cart.value) : item.label
+}
 
 function active (to: string) {
   if (to === '/') return route.path === '/'
@@ -35,9 +43,11 @@ function active (to: string) {
         v-for="item in items"
         :key="item.to"
         :to="item.to"
-        class="relative flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-2 text-xs"
+        class="relative flex min-w-0 flex-col items-center gap-1 rounded-md px-1 py-2 text-sm"
         :class="[active(item.to) ? 'font-semibold text-primary dark:text-foreground' : 'text-muted-foreground', item.showsCartBadge && cartPulse ? 'scale-105 text-primary dark:text-foreground' : '']"
         :aria-current="active(item.to) ? 'page' : undefined"
+        :aria-label="accessibleName(item)"
+        data-bottom-nav-link
       >
         <Icon
           :name="item.icon"
@@ -47,6 +57,7 @@ function active (to: string) {
         <span class="truncate">{{ item.label }}</span>
         <UiBadge
           v-if="item.showsCartBadge && !cart.is_empty"
+          aria-hidden="true"
           variant="default"
           size="sm"
           class="absolute right-2 top-1 size-5 min-w-5 rounded-full p-0 text-xs font-semibold tabular-nums transition-transform"

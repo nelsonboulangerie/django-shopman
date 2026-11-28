@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // Qualidade = a revisão do gestor sobre o lote já fechado (quality_reviewed /
-// quality_corrected). A classificação continua acontecendo no Fechamento
-// (ADR-017 §9): o lote sai do forno classificado, e aqui o gestor confere por
+// quality_corrected). A classificação continua acontecendo na Finalização
+// (ADR-017 §9): o lote fica pronto já classificado, e aqui o gestor confere por
 // exceção (QualityGatePanel), confirma o conjunto sem exceção num ato só ou
 // corrige a partição de um lote (QcCloseScreen em modo de correção). Mesma
-// projeção do Fechamento (o quiosque de QC), outra pergunta.
+// projeção da Finalização (o quiosque de QC), outra pergunta.
 import type { QCOrderCardProjection } from "~/types/production";
 import { isStale, isoForOffset } from "~/presentation/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import { qualityGate } from "~/presentation/qualityGate";
+import { staleReadAlert } from "~/presentation/liveSeal";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
 import {
   periodAnchor,
   periodOfDay,
@@ -24,6 +26,8 @@ const {
   error,
   submitting,
   refresh,
+  realtime,
+  fallbackPollMs,
   reviewQuality,
   reviewQualityBatch,
   correctQuality,
@@ -31,6 +35,21 @@ const {
 
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: !!kiosk.value }),
+);
+// A primeira leitura falhou e não há lote nenhum: a tela diz o erro, com "Tentar de
+// novo", em vez de ficar em branco (P1-18). Havendo dado, o aviso de dado velho mora
+// nos `alerts` do cabeçalho, com X (P2-07).
+const offline = computed(() => !!error.value && !kiosk.value);
+const qualityAlerts = computed<OperatorScreenAlert[]>(() =>
+  stale.value
+    ? [
+        staleReadAlert(
+          "os lotes",
+          refresh,
+          "Confira antes de confirmar: outro tablet pode ter mudado um lote.",
+        ),
+      ]
+    : [],
 );
 
 useHead({ title: "Qualidade" });
@@ -49,7 +68,7 @@ watch(
   },
 );
 
-// Mesmo "Período" do Fechamento: o lote de ontem se revisa a um toque de ‹.
+// Mesmo "Período" da Finalização: o lote de ontem se revisa a um toque de ‹.
 const todayISO = isoForOffset(0);
 const period = computed<PeriodSelection>({
   get: () => periodOfDay("day", selectedDate.value, todayISO),
@@ -178,7 +197,7 @@ async function confirmQualityBatch() {
     );
 }
 
-// O atalho dos lotes ainda abertos leva ao Fechamento, no mesmo dia.
+// O atalho dos lotes ainda abertos leva à Finalização, no mesmo dia.
 function goClose() {
   navigateTo({
     path: "/close",
@@ -188,7 +207,7 @@ function goClose() {
 
 // ── Correção da partição de um lote fechado ─────────────────────────────────
 // O lote em correção mora na URL (`?lot=<pk>`, com o dia e a busca), como no
-// Fechamento: o voltar do navegador volta ao portão, e o anterior e o próximo
+// Finalização: o voltar do navegador volta ao portão, e o anterior e o próximo
 // andam entre os lotes que o portão mostra com Corrigir.
 const QUALITY_LOTS_TRAIL = "production-quality-lots";
 const correcting = ref<QCOrderCardProjection | null>(null);
@@ -333,6 +352,10 @@ const screenStarted = computed(() => {
       :subtitle="qualitySubtitle"
       :pending="pending"
       :stale="stale"
+      :offline="offline"
+      :realtime="realtime"
+      :poll-ms="fallbackPollMs"
+      :alerts="qualityAlerts"
       search-placeholder="Buscar lote ou produto"
       search-label="filtrando os lotes"
       :actions="dayActions"
@@ -383,18 +406,16 @@ const screenStarted = computed(() => {
       v-else
       class="flex w-full flex-col gap-4 px-4 py-4"
     >
-      <div
-        v-if="stale"
-        role="status"
-        aria-live="polite"
-        class="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-      >
-        <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
-        <span>Sem atualizar. Mostrando o último painel carregado.</span>
-      </div>
-
+      <OperatorScreenState
+        v-if="offline"
+        state="error"
+        what="os lotes"
+        description="Estamos tentando reconectar sozinhos."
+        data-quality-error
+        @retry="refresh()"
+      />
       <p
-        v-if="pending && !kiosk"
+        v-else-if="pending && !kiosk"
         class="py-10 text-center text-muted-foreground"
       >
         Carregando…

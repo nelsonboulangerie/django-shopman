@@ -1,0 +1,149 @@
+# ORDEM — 2026-10-20, turno 4: consertos + resolvedor do vínculo iFood — coordenação DSH
+
+> Canal: este arquivo (next-consertos.md). Sessão executora (Codex): leia inteiro, execute nesta
+> ordem, registre no BOARD e em ROUNDS. Base: origin/main = 82173b583.
+> Antes: git fetch origin, git log --oneline -1 origin/main, gh pr list --state open.
+
+## Por que esta ordem existe
+
+Duas PRs vermelhas ficaram sem dono (as sessões que as abriram encerraram), e elas travam o
+resto da frente 6. A #1905 tem **um** defeito pequeno e é a chave do caminho crítico: o resolvedor
+do vínculo (frente B) está adiado justamente esperando ela. Feche isso primeiro.
+
+## Não toque (sessão 3 ainda viva)
+
+- codex/arquivar-gesto (#1948) e codex/arquivar-superficies (#1947): são da sessão 3. Se precisar
+  mexer, pare e diga no relatório.
+- #1945 (Core) e #1946 (Compras) estão na fila com auto-merge: não reabra, não force.
+- Outra coordenação (Claude) está viva no repo agora: PRs #1949 e #1950 (ADR-040) e worktrees
+  mexendo em shop/product_options.py, shop/services/made_to_order.py, seed.py e docs. Não toque
+  nesses arquivos. A #1949 é a dona da migração 0102 (ver frente 1).
+- Território reservado de sempre: shopman/shop/services/fiscal.py, notifications.py,
+  shopman/backstage/projections/pos.py, shopman/backstage/api/operations.py,
+  shopman/storefront/api/geocode.py, promotions.py, modifiers.py, cart.py, availability.py,
+  adapters/stock.py, notification_copy.py, shopman/shop/config.py, surfaces/pos-nuxt/**,
+  surfaces/orders-nuxt/**/customers/**, surfaces/production-nuxt/**, packages/orderman/**,
+  packages/craftsman/**, docs/plans/**.
+
+## Regras comuns (valem para as duas frentes)
+
+1. Worktree próprio por frente; git add só arquivo nomeado; nunca git stash puro.
+2. Esteira no mesmo turno: commit → push → ajuste do PR existente quando for conserto (não abra PR
+   novo para consertar PR aberto) → fila.
+3. Vermelho: leia o log e nomeie a causa no PR; não reenfileire às cegas.
+4. Copy sem travessão, vocabulário de docs/reference/suite-vocabulary.md; "dispositivo", nunca
+   "aparelho". Nada de jargão em tela.
+5. Tela: D1 a D12 item a item e capturas antes/depois claro/escuro com nome único.
+6. Desempenho: medir antes e depois e pôr o número no PR.
+7. Migração: ls <app>/migrations | sed 's/_.*//' | sort | uniq -d antes do push.
+
+---
+
+# Frente 1 — consertar a #1905 (foto do catálogo iFood)  [primeiro]
+
+**Tamanho:** S. **Branch:** o mesmo do PR: codex/ifood-foto.
+
+**Estado medido (run 39402815161, 20/10 10:06):** a PR está MERGEABLE e sobram três checks
+vermelhos com **uma causa só**. Atenção à migração: ela é 0102_catalogimageupload, mas a **#1949
+(outra coordenação) também cria shopman/shop/migrations/0102_fichas_feitas_na_hora.py**. Duas 0102
+no mesmo app quebram o grafo. Enquanto as duas estiverem abertas:
+
+- se a #1949 já tiver mergeado quando você for enfileirar, renomeie a sua para
+  0103_catalogimageupload com dependencies = [("shop", "0102_fichas_feitas_na_hora")];
+- se ela ainda não mergeou, **não enfileire antes dela**: segure, e faça o rename no instante em que
+  ela entrar (git merge origin/main, rename, dependência, push).
+
+A causa dos três checks vermelhos é:
+
+    config.synthetic_purge.PolicyError: modelo sem classificação: shop.CatalogImageUpload
+
+O gate config/synthetic_purge.py exige que **todo** modelo esteja classificado (KEEP, PURGE ou
+PURGE_ROWS). O modelo novo do cache de imagePath não está.
+
+**Tarefa:**
+1. Classifique shop.CatalogImageUpload no POLICY de config/synthetic_purge.py. Recomendação:
+   _purge("cache do imagePath do catálogo iFood; derivado do merchant remoto"), porque é cache
+   reconstruível e não é vínculo. Se o arquivo tiver regra melhor para cache por canal, siga o
+   arquivo, não a recomendação.
+2. Confirme que o teste que baixava https://cdn.test/pao.jpg de verdade (o que derrubou
+   shopman/shop/tests/test_external_availability.py:158) está simulado: nenhum teste pode tocar a
+   rede. Se ainda houver, simule.
+3. Rode o teste do policy (test_exception_hygiene / o que o arquivo tiver), test-shop e o teste do
+   adapter. Push sem force e reabra a fila.
+
+**Pronto quando:** a #1905 verde e na fila, com o motivo do conserto escrito no PR.
+
+---
+
+# Frente 2 — consertar a #1931 (tela de categorias em Canais)
+
+**Tamanho:** S. **Branch:** o mesmo do PR: codex/ifood-categorias-tela.
+
+**Estado medido (run 39401949717):** dois defeitos reais, mais dois checks que caem por
+consequência (test-backstage e Coverage Gate).
+
+**Defeito 1 — conjunto mínimo do kit (D5/D11).**
+    AssertionError: orders-nuxt saiu do conjunto mínimo: expected [ 'badgeVariant: 2 (teto 0)' ]
+Em surfaces/orders-nuxt, o teto de badgeVariant é **zero**: selo não leva variant escrito, o tema
+dá soft. Troque os dois selos novos pela peça canônica do kit (sem variant) ou leve o mapa de cor
+para o kit, uma vez. Não suba teto de guardrail para acomodar uso novo.
+
+**Defeito 2 — exceção silenciosa.**
+    shopman/backstage/projections/catalog_bindings.py:217 — broad except without log/raise
+Loge com contexto ou levante; exceção ampla e muda é o que o gate proíbe. Não silencie o gate.
+
+**Tarefa:** corrija os dois, rode operator-kit, test-backstage e o teste de higiene de exceções,
+push sem force, fila. Se o Coverage Gate cair junto, diga no PR qual linha destravou.
+
+---
+
+# Frente 2b — a #1948 (gesto de Arquivar), se ela ficar órfã
+
+**Só pegue esta frente se** a #1948 estiver DIRTY e **sem movimento há mais de 1 hora**. Ela é da
+sessão 3, e a regra continua valendo enquanto ela estiver viva. Medido em 20/10 11:50: a sessão 3
+parou às 10:23 e a PR ficou CONFLICTING às 10:50, antes da #1945 mergear.
+
+**Tamanho:** S. **Branch:** o mesmo do PR: codex/arquivar-gesto.
+
+1. git merge origin/main (a #1945, do Core, entrou: Product.is_active existe agora).
+2. Conjunto mínimo: o selo novo tem badgeVariant: 1 e o teto em orders-nuxt é zero. Use a peça
+   canônica do kit, sem variant escrito; não suba teto de guardrail.
+3. test_product_detail_get_shape: o shape do detalhe mudou com o is_active da #1945 — atualize o
+   esperado no teste com o campo novo (é contrato, não afrouxe a asserção).
+4. Rode operator-kit, test-backstage, test-storefront. Saia de draft, fila.
+
+# Frente 3 — resolvedor do vínculo (frente B do iFood)  [só depois da #1905 mergear]
+
+**Tamanho:** M. **Branch:** codex/ifood-vinculo-resolvedor.
+
+**Medido hoje:** shopman/shop/adapters/catalog_projection_ifood.py deriva item e product por
+uuid5(merchant, sku) e ignora o CatalogBinding. Um SKU reconciliado por vínculo é enviado para
+outro item, criando anúncio paralelo. O vínculo tem a identidade remota (provider, account_ref,
+catalog_ref, context, resource_id, unique no banco) mais external_product_ref, category_ref,
+item_context_ref (docs/reference/catalog-bindings.md). _set_item_status usa o mesmo uuid derivado.
+
+**Tarefa:**
+1. Resolvedor único, em módulo novo do shop (por exemplo shopman/shop/services/catalog_identity.py):
+   para (sku, channel) devolve item_id, product_id, category_ref e origem ("binding" | "derived").
+   Binding vigente cujo provider/account_ref/catalog_ref/context batem com o SHOPMAN_IFOOD
+   configurado manda; sem binding, ou binding de outro escopo, cai no uuid5 de hoje.
+2. O adapter usa o resolvedor em _item_payload e _set_item_status. **Preserve o imagePath** que a
+   #1905 acabou de integrar (faça git merge origin/main antes de começar). Não cria, altera nem
+   apaga binding; não enfileira nada.
+3. category_ref do vínculo é o ponto de partida quando não há exceção local (a tela e o mapa da
+   frente A já mergeada mandam).
+4. Testes com transporte simulado: com vínculo → payload e PATCH no id remoto, nunca uuid derivado;
+   sem vínculo → uuid derivado; binding de outro merchant → ignorado com aviso, não erro fatal; dois
+   SKUs com o mesmo resource_id → erro explícito, nunca escolha silenciosa. Nada de HTTP real.
+5. No corpo do PR: uma linha dizendo o que muda para quem já tem anúncio no iFood.
+
+**Pronto quando:** PR verde na fila e o resolvedor é o único lugar que decide identidade remota.
+
+---
+
+# Fila de depois (não faça agora)
+
+Frente 7 restante: tabelão de insumos e de clientes, vínculos do produto (listings, coleções,
+componentes de combo), vigência de preço visível e filtrável, import/export ligado a insumo,
+fornecedor, cliente, receita e grupo (o kit já mergeou na #1895), lote em fornecedores, lote em
+receitas (backend).

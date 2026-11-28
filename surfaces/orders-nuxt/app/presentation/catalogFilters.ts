@@ -12,6 +12,7 @@ import type { CatalogFacets, SurfaceProjection } from "~/types/catalog";
 // Ids das dimensões — chaves em inglês, rótulos em pt-BR (convenção do projeto).
 export const FILTER_SYNC = "sync_status";
 export const FILTER_SURFACE = "surface";
+export const FILTER_ARCHIVED = "archived";
 export const FILTER_PUBLISHED = "is_published";
 export const FILTER_SELLABLE = "is_sellable";
 export const FILTER_STOCK = "stock";
@@ -54,7 +55,12 @@ export function serverCatalogDimensions(
   facets?: CatalogFacets,
 ): FilterDimension[] {
   const hasTargets = surfaces.some((s) => s.is_projection_target);
-  const dimensions: FilterDimension[] = [];
+  const dimensions: FilterDimension[] = [{
+    id: "validity",
+    label: "Vigência do preço",
+    type: "single-select",
+    options: [{ value: "any", label: "Qualquer data" }],
+  }];
 
   if (hasTargets) {
     dimensions.push({
@@ -77,6 +83,7 @@ export function serverCatalogDimensions(
   });
 
   dimensions.push(
+    { id: FILTER_ARCHIVED, label: "Arquivados", type: "boolean", options: [] },
     { id: FILTER_PUBLISHED, label: "Exibido", type: "boolean", options: [] },
     { id: FILTER_SELLABLE, label: "À venda", type: "boolean", options: [] },
     {
@@ -128,11 +135,13 @@ const QUERY_DIMENSIONS: Record<
   string,
   { id: string; values?: readonly string[] }
 > = {
+  validity: { id: "validity", values: ["any"] },
   surface: { id: FILTER_SURFACE },
   // Na URL a chave é `sync` (contrato do checklist); a dimensão é `sync_status`.
   sync: { id: FILTER_SYNC, values: SYNC_OPTIONS.map((o) => o.value) },
   stock: { id: FILTER_STOCK, values: STOCK_OPTIONS.map((o) => o.value) },
   pim_complete: { id: FILTER_PIM, values: ["true", "false"] },
+  archived: { id: FILTER_ARCHIVED, values: ["true", "false"] },
   is_published: { id: FILTER_PUBLISHED, values: ["true", "false"] },
   is_sellable: { id: FILTER_SELLABLE, values: ["true", "false"] },
   has_vocation: { id: FILTER_VOCATION, values: ["true", "false"] },

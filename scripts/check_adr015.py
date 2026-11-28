@@ -11,7 +11,11 @@ two things become blocking in CI:
    migration fails the gate. A fix to an applied migration is a NEW migration.
 2. **DEPRECATED markers carry a deadline** — every ``# DEPRECATED(remove by
    YYYY-MM-DD)`` marker is collected; a past date (or a marker that does not
-   parse) fails the gate. The transition window is enforced, not decorative.
+   parse) fails the gate **only for the PR whose diff touches that file**.
+   Elsewhere it is a loud warning, and so is a deadline that is close
+   (``SHOPMAN_DEPRECATED_WARN_DAYS``, default 14). The calendar alone never
+   turns every PR red: a hotfix in an unrelated file must still merge, and the
+   PR that edits the deprecated file is the one that has to remove it.
 
 A third post-tag check — new migrations with destructive operations must carry
 an ``# expand-contract:`` marker — lives in ``scripts/check_migrations.py``
@@ -59,6 +63,9 @@ EXPAND_CONTRACT_HOWTO = (
 )
 
 DEPRECATED_MARKER_RE = re.compile(r"DEPRECATED\((?P<inner>[^)]*)\)")
+#: Quantos dias antes do prazo o gate começa a avisar.
+DEPRECATED_WARN_DAYS_ENV = "SHOPMAN_DEPRECATED_WARN_DAYS"
+DEPRECATED_WARN_DAYS_DEFAULT = 14
 DEPRECATED_DEADLINE_RE = re.compile(r"^\s*remove by (?P<date>\d{4}-\d{2}-\d{2})\s*$")
 
 #: Paths where the literal string ``DEPRECATED(`` is documentation or fixture,
@@ -366,28 +373,93 @@ def evaluate_deprecated_marker(inner: str, today: datetime.date) -> str | None:
     return None
 
 
-def deprecated_violations(
-    repo_root: Path | None = None, today: datetime.date | None = None
+def deprecated_warn_days() -> int:
+    raw = (os.environ.get(DEPRECATED_WARN_DAYS_ENV, "") or "").strip()
+    try:
+        return max(0, int(raw)) if raw else DEPRECATED_WARN_DAYS_DEFAULT
+    except ValueError:
+        return DEPRECATED_WARN_DAYS_DEFAULT
+
+
+def deprecated_due_soon(
+    repo_root: Path | None = None,
+    today: datetime.date | None = None,
+    warn_days: int | None = None,
 ) -> list[tuple[str, str]]:
-    """``(location, reason)`` for expired or malformed DEPRECATED markers."""
+    """``(location, reason)`` for markers whose deadline is within ``warn_days``."""
     today = today or datetime.date.today()
+    warn_days = deprecated_warn_days() if warn_days is None else warn_days
+    horizon = today + datetime.timedelta(days=warn_days)
+    due: list[tuple[str, str]] = []
+    for location, inner in _deprecated_markers(repo_root):
+        match = DEPRECATED_DEADLINE_RE.match(inner)
+        if not match:
+            continue
+        try:
+            deadline = datetime.date.fromisoformat(match.group("date"))
+        except ValueError:
+            continue
+        if today <= deadline <= horizon:
+            due.append((location, f"prazo em {deadline.isoformat()}: remova o código deprecated antes dele"))
+    return due
+
+
+def _deprecated_markers(repo_root: Path | None = None) -> list[tuple[str, str]]:
+    """``(location, inner)`` for every ``DEPRECATED(...)`` marker in tracked files."""
     grep = _git(
         ["grep", "-In", r"DEPRECATED(", "--", ".", *DEPRECATED_SCAN_EXCLUDES],
         cwd=repo_root,
     )
     if grep.returncode not in (0, 1):  # 1 = no matches
         raise RuntimeError(f"git grep falhou: {grep.stderr.strip()}")
-    violations: list[tuple[str, str]] = []
+    markers: list[tuple[str, str]] = []
     for line in grep.stdout.splitlines():
         parts = line.split(":", 2)  # git grep -In → path:lineno:content
         if len(parts) < 3:
             continue
         location = f"{parts[0]}:{parts[1]}"
         for match in DEPRECATED_MARKER_RE.finditer(parts[2]):
-            reason = evaluate_deprecated_marker(match.group("inner"), today)
-            if reason:
-                violations.append((location, reason))
+            markers.append((location, match.group("inner")))
+    return markers
+
+
+def deprecated_violations(
+    repo_root: Path | None = None, today: datetime.date | None = None
+) -> list[tuple[str, str]]:
+    """``(location, reason)`` for expired or malformed DEPRECATED markers."""
+    today = today or datetime.date.today()
+    violations: list[tuple[str, str]] = []
+    for location, inner in _deprecated_markers(repo_root):
+        reason = evaluate_deprecated_marker(inner, today)
+        if reason:
+            violations.append((location, reason))
     return violations
+
+
+def changed_paths(base: str, repo_root: Path | None = None) -> set[str]:
+    """Files the PR diff touches (any status), against the resolved base."""
+    diff = _git(["diff", "--name-only", "--no-renames", base, "HEAD"], cwd=repo_root)
+    if diff.returncode != 0:
+        raise RuntimeError(f"git diff contra '{base}' falhou: {diff.stderr.strip()}")
+    return {line.strip() for line in diff.stdout.splitlines() if line.strip()}
+
+
+def split_by_diff(
+    violations: list[tuple[str, str]], touched: set[str] | None
+) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    """``(blocking, warning)``: só reprova o marcador num arquivo que o diff toca.
+
+    ``touched is None`` (base do diff desconhecida) reprova tudo: sem saber o
+    que o PR mudou, o gate não pode concluir que o marcador vencido é alheio.
+    """
+    if touched is None:
+        return list(violations), []
+    blocking: list[tuple[str, str]] = []
+    warning: list[tuple[str, str]] = []
+    for location, reason in violations:
+        path = location.rsplit(":", 1)[0]
+        (blocking if path in touched else warning).append((location, reason))
+    return blocking, warning
 
 
 # ---------------------------------------------------------------------------
@@ -406,6 +478,12 @@ def main(argv: list[str] | None = None) -> int:
     print("check-adr015: política ADR-015 ATIVA (tag go-live-v1 presente)")
 
     base, base_description = resolve_diff_base(repo_root)
+    touched: set[str] | None = None
+    if base is not None:
+        try:
+            touched = changed_paths(base, repo_root)
+        except RuntimeError:
+            touched = None
     if base is None:
         print(f"- [FAIL] adr015.append_only: base do diff não resolvida ({base_description})")
         failed = True
@@ -430,17 +508,33 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         deprecated = deprecated_violations(repo_root)
+        due_soon = deprecated_due_soon(repo_root)
     except RuntimeError as exc:
         print(f"- [FAIL] adr015.deprecated_deadline: {exc}")
         failed = True
     else:
-        if deprecated:
+        blocking, warning = split_by_diff(deprecated, touched)
+        if blocking:
             failed = True
-            print("- [FAIL] adr015.deprecated_deadline: marcadores DEPRECATED vencidos ou ilegíveis.")
-            for location, reason in deprecated:
+            print(
+                "- [FAIL] adr015.deprecated_deadline: este PR toca arquivo com marcador "
+                "DEPRECATED vencido ou ilegível. Remova o código deprecated (ou declare um prazo novo, com motivo)."
+            )
+            for location, reason in blocking:
                 print(f"    {location}: {reason}")
-        else:
-            print("- [OK] adr015.deprecated_deadline: nenhum marcador DEPRECATED vencido ou ilegível.")
+        if warning:
+            print(
+                "- [WARN] adr015.deprecated_deadline: marcadores DEPRECATED vencidos ou ilegíveis "
+                "em arquivos que este PR não toca. Não reprova este PR; reprova o próximo que tocar o arquivo."
+            )
+            for location, reason in warning:
+                print(f"    {location}: {reason}")
+        if due_soon:
+            print(f"- [WARN] adr015.deprecated_deadline: prazo a menos de {deprecated_warn_days()} dia(s).")
+            for location, reason in due_soon:
+                print(f"    {location}: {reason}")
+        if not (blocking or warning or due_soon):
+            print("- [OK] adr015.deprecated_deadline: nenhum marcador DEPRECATED vencido, ilegível ou perto do prazo.")
 
     return 1 if failed else 0
 

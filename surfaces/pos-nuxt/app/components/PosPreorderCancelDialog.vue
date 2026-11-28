@@ -11,6 +11,11 @@ const props = defineProps<{
   open: boolean;
   customerName: string;
   requiresApproval: boolean;
+  /**
+   * O que cancelar faz com o dinheiro, com o valor: a frase do servidor (a mesma
+   * do Gestor). "" quando ele não sabe dizer, e aí vale a frase geral.
+   */
+  moneyEffect?: string;
   /** A lista única de motivos de cancelar, a mesma do Gestor. */
   cancelReasons: KeyedReason[];
   busy?: boolean;
@@ -21,10 +26,17 @@ const emit = defineEmits<{
   confirm: [{ reasonKey: string; internalNote: string }];
 }>();
 
-const description = computed(() =>
-  "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece na Sessão de caixa, em Precisa de você."
-  + (props.requiresApproval ? " Encomenda paga: um gerente precisa autorizar." : ""),
-);
+// A aprovação de gerente é pedida exatamente quando há (ou pode haver) dinheiro
+// recebido (`operator_cancel_policy`). Sem ela, não há o que devolver, e falar de
+// devolução numa encomenda sem pagamento confundia (beta test de 05/11/2026, PDV2-20).
+// Com o valor na frase (P1-6): quem cancela e o gerente que assina leem quanto
+// volta e por onde, antes do gesto.
+const description = computed(() => {
+  if (!props.requiresApproval) return "Nada foi pago nesta encomenda: não há o que devolver.";
+  const effect = props.moneyEffect?.trim();
+  if (effect) return `${effect} Encomenda paga: um gerente precisa autorizar.`;
+  return "O que já foi pago volta no mesmo meio. Devolução em dinheiro aparece no Caixa, em Precisa de você. Encomenda paga: um gerente precisa autorizar.";
+});
 </script>
 
 <template>

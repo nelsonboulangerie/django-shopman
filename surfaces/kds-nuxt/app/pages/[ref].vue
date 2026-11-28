@@ -23,8 +23,10 @@
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
-import type { KDSHistoryEntryProjection, KDSTicketProjection } from "~/types/kds";
+import type { KDSHistoryEntryProjection, KDSIndexResponse, KDSTicketProjection } from "~/types/kds";
+import { stationTitleFor } from "~/presentation/sections";
 import {
+  barNeedsArmDelay,
   boardFilterCounts,
   focusGrid,
   focusSlice,
@@ -41,6 +43,7 @@ import {
   hasChanges,
   type KDSBoardFilter,
 } from "~/presentation/board";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const route = useRoute();
 const stationRef = computed(() => String(route.params.ref || ""));
@@ -108,7 +111,10 @@ onBeforeUnmount(() => {
 // O título é o NOME da estação (Cafés, Lanches): estação é um posto específico, e não
 // existe estação chamada "Preparo" (dono, 09/10/2026). É o mesmo nome do item aceso na
 // navegação.
-const stationTitle = computed(() => view.value?.instanceName || stationRef.value);
+const { data: stationIndex } = useNuxtData<KDSIndexResponse>("kds-index");
+const stationTitle = computed(() =>
+  stationTitleFor(stationRef.value, view.value?.instanceName, stationIndex.value?.instances),
+);
 
 // O som é da estação. O navegador que bloqueia o áudio vira aviso da tela, com "Ativar
 // o som"; ligar e desligar é do botão Som na barra da estação (dono, 13/10/2026), que
@@ -160,7 +166,7 @@ async function reopenFromHistory(pk: number) {
 const now = ref<Date | null>(null);
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 const clockTime = computed(() =>
-  now.value ? now.value.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "",
+  now.value ? formatClock(now.value) : "",
 );
 onMounted(() => {
   now.value = new Date();
@@ -175,7 +181,7 @@ onBeforeUnmount(() => {
 const lastRead = ref("");
 function markRead() {
   if (import.meta.client && view.value)
-    lastRead.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    lastRead.value = formatClock(new Date());
 }
 watch(view, markRead);
 onMounted(markRead);
@@ -290,6 +296,12 @@ const positions = computed(() => {
     .forEach((card, index) => map.set(card.pk, queuePositionLabel(index)));
   return map;
 });
+// Enquanto a grade se acomoda (um pedido entrou, saiu ou trocou de célula), nenhum
+// toque age: os tickets deslizam uns sobre os outros e o toque cairia no pedido errado.
+const { settling: gridSettling, guard: whenSettled } = useKdsGridSettle(
+  () => placementSignature(slice.value.visible, slice.value.placements),
+  { stillMoving: () => Boolean(gridBox.value?.querySelector(KDS_GRID_MOVING_SELECTOR)) },
+);
 function placementStyle(pk: number) {
   const place = slice.value.placements.get(pk);
   if (!place) return {};
@@ -410,8 +422,9 @@ const chosenPk = ref<number | null>(null);
 const phoneFocus = computed<KDSTicketProjection | null>(
   () => filteredCards.value.find((card) => card.pk === chosenPk.value) ?? filteredCards.value[0] ?? null,
 );
-// Armar o Pronto na base: o botão fica no MESMO lugar ao passar de Iniciar para Pronto,
-// então o toque que iniciou não pode, quicando, marcar Pronto também (a mesma janela do
+// Armar a ação na base: o botão fica no MESMO lugar ao passar de Iniciar para Pronto e
+// quando o pedido em foco troca (o fim do Desfazer passa o botão ao pedido seguinte), então
+// o toque que veio antes não pode cair no ato novo (`barNeedsArmDelay`, a mesma janela do
 // card, `KDS_ARM_DELAY_MS`).
 const barArmed = ref(true);
 let barArmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -419,7 +432,7 @@ watch(
   () => [phoneFocus.value?.pk, phoneFocus.value?.status] as const,
   ([pk, status], [previousPk, previousStatus]) => {
     if (barArmTimer) clearTimeout(barArmTimer);
-    if (pk === previousPk && previousStatus === "pending" && status === "in_progress") {
+    if (barNeedsArmDelay({ pk: previousPk, status: previousStatus }, { pk, status })) {
       barArmed.value = false;
       barArmTimer = setTimeout(() => (barArmed.value = true), KDS_ARM_DELAY_MS);
     } else {
@@ -445,10 +458,16 @@ const phoneAction = computed<OperatorActionBarAction | null>(() => {
         label: `${action.label} ${code}`,
         icon: "i-lucide-eye",
         color: "error",
+        disabled: !barArmed.value,
         onSelect: () => void acknowledgeChange(card.pk),
       };
     case "start":
-      return { label: `Iniciar ${code}`, icon: "i-lucide-play", onSelect: () => void start(card.pk) };
+      return {
+        label: `Iniciar ${code}`,
+        icon: "i-lucide-play",
+        disabled: !barArmed.value,
+        onSelect: () => void start(card.pk),
+      };
     case "finish":
       return {
         label: `Pronto ${code}`,
@@ -530,7 +549,20 @@ function clearSearchAndFilter() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- No celular (abaixo de `md`), a linha do chão do kit, como no Gestor: o selo com o
+         ponto de conexão (a cadência e a hora da leitura no topo do ⋮), a busca, o sino e
+         o ⋮ no canto. Ela toma o lugar da barra de cima e do "Ao vivo" da mesa. -->
+    <OperatorCompactBar
+      :title="stationTitle"
+      :tone="liveTone"
+      :time="lastRead"
+      :conn-label="liveLabel"
+      :query="query"
+      search-button-label="Buscar por código, cliente ou item"
+      :options="headerActions"
+      @clear="clearSearchAndFilter"
+    />
     <OperatorPageHeader
       :title="stationTitle"
       :alerts="screenAlerts"
@@ -667,12 +699,21 @@ function clearSearchAndFilter() {
           <!-- tablet e desktop: a fila em foco -->
           <div v-if="deskVariant" class="flex min-h-0 flex-1 flex-col gap-2 max-md:hidden">
             <div ref="gridBox" class="min-h-0 flex-1 overflow-y-auto" data-kds-grid-box>
-              <TransitionGroup tag="div" name="kds-card" class="grid gap-2.5" :style="gridStyle" data-kds-grid>
+              <TransitionGroup
+                tag="div"
+                name="kds-card"
+                class="relative grid gap-2.5"
+                :class="{ 'pointer-events-none': gridSettling }"
+                :style="gridStyle"
+                :data-kds-settling="gridSettling || undefined"
+                data-kds-grid
+              >
                 <div
                   v-for="card in slice.visible"
                   :key="card.pk"
-                  class="flex self-start"
+                  class="relative isolate z-[1] flex self-start"
                   :style="placementStyle(card.pk)"
+                  :data-kds-grid-pk="card.pk"
                   data-kds-grid-cell
                 >
                   <KdsTicketCard
@@ -683,12 +724,12 @@ function clearSearchAndFilter() {
                     :addition="view.additionPks.has(card.pk)"
                     :finishing="view.finishingPks.has(card.pk)"
                     :finish-until="finishUntil.get(card.pk)"
-                    @open="openTicketPk = card.pk"
-                    @start="start(card.pk)"
-                    @finish="finish(card.pk)"
-                    @undo="undoFinish(card.pk)"
-                    @seen="acknowledgeChange(card.pk)"
-                    @locked="warnLocked(card.pk)"
+                    @open="whenSettled(() => (openTicketPk = card.pk))"
+                    @start="whenSettled(() => start(card.pk))"
+                    @finish="whenSettled(() => finish(card.pk))"
+                    @undo="whenSettled(() => undoFinish(card.pk))"
+                    @seen="whenSettled(() => acknowledgeChange(card.pk))"
+                    @locked="whenSettled(() => warnLocked(card.pk))"
                   />
                 </div>
               </TransitionGroup>
@@ -771,11 +812,11 @@ function clearSearchAndFilter() {
 </template>
 
 <style scoped>
-/* Transição da grade: no Pronto, o card sai com um respiro e a fila desliza (FLIP),
-   o próximo "assume o foco". Novos pedidos entram com o mesmo respiro. */
-.kds-card-move {
-  transition: transform 0.35s cubic-bezier(0.2, 0, 0, 1);
-}
+/* Transição da grade: no Pronto, o card sai com um respiro e o próximo "assume o
+   foco"; novos pedidos entram com o mesmo respiro. Ninguém DESLIZA de uma célula para
+   outra (a grade não tem classe de movimento): o deslize fazia um ticket passar por cima do botão de
+   outro (beta 06/11, Separação 800x600: o E09 cobria o T69). Quem troca de célula
+   aparece direto nela; o respiro de quem entra fica dentro da própria célula. */
 .kds-card-enter-active,
 .kds-card-leave-active {
   transition:
@@ -788,8 +829,18 @@ function clearSearchAndFilter() {
   transform: scale(0.96);
 }
 
+/* O ticket que sai fica ATRÁS de quem entra na célula dele, não recebe toque (a
+   célula já é de outro pedido) e sai do fluxo da grade: posto sobre a área da célula
+   (a grade é o bloco de contenção), não alonga a linha nem empurra os vizinhos. */
+.kds-card-leave-active {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .kds-card-move,
   .kds-card-enter-active,
   .kds-card-leave-active {
     transition: none;

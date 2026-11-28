@@ -33,12 +33,15 @@ import logging
 import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import NamedTuple
 
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
+from shopman.backstage.projections import order_promise
 from shopman.backstage.projections.feeds import ChannelSwitchProjection, ManagerOptionProjection
-from shopman.shop.config import STAGE_GOAL_DEFAULTS
+from shopman.shop.services.kitchen_eta import PrepExpectation, stage_minutes
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +58,11 @@ ATTENTION_KINDS = (
     "dispatch",      # despachar a entrega
     "courier_back",  # o entregador voltou com dinheiro ou maquininha
     "settle",        # acertar o dinheiro da entrega
+    "promise",       # promessa em risco (WP-G08): avisar o cliente, remarcar ou cancelar
 )
+
+#: O fato de quem não espera mais nada da etapa, mas teve a promessa quebrada.
+PROMISE_ATTENTION = "promise"
 
 #: Meta padrão do pedido novo (e do bloqueado por pagamento), em minutos, quando o
 #: canal não tem prazo de confirmação próprio.
@@ -90,34 +97,86 @@ def stage_goal(kind: str, channel_config=None) -> int:
     """A meta, em minutos, da etapa que o fato ``kind`` espera, no canal do pedido.
 
     O canal manda (``fulfillment.stage_goal_minutes``, já com a cascata loja e
-    padrões); sem config, valem os padrões do dono.
+    padrões); sem config, valem os padrões do dono (``kitchen_eta.stage_minutes``).
     """
     stage = _GOAL_STAGE.get(kind)
     if stage is None:
         return CONFIRM_GOAL_MINUTES
-    goals = channel_config.fulfillment.stage_goal_minutes if channel_config is not None else {}
-    value = goals.get(stage) if isinstance(goals, dict) else None
-    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-        return STAGE_GOAL_DEFAULTS[stage]
-    return value
+    return stage_minutes(stage, channel_config)
 
 
-def _confirmation_goal(channel_config) -> int:
-    """O prazo do pedido novo: o do canal (confirmação automática ou o do marketplace)."""
+class AcceptanceTimer(NamedTuple):
+    """O timer de aceite agendado para um pedido novo (``confirmation.timeout``)."""
+
+    expires_at_iso: str
+    action: str
+    #: O prazo que o timer conta, gravado na hora de agendar; 0 quando não há.
+    timeout_minutes: int = 0
+
+
+def acceptance_timer_goal(timer: AcceptanceTimer | None) -> tuple[int, datetime] | None:
+    """A meta e o "desde" tirados do timer agendado, ou ``None`` sem timer.
+
+    A meta é o prazo que o timer conta e o "desde" é o fim dele menos o prazo:
+    o número do card chega à meta no mesmo instante em que o relógio "cancela
+    sozinho em" zera. Contar da criação do pedido deixava o Pix pago aos 7 min
+    nascer atrasado numa meta de 5, com o prazo recém-começado; reler a data do
+    pedido na hora da leitura trocava a meta da encomenda de 60 para 5 na virada
+    do dia, com o timer ainda contando 60.
+    """
+    if timer is None or timer.timeout_minutes <= 0 or not timer.expires_at_iso:
+        return None
+    try:
+        expires = datetime.fromisoformat(timer.expires_at_iso)
+    except ValueError:
+        return None
+    return timer.timeout_minutes, expires - timedelta(minutes=timer.timeout_minutes)
+
+
+def _confirmation_goal(order: Order, channel_config) -> int:
+    """O prazo do pedido novo SEM timer agendado: o de aceite deste pedido ou o do marketplace."""
     goal = CONFIRM_GOAL_MINUTES
     if channel_config is None:
         return goal
+    from shopman.shop.lifecycle import acceptance_timeout_minutes
+
     confirmation = channel_config.confirmation
     candidates = []
-    if confirmation.mode in ("auto_confirm", "auto_cancel") and confirmation.timeout_minutes > 0:
-        candidates.append(confirmation.timeout_minutes)
+    if confirmation.mode in ("auto_confirm", "auto_cancel"):
+        timeout = acceptance_timeout_minutes(order, channel_config, now=order.created_at)
+        if timeout > 0:
+            candidates.append(timeout)
     if confirmation.external_sla_minutes > 0:
         candidates.append(confirmation.external_sla_minutes)
     return min(candidates) if candidates else goal
 
 
+def goal_minutes_label(minutes: int) -> str:
+    """A meta da etapa como a Fila a escreve: "meta 5 min".
+
+    Com a unidade: "meta 5" ao lado de "27 min" obrigava a completar o sentido
+    (5 o quê?). A Central já escrevia "meta 10 min" da mesma grandeza.
+    """
+    return f"meta {minutes} min"
+
+
 def attention_kind(order: Order, card) -> str:
-    """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``."""
+    """O fato humano que o pedido espera agora (``ATTENTION_KINDS``) ou ``""``.
+
+    O fato da etapa vem primeiro (aceitar, iniciar, despachar). Quando a etapa
+    não pede ninguém e a promessa do pedido está em risco (WP-G08), é ela o
+    fato: a encomenda de amanhã que perdeu o lote não tem etapa a cumprir hoje
+    e, mesmo assim, precisa de alguém agora.
+    """
+    kind = _stage_attention(order, card)
+    if kind:
+        return kind
+    promise = getattr(card, "promise", None)
+    return PROMISE_ATTENTION if promise is not None and promise.state == order_promise.STATE_AT_RISK else ""
+
+
+def _stage_attention(order: Order, card) -> str:
+    """O fato humano da ETAPA em que o pedido está, ou ``""``."""
     # Negociação aberta vence tudo: o iFood decide sozinho no prazo, inclusive em
     # pedido já entregue (o cliente reclama depois).
     if any(negotiation.can_respond for negotiation in (card.ifood_negotiations or ())):
@@ -130,10 +189,18 @@ def attention_kind(order: Order, card) -> str:
     advance = _action(card, "advance")
     advance_ready = bool(advance and advance.enabled and advance.priority == "primary")
     if status == Order.Status.NEW:
-        # Só o pagamento que ainda não caiu bloqueia "de fora" (avança sozinho
-        # quando cair). Qualquer outra recusa do aceite (falta de estoque, por
-        # exemplo) pede uma pessoa: recusar ou resolver.
-        return "blocked" if not card.can_confirm and card.payment_pending else "confirm"
+        if getattr(card, "awaits_online_payment", False):
+            # Esperando o dinheiro online (Pix ou cartão que ainda não caiu): não
+            # há o que fazer até ele cair, e o Gestor não o mostra como pendência,
+            # nem toca (dono, 25/11/2026, DEV-2026-091). Quando o pagamento cai, o
+            # pedido vira "confirm" pela primeira vez, e é ESSE o toque de pedido
+            # novo. Só volta a pedir alguém quando o prazo do pagamento venceu e o
+            # pedido não cancelou sozinho: aí há o "Cancelar não pago".
+            return "blocked" if getattr(card, "payment_lapsed", False) else ""
+        # Qualquer outra recusa do aceite (falta de estoque, por exemplo) pede uma
+        # pessoa: recusar ou resolver. O cartão já autorizado não espera mais nada
+        # de fora: o aceite é que cobra.
+        return "confirm"
     if status == Order.Status.ACCEPTED:
         if advance_ready and card.next_status == Order.Status.PREPARING:
             return "start"
@@ -155,8 +222,16 @@ def attention_kind(order: Order, card) -> str:
     return ""
 
 
-def card_attention(order: Order, card, channel_config=None) -> dict:
-    """Os campos de atenção do cartão: o fato, desde quando conta e a meta."""
+def card_attention(
+    order: Order, card, channel_config=None, *, acceptance_timer: AcceptanceTimer | None = None,
+    today=None,
+) -> dict:
+    """Os campos de atenção do cartão: o fato, desde quando conta e a meta.
+
+    ``acceptance_timer`` é o prazo de aceite já agendado para o pedido novo: com
+    ele, a meta e o "desde" saem do próprio timer (``acceptance_timer_goal``).
+    ``today`` é o dia da leitura do quadro (um por projeção); sem ele, o de agora.
+    """
     kind = attention_kind(order, card)
     if not kind:
         return {}
@@ -169,7 +244,7 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
             "attention": kind,
             "attention_since_iso": _iso(received),
             "goal_minutes": goal,
-            "goal_label": f"responder até {timezone.localtime(expires):%H:%M}",
+            "goal_label": f"responder até {format_clock(expires)}",
         }
     if kind == "ifood_accept":
         from shopman.shop.services import ifood_accept_sync
@@ -182,24 +257,35 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
                 "attention": kind,
                 "attention_since_iso": _iso(order.created_at),
                 "goal_minutes": goal,
-                "goal_label": f"aceite até {timezone.localtime(expires):%H:%M}",
+                "goal_label": f"aceite até {format_clock(expires)}",
             }
         return {
             "attention": kind,
             "attention_since_iso": _iso(order.created_at),
             "goal_minutes": CONFIRM_GOAL_MINUTES,
-            "goal_label": f"meta {CONFIRM_GOAL_MINUTES}",
+            "goal_label": goal_minutes_label(CONFIRM_GOAL_MINUTES),
         }
+    if kind == PROMISE_ATTENTION:
+        # Conta de quando a reserva perdeu o lastro, quando há esse instante; a
+        # meta é o combinado com o cliente, quando há hora combinada.
+        since_iso = card.promise.since_iso or _iso(order.accepted_at or order.created_at)
+        agreed = _agreed_goal(order, kind, since_iso, 0, channel_config, today=today)
+        return {"attention": kind, "attention_since_iso": since_iso, **(agreed or {"goal_minutes": 0, "goal_label": ""})}
     if kind in ("confirm",) or (kind == "blocked" and order.status == Order.Status.NEW):
-        goal, since = _confirmation_goal(channel_config), order.created_at
+        goal, since = acceptance_timer_goal(acceptance_timer) or (
+            _confirmation_goal(order, channel_config), order.created_at,
+        )
     else:
         goal = stage_goal(kind, channel_config)
+        # A encomenda só passa a pedir "Iniciar preparo" quando chega à Cozinha
+        # (WP-G02): o relógio conta dali, não do aceite de dias atrás.
+        released = _parse(getattr(card, "kitchen_released_at_iso", ""))
         since = {
             "blocked": order.accepted_at or order.created_at,
-            "start": order.accepted_at or order.created_at,
+            "start": released or order.accepted_at or order.created_at,
             "station": order.preparing_at or order.created_at,
             "mark_ready": order.preparing_at or order.created_at,
-            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30").
+            # A entrega promete o tempo todo, da chegada à saída ("27 min · meta 30 min").
             "dispatch": order.created_at,
             "courier_back": order.dispatched_at or order.created_at,
             "settle": order.delivered_at or order.dispatched_at or order.created_at,
@@ -208,69 +294,83 @@ def card_attention(order: Order, card, channel_config=None) -> dict:
     if kind == "handoff":
         # No balcão o relógio é o do pronto ("6 min no balcão").
         since_iso = card.ready_at_iso or _iso(order.ready_at) or _iso(order.created_at)
+    agreed = _agreed_goal(order, kind, since_iso, goal, channel_config, today=today)
+    if agreed is not None:
+        return {"attention": kind, "attention_since_iso": since_iso, **agreed}
     return {
         "attention": kind,
         "attention_since_iso": since_iso,
         "goal_minutes": goal,
-        "goal_label": "no balcão" if kind == "handoff" else f"meta {goal}",
+        "goal_label": "no balcão" if kind == "handoff" else goal_minutes_label(goal),
     }
 
 
-# ── "Na Cozinha · próximo pronto em ~4 min" (G10) ───────────────────────
-
-#: Janela dos preparos reais que medem o tempo da Cozinha agora.
-PREP_SAMPLE_HOURS = 3
-#: Abaixo disto a mediana não diz nada: vale a meta da estação.
-PREP_MIN_SAMPLES = 3
+#: As etapas cujo prazo, num pedido com hora combinada, é a hora combinada.
+_AGREED_STAGES = ("start", "station", "mark_ready", "dispatch", "handoff", PROMISE_ATTENTION)
 
 
-@dataclass(frozen=True)
-class PrepExpectation:
-    """Quanto um preparo está levando agora: a mediana real ou, sem amostra, a meta."""
+def _agreed_goal(order: Order, kind: str, since_iso: str, goal: int, channel_config, *, today=None) -> dict | None:
+    """A meta do pedido com hora combinada: o atraso se mede contra o combinado.
 
-    #: Minutos medidos (mediana de ``preparing_at`` → ``ready_at``); ``None`` sem amostra.
-    minutes: float | None
-    samples: int
+    Sem isto, a retirada combinada para as 18h aceita às 10h nascia atrasada às
+    10h05 ("iniciar, meta 5 min"), e a entrega das 18h ficava vermelha 30 min depois
+    de chegar. A régua é a da Cozinha (``kds._build_ticket``): com hora combinada,
+    o prazo é ela (``fulfillment_window.promised_at``). O "desde" continua o da
+    etapa (o número diz há quanto tempo o pedido está nela); só a meta se estica
+    até o prazo:
 
-    @property
-    def basis(self) -> str:
-        if self.minutes is None:
-            return "pela meta da estação (sem preparos suficientes nas últimas 3 horas)"
-        return f"pela mediana de {self.samples} preparos nas últimas {PREP_SAMPLE_HOURS} horas"
+    - **iniciar**: o combinado menos o preparo (a meta da estação), para dar tempo;
+    - **pronto** (estação ou à mão) e **despachar**: o próprio combinado;
+    - **balcão**: a meta do balcão contada do combinado, não do pronto. Pronto
+      antes da hora não é cliente atrasado.
 
-
-def prep_expectation(*, now: datetime) -> PrepExpectation:
-    """A mediana dos preparos que terminaram nas últimas horas (uma consulta)."""
-    since = now - timedelta(hours=PREP_SAMPLE_HOURS)
-    rows = Order.objects.filter(
-        ready_at__gte=since, ready_at__lte=now, preparing_at__isnull=False,
-    ).order_by("-ready_at").values_list("preparing_at", "ready_at")[:60]
-    minutes = sorted((ready - start).total_seconds() / 60 for start, ready in rows if ready > start)
-    if len(minutes) < PREP_MIN_SAMPLES:
-        return PrepExpectation(minutes=None, samples=len(minutes))
-    middle = len(minutes) // 2
-    median = minutes[middle] if len(minutes) % 2 else (minutes[middle - 1] + minutes[middle]) / 2
-    return PrepExpectation(minutes=median, samples=len(minutes))
-
-
-def ready_eta(order: Order, expectation: PrepExpectation, channel_config=None, *, now: datetime) -> datetime | None:
-    """Quando o pedido na Cozinha deve ficar pronto: o início real mais o tempo de agora.
-
-    O início é o primeiro "Iniciar" do KDS (``Order.data["kds_started"]``) ou o
-    ``preparing_at``; o tempo é a mediana real (``prep_expectation``) ou a meta da
-    estação do canal. Pedido que ainda não começou não fica pronto antes de começar:
-    conta a partir de agora.
+    ``None`` quando o pedido não combinou hora: vale a meta da etapa.
     """
-    if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
+    if kind not in _AGREED_STAGES:
         return None
-    expected = expectation.minutes if expectation.minutes is not None else stage_goal("station", channel_config)
-    starts = []
-    for record in ((order.data or {}).get("kds_started") or {}).values():
-        at = _parse(record.get("at")) if isinstance(record, dict) else None
-        if at is not None:
-            starts.append(at)
-    start = min(starts) if starts else order.preparing_at
-    return (start or now) + timedelta(minutes=expected)
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    promised = promised_at(order)
+    since = _parse(since_iso)
+    if promised is None or since is None:
+        return None
+    clock = timezone.localtime(promised)
+    goal_label = f"combinado para as {format_clock(clock)}"
+    today = today or timezone.localdate()
+    if clock.date() != today:
+        # Outro dia diz o dia, com a mesma palavra do selo do combinado
+        # ("Era para ontem · ..." ao lado de "combinado para ontem às 15h").
+        goal_label = f"combinado para {commitment_day_label(clock.date(), today=today)} às {format_clock(clock)}"
+    if kind == "start":
+        deadline = promised - timedelta(minutes=stage_goal("station", channel_config))
+    elif kind == "handoff":
+        deadline = max(since, promised) + timedelta(minutes=goal)
+    else:
+        deadline = promised
+    minutes = max(1, math.ceil((deadline - since).total_seconds() / 60))
+    return {
+        "goal_minutes": minutes,
+        "goal_label": "no balcão" if kind == "handoff" else goal_label,
+    }
+
+
+def commitment_day_label(day, *, today=None) -> str:
+    """O dia do combinado como o operador fala: "hoje", "amanhã", "ontem" ou "qua, 18/11".
+
+    Uma régua só para o selo do card (``order_queue._schedule``) e para a meta da
+    Fila: duas leituras do mesmo pedido não podem discordar sobre o dia. ``today``
+    é o dia da leitura de quem chama (um por projeção); sem ele, o de agora.
+    """
+    from django.utils import formats
+
+    today = today or timezone.localdate()
+    if day == today:
+        return "hoje"
+    if day == today + timedelta(days=1):
+        return "amanhã"
+    if day == today - timedelta(days=1):
+        return "ontem"
+    return f"{formats.date_format(day, 'D')}, {formats.date_format(day, 'd/m')}"
 
 
 # ── A consciência ao lado da Fila ────────────────────────────────────────
@@ -355,7 +455,7 @@ MAX_MENU_OUTAGES = 5
 
 
 def _clock(moment) -> str:
-    return timezone.localtime(moment).strftime("%H:%M") if moment else ""
+    return format_clock(moment) if moment else ""
 
 
 def _parse(value) -> datetime | None:
@@ -450,6 +550,9 @@ def menu_outages(*, channel_names: dict[str, str]) -> tuple[tuple[MenuOutageProj
     for row in open_rows:
         by_sku.setdefault(row.sku, []).append(row)
     names = dict(Product.objects.filter(sku__in=list(by_sku)).values_list("sku", "name"))
+    # Só o que está no cardápio: a falta de um insumo (TOMATE, LEVAIN) não é item
+    # "fora do ar", e contá-la fazia o "+N" passar do tamanho do catálogo (GES-08).
+    by_sku = {sku: rows for sku, rows in by_sku.items() if sku in names}
     items = []
     for sku, rows in list(by_sku.items())[:MAX_MENU_OUTAGES]:
         paused = any(row.reason == OutageReason.PAUSED for row in rows)
@@ -526,14 +629,12 @@ __all__ = [
     "CONFIRM_GOAL_MINUTES",
     "SYSTEM_WINDOW_MINUTES",
     "MenuChannelProjection",
-    "PrepExpectation",
     "MenuOutageProjection",
     "QueueAwarenessProjection",
     "SystemActionProjection",
+    "acceptance_timer_goal",
     "attention_kind",
     "build_queue_awareness",
     "card_attention",
-    "prep_expectation",
-    "ready_eta",
     "stage_goal",
 ]

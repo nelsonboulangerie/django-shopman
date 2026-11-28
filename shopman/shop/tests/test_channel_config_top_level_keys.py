@@ -16,6 +16,7 @@ lugar onde esse defeito aparecia.
 from __future__ import annotations
 
 import pytest
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.config import ChannelConfig
 
@@ -73,13 +74,53 @@ def test_pedido_da_loja_online_nasce_com_a_marca_no_ref():
         state="open",
         rev=1,
         items=[{"line_id": "L1", "sku": "A", "qty": 1, "unit_price_q": 1000}],
+        data={"payment": {"method": "cash"}},
     )
 
     result = CommitService.commit(
         session_key="NB-PREFIX-E2E",
         channel_ref="web",
         idempotency_key="nb-prefix-e2e",
+        seal=seal_for("NB-PREFIX-E2E", "web"),
         channel_config=ChannelConfig.for_channel("web").to_dict(),
     )
 
     assert result.order_ref.startswith("NB-"), result.order_ref
+
+
+# ── Chave desconhecida dentro de um aspecto: grita (laudo de soberania, A6-7) ──
+
+
+def test_unknown_key_inside_an_aspect_is_refused_by_name():
+    """`safty_margin: 9` era aceita e o canal seguia com o default, calado."""
+    with pytest.raises(ValueError, match=r"stock: chave desconhecida safty_margin"):
+        ChannelConfig.from_dict({"stock": {"safty_margin": 9}})
+
+
+def test_aspect_that_is_not_an_object_is_refused():
+    with pytest.raises(ValueError, match=r"payment deve ser um objeto"):
+        ChannelConfig.from_dict({"payment": ["pix"]})
+
+
+def test_shop_rule_policies_are_declared_not_swallowed():
+    """As políticas da loja em `rules` têm leitor próprio (`shop_rule_q`): a seção
+    as reconhece pelo nome e não as carrega; uma chave fora da lista grita."""
+    from shopman.shop.config import SHOP_RULE_POLICY_KEYS
+
+    config = ChannelConfig.from_dict({"rules": dict.fromkeys(SHOP_RULE_POLICY_KEYS, 100)})
+    assert config.rules == ChannelConfig.Rules()
+    with pytest.raises(ValueError, match=r"rules: chave desconhecida minimun_order_q"):
+        ChannelConfig.from_dict({"rules": {"minimun_order_q": 100}})
+
+
+@pytest.mark.django_db
+def test_admin_refuses_channel_config_with_unknown_key():
+    from django.core.exceptions import ValidationError
+
+    from shopman.shop.models import Channel
+
+    channel, _ = Channel.objects.update_or_create(
+        ref="web", defaults={"name": "Loja online", "config": {"stock": {"safty_margin": 9}}},
+    )
+    with pytest.raises(ValidationError, match="safty_margin"):
+        channel.full_clean()

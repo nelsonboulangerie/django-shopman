@@ -30,14 +30,15 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 CONTRACTS_DIR = Path(__file__).resolve().parents[3] / "contracts" / "projections"
 
@@ -89,9 +90,20 @@ def _assert_matches_contract(payload, name: str) -> None:
     )
 
 
+#: O relógio do contrato: terça, 17/11/2026, 10h em São Paulo, com a casa aberta.
+#: A promessa de quando ("Disponível amanhã, quarta, a partir das 9h") traz o dia
+#: da semana e depende da hora; sem relógio fixo o contrato mudaria todo dia.
+CONTRACT_NOW = datetime(2026, 11, 17, 13, 0, tzinfo=UTC)
+
+
 @pytest.fixture
 def canonical_catalog(db):
     """O cardápio canônico: um produto por estado de disponibilidade."""
+    with patch("django.utils.timezone.now", return_value=CONTRACT_NOW):
+        yield _canonical_catalog()
+
+
+def _canonical_catalog():
     from shopman.offerman.models import (
         Collection,
         CollectionItem,
@@ -103,7 +115,13 @@ def canonical_catalog(db):
 
     from shopman.shop.models import Shop
 
-    Shop.load() or Shop.objects.create(name="Padaria Contrato")
+    shop = Shop.load() or Shop.objects.create(name="Padaria Contrato")
+    # Expediente de segunda a sábado: a promessa precisa de horário para dizer o dia.
+    shop.opening_hours = {
+        day: {"open": "07:00", "close": "18:00"}
+        for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday")
+    }
+    shop.save(update_fields=["opening_hours"])
     vitrine, _ = Position.objects.get_or_create(
         ref="vitrine",
         defaults={
@@ -133,7 +151,9 @@ def canonical_catalog(db):
 
     add_product("PAO-CONTRATO", "Pão do Contrato", 900, qty=Decimal("12"))
     add_product("CROISSANT-CONTRATO", "Croissant do Contrato", 1200, qty=Decimal("2"))
-    add_product("BOLO-CONTRATO", "Bolo do Contrato", 2400, qty=None)
+    # Esgotado é SKU que o ledger conhece com saldo zero. Sem nenhum Quant o
+    # SKU é "sem ledger", e a promessa do Stockman não lhe dá teto (#2277).
+    add_product("BOLO-CONTRATO", "Bolo do Contrato", 2400, qty=Decimal("0"))
 
     # Planejado para amanhã: o estado "encomendável" (planned) do cardápio.
     sonho = add_product("SONHO-CONTRATO", "Sonho do Contrato", 800, qty=None)
@@ -154,10 +174,46 @@ def test_storefront_catalog_matches_shared_contract(canonical_catalog):
     _assert_matches_contract(payload, "storefront_catalog")
 
 
+def test_storefront_catalog_on_a_chosen_day_matches_shared_contract(canonical_catalog):
+    """OC-33 B1: o cardápio do dia escolhido (amanhã, quarta). O Sonho fica pronto às 11h.
+
+    A tela da variante B lê ESTE arquivo: o dia escolhido com rótulo e abertura, o
+    item disponível desde a abertura sem frase, o que fica depois com "A partir das
+    12h" (o primeiro turno depois das 11h) e o esgotado como "Indisponível".
+    """
+    from datetime import timedelta
+
+    from django.core.cache import cache
+    from shopman.offerman.models import Product
+
+    from shopman.storefront.api.projections import projection_data
+    from shopman.storefront.presentation.catalog import build_catalog
+
+    Product.objects.filter(sku="SONHO-CONTRATO").update(metadata={"ready_from": "11:00"})
+    cache.clear()
+    tomorrow = timezone.localdate() + timedelta(days=1)
+    payload = projection_data(build_catalog(channel_ref="web", target_date=tomorrow))
+    _assert_matches_contract(payload, "storefront_catalog_day")
+
+
 def test_storefront_product_detail_matches_shared_contract(canonical_catalog):
+    from shopman.shop.models import Shop
     from shopman.storefront.api.projections import projection_data
     from shopman.storefront.presentation.product_detail import build_product_detail
 
+    # A página do produto nomeia a loja onde se retira (#2652): o contrato traz
+    # o objeto, com o endereço montado pela ``Shop``.
+    Shop.objects.filter(pk=Shop.load().pk).update(
+        route="Rua do Contrato",
+        street_number="100",
+        neighborhood="Centro",
+        city="Londrina",
+        state_code="PR",
+        postal_code="86000-000",
+    )
+    from django.core.cache import cache
+
+    cache.clear()
     payload = projection_data(
         build_product_detail(sku="CROISSANT-CONTRATO", channel_ref="web")
     )
@@ -205,3 +261,22 @@ def test_storefront_site_matches_shared_contract(canonical_catalog):
     payload = projection_data(build_site(shop=shop, channel_ref=STOREFRONT_CHANNEL_REF))
 
     _assert_matches_contract(payload, "storefront_site")
+
+
+def test_storefront_ordering_matches_shared_contract(canonical_catalog):
+    """"Dá para pedir?" (OC-04): a home e a sacola vazia dizem o mesmo, na mesma forma.
+
+    O cardápio canônico, terça às 10h com a casa aberta, tem pronto hoje: ``now``.
+    O vitest atravessa este arquivo pela frase do topo (``presentation/home.ts``).
+    """
+    from django.core.cache import cache
+    from django.test import Client
+
+    cache.clear()
+    client = Client()
+    home = client.get("/api/v1/storefront/home/").json()["home"]
+    cart = client.get("/api/v1/storefront/cart/").json()["cart"]
+
+    _assert_matches_contract(
+        {"home": home["ordering"], "empty_cart": cart["ordering"]}, "storefront_ordering"
+    )

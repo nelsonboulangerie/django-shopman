@@ -90,8 +90,8 @@ def test_hub_superuser_sees_all_tiles(client, db):
     # Contrato do tile.
     for tile in hub["tiles"]:
         assert set(tile) == {
-            "ref", "label", "description", "icon", "url", "kind", "status_attention", "status_summary",
-            "status_positive", "next_item",
+            "ref", "label", "description", "icon", "url", "kind", "status_attention", "attention_count",
+            "status_summary", "status_positive",
         }
         assert tile["label"] and tile["url"]
 
@@ -109,6 +109,18 @@ def test_hub_filters_by_permission(client, db):
     assert "pos" not in refs
     assert "kds" not in refs
     assert "loja" not in refs  # loja só p/ superuser
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_catalog_operator_sees_gestor_tile_without_receiving_order_or_customer_grants(client, db):
+    operator = User.objects.create_user("hub-catalogo", password="pw", is_staff=True)
+    operator.user_permissions.add(_perm("shop", "manage_catalog"))
+    client.force_login(User.objects.get(pk=operator.pk))
+    refs = [tile["ref"] for tile in client.get(reverse("api-backstage-hub")).json()["hub"]["tiles"]]
+    assert refs == ["gestor"]
+    assert operator.has_perm("shop.manage_orders") is False
+    assert operator.has_perm("shop.manage_customers") is False
 
 
 @pytest.mark.django_db

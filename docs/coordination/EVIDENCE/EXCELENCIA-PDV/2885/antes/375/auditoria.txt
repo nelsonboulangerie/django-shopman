@@ -1,0 +1,100 @@
+#2885 auditoria do diálogo Cliente, 375 px, cadastro Maria Santos (telefone 43991111111), 2026-11-20T19:18:18.017Z
+
+== 01 topo do diálogo ==
+diálogo: left=16 right=359 width=343
+corpo (data-slot=body): scrollWidth=433 clientWidth=343 transbordo=90px
+span     left=  32 right=  86 w=  54 h= 20 contraste=13.67 "Cliente"
+p        left=  32 right= 305 w= 273 h= 60 contraste= 6.52 "Busque por nome, telefone, CPF ou e-mail. Depois, escolha um"
+button   left= 311 right= 343 w=  32 h= 32 contraste=13.67 "Fechar"
+input    left=  32 right= 449 w= 417 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Buscar por nome, telefone, CPF ou e-mail"
+span     left=  71 right= 273 w= 202 h= 24 contraste=12.79 [RETICENCIAS] "Cadastro existente · Maria Santos"
+p        left=  49 right= 273 w= 224 h= 20 contraste= 6.10 "+5543991111111"
+button   left= 285 right= 432 w= 147 h= 32 contraste= 5.69 [PASSA-DA-DIREITA] "Remover cliente"
+span     left=  49 right= 123 w=  74 h= 20 contraste= 5.71 "17 pedidos"
+button   left= 131 right= 224 w=  93 h= 32 contraste=12.76 "Favorito"
+span     left=  49 right= 379 w= 330 h= 22 contraste= 4.09 [PASSA-DA-DIREITA,CONTRASTE<4.5] "🎂 Aniversário HOJE · Parabéns! Desconto de aniversário"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "Nome"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Maria Santos"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "WhatsApp"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] +5543991111111"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "CPF/CNPJ"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Documento do cadastro"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "E-mail"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] cliente@email.com"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Padrões deste cliente"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Vale nesta venda e nas próximas."
+span     left=  62 right= 165 w= 103 h= 20 contraste=12.79 "CPF na nota"
+button   left= 381 right= 425 w=  44 h= 24 contraste=10.67 [PASSA-DA-DIREITA] "CPF na nota"
+span     left=  62 right= 187 w= 125 h= 20 contraste=12.79 "Nota por e-mail"
+button   left= 381 right= 425 w=  44 h= 24 contraste=10.67 [PASSA-DA-DIREITA] "Nota por e-mail"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Usar CPF ou e-mail numa venda liga o padrão sozinho; desliga"
+span     left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Restrições alimentares"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Ex: alérgico a nozes"
+span     left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Observações do balcão"
+textarea left=  49 right= 432 w= 383 h= 52 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Ex: prefere pão bem assado; busca às 17h"
+button   left=  32 right= 343 w= 311 h= 40 contraste= 4.95 "Concluir"
+span     left= 156 right= 219 w=  63 h= 24 contraste= 4.95 "Concluir"
+alinhamento do cartão do cadastro: esquerdas=49 direitas=432 OK
+busca × cartão: busca 32..449, cartão 32..449 OK
+
+== 02 fim do diálogo (corpo rolado até o fim) ==
+diálogo: left=16 right=359 width=343
+corpo (data-slot=body): scrollWidth=433 clientWidth=343 transbordo=90px
+span     left=  32 right=  86 w=  54 h= 20 contraste=13.67 "Cliente"
+p        left=  32 right= 305 w= 273 h= 60 contraste= 6.52 "Busque por nome, telefone, CPF ou e-mail. Depois, escolha um"
+button   left= 311 right= 343 w=  32 h= 32 contraste=13.67 "Fechar"
+input    left=  32 right= 449 w= 417 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Buscar por nome, telefone, CPF ou e-mail"
+span     left=  71 right= 273 w= 202 h= 24 contraste=12.79 [RETICENCIAS] "Cadastro existente · Maria Santos"
+p        left=  49 right= 273 w= 224 h= 20 contraste= 6.10 "+5543991111111"
+button   left= 285 right= 432 w= 147 h= 32 contraste= 5.69 [PASSA-DA-DIREITA] "Remover cliente"
+span     left=  49 right= 123 w=  74 h= 20 contraste= 5.71 "17 pedidos"
+button   left= 131 right= 224 w=  93 h= 32 contraste=12.76 "Favorito"
+span     left=  49 right= 379 w= 330 h= 22 contraste= 4.09 [PASSA-DA-DIREITA,CONTRASTE<4.5] "🎂 Aniversário HOJE · Parabéns! Desconto de aniversário"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "Nome"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Maria Santos"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "WhatsApp"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] +5543991111111"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "CPF/CNPJ"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Documento do cadastro"
+span     left=  49 right= 432 w= 383 h= 20 contraste= 6.10 [PASSA-DA-DIREITA] "E-mail"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] cliente@email.com"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Padrões deste cliente"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Vale nesta venda e nas próximas."
+span     left=  62 right= 165 w= 103 h= 20 contraste=12.79 "CPF na nota"
+button   left= 381 right= 425 w=  44 h= 24 contraste=10.67 [PASSA-DA-DIREITA] "CPF na nota"
+span     left=  62 right= 187 w= 125 h= 20 contraste=12.79 "Nota por e-mail"
+button   left= 381 right= 425 w=  44 h= 24 contraste=10.67 [PASSA-DA-DIREITA] "Nota por e-mail"
+p        left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Usar CPF ou e-mail numa venda liga o padrão sozinho; desliga"
+span     left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Restrições alimentares"
+input    left=  49 right= 432 w= 383 h= 32 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Ex: alérgico a nozes"
+span     left=  49 right= 432 w= 383 h= 16 contraste= 6.10 [PASSA-DA-DIREITA] "Observações do balcão"
+textarea left=  49 right= 432 w= 383 h= 52 contraste=12.76 [PASSA-DA-DIREITA] "[campo] Ex: prefere pão bem assado; busca às 17h"
+button   left=  32 right= 343 w= 311 h= 40 contraste= 4.95 "Concluir"
+span     left= 156 right= 219 w=  63 h= 24 contraste= 4.95 "Concluir"
+alinhamento do cartão do cadastro: esquerdas=49 direitas=432 OK
+busca × cartão: busca 32..449, cartão 32..449 OK
+
+== problemas ==
+corpo transborda 90px
+PASSA-DA-DIREITA: [campo] Buscar por nome, telefone, CPF ou e-mail
+RETICENCIAS: Cadastro existente · Maria Santos
+PASSA-DA-DIREITA: Remover cliente
+PASSA-DA-DIREITA,CONTRASTE<4.5: 🎂 Aniversário HOJE · Parabéns! Desconto de aniversário
+contraste 4.09: 🎂 Aniversário HOJE · Parabéns! Desconto de aniversário
+PASSA-DA-DIREITA: Nome
+PASSA-DA-DIREITA: [campo] Maria Santos
+PASSA-DA-DIREITA: WhatsApp
+PASSA-DA-DIREITA: [campo] +5543991111111
+PASSA-DA-DIREITA: CPF/CNPJ
+PASSA-DA-DIREITA: [campo] Documento do cadastro
+PASSA-DA-DIREITA: E-mail
+PASSA-DA-DIREITA: [campo] cliente@email.com
+PASSA-DA-DIREITA: Padrões deste cliente
+PASSA-DA-DIREITA: Vale nesta venda e nas próximas.
+PASSA-DA-DIREITA: CPF na nota
+PASSA-DA-DIREITA: Nota por e-mail
+PASSA-DA-DIREITA: Usar CPF ou e-mail numa venda liga o padrão sozinho; desliga
+PASSA-DA-DIREITA: Restrições alimentares
+PASSA-DA-DIREITA: [campo] Ex: alérgico a nozes
+PASSA-DA-DIREITA: Observações do balcão
+PASSA-DA-DIREITA: [campo] Ex: prefere pão bem assado; busca às 17h

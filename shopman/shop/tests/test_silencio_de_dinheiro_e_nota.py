@@ -322,15 +322,20 @@ class _Counter:
     def close(self, *, client_request_id: str):
         from shopman.shop.services import pos as pos_service
 
+        payload = {
+            "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+            "customer_name": "Cliente",
+            "payment_method": "cash",
+            "client_request_id": client_request_id,
+            "cash_shift_id": self.shift.pk,
+        }
+        review = pos_service.review_sale(
+            channel_ref="pdv", payload=payload, operator_username=self.operator.username,
+        )
+        payload["expected_total_q"] = review.total_q
         return pos_service.close_sale(
             channel_ref="pdv",
-            payload={
-                "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
-                "customer_name": "Cliente",
-                "payment_method": "cash",
-                "client_request_id": client_request_id,
-                "cash_shift_id": self.shift.pk,
-            },
+            payload=payload,
             actor=f"pos:{self.operator.username}",
             operator_username=self.operator.username,
         )

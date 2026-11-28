@@ -5,7 +5,14 @@
 import type { OrderCardProjection } from "~/types/orders";
 import { courierReturnOrders } from "~/presentation/board";
 
-defineProps<{ card: OrderCardProjection | null; busy?: boolean }>();
+// O cartão da Fila ou o detail do pedido: os dois trazem a mesma lista de retorno.
+defineProps<{
+  card: Pick<
+    OrderCardProjection,
+    "courier_return_orders" | "courier_return_lines"
+  > | null;
+  busy?: boolean;
+}>();
 const emit = defineEmits<{ (e: "confirm" | "different" | "close"): void }>();
 </script>
 

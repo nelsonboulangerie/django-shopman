@@ -22,7 +22,7 @@ from ..error_codes import ErrorCode
 from ..exceptions import GateError
 from ..gates import Gates
 from ..models import AccessLink, CustomerUser
-from ..protocols.customer import AuthCustomerInfo
+from ..protocols.identity import IdentityConflict, IdentityView
 from ..signals import access_link_created, customer_authenticated
 from ._user_bridge import get_or_create_user_for_customer
 
@@ -51,7 +51,7 @@ class AuthResult:
 
     success: bool
     user: User | None = None
-    customer: AuthCustomerInfo | None = None
+    customer: IdentityView | None = None
     created_user: bool = False
     error: str | None = None
     error_code: ErrorCode | None = None
@@ -82,7 +82,7 @@ class AccessLinkService:
     @transaction.atomic
     def create_token(
         cls,
-        customer: AuthCustomerInfo,
+        customer: IdentityView,
         audience: str = AccessLink.Audience.WEB_GENERAL,
         source: str = AccessLink.Source.MANYCHAT,
         ttl_minutes: int | None = None,
@@ -125,7 +125,7 @@ class AccessLinkService:
                 error_code=ErrorCode.INVALID_INPUT,
             )
         adapter = get_adapter()
-        locked_customer = adapter.lock_active_customer_by_uuid(customer.uuid)
+        locked_customer = adapter.lock_active_identity(customer.subject_id, purpose="access_link")
         if locked_customer is None:
             return TokenResult(
                 success=False,
@@ -135,7 +135,7 @@ class AccessLinkService:
         expires_at = timezone.now() + timedelta(minutes=ttl)
 
         link, raw_token = AccessLink.create_with_token(
-            customer_id=locked_customer.uuid,
+            customer_id=locked_customer.subject_id,
             audience=audience,
             source=source,
             expires_at=expires_at,
@@ -144,19 +144,23 @@ class AccessLinkService:
 
         url = cls._build_url(raw_token)
 
-        # Signal
-        access_link_created.send(
-            sender=cls,
-            token=link,
-            customer=locked_customer,
-            audience=audience,
-            source=source,
-            url=url,
+        # ADR-025: anúncio depois do COMMIT. O receiver do orquestrador manda o link
+        # pelo WhatsApp (efeito externo); antes do COMMIT, um rollback deixaria enviada
+        # uma mensagem com link para um token que não existe.
+        transaction.on_commit(
+            lambda: access_link_created.send(
+                sender=cls,
+                token=link,
+                customer=locked_customer,
+                audience=audience,
+                source=source,
+                url=url,
+            )
         )
 
         logger.info(
             "Access link created",
-            extra={"customer_id": str(locked_customer.uuid), "audience": audience},
+            extra={"customer_id": str(locked_customer.subject_id), "audience": audience},
         )
 
         return TokenResult(
@@ -180,8 +184,8 @@ class AccessLinkService:
         adapters. Todos apontavam para uma rota que a loja não serve.
 
         A entrada tem de ser a da loja por desenho, não por acaso: é lá que o
-        cookie de sessão precisa nascer (ver o docstring de
-        `shopman/shop/services/access_urls.py`).
+        cookie de sessão precisa nascer (ver o docstring de `path_access` em
+        `shopman/shop/services/storefront_links.py`).
         """
         entry = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         if entry:
@@ -235,7 +239,7 @@ class AccessLinkService:
             return AuthResult(success=False, error="Invalid token.", error_code=ErrorCode.TOKEN_INVALID)
 
         adapter = get_adapter()
-        customer = adapter.lock_active_customer_by_uuid(token_hint.customer_id)
+        customer = adapter.lock_active_identity(token_hint.customer_id, purpose="session")
         if customer is None:
             return AuthResult(
                 success=False,
@@ -246,7 +250,7 @@ class AccessLinkService:
         # Releitura sob lock: o link pode ter expirado ou sido consumido desde
         # a leitura indicativa acima.
         token = AccessLink.get_by_token(token_str, for_update=True)
-        if token is None or token.pk != token_hint.pk or token.customer_id != customer.uuid:
+        if token is None or token.pk != token_hint.pk or token.customer_id != customer.subject_id:
             return AuthResult(success=False, error="Invalid token.", error_code=ErrorCode.TOKEN_INVALID)
 
         # G7: Validate
@@ -290,13 +294,15 @@ class AccessLinkService:
         else:
             logger.debug("No session keys to restore")
 
-        # Signal
-        customer_authenticated.send(
-            sender=cls,
-            customer=customer,
-            user=user,
-            method="access_link",
-            request=request,
+        # ADR-025: anúncio depois do COMMIT (o link consumido só vale se a troca gravou).
+        transaction.on_commit(
+            lambda: customer_authenticated.send(
+                sender=cls,
+                customer=customer,
+                user=user,
+                method="access_link",
+                request=request,
+            )
         )
 
         # Adapter hook
@@ -305,7 +311,7 @@ class AccessLinkService:
         logger.info(
             "Token exchanged",
             extra={
-                "customer_id": str(customer.uuid),
+                "customer_id": str(customer.subject_id),
                 "user_id": user.id,
                 "created_user": created_user,
             },
@@ -319,7 +325,7 @@ class AccessLinkService:
         )
 
     @classmethod
-    def _get_or_create_user(cls, customer: AuthCustomerInfo) -> tuple[User, bool]:
+    def _get_or_create_user(cls, customer: IdentityView) -> tuple[User, bool]:
         """Delegate to shared _user_bridge."""
         return get_or_create_user_for_customer(customer)
 
@@ -374,7 +380,11 @@ class AccessLinkService:
         # G10: Rate limit by IP (reuse existing gate)
         if ip_address:
             try:
-                Gates.ip_rate_limit(ip_address)
+                Gates.ip_rate_limit(
+                    ip_address,
+                    max_requests=settings.IP_RATE_LIMIT_MAX,
+                    window_minutes=settings.IP_RATE_LIMIT_WINDOW_MINUTES,
+                )
             except GateError:
                 return AccessLinkEmailResult(
                     success=False,
@@ -384,7 +394,14 @@ class AccessLinkService:
 
         # Find customer by email
         adapter = get_adapter()
-        customer = adapter.resolve_customer_by_email(email)
+        try:
+            customer = adapter.resolve_identity("email", email, purpose="access_link")
+        except IdentityConflict:
+            return AccessLinkEmailResult(
+                success=False,
+                error="Identity ownership is conflicting.",
+                error_code=ErrorCode.IDENTITY_CONFLICT,
+            )
 
         if not customer:
             if not adapter.should_auto_create_customer():
@@ -407,12 +424,17 @@ class AccessLinkService:
 
         # Create access link with email login TTL
         ttl = doorman_settings.ACCESS_LINK_TTL_MINUTES
+        import hashlib
+
         token_result = cls.create_token(
             customer=customer,
             audience=AccessLink.Audience.WEB_GENERAL,
             source=AccessLink.Source.INTERNAL,
             ttl_minutes=ttl,
-            metadata={"method": "access_link", "email": email},
+            metadata={
+                "method": "access_link",
+                "target_digest": hashlib.sha256(email.encode("utf-8")).hexdigest(),
+            },
         )
 
         if not token_result.success:
@@ -431,7 +453,7 @@ class AccessLinkService:
 
         logger.info(
             "Access link sent",
-            extra={"email": email, "customer_id": str(customer.uuid)},
+            extra={"customer_id": str(customer.subject_id)},
         )
 
         return AccessLinkEmailResult(success=True)
@@ -468,10 +490,10 @@ class AccessLinkService:
             msg.attach_alternative(html_body, "text/html")
             msg.send(fail_silently=False)
 
-            logger.info("Access link email sent", extra={"email": email})
+            logger.info("Access link email sent")
             return True
         except Exception:
-            logger.exception("Access link email send failed", extra={"email": email})
+            logger.error("Access link email send failed")
             return False
 
     # ===========================================
@@ -481,7 +503,7 @@ class AccessLinkService:
     @classmethod
     def create_and_send(
         cls,
-        customer: AuthCustomerInfo,
+        customer: IdentityView,
         channel: str = "email",
         audience: str = AccessLink.Audience.WEB_GENERAL,
         ttl_minutes: int | None = None,
@@ -521,7 +543,7 @@ class AccessLinkService:
         logger.info(
             "Access link sent via %s",
             channel,
-            extra={"customer_id": str(customer.uuid), "channel": channel},
+            extra={"customer_id": str(customer.subject_id), "channel": channel},
         )
 
         return AccessLinkEmailResult(success=True)
@@ -531,7 +553,7 @@ class AccessLinkService:
     # ===========================================
 
     @classmethod
-    def get_customer_for_user(cls, user) -> AuthCustomerInfo | None:
+    def get_customer_for_user(cls, user) -> IdentityView | None:
         """
         Get Customer for a Django User.
 
@@ -539,17 +561,18 @@ class AccessLinkService:
             user: Django User instance
 
         Returns:
-            AuthCustomerInfo or None
+            IdentityView or None
         """
         try:
             link = CustomerUser.objects.get(user=user)
             adapter = get_adapter()
-            return adapter.resolve_customer_by_uuid(link.customer_id)
+            customer = adapter.identity(link.customer_id, purpose="session")
+            return customer if customer is not None and customer.is_active else None
         except CustomerUser.DoesNotExist:
             return None
 
     @classmethod
-    def get_user_for_customer(cls, customer: AuthCustomerInfo) -> User | None:
+    def get_user_for_customer(cls, customer: IdentityView) -> User | None:
         """
         Get Django User for a Customer.
 
@@ -561,7 +584,7 @@ class AccessLinkService:
         """
         try:
             link = CustomerUser.objects.select_related("user").get(
-                customer_id=customer.uuid,
+                customer_id=customer.subject_id,
             )
             return link.user
         except CustomerUser.DoesNotExist:

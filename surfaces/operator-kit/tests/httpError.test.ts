@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { httpError, httpErrorCode, httpErrorMessage, isStationLockedError, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
+import { httpError, httpErrorCode, httpErrorMessage, httpErrorRetryMessage, isForbiddenError, isStationLockedError, isTransientError, isUnauthenticatedError } from "../app/utils/httpError";
 
 describe("httpError", () => {
   it("extracts status/data/message from an ofetch-style error", () => {
@@ -134,5 +134,51 @@ describe("httpErrorCode / isStationLockedError", () => {
     expect(isStationLockedError(locked)).toBe(true);
     expect(isStationLockedError({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
     expect(isStationLockedError({ status: 401, data: { error: { code: "station_locked" } } })).toBe(false);
+  });
+});
+
+describe("isForbiddenError (beta 05/11, CEN-05 e GES-17)", () => {
+  it("403 sem código é falta de permissão: não é rede, não é login", () => {
+    const denied = { statusCode: 403, data: { detail: "Você não tem permissão." } };
+    expect(isForbiddenError(denied)).toBe(true);
+    expect(isTransientError(denied)).toBe(false);
+    expect(isUnauthenticatedError(denied)).toBe(false);
+  });
+
+  it("403 que nomeia a saída (login, PIN, gerente) não é 'sem permissão'", () => {
+    for (const code of ["not_authenticated", "station_locked", "manager_approval_required"]) {
+      expect(isForbiddenError({ statusCode: 403, data: { detail: "x", error: { code } } })).toBe(false);
+    }
+    expect(isForbiddenError({ statusCode: 503 })).toBe(false);
+  });
+});
+
+describe("httpErrorRetryMessage", () => {
+  it("PIN pendente não orienta conferir conexão", () => {
+    const locked = {
+      status: 403,
+      data: {
+        detail: "Estação travada. Identifique-se com PIN ou crachá.",
+        error: { code: "station_locked" },
+      },
+    };
+    expect(httpErrorRetryMessage(locked)).toBe(locked.data.detail);
+    expect(
+      httpErrorRetryMessage({
+        status: 403,
+        data: { error: { code: "station_locked" } },
+      }),
+    ).toBe("Identifique-se com PIN ou crachá para continuar.");
+  });
+  it("mantém a recuperação de conexão para falha de rede", () => {
+    expect(httpErrorRetryMessage(new Error("Failed to fetch"))).toBe(
+      "Confira a conexão e tente de novo.",
+    );
+    expect(
+      httpErrorRetryMessage({
+        status: 503,
+        data: { detail: "Serviço indisponível." },
+      }),
+    ).toBe("Serviço indisponível. Confira a conexão e tente de novo.");
   });
 });

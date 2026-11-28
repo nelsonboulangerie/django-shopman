@@ -163,6 +163,36 @@ def _clean_label(label) -> str:
     return label
 
 
+def _refuse_taken_label(label: str, *, keep_ref: str = "") -> None:
+    """Dois postos com o mesmo nome não se distinguem na tela de vincular (#2584).
+
+    O nome é comparado sem diferença de maiúscula. O desativado também conta: o caminho
+    é reativá-lo, não criar outro igual.
+    """
+    from shopman.backstage.models import Workstation
+
+    taken = Workstation.objects.filter(label__iexact=label).exclude(ref=keep_ref).first()
+    if taken is None:
+        return
+    if taken.is_active:
+        raise WorkstationError("Já existe um posto com esse nome.", field="label", code="workstation_label_taken")
+    raise WorkstationError(
+        "Já existe um posto desativado com esse nome. Reative-o na lista.",
+        field="label",
+        code="workstation_label_taken",
+    )
+
+
+def default_kind_here() -> str:
+    """O tipo que o posto novo já traz: o primeiro que o Gestor oferece para vincular.
+
+    A tela de Postos mora no Gestor e cadastra os postos de todos os apps; o padrão vinha
+    do primeiro da lista inteira ("Atendimento", do PDV), e o posto criado não aparecia
+    para vincular o próprio dispositivo (#2584).
+    """
+    return next(kind for kind in kinds_for_surface("orders") if kind != CASH_DESK)
+
+
 def _free_ref(label: str) -> str:
     from shopman.cashman.models import Terminal
 
@@ -183,6 +213,7 @@ def create(*, label, kind) -> object:
     from shopman.backstage.models import Workstation
 
     label = _clean_label(label)
+    _refuse_taken_label(label)
     kind = str(kind or "").strip()
     if kind not in KIND_LABELS:
         raise WorkstationError("Escolha o tipo do posto.", field="kind")
@@ -207,6 +238,7 @@ def update(ref: str, *, label=None, kind=None, is_active=None):
     fields = []
     if label is not None:
         workstation.label = _clean_label(label)
+        _refuse_taken_label(workstation.label, keep_ref=workstation.ref)
         fields.append("label")
     if kind is not None:
         kind = str(kind).strip()
@@ -266,6 +298,33 @@ def release_device(ref: str, device_id: str) -> bool:
         return False
     device.revoke()
     return True
+
+
+def rename_device(ref: str, device_id: str, label) -> bool:
+    """Dá nome a UM dispositivo do posto (beta 05/11, GES-21).
+
+    O rótulo nasce do navegador ("Chrome no Android"), e cinco tablets iguais
+    atrás do mesmo roteador ficavam idênticos na lista: não havia como saber
+    qual desvincular. O nome dado aqui substitui o rótulo derivado.
+    """
+    import uuid
+
+    from shopman.doorman.models import SubjectType, TrustedDevice
+
+    label = " ".join(str(label or "").split())
+    if not label:
+        raise WorkstationError("Dê um nome ao dispositivo.", field="label")
+    if len(label) > 100:
+        raise WorkstationError("Nome longo demais (até 100 letras).", field="label")
+    try:
+        uuid.UUID(str(device_id))
+    except ValueError:
+        return False
+    return bool(
+        TrustedDevice.objects.filter(
+            pk=device_id, subject_type=SubjectType.STATION, subject_id=ref, is_active=True
+        ).update(label=label)
+    )
 
 
 def release_all(ref: str) -> int:

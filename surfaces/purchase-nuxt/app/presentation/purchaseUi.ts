@@ -51,6 +51,12 @@ export function materialDimensions(
   );
   return [
     {
+      id: "archive",
+      label: "Cadastro",
+      type: "single-select",
+      options: [{ value: "archived", label: "Arquivados" }],
+    },
+    {
       id: "tone",
       label: "Situação",
       type: "multi-select",
@@ -80,34 +86,32 @@ export function isAttentionRecorte(filters: ActiveFilters): boolean {
 
 /** O insumo casa o recorte? Dentro de uma dimensão, OU; entre dimensões, E. */
 export function matchesMaterialFilters(
-  material: { tone: MaterialTone; category: string },
+  material: { tone: MaterialTone; category: string; isActive?: boolean },
   filters: ActiveFilters,
 ): boolean {
+  const archive = filters.archive ?? [];
   const tones = filters.tone ?? [];
   const categories = filters.category ?? [];
   return (
+    (!archive.length ? material.isActive !== false : archive.includes("archived") && material.isActive === false) &&
     (!tones.length || tones.includes(material.tone)) &&
     (!categories.length || categories.includes(material.category))
   );
 }
 
 // ── Os recortes de Base · Fornecedores ──────────────────────────────────────
-// Situação (Ativo/Inativo) e a pergunta que o comprador faz antes de apertar
-// enviar: este fornecedor tem para quem mandar o pedido?
+// Arquivados e a pergunta que o comprador faz antes de apertar enviar: este
+// fornecedor tem para quem mandar o pedido?
 
 /** As dimensões do painel, com quantos fornecedores casam cada opção. */
 export function supplierDimensions(suppliers: readonly Supplier[]): FilterDimension[] {
-  const active = suppliers.filter((supplier) => supplier.isActive).length;
   const withContact = suppliers.filter((supplier) => Boolean(supplier.orderContactName)).length;
   return [
     {
-      id: "status",
-      label: "Situação",
-      type: "multi-select",
-      options: [
-        { value: "active", label: "Ativo", count: active },
-        { value: "inactive", label: "Inativo", count: suppliers.length - active },
-      ],
+      id: "archive",
+      label: "Cadastro",
+      type: "single-select",
+      options: [{ value: "archived", label: "Arquivados" }],
     },
     {
       id: "contact",
@@ -126,13 +130,46 @@ export function matchesSupplierFilters(
   supplier: Pick<Supplier, "isActive" | "orderContactName">,
   filters: ActiveFilters,
 ): boolean {
-  const status = filters.status ?? [];
+  const archive = filters.archive ?? [];
   const contact = filters.contact ?? [];
-  const statusValue = supplier.isActive ? "active" : "inactive";
   const contactValue = supplier.orderContactName ? "with" : "without";
   return (
-    (!status.length || status.includes(statusValue)) &&
+    (!archive.length ? supplier.isActive : archive.includes("archived") && !supplier.isActive) &&
     (!contact.length || contact.includes(contactValue))
   );
 }
 
+
+/**
+ * O pedido de compra deste fornecedor não tem por onde sair (sem e-mail nem
+ * telefone). O cartão de Comprar avisa antes e troca o gesto por "Cadastrar
+ * contato"; antes a falta só aparecia depois de confirmar, num aviso que sumia
+ * (beta 05/11, CMP-09). Sem fornecedor é outro caso: não é falta de contato.
+ */
+export function supplierLacksOrderContact(supplier: { canReceiveOrder?: boolean } | null | undefined): boolean {
+  return Boolean(supplier) && supplier?.canReceiveOrder === false;
+}
+
+/**
+ * Pontualidade e prazo do fornecedor, sem inventar número. Sem nenhuma entrega
+ * registrada, "100%" e "0 dias" pareciam medida (beta 05/11, CMP-14).
+ */
+export function supplierReliabilityLabel(supplier: Pick<Supplier, "reliabilityPercent" | "lastDeliveryAt">): string {
+  return supplier.lastDeliveryAt ? `${supplier.reliabilityPercent}%` : "sem histórico";
+}
+
+export function supplierLeadTimeLabel(supplier: Pick<Supplier, "leadTimeDays">): string {
+  if (!supplier.leadTimeDays) return "não informado";
+  return `${supplier.leadTimeDays} ${supplier.leadTimeDays === 1 ? "dia" : "dias"}`;
+}
+
+/**
+ * Contar estoque sem a permissão de auditoria. Quem conta é quem tem essa
+ * permissão (no Nelson, o Dono), não "o gestor"; e a tela dá a saída, que é
+ * trocar de operador (beta 05/11, CMP-12).
+ */
+export const COUNT_FORBIDDEN = {
+  title: "Contar estoque pede a permissão de auditoria.",
+  description: "Quem tem essa permissão conta e ajusta o estoque de insumos. Troque de operador para contar.",
+  action: "Trocar operador",
+} as const;

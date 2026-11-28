@@ -10,6 +10,9 @@ from django.contrib.auth.models import User
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.craftsman.services import recipe_book
+from shopman.stockman.models import Batch
+from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.projections.production import (
@@ -68,6 +71,36 @@ def test_production_dashboard_projection_summarizes_day_and_late_orders(recipe):
 
 
 @pytest.mark.django_db
+def test_dashboard_never_sums_pieces_with_grams_and_loss_hint_speaks_of_closed_lots(recipe):
+    """Beta 05/11: "Planejado 159966.487" somava gramas de massa com peças, e a
+    frase sob a Perda usava o previsto dos lotes ainda abertos."""
+    dough = Recipe.objects.create(
+        ref="massa-op-v1",
+        name="Massa Operacional",
+        output_sku="MASSA-OP",
+        batch_size=Decimal("1000"),
+        steps=["Mistura"],
+        meta={"output_unit": "g", "capacity_per_day": 20000},
+    )
+    craft.plan(dough, 18720, date=date.today(), position_ref="forno")
+    open_lot = craft.plan(recipe, 30, date=date.today(), position_ref="forno")
+    craft.start(open_lot, quantity=30, position_ref="forno", expected_rev=0)
+    closed = craft.plan(recipe, 40, date=date.today(), position_ref="forno")
+    craft.finish(closed, finished=36, actor="test")
+
+    dashboard = build_production_dashboard(selected_date=date.today(), position_ref="forno")
+
+    assert dashboard.planned_display == "70 un. · 18,72 kg"
+    assert dashboard.loss_display == "4 un."
+    # A frase não junta grandezas (WP-F18, P2-05): cada uma tem a sua coluna na tabela.
+    assert dashboard.loss_hint == "O lote fechado teve perda"
+    # O número do Planejado soma os três lotes vivos; a frase conta os mesmos três.
+    assert dashboard.planned_hint == "3 lotes no plano do dia"
+    # Carga média das fichas (70/100 e 18720/20000), nunca a soma das grandezas.
+    assert dashboard.capacity_percent == 81
+
+
+@pytest.mark.django_db
 def test_kds_card_exposes_linked_order_refs(recipe, superuser):
     """WP-PE5: o chão mostra quantos pedidos aguardam o lote (aviso no estorno)."""
     wo = craft.plan(recipe, 10, date=date.today())
@@ -96,6 +129,111 @@ def test_production_kds_projection_returns_started_cards_only(recipe, superuser)
     assert kds.cards[0].started_qty == "11"
     assert kds.cards[0].can_finish is True
     assert planned.ref not in [card.ref for card in kds.cards]
+
+
+@pytest.mark.django_db
+def test_kds_card_exposes_frozen_formula_limits_and_current_actual(superuser):
+    entry = recipe_book.create_entry(
+        ref="massa-com-limites",
+        name="Massa com limites",
+        kind="bread",
+        output_sku="MASSA-LIMITES",
+    )
+    version = recipe_book.create_version(
+        entry,
+        formula={
+            "anchor": {"kind": "flour"},
+            "ingredients": [
+                {
+                    "ref": "ingredient-flour",
+                    "sku": "FARINHA-T55",
+                    "name": "Farinha T55",
+                    "role": "flour",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "fixed",
+                        "minimum": 900,
+                        "target": 1000,
+                        "maximum": 1100,
+                        "unit": "g",
+                    },
+                },
+                {
+                    "ref": "ingredient-levain",
+                    "sku": "LEVAIN",
+                    "name": "Levain",
+                    "role": "other",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "ratio",
+                        "minimum": 10,
+                        "target": 15,
+                        "maximum": 20,
+                        "basis": {"kind": "total"},
+                    },
+                },
+                {
+                    "ref": "ingredient-old-dough",
+                    "sku": "MASSA-VELHA-PAO-FRANCES",
+                    "name": "Massa velha de Pão Francês",
+                    "role": "other",
+                    "composition": "additional",
+                    "quantity": {
+                        "kind": "ratio",
+                        "minimum": None,
+                        "target": 15,
+                        "maximum": 20,
+                        "basis": {"kind": "total"},
+                    },
+                },
+            ],
+        },
+        yield_quantity=1000,
+        yield_unit="g",
+    )
+    recipe = recipe_book.publish_version(version)
+    wo = craft.plan(recipe, 1000, date=date.today())
+    craft.start(wo, quantity=1000)
+    wo.refresh_from_db()
+    wo.meta = {**wo.meta, "_ingredient_actuals": {"ingredient-levain": "18"}}
+    wo.save(update_fields=["meta"])
+    available = Batch.objects.create(
+        ref="MV-AVAILABLE",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today(),
+        expiry_date=date.today() + timedelta(days=2),
+        metadata={"resource_kind": "old_dough"},
+    )
+    expired = Batch.objects.create(
+        ref="MV-EXPIRED",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today() - timedelta(days=3),
+        expiry_date=date.today() - timedelta(days=1),
+        metadata={"resource_kind": "old_dough"},
+    )
+    Batch.objects.create(
+        ref="MV-ZERO",
+        sku="MASSA-VELHA-PAO-FRANCES",
+        production_date=date.today(),
+        expiry_date=date.today() + timedelta(days=3),
+        metadata={"resource_kind": "old_dough"},
+    )
+    StockMovements.receive(Decimal("750"), available.sku, batch=available.ref, reason="Massa velha disponível")
+    StockMovements.receive(Decimal("500"), expired.sku, batch=expired.ref, reason="Massa velha vencida")
+
+    card = build_production_kds(selected_date=date.today()).cards[0]
+
+    assert [(row.ingredient_ref, row.unit, row.basis_label) for row in card.formula_limits] == [
+        ("ingredient-flour", "g", ""),
+        ("ingredient-levain", "%", "Fórmula"),
+        ("ingredient-old-dough", "%", "Fórmula"),
+    ]
+    levain = card.formula_limits[1]
+    assert (levain.minimum, levain.target, levain.maximum, levain.actual) == ("10", "15", "20", "18")
+    old_dough = card.formula_limits[2]
+    assert [(batch.ref, batch.quantity, batch.unit, batch.expiry_date) for batch in old_dough.available_batches] == [
+        ("MV-AVAILABLE", "750", "g", (date.today() + timedelta(days=2)).isoformat()),
+    ]
 
 
 @pytest.mark.django_db

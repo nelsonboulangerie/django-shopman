@@ -47,8 +47,68 @@ def _record_failure(operation: str, detail: str, *, exc: BaseException | None = 
     )
 
 
+def _record_success() -> None:
+    """O Google respondeu com resultado: fecha os avisos do geocoding, inclusive o do
+    antifraude que rodou cego por causa dele."""
+    from shopman.shop.services.observability import record_integration_success
+
+    record_integration_success("google_geocoding")
+
+
 class GeocodingError(Exception):
     """Raised when reverse geocoding cannot produce a canonical result."""
+
+
+class GeocodingDailyLimitReached(GeocodingError):
+    """O teto diário de chamadas pagas ao Google no reverso foi atingido."""
+
+
+#: Teto padrão de chamadas ao Google por dia no geocoding reverso, somadas em
+#: todos os processos (cache compartilhado). 300/dia ≈ 9 mil/mês, dentro da faixa
+#: gratuita do Geocoding. Ajuste em ``SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT``.
+REVERSE_DAILY_LIMIT_DEFAULT = 300
+REVERSE_DAILY_LIMIT_MESSAGE = (
+    "A localização automática chegou ao limite de hoje. Digite o endereço, por favor."
+)
+
+
+def _reverse_daily_limit() -> int:
+    from django.conf import settings
+
+    try:
+        return int(getattr(settings, "SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT", REVERSE_DAILY_LIMIT_DEFAULT))
+    except (TypeError, ValueError):
+        return REVERSE_DAILY_LIMIT_DEFAULT
+
+
+def _spend_reverse_daily_budget() -> None:
+    """Gasta uma chamada do teto diário GLOBAL, ou recusa (falha fechada).
+
+    O limite por IP do endpoint (30/min) não segura custo: mil IPs fazem mil
+    chamadas pagas por minuto. Este teto é do Google inteiro, por dia de operação
+    da loja. Só a chamada que vai ao Google gasta (acerto de cache é de graça).
+    Contador ilegível (cache fora) também recusa: sem saber quanto já se gastou,
+    não se gasta mais. Ao cruzar o teto, um alerta para a TI.
+    """
+    from django.utils import timezone
+
+    limit = _reverse_daily_limit()
+    key = f"geocode:rev:budget:{timezone.localdate().isoformat()}"
+    try:
+        cache.add(key, 0, timeout=60 * 60 * 48)
+        used = cache.incr(key)
+    except Exception as exc:  # noqa: BLE001 — sem contador, falha fechada
+        logger.error("reverse_geocode_budget_unreadable", exc_info=True)
+        _record_failure("reverse_geocode", "contador do teto diário ilegível; geocoding reverso recusado", exc=exc)
+        raise GeocodingDailyLimitReached(REVERSE_DAILY_LIMIT_MESSAGE) from exc
+    if used > limit:
+        if used == limit + 1:
+            _record_failure(
+                "reverse_geocode",
+                f"teto diário de {limit} chamadas atingido; geocoding reverso recusado até amanhã "
+                "(SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT)",
+            )
+        raise GeocodingDailyLimitReached(REVERSE_DAILY_LIMIT_MESSAGE)
 
 
 @dataclass(frozen=True)
@@ -123,6 +183,9 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
     """Reverse-geocode (lat, lng) via Google. Raises GeocodingError on failure.
 
     Cached for 24h per (lat, lng) rounded to ~11m precision (6 decimals).
+    Cache miss spends one call of the global daily cap
+    (``SHOPMAN_GEOCODE_REVERSE_DAILY_LIMIT``); past it, raises
+    ``GeocodingDailyLimitReached``.
     """
     api_key = server_api_key()
     if not api_key:
@@ -132,6 +195,8 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
     cached = cache.get(key)
     if cached is not None:
         return ReverseGeocodeResult(**cached)
+
+    _spend_reverse_daily_budget()
 
     params = {
         "latlng": f"{lat},{lng}",
@@ -146,13 +211,15 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — network error surfaces as domain error
-        logger.warning("reverse_geocode_http_failed lat=%s lng=%s err=%s", lat, lng, exc)
+        # Coordenada do cliente é dado pessoal, e o texto da exceção pode trazer a URL
+        # com a chave da API: o log leva só a classe do erro.
+        logger.warning("reverse_geocode_http_failed err=%s", exc.__class__.__name__)
         _record_failure("reverse_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         raise GeocodingError("Reverse geocoding request failed.") from exc
 
     status = payload.get("status", "")
     if status != "OK":
-        logger.info("reverse_geocode_empty lat=%s lng=%s status=%s", lat, lng, status)
+        logger.info("reverse_geocode_empty status=%s", status)
         _record_failure("reverse_geocode", f"status={status or '-'}")
         raise GeocodingError(f"No result (status={status}).")
 
@@ -162,6 +229,7 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
 
     parsed = _parse_result(results[0], lat, lng)
     cache.set(key, parsed.to_dict(), CACHE_TTL_SECONDS)
+    _record_success()
     return parsed
 
 
@@ -207,7 +275,7 @@ def forward_geocode_structured(address: str) -> ReverseGeocodeResult | None:
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — rede falha vira "sem coordenada" (fallback)
-        logger.warning("forward_geocode_http_failed addr=%s err=%s", address, exc)
+        logger.warning("forward_geocode_http_failed err=%s", exc.__class__.__name__)
         _record_failure("forward_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         return None
 
@@ -226,4 +294,5 @@ def forward_geocode_structured(address: str) -> ReverseGeocodeResult | None:
 
     parsed = _parse_result(results[0], float(lat), float(lng))
     cache.set(key, parsed.to_dict(), CACHE_TTL_SECONDS)
+    _record_success()
     return parsed

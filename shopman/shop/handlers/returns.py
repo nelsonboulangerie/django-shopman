@@ -20,6 +20,38 @@ from shopman.shop.directives import RETURN_PROCESS
 logger = logging.getLogger(__name__)
 
 
+#: O estorno da devolução não voltou ao cliente agora, mas já tem dono, e repetir a
+#: devolução não ajuda: o gateway recusou (o aviso do sino e o "Tentar o estorno de
+#: novo" do Gestor), o gateway não respondeu (a directive ``payment.refund`` retenta
+#: com a mesma chave), ou o dinheiro volta pela gaveta ou pela maquininha (as listas
+#: do PDV). Ver :meth:`ReturnService.process_refund`.
+REFUND_GATEWAY_REFUSED = "gateway_refused"
+REFUND_GATEWAY_UNCONFIRMED = "gateway_unconfirmed"
+REFUND_PENDING_COUNTER = "pending_counter_refund"
+REFUND_HANDED_OFF = frozenset({REFUND_GATEWAY_REFUSED, REFUND_GATEWAY_UNCONFIRMED, REFUND_PENDING_COUNTER})
+
+
+def _order_refunded_q(order: Order) -> int:
+    """Quanto o Payman diz que já voltou ao cliente, somando todas as cobranças do pedido."""
+    from shopman.payman import PaymentService
+
+    return sum(PaymentService.refunded_total(intent.ref) for intent in PaymentService.get_by_order(order.ref))
+
+
+def _refund_not_returned_reason(order: Order) -> str:
+    """Por que o estorno pedido não voltou (todo ou em parte), lido de onde ele ficou."""
+    from shopman.shop.directives import PAYMENT_REFUND
+    from shopman.shop.services import payment as payment_service
+
+    if Directive.objects.filter(
+        topic=PAYMENT_REFUND, payload__order_ref=order.ref, status__in=("queued", "running"),
+    ).exists():
+        return REFUND_GATEWAY_UNCONFIRMED
+    if payment_service.gateway_refund_owed_q(order) > 0:
+        return REFUND_GATEWAY_REFUSED
+    return REFUND_PENDING_COUNTER
+
+
 @dataclass
 class ReturnResult:
     """Resultado da iniciação de devolução."""
@@ -32,12 +64,32 @@ class ReturnResult:
     error: str | None = None
 
 
+def returned_qty_by_line(order: Order) -> dict[str, Decimal]:
+    """O que já voltou de cada linha, somando as devoluções registradas (``Order.data.returns``)."""
+    totals: dict[str, Decimal] = {}
+    for record in (order.data or {}).get("returns") or []:
+        if not isinstance(record, dict):
+            continue
+        for item in record.get("items") or []:
+            if not isinstance(item, dict) or not item.get("line_id"):
+                continue
+            totals[item["line_id"]] = totals.get(item["line_id"], Decimal("0")) + Decimal(str(item.get("qty") or "0"))
+    return totals
+
+
 class ReturnService:
     """Service para devoluções de pedidos."""
 
     @classmethod
     @transaction.atomic
-    def initiate_return(cls, order: Order, items: list[dict], reason: str, actor: str) -> ReturnResult:
+    def initiate_return(
+        cls, order: Order, items: list[dict], reason: str, actor: str, *, approved_by: str = "",
+    ) -> ReturnResult:
+        """Registra a devolução e enfileira o estoque e o estorno (``return.process``).
+
+        ``approved_by`` é o Gerente que assinou (o ``username`` verificado pelo
+        PIN, nunca o nome que veio no corpo); vai para o registro e o evento.
+        """
         from shopman.orderman.exceptions import InvalidTransition
 
         order = Order.objects.select_for_update().get(pk=order.pk)
@@ -53,12 +105,24 @@ class ReturnService:
         # Pedido + ajustes: devolver linha que o cliente já tinha tirado, ou
         # recusar linha que ele acrescentou, seria devolver o pedido errado.
         from shopman.shop.services import order_composition
+        from shopman.shop.services.order_edit import DELIVERY_FEE_SKU
 
+        # A taxa de entrega não é mercadoria: não volta ao estoque e não entra na
+        # conta do "devolveu tudo" (com ela na lista, pedido de entrega nunca era
+        # devolução total).
         order_items_by_line = {
-            item.line_id: item for item in order_composition.effective_items(order)
+            item.line_id: item
+            for item in order_composition.effective_items(order)
+            if str(item.sku or "") != DELIVERY_FEE_SKU
+            and (item.meta if isinstance(item.meta, dict) else {}).get("type") != "delivery_fee"
         }
+        already_returned = returned_qty_by_line(order)
         items_detail = []
         refund_total_q = 0
+        if not items:
+            return ReturnResult(success=False, error="Escolha ao menos um item para devolver.")
+        if len({item_req["line_id"] for item_req in items}) != len(items):
+            return ReturnResult(success=False, error="O mesmo item veio duas vezes na devolução.")
 
         for item_req in items:
             line_id = item_req["line_id"]
@@ -68,8 +132,18 @@ class ReturnService:
                 return ReturnResult(success=False, error=f"Item não encontrado no pedido: {line_id}")
 
             order_item = order_items_by_line[line_id]
+            if qty <= 0:
+                return ReturnResult(success=False, error=f"Quantidade de devolução inválida ({qty}) para o item {line_id}")
             if qty > order_item.qty:
                 return ReturnResult(success=False, error=f"Quantidade de devolução ({qty}) excede quantidade do pedido ({order_item.qty}) para item {line_id}")
+            # Uma segunda devolução do mesmo item só leva o que ainda não voltou:
+            # sem isto, devolver 2 de 3 duas vezes estornava 4.
+            returnable = order_item.qty - already_returned.get(line_id, Decimal("0"))
+            if qty > returnable:
+                return ReturnResult(
+                    success=False,
+                    error=f"Do item {order_item.name or order_item.sku} só {format(returnable.normalize(), 'f')} ainda pode voltar.",
+                )
 
             refund_q = int(order_item.unit_price_q * qty)
             refund_total_q += refund_q
@@ -83,7 +157,7 @@ class ReturnService:
         return_type = "total" if is_total else "partial"
 
         return_record = {
-            "timestamp": timezone.now().isoformat(), "actor": actor, "reason": reason,
+            "timestamp": timezone.now().isoformat(), "actor": actor, "approved_by": approved_by, "reason": reason,
             "type": return_type, "items": items_detail, "refund_total_q": refund_total_q,
             "refund_processed": False, "stock_receipt_version": 1, "stock_processed": False,
         }
@@ -95,7 +169,10 @@ class ReturnService:
 
         order.emit_event(
             event_type="return_initiated", actor=actor,
-            payload={"reason": reason, "return_type": return_type, "items": items_detail, "refund_total_q": refund_total_q},
+            payload={
+                "reason": reason, "return_type": return_type, "items": items_detail,
+                "refund_total_q": refund_total_q, "approved_by": approved_by,
+            },
         )
 
         if is_total:
@@ -121,23 +198,52 @@ class ReturnService:
 
         result = {"refund": None, "fiscal": None}
 
-        if (order.data.get("payment") or {}).get("intent_ref"):
+        payment_data = order.data.get("payment") or {}
+        if payment_service.pays_only_on_account(payment_data):
+            # Venda só em conta: nada foi pago, e a devolução tira o valor da conta
+            # do cliente (#2606). A régua de quem pode passou antes
+            # (``order_return.return_block_reason``: a conta em aberto).
+            payment_service.reduce_account_debt(
+                order, amount_q, idempotency_key=refund_reference or f"return:{order.ref}",
+            )
+            result["refund"] = {"success": True, "amount_q": amount_q, "on_account": True}
+        elif payment_data.get("intent_ref") or payment_service._pays_on_account(payment_data):
+            # A venda mista com conta da casa passa por aqui mesmo sem ``intent_ref``:
+            # o ``refund`` tira da conta primeiro e devolve só o resto (#3151).
             try:
                 # Devolução PARCIAL estorna só o valor devolvido — nunca o
                 # saldo capturado inteiro. ``refund_reference`` (por índice de
                 # devolução) torna o estorno idempotente: um retry após crash
                 # entre o gateway e o save da flag NÃO estorna de novo.
-                payment_service.refund(
-                    order,
-                    amount_q=amount_q,
-                    idempotency_key=refund_reference or f"return:{order.ref}",
-                )
-                result["refund"] = {"success": True, "amount_q": amount_q}
-                order.emit_event(
-                    event_type="refund_processed",
-                    actor=actor,
-                    payload={"amount_q": amount_q, "success": True},
-                )
+                #
+                # O ``refund`` não levanta quando o dinheiro NÃO volta: na recusa
+                # do gateway ele abre o aviso, sem resposta ele enfileira o retry,
+                # e gaveta e maquininha ficam nas listas do PDV. Quem diz quanto
+                # voltou é o Payman, antes e depois: o evento ``refund_processed``
+                # (que o Gestor e a loja do cliente mostram) só nasce com dinheiro
+                # que de fato voltou, e com o valor dele.
+                refunded_before_q = _order_refunded_q(order)
+                refund_key = refund_reference or f"return:{order.ref}"
+                payment_service.refund(order, amount_q=amount_q, idempotency_key=refund_key)
+                returned_q = max(0, _order_refunded_q(order) - refunded_before_q)
+                # O que saiu da conta da casa (venda mista) não é dinheiro que volta.
+                from_account_q = payment_service.account_debt_reduced_q(order, refund_key) or 0
+                money_q = max(0, amount_q - from_account_q)
+                if returned_q > 0:
+                    order.emit_event(
+                        event_type="refund_processed",
+                        actor=actor,
+                        payload={"amount_q": returned_q, "success": True},
+                    )
+                if returned_q >= money_q:
+                    result["refund"] = {"success": True, "amount_q": returned_q + from_account_q}
+                else:
+                    reason = _refund_not_returned_reason(order)
+                    logger.warning(
+                        "process_refund: estorno da devolução não voltou order=%s pedido_q=%s voltou_q=%s motivo=%s",
+                        order.ref, amount_q, returned_q, reason,
+                    )
+                    result["refund"] = {"success": False, "amount_q": returned_q, "reason": reason}
             except Exception as exc:
                 logger.exception("process_refund: payment refund failed for %s", order.ref)
                 result["refund"] = {"success": False, "error": str(exc)}
@@ -231,7 +337,12 @@ class ReturnHandler:
                 actor="return.process",
                 refund_reference=f"return:{order_ref}:{return_index}",
             )
-            if result.get("refund", {}) is not None and result.get("refund", {}).get("success") is False:
+            refund = result.get("refund")
+            # O estorno que não voltou mas já tem dono (recusa no sino e no Gestor, retry
+            # da directive ``payment.refund``, listas do PDV) encerra a etapa da devolução:
+            # repetir não devolve nada e só terminaria em "devolução travada". Fora isso,
+            # o estorno que não se confirmou retém o recibo do estoque e retenta.
+            if refund is not None and refund.get("success") is False and refund.get("reason") not in REFUND_HANDED_OFF:
                 raise DirectiveTransientError("Refund not confirmed; stock receipt retained")
         except Exception as exc:
             raise DirectiveTransientError(f"Refund processing failed: {exc}") from exc
@@ -261,4 +372,4 @@ class ReturnHandler:
         fiscal.open_return_note(order, return_index=return_index)
 
 
-__all__ = ["ReturnHandler", "ReturnService", "ReturnResult"]
+__all__ = ["ReturnHandler", "ReturnService", "ReturnResult", "returned_qty_by_line"]

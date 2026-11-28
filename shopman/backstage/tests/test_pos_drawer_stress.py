@@ -222,32 +222,34 @@ def test_PIN_errado_em_rajada_nao_destrava_nem_UMA_vez(caixa, gerente):
     assert Entry.objects.filter(kind=Entry.Kind.DRAWER_UNLOCK).count() == 0
 
 
-def test_auto_aprovacao_e_recusada_mesmo_com_o_gerente_operando(caixa):
-    """O caso real: quem opera o balcão TAMBÉM é gerente (a Joyce do seed)."""
+def test_o_gerente_que_opera_libera_com_o_proprio_PIN_e_o_livro_registra(caixa):
+    """O caso real: quem opera o balcão TAMBÉM é gerente (a Joyce do seed).
+
+    Decisão do dono, 28/10/2026: ele assina a própria exceção digitando o PIN de
+    novo. O livro guarda quem operou e quem autorizou, os dois a mesma pessoa.
+    """
     caixa.user_permissions.clear()
     _grant(caixa, "operate_pos")
     _grant(caixa, "adjust_shift")
     PinCredential.set_for(caixa, "1111")
     caixa = get_user_model().objects.get(pk=caixa.pk)  # limpa o cache de permissões
 
-    with pytest.raises(PosIntentError) as exc:
-        pos_service.unlock_drawer(
-            operator=caixa, manager_approval={"username": "marina", "pin": "1111"},
-        )
+    entry = pos_service.unlock_drawer(
+        operator=caixa, manager_approval={"username": caixa.get_username(), "pin": "1111"},
+    )
 
-    assert exc.value.code == "manager_approval_invalid"
-    assert Entry.objects.filter(kind=Entry.Kind.DRAWER_UNLOCK).count() == 0
+    assert entry.approved_by == caixa
 
 
-def test_auto_aprovacao_pelo_CRACHA_tambem_e_recusada(caixa):
-    """A porta nova não pode reabrir a fraude que a porta velha fechou."""
+def test_o_gerente_que_opera_com_PIN_errado_nao_libera(caixa):
     caixa.user_permissions.clear()
     _grant(caixa, "operate_pos")
     _grant(caixa, "adjust_shift")
+    PinCredential.set_for(caixa, "1111")
     caixa = get_user_model().objects.get(pk=caixa.pk)
 
     with pytest.raises(PosIntentError):
-        pos_service.unlock_drawer(operator=caixa, manager_approval={"badge": "marina"})
+        pos_service.unlock_drawer(operator=caixa, manager_approval={"username": caixa.get_username(), "pin": "2222"})
 
     assert Entry.objects.filter(kind=Entry.Kind.DRAWER_UNLOCK).count() == 0
 

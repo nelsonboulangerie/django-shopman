@@ -91,7 +91,7 @@ const props = withDefaults(
 );
 const emit = defineEmits<{ start: []; finish: []; seen: []; locked: []; undo: []; open: []; hold: [] }>();
 
-const tone = computed(() => ticketTone(props.ticket.timer_class));
+const tone = computed(() => ticketTone(props.ticket.timer_class, props.ticket.status));
 const code = computed(() => splitRef(props.ticket.order_ref).code);
 const overline = computed(() => ticketOverline(props.ticket));
 const startLine = computed(() => ticketStartLine(props.ticket));
@@ -199,21 +199,17 @@ watch(
   },
   { immediate: true },
 );
-// Observação curta mora na linha do item ("Pão de Hambúrguer · sem gergelim"); a longa
-// ganha a caixa "Obs.:" embaixo dele, inteira. As duas em âmbar (v4).
-function isShortNote(notes: string): boolean {
-  return Boolean(notes) && notes.length <= 24 && !notes.includes("\n");
-}
-
 // Moldura comum (margem, ritmo, código, botão) + o que só o preparo tem: o relógio e
 // o corpo dos itens e das notas. `timerH` segue a escada do canon do kit
 // (operator-base.css, "ALTURAS DE CONTROLE"): h-9 = chip, h-11 = controle.
+// `itemNote` é a observação do item: um passo abaixo do item, nunca dois. Ela é a
+// ressalva que o cozinheiro lê a dois metros no rush ("Croque monsieur" / "sem glúten").
 const d = computed(() => ({
   ...cardScale(props.density),
   ...{
-    compact: { timer: "text-base", timerH: "h-9", item: "text-base leading-snug", note: "text-xs" },
-    cozy: { timer: "text-lg", timerH: "h-9", item: "text-lg leading-[1.375rem]", note: "text-sm" },
-    roomy: { timer: "text-xl", timerH: "h-11", item: "text-xl leading-snug", note: "text-base" },
+    compact: { timer: "text-base", timerH: "h-9", item: "text-base leading-snug", itemNote: "text-sm", note: "text-xs" },
+    cozy: { timer: "text-lg", timerH: "h-9", item: "text-lg leading-[1.375rem]", itemNote: "text-base", note: "text-sm" },
+    roomy: { timer: "text-xl", timerH: "h-11", item: "text-xl leading-snug", itemNote: "text-lg", note: "text-base" },
   }[props.density],
 }));
 </script>
@@ -226,7 +222,9 @@ const d = computed(() => ({
     :data-next="next || undefined"
   >
     <!-- ÁREA DE LEITURA: identidade + itens. Um toque aqui abre o detalhe — o gesto
-         seguro fica com a área grande, o gesto que sai da cozinha fica no botão. -->
+         seguro fica com a área grande, o gesto que sai da cozinha fica no botão.
+         O botão sem texto fica POR BAIXO da leitura de propósito (camada empilhada,
+         `data-operator-overlap-allowed`): o texto por cima não tem toque e cai nele. -->
     <div class="relative flex flex-1 flex-col" v-bind="longPress" data-kds-hold>
       <NuxtButton
         v-if="!finishing && !cancelled"
@@ -235,6 +233,7 @@ const d = computed(() => ({
         class="absolute inset-0 z-0 rounded-b-none"
         :aria-label="`Ver o detalhe do pedido ${code}`"
         data-kds-open
+        data-operator-overlap-allowed
         @click="emit('open')"
       />
 
@@ -294,7 +293,7 @@ const d = computed(() => ({
               <Icon
                 :name="ticket.due_clock_display ? 'lucide:calendar-clock' : 'lucide:timer'"
                 class="size-5 shrink-0"
-                :class="tone === 'ok' ? 'text-muted-foreground' : ''"
+                :class="tone === 'neutral' ? 'text-muted-foreground' : ''"
               />
               <span data-kds-clock>{{ ticketClockLabel(ticket) }}</span>
             </span>
@@ -310,18 +309,25 @@ const d = computed(() => ({
         </div>
 
         <!-- Quem iniciou e a hora combinada (v4: "iniciado por Rafael às 21:56 · retira às 22:30"). -->
+        <!-- A linha tem o lugar reservado mesmo vazia: ao iniciar, "iniciado por" não
+             empurra o botão para baixo no meio do toque (beta 05/11, KDS-15). -->
         <p
-          v-if="startLine"
-          class="flex min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
+          v-if="!cancelled"
+          class="flex min-h-[1lh] min-w-0 items-start gap-1.5 op-micro text-muted-foreground"
+          :class="startLine ? '' : 'invisible'"
+          :aria-hidden="startLine ? undefined : 'true'"
           data-kds-started
         >
-          <!-- Sem ninguém ter iniciado, a linha é só a hora combinada: o ícone é o da agenda. -->
-          <Icon
-            :name="ticket.started_by ? 'lucide:user-round' : 'lucide:calendar-clock'"
-            class="mt-px size-3.5 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 break-words">{{ startLine }}</span>
+          <!-- Quem iniciou: a pessoa; sem ninguém, a hora combinada (a agenda) ou há
+               quanto o pedido espera (o relógio). -->
+          <template v-if="startLine">
+            <Icon
+              :name="ticket.started_by ? 'lucide:user-round' : ticket.due_time_display ? 'lucide:calendar-clock' : 'lucide:clock'"
+              class="mt-px size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span class="min-w-0 break-words">{{ startLine }}</span>
+          </template>
         </p>
 
         <!-- MUDANÇA: o que mudou depois de chegar à cozinha, uma linha por mudança, até
@@ -366,14 +372,14 @@ const d = computed(() => ({
               >{{ item.qty }}×</span
             >
             <div class="min-w-0 flex-1">
-              <p class="break-words font-semibold" :class="d.item">
-                {{ item.name
-                }}<span v-if="isShortNote(item.notes)" class="text-sm text-warning"> · {{ item.notes }}</span>
-              </p>
+              <p class="break-words font-semibold" :class="d.item">{{ item.name }}</p>
+              <!-- Toda observação do item ganha a caixa âmbar, curta ou longa: o
+                   comprimento não decide o destaque (dono, DEV-2026-032). -->
               <p
-                v-if="item.notes && !isShortNote(item.notes)"
-                class="mt-1 flex w-fit max-w-full items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-1 font-semibold leading-snug text-warning"
-                :class="d.note"
+                v-if="item.notes"
+                class="mt-1 flex w-fit max-w-full items-start gap-1.5 rounded-md bg-warning/15 px-2.5 py-1 font-bold leading-snug text-warning"
+                :class="d.itemNote"
+                data-kds-item-note
               >
                 <Icon name="lucide:message-square-warning" class="mt-0.5 size-4 shrink-0" />
                 <span class="min-w-0 whitespace-pre-wrap break-words">Obs.: {{ item.notes }}</span>

@@ -30,6 +30,20 @@ function save() {
     "Atalhos de venda gravados.",
   );
 }
+
+// Trocar de aba perdia as mudanças sem aviso (beta 05/11, PDV-22): a mesma guarda
+// do Salão.
+const confirm = useConfirm();
+onBeforeRouteLeave(async () => {
+  if (!changed.value) return true;
+  return await confirm({
+    tone: "danger",
+    title: "Sair sem gravar os atalhos?",
+    description: "As mudanças nos atalhos de venda se perdem fora daqui.",
+    confirmLabel: "Sair sem gravar",
+    cancelLabel: "Continuar editando",
+  });
+});
 </script>
 
 <template>

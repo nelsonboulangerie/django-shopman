@@ -4,20 +4,32 @@ from __future__ import annotations
 
 from django.urls import path
 
+from shopman.backstage.api.purchase_csv import PurchaseCsvView
+from shopman.backstage.api.purchase_supplier_bulk import PurchaseSupplierBulkView
 from shopman.shop.eventstream import events as eventstream_view
 
-from .alerts import AlertAckView, AlertListView
+from .alerts import (
+    AlertAckView,
+    AlertListView,
+    ConciergeHandoffGiveBackView,
+    ConciergeVerificationAnswerView,
+    ConciergeVerificationPromoteView,
+    ConciergeVerificationTakeOverView,
+)
 from .backup import BackupExportView
 from .bi import (
+    BIAiView,
     BICashView,
     BIChangeView,
     BIConsumptionProfilesView,
     BICustomersView,
+    BIDeliveryCostView,
     BIDeliveryTimingView,
     BIExploreView,
     BIForecastView,
     BIOverShortCarryView,
     BIOverShortView,
+    BIPreorderKitchenView,
     BIProductionView,
     BISalesView,
     BIScenariosView,
@@ -29,14 +41,18 @@ from .catalog import (
     CatalogCellsView,
     CatalogCellView,
     CatalogMatrixView,
+    CatalogProductArchiveView,
     CatalogProductCreateView,
     CatalogProductDetailView,
     CatalogProductDraftView,
     CatalogProductDuplicateView,
     CatalogProductImportView,
+    CatalogProductOptionsView,
     CatalogProductPhotoUploadView,
     CatalogProductPhotoView,
     CatalogProductPurchaseView,
+    CatalogProductsDuplicateView,
+    CatalogProductSheetView,
     CatalogProductView,
     CatalogReorderCollectionsView,
     CatalogReorderItemsView,
@@ -44,9 +60,15 @@ from .catalog import (
     CatalogSocialView,
     CatalogSyncStatusView,
 )
-from .catalog_bindings import CatalogBindingConfirmView, CatalogBindingReviewView, CatalogSnapshotImportView
+from .catalog_bindings import (
+    CatalogBindingConfirmView,
+    CatalogBindingReviewView,
+    CatalogCategoryView,
+    CatalogSnapshotImportView,
+)
+from .channel_addons import ChannelAddonsView
 from .channel_health import ChannelHealthView
-from .customer_groups import CustomerGroupDetailView, CustomerGroupListView
+from .customer_groups import CustomerGroupDetailView, CustomerGroupListView, CustomerGroupMembersView
 from .customers import (
     CustomerAddressDetailView,
     CustomerAddressListView,
@@ -67,8 +89,31 @@ from .feeds import (
     FeedRotationView,
     FeedSwitchView,
 )
+from .house_couriers import (
+    HouseCourierRideView,
+    HouseCourierShiftView,
+    HouseCouriersView,
+    HouseRideGestureView,
+    HouseRideSlipView,
+)
 from .hub import HubView
-from .ifood_store import IFoodStoreView
+from .ifood_reviews import (
+    IFoodReviewDetailView,
+    IFoodReviewListView,
+    IFoodReviewReplyView,
+    IFoodReviewSummaryView,
+)
+from .ifood_store import (
+    IFoodInterruptionDetailView,
+    IFoodInterruptionsView,
+    IFoodMerchantsView,
+    IFoodMerchantView,
+    IFoodOpeningHoursView,
+    IFoodOpeningHoursWriteView,
+    IFoodStoreView,
+    IFoodWidgetView,
+)
+from .incidents import IncidentsView
 from .kds import (
     KDSBoardView,
     KDSCustomerStatusView,
@@ -112,6 +157,7 @@ from .marketing import (
     MarketingDecisionQueueView,
     MarketingDualControlView,
     MarketingFreezeView,
+    MarketingOfferDetailView,
     MarketingOfferListView,
     MarketingStepUpView,
     MarketingUnfreezeView,
@@ -138,31 +184,50 @@ from .notifications import (
     NotificationReadView,
     NotificationSeenBatchView,
 )
+from .operation_checklists import (
+    OperationChecklistBoardView,
+    OperationChecklistCompleteView,
+    OperationChecklistStartView,
+    OperationTaskCompleteView,
+    OperationTaskSuperviseView,
+)
 from .operations import (
     CourierTicketEscposView,
+    DayClosingNotPickedUpView,
     DayClosingView,
+    DeliveriesCountView,
+    DeliveriesView,
+    DeliveryDriverPhotoView,
     OperationEpisodeAnswerView,
     OperatorBadgeLostView,
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
+    OperatorLogoutView,
     OperatorPinChangeView,
     OperatorPinResetView,
     OperatorSessionView,
+    OperatorUnlockPasswordView,
     OperatorUnlockView,
     OrderAdvanceView,
     OrderAssignView,
     OrderBoardLayoutView,
-    OrderCancellationReasonsView,
     OrderCancelView,
     OrderCommentView,
     OrderConfirmView,
     OrderCourierBackView,
     OrderCourierCancelView,
+    OrderCourierCloseHereView,
+    OrderCourierCustodyView,
     OrderCourierDispatchAgainView,
     OrderCourierDispatchView,
     OrderCourierQuoteView,
     OrderCourierReminderDismissView,
+    OrderCourierRideQuoteView,
+    OrderCourierRideView,
+    OrderCustomerContactResolveView,
+    OrderCustomerNoticePreviewView,
+    OrderCustomerNoticeView,
     OrderDanfeEscposView,
     OrderDetailView,
     OrderEditPreviewView,
@@ -171,13 +236,23 @@ from .operations import (
     OrderIFoodAcceptRetryView,
     OrderIFoodEvidenceView,
     OrderIFoodHandshakeView,
+    OrderNoShowPreviewView,
+    OrderNoShowView,
     OrderNotesView,
+    OrderPaymentCheckView,
+    OrderPromiseResolutionView,
     OrderQueueView,
     OrderRailCountsView,
+    OrderRefundPreviewView,
+    OrderRefundRetryView,
+    OrderRefundView,
     OrderRejectView,
     OrderRequeueFiscalView,
     OrderRescheduleView,
     OrderResendPaymentLinkView,
+    OrderRetentionReceiptEscposView,
+    OrderReturnPreviewView,
+    OrderReturnView,
     OrderSettleDeliveryCashView,
     OrderTicketBatchEscposView,
     OrderTicketBatchView,
@@ -214,15 +289,20 @@ from .operations import (
     POSCustomerResolveView,
     POSCustomerSearchView,
     POSDanfeEscposView,
+    POSDeliveryFeeView,
     POSEmitFiscalView,
+    POSManagerApprovalCheckView,
     POSMovementView,
     POSPaymentStatusView,
+    POSPreorderCounterPixView,
     POSPreorderDetailView,
     POSPreorderEditSessionView,
     POSPreorderHandOverView,
     POSPreorderListView,
+    POSPreorderPaymentCheckView,
     POSPreorderRedoTabView,
     POSPreorderSearchView,
+    POSPreorderSwapView,
     POSRecentSalesView,
     POSResendFiscalEmailView,
     POSResendPaymentLinkView,
@@ -236,20 +316,26 @@ from .operations import (
     POSTabMoveLinesView,
     POSTabOpenView,
     POSTabRenameView,
+    POSTabReserveNextFreeView,
     POSTabSaveView,
     POSTabUnfireView,
     POSView,
+    ProductionBlindCodeAllocationView,
     ProductionBlindMapView,
     ProductionBoardView,
     ProductionForecastView,
     ProductionKDSView,
     ProductionManagementView,
     ProductionMiseEnPlaceView,
+    ProductionPurchaseRequestView,
     ProductionQCView,
     ProductionReportsView,
+    ProductionShortageAuthorizationView,
     ProductionWeighingView,
     StationProvisionView,
     WorkOrderFinishView,
+    WorkOrderFormulaDeviationView,
+    WorkOrderOldDoughView,
     WorkOrderOvenArmView,
     WorkOrderOvenConcludeView,
     WorkOrderPlanView,
@@ -274,6 +360,7 @@ from .print_jobs import (
     ProductionWeighingPrintJobCreateView,
 )
 from .product_promise import CatalogPromiseView, ProductPromiseView
+from .production_checklist import ProductionPrepChecklistView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
@@ -313,18 +400,29 @@ from .recipe_book import (
     RecipeExecutionView,
     RecipeFavoriteView,
     RecipeReferenceView,
+    RecipeReviewQueueView,
     RecipeSheetDuplicateView,
     RecipeSheetListView,
     RecipeSheetView,
     RecipeVersionCreateView,
     RecipeVersionPublishView,
     RecipeVersionRatingView,
+    RecipeVersionReviewView,
     RecipeVersionView,
 )
 from .saved_views import SavedViewDetailView, SavedViewListView
 from .search import SuiteSearchView
 from .seating import POSSeatingView
 from .sign_ins import SignInListView
+from .support import (
+    SupportCapabilitiesView,
+    SupportTicketDecisionView,
+    SupportTicketDetailView,
+    SupportTicketLinkDevView,
+    SupportTicketListCreateView,
+    SupportTicketMessageView,
+    SupportTicketTriageView,
+)
 from .telemetry import ClientErrorView, ClientPwaUpdateView, MarketingVitalView
 from .tenant import OperatorTenantView
 from .timer_tags import ProductionTimerTagsView
@@ -350,6 +448,33 @@ urlpatterns = [
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # Busca da suíte: o campo do cabeçalho dos oito apps e a barra da Central
     path("search/", SuiteSearchView.as_view(), name="api-backstage-search"),
+    # Rotina diária: configurar e auditar continua no Admin; executar e conferir
+    # acontece na superfície do Gestor.
+    path(
+        "operation-checklists/",
+        OperationChecklistBoardView.as_view(),
+        name="api-backstage-operation-checklists",
+    ),
+    path(
+        "operation-checklists/start/",
+        OperationChecklistStartView.as_view(),
+        name="api-backstage-operation-checklists-start",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/complete/",
+        OperationChecklistCompleteView.as_view(),
+        name="api-backstage-operation-checklists-complete",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/tasks/<int:task_id>/complete/",
+        OperationTaskCompleteView.as_view(),
+        name="api-backstage-operation-task-complete",
+    ),
+    path(
+        "operation-checklists/<int:run_id>/tasks/<int:task_id>/supervise/",
+        OperationTaskSuperviseView.as_view(),
+        name="api-backstage-operation-task-supervise",
+    ),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
     path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
@@ -406,7 +531,15 @@ urlpatterns = [
     path("operator/tenant/", OperatorTenantView.as_view(), name="api-backstage-operator-tenant"),
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
+    # "Entrar com senha" na trava: só quem não tem PIN; num posto, só o Dono (06/11).
+    path(
+        "operator/unlock/password/",
+        OperatorUnlockPasswordView.as_view(),
+        name="api-backstage-operator-unlock-password",
+    ),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
+    # Sair deste dispositivo: encerra a sessão (o vínculo de posto fica).
+    path("operator/logout/", OperatorLogoutView.as_view(), name="api-backstage-operator-logout"),
     # "Perdi meu crachá": ativo, pela própria pessoa, sem esperar uso indevido.
     path("operator/badge/lost/", OperatorBadgeLostView.as_view(), name="api-backstage-operator-badge-lost"),
     path("operator/pin/change/", OperatorPinChangeView.as_view(), name="api-backstage-operator-pin-change"),
@@ -450,9 +583,19 @@ urlpatterns = [
         name="api-backstage-production-mise-en-place",
     ),
     path(
+        "production/mise-en-place/marks/",
+        ProductionPrepChecklistView.as_view(),
+        name="api-backstage-production-prep-checklist",
+    ),
+    path(
         "production/weighing/",
         ProductionWeighingView.as_view(),
         name="api-backstage-production-weighing",
+    ),
+    path(
+        "production/weighing/blind-codes/",
+        ProductionBlindCodeAllocationView.as_view(),
+        name="api-backstage-production-weighing-blind-codes",
     ),
     path(
         "production/weighing/print-jobs/",
@@ -516,6 +659,8 @@ urlpatterns = [
     path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
     path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
     path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    # A fila de conferência: rota fixa ANTES de recipes/<slug:ref>/ ("review" também é slug).
+    path("recipes/review/", RecipeReviewQueueView.as_view(), name="api-backstage-recipes-review"),
     # Ficha de execução: rotas fixas ANTES de recipes/<slug:ref>/ ("sheets" também é slug).
     path("recipes/sheets/", RecipeSheetListView.as_view(), name="api-backstage-recipe-sheets"),
     path("recipes/sheets/<slug:ref>/", RecipeSheetView.as_view(), name="api-backstage-recipe-sheet"),
@@ -530,6 +675,11 @@ urlpatterns = [
     path("recipes/<slug:ref>/favorite/", RecipeFavoriteView.as_view(), name="api-backstage-recipe-favorite"),
     path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
     path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
+    path(
+        "recipes/<slug:ref>/versions/<int:number>/review/",
+        RecipeVersionReviewView.as_view(),
+        name="api-backstage-recipe-version-review",
+    ),
     path(
         "recipes/<slug:ref>/versions/<int:number>/rating/",
         RecipeVersionRatingView.as_view(),
@@ -585,6 +735,7 @@ urlpatterns = [
     ),
     # Cadastro da Base. A ordem importa: `min-stock` e os subgestos de um SKU
     # vêm antes do detalhe, senão "min-stock" casaria com <material_sku>.
+    path("purchase/<str:entity>/csv/", PurchaseCsvView.as_view(), name="api-backstage-purchase-csv"),
     path("purchase/materials/", PurchaseMaterialView.as_view(), name="api-backstage-purchase-materials"),
     path(
         "purchase/materials/<str:material_sku>/duplicate/",
@@ -596,6 +747,7 @@ urlpatterns = [
         PurchaseMaterialDetailView.as_view(),
         name="api-backstage-purchase-material",
     ),
+    path("purchase/suppliers/batch/", PurchaseSupplierBulkView.as_view(), name="api-backstage-purchase-supplier-bulk"),
     path("purchase/suppliers/", PurchaseSupplierView.as_view(), name="api-backstage-purchase-suppliers"),
     path(
         "purchase/suppliers/<str:ref>/duplicate/",
@@ -646,7 +798,10 @@ urlpatterns = [
     ),
     # B.I. — persona gestor (perm fina backstage.view_bi, ADR-021)
     path("bi/production/", BIProductionView.as_view(), name="api-backstage-bi-production"),
+    path("bi/ai/", BIAiView.as_view(), name="api-backstage-bi-ai"),
+    path("bi/delivery-cost/", BIDeliveryCostView.as_view(), name="api-backstage-bi-delivery-cost"),
     path("bi/delivery-timing/", BIDeliveryTimingView.as_view(), name="api-backstage-bi-delivery-timing"),
+    path("bi/preorder-kitchen/", BIPreorderKitchenView.as_view(), name="api-backstage-bi-preorder-kitchen"),
     path("bi/over-short/", BIOverShortView.as_view(), name="api-backstage-bi-over-short"),
     path("bi/over-short/carry/", BIOverShortCarryView.as_view(), name="api-backstage-bi-over-short-carry"),
     path("bi/sales/", BISalesView.as_view(), name="api-backstage-bi-sales"),
@@ -666,6 +821,7 @@ urlpatterns = [
     path("saved-views/<int:pk>/", SavedViewDetailView.as_view(), name="api-backstage-saved-view"),
     path("bi/scenarios/", BIScenariosView.as_view(), name="api-backstage-bi-scenarios"),
     path("closing/", DayClosingView.as_view(), name="api-backstage-closing"),
+    path("closing/not-picked-up/", DayClosingNotPickedUpView.as_view(), name="api-backstage-closing-not-picked-up"),
     path(
         "closing/episodes/<int:episode_id>/",
         OperationEpisodeAnswerView.as_view(),
@@ -676,8 +832,47 @@ urlpatterns = [
     # ⚠️ ANTES de `orders/<str:ref>/…`: `board-layout` casaria com `<str:ref>`.
     path("orders/board-layout/", OrderBoardLayoutView.as_view(), name="api-backstage-order-board-layout"),
     path("orders/rail-counts/", OrderRailCountsView.as_view(), name="api-backstage-order-rail-counts"),
+    path("deliveries/", DeliveriesView.as_view(), name="api-backstage-deliveries"),
+    path("deliveries/count/", DeliveriesCountView.as_view(), name="api-backstage-deliveries-count"),
+    # Os entregadores da casa: quem leva, enviar a corrida e a escala de hoje (M3, #2526).
+    path("deliveries/couriers/", HouseCouriersView.as_view(), name="api-backstage-house-couriers"),
+    path("deliveries/couriers/ride/", HouseCourierRideView.as_view(), name="api-backstage-house-courier-ride"),
+    path("deliveries/couriers/<str:ref>/shift/", HouseCourierShiftView.as_view(),
+         name="api-backstage-house-courier-shift"),
+    # A via impressa da rota, com o QR do link (#2406). ANTES do gesto: "slip" casaria com <gesture>.
+    path("deliveries/couriers/rides/<str:ride>/slip/", HouseRideSlipView.as_view(),
+         name="api-backstage-house-ride-slip"),
+    # Os gestos do balcão na corrida da casa (M3b, #2898): depart, deliver, resend, release.
+    path("deliveries/couriers/rides/<str:ride>/<str:gesture>/", HouseRideGestureView.as_view(),
+         name="api-backstage-house-ride-gesture"),
+    path("deliveries/<str:ride>/driver-photo/", DeliveryDriverPhotoView.as_view(),
+         name="api-backstage-delivery-driver-photo"),
     # A loja no iFood: status conferido + pausa do gestor (menu de mais opções).
     path("ifood/store/", IFoodStoreView.as_view(), name="api-backstage-ifood-store"),
+    path("ifood/widget/", IFoodWidgetView.as_view(), name="api-backstage-ifood-widget"),
+    path("ifood/merchants/", IFoodMerchantsView.as_view(), name="api-backstage-ifood-merchants"),
+    path("ifood/merchant/", IFoodMerchantView.as_view(), name="api-backstage-ifood-merchant"),
+    path("ifood/interruptions/", IFoodInterruptionsView.as_view(), name="api-backstage-ifood-interruptions"),
+    path(
+        "ifood/interruptions/<str:interruption_id>/",
+        IFoodInterruptionDetailView.as_view(),
+        name="api-backstage-ifood-interruption",
+    ),
+    path("ifood/opening-hours/", IFoodOpeningHoursView.as_view(), name="api-backstage-ifood-opening-hours"),
+    path(
+        "ifood/opening-hours/write/",
+        IFoodOpeningHoursWriteView.as_view(),
+        name="api-backstage-ifood-opening-hours-write",
+    ),
+    # Avaliações dos clientes no iFood (módulo Review). `summary/` ANTES de `<id>/`.
+    path("ifood/reviews/", IFoodReviewListView.as_view(), name="api-backstage-ifood-reviews"),
+    path("ifood/reviews/summary/", IFoodReviewSummaryView.as_view(), name="api-backstage-ifood-review-summary"),
+    path("ifood/reviews/<str:review_id>/", IFoodReviewDetailView.as_view(), name="api-backstage-ifood-review"),
+    path(
+        "ifood/reviews/<str:review_id>/reply/",
+        IFoodReviewReplyView.as_view(),
+        name="api-backstage-ifood-review-reply",
+    ),
     # Catalog matrix (produto × superfície)
     path(
         "catalog/channels/<str:ref>/review/",
@@ -694,12 +889,27 @@ urlpatterns = [
         CatalogBindingConfirmView.as_view(),
         name="api-backstage-catalog-binding-confirm",
     ),
+    path(
+        "catalog/channels/<str:ref>/categories/",
+        CatalogCategoryView.as_view(),
+        name="api-backstage-catalog-category",
+    ),
+    path(
+        "catalog/channels/<str:ref>/addons/",
+        ChannelAddonsView.as_view(),
+        name="api-backstage-catalog-addons",
+    ),
     # Clientes do Gestor. `merge/` e `merges/` antes de `<ref>/`: um ref nunca
     # se chama "merge", mas a ordem não deveria depender disso.
     path("customers/", CustomerListView.as_view(), name="api-backstage-customers"),
     path("customers/bulk/", CustomerBulkView.as_view(), name="api-backstage-customers-bulk"),
     path("customers/groups/", CustomerGroupListView.as_view(), name="api-backstage-customer-groups"),
     path("customers/groups/<str:ref>/", CustomerGroupDetailView.as_view(), name="api-backstage-customer-group-detail"),
+    path(
+        "customers/groups/<str:ref>/members/",
+        CustomerGroupMembersView.as_view(),
+        name="api-backstage-customer-group-members",
+    ),
     path("customers/merge/preview/", CustomerMergePreviewView.as_view(), name="api-backstage-customers-merge-preview"),
     path("customers/merge/", CustomerMergeView.as_view(), name="api-backstage-customers-merge"),
     path("customers/merges/", CustomerMergeListView.as_view(), name="api-backstage-customers-merges"),
@@ -727,6 +937,10 @@ urlpatterns = [
     path("catalog/", CatalogMatrixView.as_view(), name="api-backstage-catalog"),
     path("catalog/cell/", CatalogCellView.as_view(), name="api-backstage-catalog-cell"),
     path("catalog/cells/", CatalogCellsView.as_view(), name="api-backstage-catalog-cells"),
+    path("catalog/products/archive/", CatalogProductArchiveView.as_view(), name="api-backstage-catalog-products-archive"),
+    path("catalog/products/options/", CatalogProductOptionsView.as_view(), name="api-backstage-catalog-products-options"),
+    path("catalog/products/sheet/", CatalogProductSheetView.as_view(), name="api-backstage-catalog-products-sheet"),
+    path("catalog/products/duplicate/", CatalogProductsDuplicateView.as_view(), name="api-backstage-catalog-products-duplicate"),
     path("catalog/product/", CatalogProductView.as_view(), name="api-backstage-catalog-product"),
     # ⚠️ ANTES de `catalog/product/<str:sku>/`: `create` e `duplicate` casariam com `<str:sku>`.
     path("catalog/product/create/", CatalogProductCreateView.as_view(), name="api-backstage-catalog-product-create"),
@@ -766,6 +980,7 @@ urlpatterns = [
     path("feeds/automatic/", FeedAutomaticView.as_view(), name="api-backstage-feeds-automatic"),
     # O checklist vivo de cada canal (o que falta para funcionar, e onde resolve).
     path("channels/health/", ChannelHealthView.as_view(), name="api-backstage-channel-health"),
+    path("incidents/", IncidentsView.as_view(), name="api-backstage-incidents"),
     # Histórico do Gestor: pedidos fechados, filtrados no servidor.
     # ⚠️ ANTES de `orders/<str:ref>/…`: `history` casaria com `<str:ref>`.
     path("orders/history/", OrderHistoryView.as_view(), name="api-backstage-order-history"),
@@ -780,11 +995,24 @@ urlpatterns = [
     # Orders — operator actions
     # Antes do detalhe: "volume-check" não é ref de pedido.
     path("orders/volume-check/", OrderVolumeCheckView.as_view(), name="api-backstage-order-volume-check"),
+    path("orders/courier-ride/", OrderCourierRideView.as_view(), name="api-backstage-order-courier-ride"),
+    path("orders/courier-ride/quote/", OrderCourierRideQuoteView.as_view(),
+         name="api-backstage-order-courier-ride-quote"),
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
+    path(
+        "orders/<str:ref>/payment/check/",
+        OrderPaymentCheckView.as_view(),
+        name="api-backstage-order-payment-check",
+    ),
     path(
         "orders/<str:ref>/ticket-escpos/",
         OrderTicketEscposView.as_view(),
         name="api-backstage-order-ticket-escpos",
+    ),
+    path(
+        "orders/<str:ref>/retention-receipt-escpos/",
+        OrderRetentionReceiptEscposView.as_view(),
+        name="api-backstage-order-retention-receipt-escpos",
     ),
     path(
         "orders/<str:ref>/danfe-escpos/",
@@ -817,11 +1045,18 @@ urlpatterns = [
     ),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-backstage-order-cancel"),
+    path("orders/<str:ref>/return/", OrderReturnView.as_view(), name="api-backstage-order-return"),
+    path("orders/<str:ref>/return/preview/", OrderReturnPreviewView.as_view(), name="api-backstage-order-return-preview"),
     path(
-        "orders/<str:ref>/cancellation-reasons/",
-        OrderCancellationReasonsView.as_view(),
-        name="api-backstage-order-cancellation-reasons",
+        "orders/<str:ref>/promise-resolution/",
+        OrderPromiseResolutionView.as_view(),
+        name="api-backstage-order-promise-resolution",
     ),
+    path("orders/<str:ref>/no-show/", OrderNoShowView.as_view(), name="api-backstage-order-no-show"),
+    path("orders/<str:ref>/no-show/preview/", OrderNoShowPreviewView.as_view(), name="api-backstage-order-no-show-preview"),
+    path("orders/<str:ref>/refund-retry/", OrderRefundRetryView.as_view(), name="api-backstage-order-refund-retry"),
+    path("orders/<str:ref>/refund/", OrderRefundView.as_view(), name="api-backstage-order-refund"),
+    path("orders/<str:ref>/refund/preview/", OrderRefundPreviewView.as_view(), name="api-backstage-order-refund-preview"),
     path(
         "orders/<str:ref>/settle-delivery-cash/",
         OrderSettleDeliveryCashView.as_view(),
@@ -832,6 +1067,8 @@ urlpatterns = [
         "orders/<str:ref>/equipment-back/", OrderEquipmentBackView.as_view(), name="api-backstage-order-equipment-back"
     ),
     path("orders/<str:ref>/courier-back/", OrderCourierBackView.as_view(), name="api-backstage-order-courier-back"),
+    path("orders/<str:ref>/courier-close-here/", OrderCourierCloseHereView.as_view(), name="api-backstage-order-courier-close-here"),
+    path("orders/<str:ref>/courier-custody/", OrderCourierCustodyView.as_view(), name="api-backstage-order-courier-custody"),
     path(
         "orders/<str:ref>/requeue-fiscal/", OrderRequeueFiscalView.as_view(), name="api-backstage-order-requeue-fiscal"
     ),
@@ -841,6 +1078,16 @@ urlpatterns = [
         name="api-backstage-order-resend-payment-link",
     ),
     path("orders/<str:ref>/reschedule/", OrderRescheduleView.as_view(), name="api-backstage-order-reschedule"),
+    path(
+        "orders/<str:ref>/customer-notice/",
+        OrderCustomerNoticeView.as_view(),
+        name="api-backstage-order-customer-notice",
+    ),
+    path(
+        "orders/<str:ref>/customer-notice/preview/",
+        OrderCustomerNoticePreviewView.as_view(),
+        name="api-backstage-order-customer-notice-preview",
+    ),
     path("orders/<str:ref>/edit/", OrderEditView.as_view(), name="api-backstage-order-edit"),
     path("orders/<str:ref>/edit/preview/", OrderEditPreviewView.as_view(), name="api-backstage-order-edit-preview"),
     path("orders/<str:ref>/notes/", OrderNotesView.as_view(), name="api-backstage-order-notes"),
@@ -867,9 +1114,73 @@ urlpatterns = [
     path("orders/<str:ref>/assign/", OrderAssignView.as_view(), name="api-backstage-order-assign"),
     path("orders/<str:ref>/unassign/", OrderUnassignView.as_view(), name="api-backstage-order-unassign"),
     path("orders/<str:ref>/comment/", OrderCommentView.as_view(), name="api-backstage-order-comment"),
+    path(
+        "orders/<str:ref>/customer-contact/resolve/",
+        OrderCustomerContactResolveView.as_view(),
+        name="api-backstage-order-customer-contact-resolve",
+    ),
     # Operator alerts
     path("alerts/", AlertListView.as_view(), name="api-backstage-alerts"),
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
+    # "Vou verificar" da Concierge: a equipe responde a pergunta do cliente, ou assume.
+    path(
+        "alerts/<int:pk>/concierge-verification/answer/",
+        ConciergeVerificationAnswerView.as_view(),
+        name="api-backstage-alert-concierge-verification-answer",
+    ),
+    path(
+        "alerts/<int:pk>/concierge-verification/take-over/",
+        ConciergeVerificationTakeOverView.as_view(),
+        name="api-backstage-alert-concierge-verification-take-over",
+    ),
+    # #3578: a conversa com a equipe volta à Concierge pelo cartão do handoff.
+    path(
+        "alerts/<int:pk>/concierge-handoff/give-back/",
+        ConciergeHandoffGiveBackView.as_view(),
+        name="api-backstage-alert-concierge-handoff-give-back",
+    ),
+    # WP-15: a pergunta respondida vira rascunho de pergunta frequente (não publicado).
+    path(
+        "alerts/<int:pk>/concierge-verification/promote-faq/",
+        ConciergeVerificationPromoteView.as_view(),
+        name="api-backstage-alert-concierge-verification-promote-faq",
+    ),
+    # Suporte (helpdesk interno)
+    path(
+        "support/capabilities/",
+        SupportCapabilitiesView.as_view(),
+        name="api-backstage-support-capabilities",
+    ),
+    path(
+        "support/tickets/",
+        SupportTicketListCreateView.as_view(),
+        name="api-backstage-support-tickets",
+    ),
+    path(
+        "support/tickets/<str:ref>/",
+        SupportTicketDetailView.as_view(),
+        name="api-backstage-support-ticket",
+    ),
+    path(
+        "support/tickets/<str:ref>/messages/",
+        SupportTicketMessageView.as_view(),
+        name="api-backstage-support-ticket-messages",
+    ),
+    path(
+        "support/tickets/<str:ref>/triage/",
+        SupportTicketTriageView.as_view(),
+        name="api-backstage-support-ticket-triage",
+    ),
+    path(
+        "support/tickets/<str:ref>/decision/",
+        SupportTicketDecisionView.as_view(),
+        name="api-backstage-support-ticket-decision",
+    ),
+    path(
+        "support/tickets/<str:ref>/link-dev/",
+        SupportTicketLinkDevView.as_view(),
+        name="api-backstage-support-ticket-link-dev",
+    ),
     # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
     # O histórico de acessos da PRÓPRIA conta (a trilha de todos é a tela de
@@ -924,6 +1235,11 @@ urlpatterns = [
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
     path("marketing/offers/", MarketingOfferListView.as_view(), name="api-backstage-marketing-offers"),
+    path(
+        "marketing/offers/<slug:ref>/",
+        MarketingOfferDetailView.as_view(),
+        name="api-backstage-marketing-offer",
+    ),
     path("marketing/security/step-up/", MarketingStepUpView.as_view(), name="api-backstage-marketing-step-up"),
     path(
         "marketing/security/dual-control/",
@@ -1037,6 +1353,16 @@ urlpatterns = [
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),
+    path(
+        "production/<int:wo_id>/old-dough/",
+        WorkOrderOldDoughView.as_view(),
+        name="api-backstage-wo-old-dough",
+    ),
+    path(
+        "production/<int:wo_id>/formula-deviation/",
+        WorkOrderFormulaDeviationView.as_view(),
+        name="api-backstage-wo-formula-deviation",
+    ),
     path("production/<int:wo_id>/finish/", WorkOrderFinishView.as_view(), name="api-backstage-wo-finish"),
     path(
         "production/quality-review/batch/",
@@ -1054,6 +1380,16 @@ urlpatterns = [
         name="api-backstage-wo-quality-correction",
     ),
     path("production/quick-finish/", WorkOrderQuickFinishView.as_view(), name="api-backstage-wo-quick-finish"),
+    path(
+        "production/purchase-request/",
+        ProductionPurchaseRequestView.as_view(),
+        name="api-backstage-production-purchase-request",
+    ),
+    path(
+        "production/shortage-authorization/",
+        ProductionShortageAuthorizationView.as_view(),
+        name="api-backstage-production-shortage-authorization",
+    ),
     path("production/<int:wo_id>/void/", WorkOrderVoidView.as_view(), name="api-backstage-wo-void"),
     # Forno — o timer do kiosk declara; o servidor carimba (ADR-021 §4)
     path("production/<int:wo_id>/oven/arm/", WorkOrderOvenArmView.as_view(), name="api-backstage-wo-oven-arm"),
@@ -1127,6 +1463,7 @@ urlpatterns = [
     ),
     # POS — tab (comanda) lifecycle
     path("pos/tabs/", POSTabCreateView.as_view(), name="api-backstage-pos-tab-create"),
+    path("pos/tabs/next-free/", POSTabReserveNextFreeView.as_view(), name="api-backstage-pos-tab-next-free"),
     path("pos/tabs/<str:tab_ref>/open/", POSTabOpenView.as_view(), name="api-backstage-pos-tab-open"),
     path("pos/tabs/save/", POSTabSaveView.as_view(), name="api-backstage-pos-tab-save"),
     path("pos/tabs/rename/", POSTabRenameView.as_view(), name="api-backstage-pos-tab-rename"),
@@ -1137,15 +1474,27 @@ urlpatterns = [
     path("pos/sale/review/", POSReviewSaleView.as_view(), name="api-backstage-pos-review-sale"),
     path("pos/sale/close/", POSCloseSaleView.as_view(), name="api-backstage-pos-close-sale"),
     path("pos/schedule/", POSScheduleView.as_view(), name="api-backstage-pos-schedule"),
+    path("pos/delivery-fee/", POSDeliveryFeeView.as_view(), name="api-backstage-pos-delivery-fee"),
     path("pos/recent-sales/", POSRecentSalesView.as_view(), name="api-backstage-pos-recent-sales"),
     path("pos/preorders/", POSPreorderListView.as_view(), name="api-backstage-pos-preorders"),
     # ⚠️ ANTES de `pos/preorders/<str:ref>/`: `search` casaria com o ref.
     path("pos/preorders/search/", POSPreorderSearchView.as_view(), name="api-backstage-pos-preorder-search"),
     path("pos/preorders/<str:ref>/", POSPreorderDetailView.as_view(), name="api-backstage-pos-preorder-detail"),
+    path("pos/preorders/<str:ref>/swap/", POSPreorderSwapView.as_view(), name="api-backstage-pos-preorder-swap"),
+    path(
+        "pos/preorders/<str:ref>/payment/check/",
+        POSPreorderPaymentCheckView.as_view(),
+        name="api-backstage-pos-preorder-payment-check",
+    ),
     path(
         "pos/preorders/<str:ref>/hand-over/",
         POSPreorderHandOverView.as_view(),
         name="api-backstage-pos-preorder-hand-over",
+    ),
+    path(
+        "pos/preorders/<str:ref>/pix/",
+        POSPreorderCounterPixView.as_view(),
+        name="api-backstage-pos-preorder-counter-pix",
     ),
     path(
         "pos/preorders/<str:ref>/edit-session/",
@@ -1184,6 +1533,11 @@ urlpatterns = [
     path("pos/customer/lookup/", POSCustomerLookupView.as_view(), name="api-backstage-pos-customer-lookup"),
     path("pos/customer/search/", POSCustomerSearchView.as_view(), name="api-backstage-pos-customer-search"),
     path("pos/customer/resolve/", POSCustomerResolveView.as_view(), name="api-backstage-pos-customer-resolve"),
+    path(
+        "pos/manager-approval/check/",
+        POSManagerApprovalCheckView.as_view(),
+        name="api-backstage-pos-manager-approval-check",
+    ),
     path("pos/customer/merge/", POSCustomerMergeView.as_view(), name="api-backstage-pos-customer-merge"),
     path(
         "pos/customer/contact/release/",

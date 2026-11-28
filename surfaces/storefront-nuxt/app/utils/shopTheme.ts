@@ -54,7 +54,8 @@ export const TOKEN_TO_CSS_VAR: Record<string, string> = {
   ink_foreground: '--shop-ink-foreground',
   bottomnav: '--shop-bottomnav',
   cta: '--shop-cta',
-  cta_foreground: '--shop-cta-foreground'
+  cta_foreground: '--shop-cta-foreground',
+  promotion: '--shop-promotion'
 }
 
 function cssColor (value: string): string {
@@ -241,17 +242,17 @@ export function shopThemeCss (
       `.shop-pillbar [data-menu-pill-ref][data-state="active"] { background-color: color-mix(in srgb, var(--shop-cta) 38%, #000); border-color: color-mix(in srgb, var(--shop-cta) 38%, #000); color: #fff; }`
     )
 
-    // Barra de busca: fundo Brass, campo branco (bg-card no input), ícone de voltar branco.
-    // Hover do botão de voltar (ghost) = mesmo wash branco sutil da pill bar (remap --accent).
+    // Barra de busca: fundo Brass, campo branco (bg-card no input), ícones brancos.
+    // Hover do botão de fechar (ghost) = mesmo wash branco sutil da pill bar (remap --accent).
     blocks.push(
-      `.shop-searchbar.shop-searchbar { background-color: var(--shop-cta); color: #fff; --accent: color-mix(in srgb, #fff 16%, transparent); --accent-foreground: #fff; }`,
-      `.shop-searchbar [aria-label="Voltar ao cardápio"] { color: #fff; }`
+      `.shop-searchbar.shop-searchbar { background-color: var(--shop-cta); color: #fff; --accent: color-mix(in srgb, #fff 16%, transparent); --accent-foreground: #fff; }`
     )
 
-    // Breadcrumb sobre barra Brass: letras creme nos links, item ATUAL branco (o
-    // UiBreadcrumbs usa text-primary no atual → remapeado p/ branco aqui).
+    // Breadcrumb sobre barra Brass: tudo branco inteiro, e o item ATUAL se distingue pelo
+    // peso (o UiBreadcrumbs usa text-primary font-medium no atual → remapeado p/ branco).
+    // Branco a 80 % dava 3,8:1 sobre o Brass-700, abaixo do AA (X9, OC-30); inteiro dá 4,9:1.
     blocks.push(
-      `.shop-breadcrumb-bar.shop-breadcrumb-bar { background-color: var(--shop-cta); color: #fff; --foreground: #fff; --primary: #fff; --muted-foreground: color-mix(in srgb, #fff 80%, transparent); }`
+      `.shop-breadcrumb-bar.shop-breadcrumb-bar { background-color: var(--shop-cta); color: #fff; --foreground: #fff; --primary: #fff; --muted-foreground: #fff; }`
     )
 
     // Fios dourados que emolduram o conteúdo. O header pinta 6px Brass logo ABAIXO de

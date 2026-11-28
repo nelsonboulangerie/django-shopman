@@ -50,3 +50,20 @@ class PaymentResult:
     # Cartão: "credit" | "debit" | "prepaid" | "unknown", como o gateway informa
     # DEPOIS da captura. Só a Stripe preenche; é o que separa 03 de 04 na NFC-e.
     card_funding: str | None = None
+
+
+def pix_timeout_minutes_from(config: dict) -> int:
+    """O prazo do Pix que o orquestrador decidiu, em minutos. Sem default.
+
+    Fonte única: ``services.payment._adapter_config`` (o ``timeout_minutes`` do
+    canal, ou o prazo do link na encomenda do PDV). Antes o adapter caía num
+    segundo número quando a chave não vinha (``SHOPMAN_PIX_EXPIRY_SECONDS`` na
+    Efí, 30 no simulador): o QR vencia num relógio e o pedido cancelava em outro.
+    """
+    raw = config.get("pix_timeout_minutes")
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw <= 0:
+        raise ValueError(
+            f"pix_timeout_minutes ausente ou inválido ({raw!r}): o prazo do Pix vem "
+            "do canal (ChannelConfig.payment.timeout_minutes)"
+        )
+    return raw

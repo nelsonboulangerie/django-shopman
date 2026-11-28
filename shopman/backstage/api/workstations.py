@@ -3,6 +3,7 @@
 GET    /api/v1/backstage/workstations/                          → postos, tipos e copy
 POST   /api/v1/backstage/workstations/                          → cria posto sem caixa
 PATCH  /api/v1/backstage/workstations/<ref>/                    → renomeia, muda o tipo, liga/desliga
+PATCH  /api/v1/backstage/workstations/<ref>/devices/<id>/       → dá nome a um dispositivo
 DELETE /api/v1/backstage/workstations/<ref>/devices/<id>/       → desvincula um dispositivo
 
 A mesma permissão de vincular um dispositivo a um posto (``cashman.manage_operators``):
@@ -37,6 +38,8 @@ def _state() -> dict:
     return {
         "workstations": workstations.management_list(),
         "kinds": [{"kind": kind, "label": label} for kind, label in KIND_LABELS.items()],
+        # O tipo que o posto novo já traz: um que o Gestor oferece para vincular (#2584).
+        "default_kind": workstations.default_kind_here(),
         "copy": dict(COPY),
     }
 
@@ -76,6 +79,16 @@ class WorkstationDetailView(APIView):
 class WorkstationDeviceView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = station_trust.PROVISION_PERM
+
+    def patch(self, request, ref: str, device_id: str):
+        body = request.data if isinstance(request.data, dict) else {}
+        try:
+            found = workstations.rename_device(ref, device_id, body.get("label"))
+        except workstations.WorkstationError as exc:
+            return _error(exc)
+        if not found:
+            return Response({"detail": "Dispositivo não encontrado neste posto.", "field": None, "errors": {}}, status=404)
+        return Response(_state())
 
     def delete(self, request, ref: str, device_id: str):
         if not workstations.release_device(ref, device_id):

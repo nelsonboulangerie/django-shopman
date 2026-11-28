@@ -34,7 +34,8 @@ export function usePosDanfePrint(pos: ComputedRef<POSProjection | null>, agent: 
   async function fetchDanfe(orderRef: string) {
     return await $fetch<{ payload_b64: string; title: string }>(
       apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/danfe-escpos/`),
-      { credentials: "include" },
+      // POST: compor é emitir a via, e o servidor carimba a primeira.
+      { method: "POST", credentials: "include" },
     );
   }
 

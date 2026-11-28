@@ -85,6 +85,58 @@ class IFoodStatusCallbackHandler:
         if not sent:
             logger.info("ifood_status: no iFood action for status=%s (order %s)", status, order_id)
 
+    def on_terminal_failure(self, *, message: Directive) -> None:
+        """Esgotou as tentativas: o iFood ficou sem saber. Nunca em silêncio.
+
+        O aceite tem aviso próprio desde a primeira falha (``ifood_accept_sync``).
+        Os demais passos (preparo, pronto, saída) e o pedido de cancelamento
+        ficavam só no log, e o pedido seguia diferente aqui e lá (16/11/2026).
+        """
+        payload = message.payload or {}
+        if payload.get("cancellation_request_id"):
+            ifood_cancellation.record_not_delivered(payload, error=message.last_error or "")
+            return
+        status = str(payload.get("status") or "")
+        if status == ifood_accept_sync.ACCEPT_STATUS:
+            return
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(
+            channel_ref=ifood_ingest.IFOOD_CHANNEL_REF, ref=payload.get("order_ref") or "",
+        ).first()
+        if order is None or order.status in Order.TERMINAL_STATUSES:
+            return
+        alert_status_not_delivered(order, status=status, error=message.last_error or "")
+
+
+#: Etapa do pedido que não chegou ao iFood depois de todas as tentativas.
+STATUS_NOT_DELIVERED_ALERT = "ifood_status_not_delivered"
+_STEP_COPY = {
+    "preparing": "o início do preparo",
+    "ready": "o pedido pronto",
+    "dispatched": "a saída para entrega",
+}
+
+
+def alert_status_not_delivered(order, *, status: str, error: str = "") -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    display = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    name = f"{order.ref} (iFood #{display})" if display else order.ref
+    step = _STEP_COPY.get(status, f"a etapa {status}")
+    create_operator_alert(
+        type=STATUS_NOT_DELIVERED_ALERT,
+        severity="error",
+        message=(
+            f"O iFood não recebeu {step} do pedido {name}: o envio falhou em todas as tentativas. "
+            "Aqui o pedido andou e lá não. Marque a etapa no Portal ou no widget do iFood."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"{STATUS_NOT_DELIVERED_ALERT}:{order.ref}:{status}",
+        debounce_minutes=24 * 60,
+        http_error=str(error)[:200],
+    )
+
 
 # ── Signal receiver ────────────────────────────────────────────────────────────
 
@@ -197,9 +249,10 @@ def _enqueue_callback(order, actor) -> None:
             "status": order.status,
             **context,
             # cancellation.cancel writes these to order.data before the signal fires.
-            # The operator's chosen iFood code (if any) overrides the default.
+            # O código do iFood vem do motivo da casa (``DEFAULT_REASON_CODES``).
             "cancellation_reason": (order.data or {}).get("cancellation_reason", ""),
-            "cancellation_code": (order.data or {}).get("ifood_cancellation_code", ""),
+            "cancellation_code": (order.data or {}).get("ifood_cancellation_code")
+            or ifood_callbacks.resolve_cancellation_code((order.data or {}).get("cancellation_reason_key", "")),
         },
         dedupe_key=dedupe_key,
     )
@@ -225,4 +278,4 @@ def _progress_already_announced(order) -> bool:
     ).exists()
 
 
-__all__ = ["IFoodStatusCallbackHandler", "on_order_status_changed"]
+__all__ = ["IFoodStatusCallbackHandler", "STATUS_NOT_DELIVERED_ALERT", "alert_status_not_delivered", "on_order_status_changed"]

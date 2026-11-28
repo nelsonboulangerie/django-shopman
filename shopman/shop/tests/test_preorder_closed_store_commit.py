@@ -18,7 +18,7 @@ decisão de produto 2026-07-14 — encomenda é cidadã de 1ª classe):
   default) → o commit FECHA registrando DEMANDA (hold ``quant=None`` datado),
   que alimenta a sugestão de produção e materializa com prioridade na fornada;
 - canal com ``stock.preorder=False`` (PDV, marketplace) → o gate REPROVA
-  (`insufficient_stock`) e nenhum pedido nasce.
+  (`insufficient_supply`) e nenhum pedido nasce.
 
 É a versão determinística (sequencial, SQLite) do gate; irmã de
 `test_commit_stock_gate.py`, mas no eixo de DATA (encomenda), não de quantidade.
@@ -31,6 +31,9 @@ from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
+from shopman.orderman.tests.commit_support import seal_for
+
+from shopman.shop.tests._payment import with_payment
 
 SKU = "PREORDER-MINI-BAGUETE"
 
@@ -97,7 +100,7 @@ def _open_session(channel_ref: str, session_key: str, delivery_date, qty: int):
                 "unit_price_q": 1000,
             }
         ],
-        data={"delivery_date": delivery_date.isoformat()},
+        data=with_payment(channel_ref, {"delivery_date": delivery_date.isoformat()}),
     )
 
 
@@ -108,6 +111,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 
@@ -139,7 +144,7 @@ class PreorderClosedStoreCommitTests(TestCase):
     def test_preorder_for_day_without_production_registers_demand(self) -> None:
         """Dia sem produção planejada ("segunda"): a encomenda FECHA registrando demanda.
 
-        Era o beco sem saída do QA (recusa por ``insufficient_stock``); a
+        Era o beco sem saída do QA (recusa por ``insufficient_supply``); a
         decisão de produto do WP-C inverte: o canal aceita encomenda por
         padrão, a demanda vira hold datado ``quant=None`` que alimenta a
         sugestão de produção e materializa com prioridade de pedido.
@@ -177,7 +182,7 @@ class PreorderClosedStoreCommitTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("PRE-REJ", self.channel.ref, "PRE-KEY-REJ")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(ctx.exception.context.get("sku"), SKU)
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
         self.assertEqual(Session.objects.get(session_key="PRE-REJ").state, "open")

@@ -62,6 +62,19 @@ def promotion():
     )
 
 
+@pytest.mark.parametrize(
+    ("variables", "expected"),
+    [
+        (("price",), True),
+        (("product_name",), True),
+        (("link",), False),
+        ((), False),
+    ],
+)
+def test_product_requirement_follows_the_canonical_fact_variables(variables, expected):
+    assert marketing_facts.requires_product(variables) is expected
+
+
 def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, monkeypatch):
     from shopman.shop.projections import catalog_context
 
@@ -71,6 +84,7 @@ def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, mo
         lambda *args, **kwargs: {
             "availability_policy": "stock_only",
             "total_promisable": 3,
+            "is_tracked": True,
         },
     )
     now = timezone.now()
@@ -92,6 +106,44 @@ def test_facts_replace_stale_event_values_with_canonical_owner_reads(product, mo
     assert facts.variable_values()["link"].endswith("/produto/croissant-facts")
     assert facts.source_hash == later.source_hash
     assert facts.as_of != later.as_of
+
+
+def test_campaign_preview_sample_comes_from_inside_the_offer(product, promotion):
+    """ge:MKT-12: o produto de exemplo da prévia sai do alcance da oferta escolhida."""
+    Product.objects.create(
+        sku="aaa-fora-da-oferta",
+        name="Abacaxi",  # vem antes na ordem alfabética: sem o recorte, seria ele
+        base_price_q=500,
+        is_published=True,
+        is_sellable=True,
+    )
+
+    assert campaign._sample_sku() == "aaa-fora-da-oferta"
+    assert campaign._sample_sku(promotion.ref) == product.sku
+
+
+def test_campaign_form_preview_without_product_uses_one_the_offer_reaches(product, promotion):
+    """ge:MKT-12 na prévia do formulário: sem produto escolhido, o exemplo é da oferta.
+
+    Antes a prévia pegava o primeiro produto do catálogo e recusava "a oferta não
+    alcança o produto do anúncio" por uma escolha nossa.
+    """
+    Product.objects.create(
+        sku="aaa-fora-da-oferta",
+        name="Abacaxi",
+        base_price_q=500,
+        is_published=True,
+        is_sellable=True,
+    )
+
+    preview = campaign.preview_platforms(
+        "{{product_name}} por {{price}}",
+        platforms=["instagram"],
+        promotion_ref=promotion.ref,
+    )
+
+    assert preview["sample"] is True
+    assert preview["sku"] == product.sku
 
 
 def test_operator_override_resolves_new_fact_placeholder_canonically(product):

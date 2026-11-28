@@ -1,22 +1,38 @@
 // Presentation — order board shaping. Pure transforms over the order queue
 // projection (served by shopman/backstage/api/operations.py). The projection is
-// already screen-ready (status_label, timer_class, next_action_label, can_* flags
-// pre-resolved); this layer only derives the view shape, the functional-color tone,
-// and the action affordances. No status arithmetic (the backend owns the lifecycle).
-import type { EquipmentOptionProjection } from "~/generated/ordersContract";
+// already screen-ready (status_label, timer_class, channel_name, the label of each
+// action, can_* flags pre-resolved); this layer only derives the view shape, the
+// functional-color tone, and the action affordances. No status arithmetic (the
+// backend owns the lifecycle), and no naming: o nome do canal e o nome de cada gesto
+// são os do servidor.
+import type {
+  EquipmentOptionProjection,
+  EquipmentOutProjection,
+} from "~/generated/ordersContract";
 import type {
   OrderCardProjection,
+  OrderScheduleState,
   OrderTimerClass,
   TwoZoneQueueProjection,
 } from "~/types/orders";
 // A custódia do entregador (troco, maquininha) mora no kit: o PDV chama o mesmo.
-import { freeMachines, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import {
+  freeMachines,
+  moneyInput,
+} from "../../../operator-kit/app/presentation/custody";
+import { clockHHMM } from "../../../operator-kit/app/presentation/courierProgress";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
 // ── Status tone, ícone do canal e "fatos numa linha" ──────────────────────
 // Moram no kit (`operator-kit/app/presentation/orderDetail.ts`) porque o detalhe
 // do pedido é o mesmo no Gestor e no PDV; o board lê as mesmas peças.
 import { joinFacts } from "../../../operator-kit/app/presentation/orderDetail";
 import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
+import { blockWaits, promiseWaitLines } from "./orderPromise";
 
 export {
   joinFacts,
@@ -28,25 +44,23 @@ export type { Tone } from "../../../operator-kit/app/presentation/orderDetail";
 
 // ── Timer tone (urgency of the elapsed clock) ──────────────────────────────
 
-export type TimerTone = "ok" | "warning" | "late" | "muted";
+export type TimerTone = TimeTone;
 
 export function timerTone(timerClass: OrderTimerClass): TimerTone {
-  if (timerClass === "timer-urgent") return "late";
-  if (timerClass === "timer-warning") return "warning";
-  if (timerClass === "timer-muted") return "muted";
-  return "ok";
+  if (timerClass === "timer-urgent") return timeTone("late");
+  if (timerClass === "timer-warning") return timeTone("warning");
+  return timeTone("on_time");
 }
 
-/** Tonal chip classes for the live timer. Atenção ao tempo é número com intensidade,
- *  sempre no âmbar (G03): o vermelho é só "bloqueado com motivo", nunca o relógio. */
+/** Classes do relógio vivo segundo o mapa único do tempo. */
 export function timerChip(tone: TimerTone): string {
   switch (tone) {
     case "late":
-      return "border-warning/60 bg-warning/20 font-bold text-warning";
+      return "border-destructive/60 bg-destructive/15 font-bold text-destructive";
     case "warning":
       return "border-warning/40 bg-warning/10 text-warning";
-    case "muted":
-      return "border-transparent bg-transparent text-muted-foreground";
+    case "ready":
+      return "border-success/40 bg-success/10 text-success";
     default:
       return "border-border bg-muted text-muted-foreground";
   }
@@ -76,7 +90,8 @@ export function elapsedLabel(seconds: number): string {
 
 /**
  * Countdown regressivo até o prazo da confirmação otimista.
- * Retorna "" quando não há prazo; "0:00" quando já venceu; senão "M:SS".
+ * Retorna "" quando não há prazo; "0:00" quando já venceu; "M:SS" abaixo de uma
+ * hora; "4h03" de uma hora para cima; "3 dias" a partir de 48 horas.
  * Puro e testável — o card passa um `nowMs` que tica no cliente.
  */
 /**
@@ -87,13 +102,13 @@ export function elapsedLabel(seconds: number): string {
  * qualquer canal: o prazo do iFood e o timer da casa pedem a mesma leitura.
  */
 export function deadlineTone(deadlineIso: string, nowMs: number): TimerTone {
-  if (!deadlineIso) return "muted";
+  if (!deadlineIso) return timeTone("on_time");
   const deadlineMs = Date.parse(deadlineIso);
-  if (Number.isNaN(deadlineMs)) return "muted";
+  if (Number.isNaN(deadlineMs)) return timeTone("on_time");
   const secondsLeft = (deadlineMs - nowMs) / 1000;
-  if (secondsLeft <= 60) return "late";
-  if (secondsLeft <= 180) return "warning";
-  return "ok";
+  if (secondsLeft < 0) return timeTone("late");
+  if (secondsLeft <= 180) return timeTone("warning");
+  return timeTone("on_time");
 }
 
 export function confirmationRemainingLabel(
@@ -104,8 +119,18 @@ export function confirmationRemainingLabel(
   const deadlineMs = Date.parse(deadlineIso);
   if (Number.isNaN(deadlineMs)) return "";
   const left = Math.max(0, Math.round((deadlineMs - nowMs) / 1000));
-  const m = Math.floor(left / 60);
-  return `${m}:${String(left % 60).padStart(2, "0")}`;
+  // M:SS é instrumento de contagem curta (o prazo do iFood, a janela de
+  // desfazer). Prazo de horas (o aceite que vence 5 ou 60 min depois da abertura)
+  // saía "cancela sozinho em 252:11", e o operador tinha de fazer a conta
+  // (beta 06/11, F8/PIXEXP-11/SMS-18). De uma hora para cima, horas e minutos.
+  if (left < 3600) {
+    const m = Math.floor(left / 60);
+    return `${m}:${String(left % 60).padStart(2, "0")}`;
+  }
+  const totalMinutes = Math.floor(left / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  if (hours >= 48) return `${Math.floor(hours / 24)} dias`;
+  return `${hours}h${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
 // ── Cartão autorizado esperando aceite (P1-4) ──────────────────────────────
@@ -121,20 +146,13 @@ export interface CardAuthorizationNotice {
   expired: boolean;
 }
 
-const CARD_DEADLINE = new Intl.DateTimeFormat("pt-BR", {
-  day: "2-digit",
-  month: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  timeZone: "America/Sao_Paulo",
-});
-
 /** "20/10 às 15h25", no fuso da loja. */
 export function cardDeadlineLabel(iso: string): string {
-  const parts = Object.fromEntries(
-    CARD_DEADLINE.formatToParts(new Date(iso)).map((p) => [p.type, p.value]),
+  return formatDateClock(
+    iso,
+    { day: "2-digit", month: "2-digit" },
+    { timeZone: "America/Sao_Paulo", joiner: " às " },
   );
-  return `${parts.day}/${parts.month} às ${parts.hour}h${parts.minute}`;
 }
 
 function plural(n: number, one: string, many: string): string {
@@ -240,7 +258,7 @@ export function ifoodAcceptNotice(
 
 export interface UndoLine {
   kind: "auto_ready" | "handoff";
-  /** O fato: "Pronto · automático", "Entregue às 14:02". */
+  /** O fato: "Pronto pela Cozinha", "Pronto marcado na Saída", "Entregue às 14:02". */
   label: string;
   /** O que a janela segura, ou o carimbo depois dela. */
   detail: string;
@@ -301,7 +319,7 @@ export function undoLine(source: UndoSource, nowMs: number): UndoLine | null {
 // ── Zones (Entrada / Preparo / Saída) ──────────────────────────────────────
 
 export interface ZoneView {
-  /** As três etapas do quadro, mais a aba "Negociação" do quadro em abas
+  /** As três etapas do painel, mais a aba "Negociação" do painel em abas
    *  (`negotiationZoneView`), que não é etapa nem coluna do desktop. */
   key: "intake" | "prep" | "expedition" | "negotiation";
   title: string;
@@ -309,6 +327,14 @@ export interface ZoneView {
   icon: string;
   cards: OrderCardProjection[];
   count: number;
+  /** Só na coluna Novos: o pedido que espera o Pix ou o cartão cair (DEV-2026-091).
+   *  Fora de `cards` e de `count`; a coluna o mostra recolhido no fim. */
+  awaiting?: OrderCardProjection[];
+}
+
+/** O pedido novo que só espera o dinheiro online, e ninguém pode fazer nada ainda. */
+function waitsOnlinePayment(card: OrderCardProjection): boolean {
+  return Boolean(card.awaits_online_payment) && !card.attention;
 }
 
 /** O estado vazio de cada coluna, nomeando a zona.
@@ -331,6 +357,25 @@ export function zoneEmptyText(key: ZoneView["key"]): string {
 
 /** Group the two-zone queue projection into the three action columns the board
  *  renders. Expedition merges pickup + delivery (ready) + delivery-in-transit. */
+/** Prontos em duas partes (dono, 13/11/2026): "A coletar" (no balcão, esperando o
+ *  cliente ou o entregador) e "Saiu para entrega" (em trânsito, o controle do que
+ *  ainda está na rua). Retirado pelo cliente vai direto para o Histórico. A ordem de
+ *  cada parte é a que veio; o rótulo vai no primeiro cartão de cada uma. */
+export interface ExitRow {
+  card: OrderCardProjection;
+  /** O rótulo da parte que começa neste cartão; vazio no resto. */
+  heading: string;
+}
+
+export function exitRows(cards: OrderCardProjection[]): ExitRow[] {
+  const toCollect = cards.filter((card) => card.status !== "dispatched");
+  const onRoad = cards.filter((card) => card.status === "dispatched");
+  return [
+    ...toCollect.map((card, i) => ({ card, heading: i === 0 ? "A coletar" : "" })),
+    ...onRoad.map((card, i) => ({ card, heading: i === 0 ? "Saiu para entrega" : "" })),
+  ];
+}
+
 export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   const expedition = [
     ...queue.expedition_pickup,
@@ -340,24 +385,25 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   return [
     {
       key: "intake",
-      title: "Entrada",
-      subtitle: "Novos: aceitar ou recusar",
+      title: "Novos",
+      subtitle: "Aceitar ou recusar",
       icon: "lucide:inbox",
-      cards: queue.intake,
-      count: queue.intake.length,
+      cards: queue.intake.filter((card) => !waitsOnlinePayment(card)),
+      count: queue.intake.filter((card) => !waitsOnlinePayment(card)).length,
+      awaiting: queue.intake.filter(waitsOnlinePayment),
     },
     {
       key: "prep",
-      title: "Preparo",
-      subtitle: "Confirmados e em preparo",
+      title: "Em preparo",
+      subtitle: "Confirmados e na cozinha",
       icon: "lucide:cooking-pot",
       cards: queue.prep,
       count: queue.prep.length,
     },
     {
       key: "expedition",
-      title: "Saída",
-      subtitle: "Retirada, coleta e entrega",
+      title: "Prontos",
+      subtitle: "A coletar e saiu para entrega",
       icon: "lucide:package-check",
       cards: expedition,
       count: expedition.length,
@@ -365,9 +411,9 @@ export function zonesView(queue: TwoZoneQueueProjection): ZoneView[] {
   ];
 }
 
-/** A aba "Negociação" do quadro em abas (celular e tablet em pé): o pedido do iFood
+/** A aba "Negociação" do painel em abas (celular e tablet em pé): o pedido do iFood
  *  com negociação aberta que não está em etapa nenhuma (já entregue, o cliente reclamou
- *  depois). No desktop ele entra no "Precisa de você" da Fila; no quadro em abas, sem
+ *  depois). No desktop ele entra no "Precisa de você" da Fila; no painel em abas, sem
  *  esta aba, ele não aparecia em lugar nenhum. O que ainda está numa etapa já mostra a
  *  negociação no próprio cartão, e não se repete aqui. Sem nenhum, a aba não existe. */
 export function negotiationZoneView(
@@ -376,7 +422,7 @@ export function negotiationZoneView(
   const inStage = new Set(
     zonesView(queue).flatMap((zone) => zone.cards.map((card) => card.ref)),
   );
-  // O contrato gerado tipa `timer_class` como texto; o cartão do quadro, como a régua.
+  // O contrato gerado tipa `timer_class` como texto; o cartão do painel, como a régua.
   const cards = (
     (queue.ifood_negotiation_orders ?? []) as OrderCardProjection[]
   ).filter((card) => !inStage.has(card.ref));
@@ -392,6 +438,76 @@ export function negotiationZoneView(
 }
 
 // ── Encomendas (pedidos confirmados para datas futuras) ────────────────────
+
+// ── O combinado (WP-G01) ──────────────────────────────────────────────────────
+
+export interface SchedulePromise {
+  /** A frase inteira, a mesma no cartão, na Fila, na Tabela e no sino. */
+  label: string;
+  color: "neutral" | "error";
+  icon: string;
+  state: Exclude<OrderScheduleState, "">;
+}
+
+/**
+ * O combinado do pedido como o Gestor o diz, em toda forma em que o pedido aparece.
+ *
+ * O servidor manda a frase (`schedule_label`, a mesma do detalhe) e o estado; aqui
+ * só entra a palavra "Encomenda" no pedido de outro dia e a cor do que venceu. Uma
+ * função só, para o Painel, a Fila, a Tabela e o sino não falarem cada um a sua.
+ *
+ * - `future`: "Encomenda · Amanhã · A partir das 15h"
+ * - `today`: "Hoje · 14h às 14h30" (pedido de hoje com hora combinada)
+ * - `overdue`: "Era para ontem · A partir das 15h", em vermelho
+ */
+export function schedulePromise(source: {
+  schedule_label?: string | null;
+  schedule_state?: string | null;
+}): SchedulePromise | null {
+  const label = String(source.schedule_label ?? "").trim();
+  const state = source.schedule_state;
+  if (!label) return null;
+  if (state === "future")
+    return { label: `Encomenda · ${label}`, color: "neutral", icon: "i-lucide-calendar-clock", state };
+  if (state === "today")
+    return { label, color: "neutral", icon: "i-lucide-clock", state };
+  if (state === "overdue")
+    return { label, color: "error", icon: "i-lucide-calendar-x", state };
+  return null;
+}
+
+/** O aviso do sino com o combinado do pedido à frente: quem toca "Aceitar" lê para quando. */
+export function alertMessageWithSchedule(alert: {
+  message: string;
+  order_schedule_label?: string | null;
+  order_schedule_state?: string | null;
+}): string {
+  const promise = schedulePromise({
+    schedule_label: alert.order_schedule_label,
+    schedule_state: alert.order_schedule_state,
+  });
+  return promise ? `${promise.label}. ${alert.message}` : alert.message;
+}
+
+export interface KitchenWait {
+  /** "Vai para a Cozinha às 16h15", a frase do servidor. */
+  label: string;
+  icon: string;
+}
+
+/**
+ * A encomenda do dia que ainda espera a hora da Cozinha (WP-G02).
+ *
+ * O servidor decide (`kitchen_release_label` só vem enquanto ela espera); aqui só entra
+ * o ícone. Quem espera não tem relógio a contar nem pede gesto: o cartão, a Fila e a
+ * Tabela dizem a hora em que ela chega, e "Adiantar" fica em segundo plano.
+ */
+export function kitchenWait(source: {
+  kitchen_release_label?: string | null;
+}): KitchenWait | null {
+  const label = String(source.kitchen_release_label ?? "").trim();
+  return label ? { label, icon: "i-lucide-chef-hat" } : null;
+}
 
 export interface PreorderGroup {
   /** ISO date the group is committed to (sort key). */
@@ -436,7 +552,11 @@ export type AffordanceRef =
   | "undo_ready"
   // O "Dispensar" do lembrete de chamar o entregador (aviso do cartão, não botão largo).
   | "dismiss_courier_reminder"
-  | "ifood_accept_retry";
+  | "ifood_accept_retry"
+  // O "Resolver" da promessa em risco (aviso do cartão e linha da Fila): abre o diálogo.
+  | "resolve_promise"
+  // O "Chamar entregador" do cartão Pronto de entrega: abre o sheet de chamar (#2876).
+  | "call_courier";
 
 export interface Affordance {
   ref: AffordanceRef;
@@ -472,7 +592,13 @@ export function cardAffordances(card: OrderCardProjection): Affordance[] {
     )
     .map((a) => ({
       ref: a.ref as AffordanceRef,
-      label: a.label,
+      // Avanço travado diz o que espera ("Aguardando o dia da encomenda"), não o
+      // verbo que não vai acontecer: "Bloqueado" e "Iniciar preparo" no mesmo
+      // cartão se contradiziam (beta 05/11, PDV2-03). O mesmo par do detalhe.
+      label:
+        a.ref === "advance" && !a.enabled && card.advance_block_label
+          ? card.advance_block_label.replace(/…$/, "")
+          : a.label,
       icon: a.enabled ? icons[a.ref]! : "lucide:clock",
       priority: a.enabled
         ? (a.priority as Affordance["priority"])
@@ -564,21 +690,6 @@ export function matchesQuery(
 
 // ── Triage: channel filter, sort, view-mode (Arc 1) ─────────────────────────
 
-/** Friendly channel labels. Unknown channels fall back to a capitalised ref so
- *  a new channel never renders blank. */
-const CHANNEL_LABEL: Record<string, string> = {
-  web: "Loja online",
-  whatsapp: "WhatsApp",
-  ifood: "iFood",
-  pdv: "PDV",
-  pos: "PDV",
-};
-
-export function channelLabel(ref: string): string {
-  if (CHANNEL_LABEL[ref]) return CHANNEL_LABEL[ref];
-  return ref ? ref.charAt(0).toUpperCase() + ref.slice(1) : "—";
-}
-
 export interface ChannelOption {
   ref: string;
   label: string;
@@ -586,13 +697,18 @@ export interface ChannelOption {
 }
 
 /** Distinct channels present in the queue, with counts, for the filter control.
- *  Derived from the data so the control only ever offers channels that exist. */
+ *  Derived from the data so the control only ever offers channels that exist. O nome
+ *  é o que o servidor manda em cada cartão (`channel_name`, o mesmo do detalhe): a tela
+ *  não tem tabela de nomes de canal. */
 export function channelOptions(cards: OrderCardProjection[]): ChannelOption[] {
-  const counts = new Map<string, number>();
-  for (const c of cards)
-    counts.set(c.channel_ref, (counts.get(c.channel_ref) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([ref, count]) => ({ ref, label: channelLabel(ref), count }))
+  const found = new Map<string, { label: string; count: number }>();
+  for (const c of cards) {
+    const entry = found.get(c.channel_ref);
+    if (entry) entry.count += 1;
+    else found.set(c.channel_ref, { label: c.channel_name, count: 1 });
+  }
+  return [...found.entries()]
+    .map(([ref, { label, count }]) => ({ ref, label, count }))
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 }
 
@@ -678,17 +794,62 @@ export function treatableOrderRefs(
     ...queue.expedition_delivery_transit,
     ...(queue.ifood_negotiation_orders ?? []),
   ];
-  return new Set(
-    cards
-      .filter(
-        (card) =>
-          card.can_confirm ||
-          card.can_advance ||
-          card.can_settle_delivery_cash ||
-          card.equipment_back_pending,
-      )
-      .map((card) => card.ref),
-  );
+  return new Set(treatableCards(cards).map((card) => card.ref));
+}
+
+/** O que a régua do "tratável" lê do cartão. Estrutural de propósito: as zonas do quadro
+ *  e as negociações do iFood chegam com tipos diferentes do mesmo contrato. */
+type TreatableSource = Pick<
+  OrderCardProjection,
+  "ref" | "attention" | "kitchen_released_at_iso"
+>;
+
+/** Os cartões que pedem alguém agora: os do "Precisa de você" da Fila, que o servidor
+ *  decide (`attention`). Decisão do dono (21/11/2026, #2758 item 3): o som segue a Fila.
+ *  Antes a tela tinha régua própria (o gesto disponível), e as duas divergiam: o pedido
+ *  em preparo com a Cozinha trabalhando tocava, e o pedido novo sem estoque, a negociação
+ *  do iFood e a promessa em risco não. A encomenda do dia que espera a hora da Cozinha
+ *  não pede ninguém, e o servidor já a deixa fora (WP-G02, P1-04). */
+function treatableCards<C extends TreatableSource>(cards: C[]): C[] {
+  return cards.filter((card) => Boolean(card.attention));
+}
+
+const KITCHEN_ARRIVAL_MARK = "@cozinha";
+
+/**
+ * As chaves do aviso do Gestor: uma por fato que merece um toque, com o pedido de cada.
+ *
+ * O pedido comum tem uma chave só, o próprio ref. A encomenda ganha uma segunda quando
+ * chega à Cozinha (`kitchen_released_at_iso`): quem a aceitou ontem já "viu" o ref, e
+ * sem a segunda chave a chegada dela ao fluxo do dia passaria em silêncio.
+ */
+export function treatableAttentionKeys(
+  queue: TwoZoneQueueProjection | null,
+): Map<string, string> {
+  const keys = new Map<string, string>();
+  if (!queue) return keys;
+  const refs = treatableOrderRefs(queue);
+  const cards = [
+    ...queue.intake,
+    ...queue.prep,
+    ...queue.expedition_pickup,
+    ...queue.expedition_delivery,
+    ...queue.expedition_delivery_transit,
+    ...(queue.ifood_negotiation_orders ?? []),
+  ];
+  for (const card of cards) {
+    if (!refs.has(card.ref)) continue;
+    const arrived = card.status === "accepted" && card.kitchen_released_at_iso;
+    keys.set(arrived ? `${card.ref}${KITCHEN_ARRIVAL_MARK}` : card.ref, card.ref);
+  }
+  return keys;
+}
+
+/** O ref do pedido de uma chave de aviso (`treatableAttentionKeys`). */
+export function attentionKeyRef(key: string): string {
+  return key.endsWith(KITCHEN_ARRIVAL_MARK)
+    ? key.slice(0, -KITCHEN_ARRIVAL_MARK.length)
+    : key;
 }
 
 /** Refs que passaram de espera passiva para trabalho possível no Gestor. */
@@ -768,8 +929,8 @@ export function triageCards(
   return sortCards(filtered, opts.sort);
 }
 
-/** "queue": a Grade, os cartões da Fila "Precisa de você" (abre nela no desktop);
- *  "board": o quadro de três colunas; "table": a Lista, a tabela densa. */
+/** "queue": a Grade, os cartões da Fila "Precisa de você" (um toque no controle de modo);
+ *  "board": o painel de três colunas; "table": a Lista, a tabela densa. */
 export type ViewMode = "queue" | "board" | "table";
 
 export interface FlatRow {
@@ -792,11 +953,20 @@ export function flattenZones(zones: ZoneView[]): FlatRow[] {
  *  ";" entre colunas e BOM, como a planilha em português lê. */
 export function rowsToCsv(rows: FlatRow[]): string {
   return readingCsvText({
-    header: ["Código", "Situação", "Canal", "Cliente", "Itens", "Total", "Tempo", "Atendente"],
+    header: [
+      "Código",
+      "Situação",
+      "Canal",
+      "Cliente",
+      "Itens",
+      "Total",
+      "Tempo",
+      "Atendente",
+    ],
     rows: rows.map((r) => [
       r.card.ref,
       r.zoneTitle,
-      channelLabel(r.card.channel_ref),
+      r.card.channel_name ?? "",
       r.card.customer_name ?? "",
       r.card.items_summary ?? "",
       r.card.total_display ?? "",
@@ -809,11 +979,7 @@ export function rowsToCsv(rows: FlatRow[]): string {
 // ── Keyboard shortcuts (Arc 3) ──────────────────────────────────────────────
 
 export type BoardShortcut =
-  | "focus-search"
-  | "refresh"
-  | "toggle-view"
-  | "cycle-sort"
-  | "clear-filters";
+  "focus-search" | "refresh" | "toggle-view" | "cycle-sort" | "clear-filters";
 
 /** Map a keydown's `key` to a board shortcut, or null if none. Pure so the
  *  mapping is testable; the page owns the side effects (focus, refresh, …) and
@@ -865,6 +1031,52 @@ export function bulkableRefs(
       : (c: OrderCardProjection) =>
           c.can_advance && !dispatchAsksChange(c) && !c.dispatch_needs_machine;
   return cards.filter((c) => selected.has(c.ref) && can(c)).map((c) => c.ref);
+}
+
+// ── Pagamento (WP-G09) ──────────────────────────────────────────────────────
+
+type PaymentSource = Pick<
+  OrderCardProjection,
+  "payment_method_label" | "payment_status_label"
+>;
+
+/**
+ * O pagamento do pedido como o servidor o diz: o meio e a situação, numa frase.
+ *
+ * "Pix · Pago", "Cartão · Cobrança recusada", "Pix · Pagamento simulado, sem dinheiro",
+ * "Dinheiro na entrega" (sem situação, quando ainda não há o que dizer). A mesma frase
+ * do detalhe. O cartão escrevia só o meio, e "Pagamento simulado" e "Cobrança recusada"
+ * existiam no servidor sem nunca chegar à tela (laudo do Gestor, P2-09).
+ */
+export function paymentLabel(card: PaymentSource): string {
+  return joinFacts(card.payment_method_label, card.payment_status_label);
+}
+
+export interface PaymentAlert {
+  label: string;
+  color: "warning" | "error";
+  icon: string;
+}
+
+/**
+ * O pagamento que pede um olhar, para o cartão enxuto do Painel (que não tem a linha
+ * do pagamento): só quando o tom do servidor é de aviso (`payment_tone`: o simulado, a
+ * cobrança recusada, o que o canal não informou). Quem ainda espera o pagamento já tem
+ * o fato na pílula do bloqueio ("Aguardando Pix", "Pix expirado", "Cobrança recusada"),
+ * e não se repete aqui.
+ */
+export function paymentAlert(
+  card: PaymentSource &
+    Pick<OrderCardProjection, "payment_tone" | "payment_pending">,
+): PaymentAlert | null {
+  const tone = card.payment_tone;
+  if (tone !== "warning" && tone !== "danger") return null;
+  if (card.payment_pending) return null;
+  const label = paymentLabel(card);
+  if (!label) return null;
+  return tone === "danger"
+    ? { label, color: "error", icon: "i-lucide-triangle-alert" }
+    : { label, color: "warning", icon: "i-lucide-circle-alert" };
 }
 
 // ── Troco da entrega (WP-9) ─────────────────────────────────────────────────
@@ -1041,12 +1253,7 @@ export function appendTag(current: string, tag: string): string {
 // Aqui se decide só a palavra e o tom; o ciclo continua do servidor.
 
 export type SealTone =
-  | "primary"
-  | "info"
-  | "success"
-  | "warning"
-  | "error"
-  | "muted";
+  "primary" | "info" | "success" | "warning" | "error" | "muted";
 
 export interface CardSeal {
   label: string;
@@ -1067,10 +1274,14 @@ const SEAL_TONE: Record<string, SealTone> = {
 type SealSource = Pick<
   OrderCardProjection,
   "status" | "status_label" | "can_confirm" | "advance_block_reason" | "actions"
->;
+> &
+  Partial<Pick<OrderCardProjection, "promise" | "advance_block_label" | "advance_block_waits">>;
 
 /** Selo do canto do cartão. Bloqueio primeiro (o motivo vem escrito no cartão); depois
- *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado. */
+ *  "Novo" (a decisão pendente) e "Próximo" (o primeiro da Saída a sair); senão o estado.
+ *  Quem só espera algo que anda sozinho (o lote ficar pronto, o Pix cair, o dia da
+ *  encomenda) não é "Bloqueado": a espera saudável não usa cor de erro (WP-G08 e #2721
+ *  item 9; a pílula diz o fato). */
 export function cardSeal(
   card: SealSource,
   opts: { next?: boolean } = {},
@@ -1078,7 +1289,7 @@ export function cardSeal(
   const advance = (card.actions ?? []).find(
     (a) => a.ref === "advance" && a.priority !== "menu",
   );
-  if (card.advance_block_reason && advance && !advance.enabled)
+  if (card.advance_block_reason && advance && !advance.enabled && !blockWaits(card))
     return { label: "Bloqueado", tone: "error" };
   if (card.can_confirm) return { label: "Novo", tone: "primary" };
   if (opts.next) return { label: "Próximo", tone: "primary" };
@@ -1124,7 +1335,12 @@ type ClockSource = Pick<
   | "elapsed_seconds"
   | "timer_class"
 > &
-  Partial<Pick<OrderCardProjection, "ready_at_iso" | "dispatched_at_iso">>;
+  Partial<
+    Pick<
+      OrderCardProjection,
+      "ready_at_iso" | "dispatched_at_iso" | "kitchen_release_label"
+    >
+  >;
 
 /** Segundos desde um instante ISO do servidor; `null` quando o instante não existe. */
 export function secondsSince(
@@ -1140,7 +1356,8 @@ export function secondsSince(
 /** A linha do tempo do canto: o prazo, quando há ("aceita sozinho em 2:40"); no pronto,
  *  desde quando está pronto ("pronto há 6 min"); na rua, desde a saída ("na rua há 18
  *  min"); senão, o decorrido desde a chegada ("há 9 min"). Um relógio só: quanto falta
- *  decide; quanto passou, não. */
+ *  decide; quanto passou, não. Na encomenda, a chegada é a chegada à Cozinha: o servidor
+ *  conta `elapsed_seconds` dali, nunca da compra (WP-G02, P1-05). */
 export function cardClock(card: ClockSource, nowMs: number): CardClock {
   const left = confirmationRemainingLabel(
     card.confirmation_deadline_iso,
@@ -1157,12 +1374,16 @@ export function cardClock(card: ClockSource, nowMs: number): CardClock {
       countdown: true,
     };
   }
+  // A encomenda que espera a hora da Cozinha não tem tempo a contar: o cartão diz a
+  // hora em que ela chega (`kitchenWait`), e o relógio fica mudo.
+  if (kitchenWait(card))
+    return { text: "", tone: timeTone("on_time"), countdown: false };
   const tone = timerTone(card.timer_class as OrderTimerClass);
   const ready = secondsSince(card.ready_at_iso, nowMs);
   if (ready !== null)
     return {
       text: ready < 60 ? "pronto agora" : `pronto ${agoLabel(ready)}`,
-      tone,
+      tone: timeTone("ready"),
       countdown: false,
     };
   const road = secondsSince(card.dispatched_at_iso, nowMs);
@@ -1194,89 +1415,66 @@ export function customerFirstName(name: string): string {
   return clean.split(/\s+/)[0] ?? "";
 }
 
-type VerbSource = Pick<
-  OrderCardProjection,
-  "ref" | "status" | "fulfillment_type" | "next_status" | "customer_name"
->;
-
-/** O verbo do botão largo, com o nome (v4: "Entregar a Ana", "Despachar M09").
- *
- *  Só muda o rótulo da SAÍDA, onde o fato é entregar à pessoa ou despachar: o rótulo do
- *  servidor ("Marcar como retirado") fica no `title` do botão. Os outros passos seguem
- *  com o rótulo do servidor, que é a fonte única. */
-export function primaryVerb(
-  card: VerbSource,
-  aff: Pick<Affordance, "ref" | "label" | "disabled">,
-): string {
-  if (aff.ref !== "advance" || aff.disabled) return aff.label;
-  if (card.next_status === "dispatched")
-    return `Despachar ${splitRef(card.ref).code}`;
-  if (card.status === "ready" && card.fulfillment_type === "pickup") {
-    const name = customerFirstName(card.customer_name);
-    return name ? `Entregar a ${name}` : `Entregar ${splitRef(card.ref).code}`;
-  }
-  return aff.label;
-}
-
-export type SegmentState = "done" | "working" | "waiting" | "alert";
-
-export interface StationProgress {
-  segments: Array<{ ref: string; state: SegmentState; title: string }>;
-  /** "Forno e Café prontos" · "2 de 3 prontos" */
-  summary: string;
-  /** "falta Café" (o que ainda segura o pedido), vazio quando todas terminaram. */
-  missing: string;
-  /** Nomes do que falta, para "Aguardando Café". */
-  missingNames: string;
-  done: boolean;
-}
-
 function joinNames(names: string[]): string {
   return names.length <= 1
     ? (names[0] ?? "")
     : `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
-/** A barra de progresso por estação (um traço por estação) e a frase dela. */
-export function stationProgress(
-  kitchen: OrderCardProjection["kitchen"],
-): StationProgress | null {
-  if (!kitchen || !kitchen.stations.length) return null;
-  const segments = kitchen.stations.map((station) => {
-    const state: SegmentState =
-      station.state === "done"
-        ? "done"
-        : station.prints && station.paper_failed
-          ? "alert"
-          : station.state === "in_progress"
-            ? "working"
-            : "waiting";
-    return {
-      ref: station.station_ref,
-      state,
-      title: `${station.station_name}: ${station.state_label}`,
-    };
-  });
-  const doneNames = kitchen.stations
-    .filter((s) => s.state === "done")
-    .map((s) => s.station_name);
-  const missingNames = kitchen.stations
-    .filter((s) => s.state !== "done")
-    .map((s) => s.station_name);
-  const done = missingNames.length === 0;
-  const total = kitchen.stations.length;
-  const summary = done
-    ? `${joinNames(doneNames)} ${total === 1 ? "pronto" : "prontos"}`
-    : `${doneNames.length} de ${total} ${doneNames.length === 1 ? "pronto" : "prontos"}`;
-  const label = kitchen.missing_label || "";
-  const missing = label ? label.charAt(0).toLowerCase() + label.slice(1) : "";
-  return {
-    segments,
-    summary,
-    missing,
-    missingNames: joinNames(missingNames),
-    done,
-  };
+/** As estações que ainda devem este pedido ("Cafés e Lanches"); vazio sem Cozinha ou
+ *  com todas prontas. O cartão diz "Aguardando Cafés e Lanches", sem barra: o que
+ *  importa é quem falta, não a fração. */
+export function kitchenWaiting(kitchen: OrderCardProjection["kitchen"]): string {
+  if (!kitchen) return "";
+  return joinNames(
+    kitchen.stations.filter((s) => s.state !== "done").map((s) => s.station_name),
+  );
+}
+
+const PRODUCTION_STATE: Record<string, string> = {
+  planned: "não começou",
+  started: "em andamento",
+  finished: "concluída",
+  void: "cancelada",
+};
+
+/** Pedido que já tem o produto na mão: o vínculo com o lote não diz mais nada. */
+const PRODUCT_IN_HAND = new Set([
+  "ready",
+  "dispatched",
+  "delivered",
+  "completed",
+  "cancelled",
+]);
+
+type ProductionSource = Pick<OrderCardProjection, "awaiting_work_orders"> &
+  Partial<
+    Pick<OrderCardProjection, "promise" | "status" | "advance_block_reason">
+  >;
+
+/**
+ * O lote que o pedido espera, uma frase por produto.
+ *
+ * Duas fontes falavam do mesmo lote, e a mais antiga não sabia a hora nem o que fazer
+ * (P2-19). Agora vale uma só por pedido:
+ *
+ * - com a leitura da promessa (`card.promise`, WP-G08), as frases são as dela, com a
+ *   hora do lote: "Baguete de tradição: O lote de hoje não começou. Fica pronto às
+ *   12h.". O item em risco não entra (tem o aviso "Promessa em risco"), nem a frase
+ *   que o bloqueio "Esperando o lote" já escreve;
+ * - sem ela, vale o vínculo do pedido com o lote ("Produção de Croissant: não
+ *   começou"), só enquanto o pedido ainda espera o produto. Em pedido pronto a linha
+ *   era mentira: o vínculo fica gravado depois que o pão saiu.
+ */
+export function productionLines(
+  card: ProductionSource,
+): Array<{ ref: string; text: string }> {
+  if (card.promise) return promiseWaitLines(card);
+  if (card.status && PRODUCT_IN_HAND.has(card.status)) return [];
+  return card.awaiting_work_orders.map((wo) => ({
+    ref: wo.ref,
+    text: `Produção de ${wo.recipe_name}: ${PRODUCTION_STATE[wo.status] ?? wo.status_label.toLowerCase()}`,
+  }));
 }
 
 /** A Saída: o primeiro cartão com o gesto da saída à mão é o "Próximo". */
@@ -1388,4 +1586,67 @@ export function stripSummary(
       return { text: cardClock(best.card, nowMs).text, tone: "warning" };
   }
   return { text: "", tone: "" };
+}
+
+// ── Maquininhas na rua (cabeçalho do Gestor) ───────────────────────────────
+
+/** "1 maquininha na rua", "2 maquininhas na rua": o rótulo do botão do cabeçalho. */
+export function equipmentOutLabel(count: number): string {
+  return count === 1 ? "1 maquininha na rua" : `${count} maquininhas na rua`;
+}
+
+/** Com quem a maquininha está: "Pedido A47 · Maria · saiu às 14:20". */
+export function equipmentOutLine(
+  item: Pick<
+    EquipmentOutProjection,
+    "order_ref" | "customer_name" | "out_at" | "shared_with"
+  >,
+): string {
+  const outMs = item.out_at ? Date.parse(item.out_at) : Number.NaN;
+  const refs = [item.order_ref, ...(item.shared_with ?? [])].map(
+    (ref) => splitRef(ref).code,
+  );
+  return joinFacts(
+    refs.length > 1 ? `Pedidos ${joinRefs(refs)}` : `Pedido ${refs[0]}`,
+    item.customer_name,
+    Number.isFinite(outMs) ? `saiu às ${clockHHMM(outMs)}` : "",
+  );
+}
+
+// ── Uma corrida para várias entregas (cabeçalho do Gestor) ─────────────────
+
+/**
+ * O cartão Pronto de entrega que dá para chamar agora (#2876, gesto 3 para 2): o
+ * "Chamar entregador" vira o gesto principal do cartão e abre o MESMO sheet das
+ * Entregas. O gesto que era principal (o "Despachar" de quem leva por conta própria)
+ * segue no cartão, como secundário.
+ */
+export function withCourierCall(affordances: Affordance[], canCall: boolean): Affordance[] {
+  if (!canCall) return affordances;
+  return [
+    { ref: "call_courier", label: "Chamar entregador", icon: "lucide:bike", priority: "primary", needsInput: false },
+    ...affordances.map((aff) => (aff.priority === "primary" ? { ...aff, priority: "secondary" as const } : aff)),
+  ];
+}
+
+/**
+ * A faixa da Saída (decisão 4 = A do dono): "Aguardando entregador: 5", abrindo a parte
+ * "A coletar". Some sem ninguém aguardando; com a contagem desconhecida, só sem número.
+ */
+export function waitingBandText(waiting: number | null | undefined): string {
+  if (waiting === null) return "Aguardando entregador";
+  if (!waiting) return "";
+  return `Aguardando entregador: ${waiting}`;
+}
+
+/** Quantos pedidos uma corrida leva (espelho de `courier.MAX_RIDE_STOPS`). */
+export const MAX_RIDE_STOPS = 4;
+
+/**
+ * O atalho do Painel para a página Entregas, onde se juntam as corridas (F5):
+ * "Montar corridas (2 sugeridas)", com quantas o plano da casa sugere agora.
+ */
+export function buildRidesLabel(suggested: number): string {
+  if (suggested < 1) return "Montar corridas";
+  return `Montar corridas (${suggested} ${suggested === 1 ? "sugerida" : "sugeridas"})`;
 }

@@ -1,37 +1,115 @@
 <script setup lang="ts">
 // Base · Fornecedores: a tabela da suíte com os fornecedores, quantos insumos cada um
 // cobre e a pontualidade. O fornecedor aberto é a rota filha (`/base/suppliers/<ref>`).
+import { navigateTo } from "#imports";
 import { SUPPLIERS_TRAIL, baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
-import { matchesSupplierFilters, plural, supplierDimensions } from "~/presentation/purchaseUi";
+import { plural, supplierDimensions, supplierLeadTimeLabel, supplierReliabilityLabel } from "~/presentation/purchaseUi";
 import type { Supplier } from "~/types/purchase";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 
-type SupplierRow = { supplier: Supplier; materialsCovered: number; preferredCount: number };
+type SupplierRow = {
+  supplier: Supplier;
+  materialsCovered: number;
+  preferredCount: number;
+};
 
+const selection = ref<Record<string, boolean>>({});
+const bulkPending = ref(false);
+const bulkIntention = ref<{ fingerprint: string; key: string } | null>(null);
+const bulkError = ref("");
+const bulkUndo = ref<{
+  undo: string;
+  until: string;
+  serverNow: string;
+  count: number;
+} | null>(null);
+const confirmBulk = useConfirm();
+const selectedCount = computed(() => Object.values(selection.value).filter(Boolean).length);
+async function applyBulk(active?: boolean) {
+  if (bulkPending.value) return;
+  const rows = displayed.value
+    .filter((row) => selection.value[row.supplier.ref])
+    .map(({ supplier }) => ({
+      ref: supplier.ref,
+      revision: supplier.revision,
+    }));
+  if (
+    active !== undefined &&
+    !(await confirmBulk({
+      title: `${active ? "Desarquivar" : "Arquivar"} ${plural(rows.length, "fornecedor", "fornecedores")}?`,
+      description: active ? "Os fornecedores voltam à lista de compras." : "Os fornecedores saem da lista de compras. O histórico fica guardado.",
+      confirmLabel: active ? "Desarquivar" : "Arquivar",
+      cancelLabel: "Manter fornecedores",
+      tone: active ? "primary" : "danger",
+    }))
+  )
+    return;
+  bulkPending.value = true;
+  bulkError.value = "";
+  try {
+    const body = active === undefined ? { undo: bulkUndo.value?.undo } : { rows, isActive: active };
+    const fingerprint = JSON.stringify(body);
+    if (bulkIntention.value?.fingerprint !== fingerprint) bulkIntention.value = { fingerprint, key: crypto.randomUUID() };
+    const response = await $fetch<{
+      resource: {
+        undo?: string;
+        until?: string;
+        serverNow?: string;
+        count: number;
+      };
+    }>("/api/v1/backstage/purchase/suppliers/batch/", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Idempotency-Key": bulkIntention.value!.key },
+      body,
+    });
+    bulkIntention.value = null;
+    const receipt = response.resource;
+    bulkUndo.value =
+      receipt.undo && receipt.until && receipt.serverNow
+        ? {
+            undo: receipt.undo,
+            until: receipt.until,
+            serverNow: receipt.serverNow,
+            count: receipt.count,
+          }
+        : null;
+    selection.value = {};
+    await refresh();
+  } catch (error) {
+    bulkError.value = (error as { data?: { detail?: string } }).data?.detail || "Não foi possível confirmar a alteração. Tente de novo.";
+  } finally {
+    bulkPending.value = false;
+  }
+}
+const csvTools = ref<{ openImport: () => void; openExport: () => void } | null>(null);
 const route = useRoute();
-const {
-  suppliers,
-  supplierSummaries,
-  supplierFilters,
-  supplierForm,
-  supplierFormSource,
-  metrics,
-  selectSupplier,
-  openSupplierCreate,
-  saveSupplier,
-  saveSupplierContact,
-  actionPending,
-  actionError,
-  refresh,
-} = usePurchaseDesk();
+const { query, suppliers, supplierList, materialList, supplierSummaries, supplierFilters, supplierForm, supplierFormSource, selectSupplier, openSupplierCreate, saveSupplier, saveSupplierContact, actionPending, actionError, refresh } =
+  usePurchaseDesk();
 
 const openRef = computed(() => (typeof route.params.ref === "string" ? route.params.ref : ""));
-watch(openRef, (ref) => {
-  if (ref) selectSupplier(ref);
-}, { immediate: true });
+watch(
+  openRef,
+  (ref) => {
+    if (ref) selectSupplier(ref);
+  },
+  { immediate: true },
+);
 
-const search = ref("");
+const search = query;
 const sorting = ref<{ id: string; desc: boolean }[]>([]);
+watch(
+  sorting,
+  (value) => {
+    const sort = value[0];
+    const order = sort?.id === "name" ? (sort.desc ? "-name" : "name") : "name";
+    void navigateTo({ query: { ...route.query, order, page: "1" } }, { replace: true });
+  },
+  { deep: true },
+);
+function goToPage(page: number) {
+  void navigateTo({ query: { ...route.query, page: String(page) } }, { replace: true });
+}
 
 // O painel de filtros da suíte: Situação e "tem contato comercial?" — a pergunta
 // que o comprador faz antes de apertar enviar.
@@ -58,6 +136,12 @@ const activeFilters = computed(() =>
     supplierFilters.value = next;
   }),
 );
+const supplierEmptyTitle = computed(() => {
+  const term = search.value.trim();
+  if (term) return `Nenhum fornecedor com “${term}”.`;
+  if (activeFilters.value.length) return "Nenhum fornecedor combina com os filtros.";
+  return supplierList.value.total === 0 ? "Nenhum fornecedor cadastrado ainda." : "Nenhum fornecedor nesta página.";
+});
 const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
   name: (row) => row.supplier.displayName,
   materials: (row) => row.materialsCovered,
@@ -68,44 +152,75 @@ const SORT_VALUE: Record<string, (row: SupplierRow) => number | string> = {
 // Com o fornecedor aberto ao lado, a tabela solta as colunas de apoio antes de rolar.
 const yieldsToDetail = computed(() => (openRef.value ? { th: "max-2xl:hidden", td: "max-2xl:hidden" } : undefined));
 const columns = computed(() => [
-  { id: "name", header: "Fornecedor", accessorFn: SORT_VALUE.name, enableSorting: true, enableHiding: false },
-  { id: "materials", header: "Insumos", accessorFn: SORT_VALUE.materials, enableSorting: true },
-  { id: "preferred", header: "Preferidos", accessorFn: SORT_VALUE.preferred, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "reliability", header: "No prazo", accessorFn: SORT_VALUE.reliability, enableSorting: true, meta: { supporting: true } },
-  { id: "lead", header: "Prazo de entrega", accessorFn: SORT_VALUE.lead, enableSorting: true, meta: { supporting: true, class: yieldsToDetail.value } },
-  { id: "status", header: "Situação" },
+  {
+    id: "name",
+    header: "Fornecedor",
+    accessorFn: SORT_VALUE.name,
+    enableSorting: true,
+    enableHiding: false,
+  },
+  { id: "materials", header: "Insumos", accessorFn: SORT_VALUE.materials },
+  {
+    id: "preferred",
+    header: "Preferidos",
+    accessorFn: SORT_VALUE.preferred,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
+  {
+    id: "reliability",
+    header: "No prazo",
+    accessorFn: SORT_VALUE.reliability,
+    meta: { supporting: true },
+  },
+  {
+    id: "lead",
+    header: "Prazo de entrega",
+    accessorFn: SORT_VALUE.lead,
+    meta: { supporting: true, class: yieldsToDetail.value },
+  },
+  { id: "status", header: "Cadastro" },
 ]);
 
-const displayed = computed<SupplierRow[]>(() => {
-  const term = search.value.trim().toLowerCase();
-  const list = supplierSummaries.value.filter(
-    (row) =>
-      (!term ||
-        row.supplier.displayName.toLowerCase().includes(term) ||
-        row.supplier.name.toLowerCase().includes(term) ||
-        row.supplier.ref.toLowerCase().includes(term)) &&
-      matchesSupplierFilters(row.supplier, supplierFilters.value),
-  );
-  const sort = sorting.value[0];
-  const value = sort ? SORT_VALUE[sort.id] : undefined;
-  if (!sort || !value) return list;
-  return [...list].sort((a, b) => {
-    const left = value(a);
-    const right = value(b);
-    const order = typeof left === "string" ? left.localeCompare(String(right), "pt-BR") : left - (right as number);
-    return sort.desc ? -order : order;
-  });
-});
+const displayed = computed<SupplierRow[]>(() => supplierSummaries.value);
 const { remember } = useRecordTrail(SUPPLIERS_TRAIL);
 watch(
   displayed,
-  (list) => remember(list.map((row) => row.supplier.ref), { from: baseSectionPath("suppliers"), label: "Fornecedores" }),
+  (list) =>
+    remember(
+      list.map((row) => row.supplier.ref),
+      { from: baseSectionPath("suppliers"), label: "Fornecedores" },
+    ),
   { immediate: true },
 );
 
+watch(
+  () => [route.query, displayed.value.map((row) => row.supplier.ref).join(",")],
+  () => {
+    selection.value = {};
+  },
+);
 const headerActions = [
-  { label: "Novo fornecedor", icon: "i-lucide-plus", onSelect: () => openSupplierCreate() },
-  { label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"], onSelect: () => void refresh() },
+  {
+    label: "Importar CSV",
+    icon: "i-lucide-upload",
+    onSelect: () => csvTools.value?.openImport(),
+  },
+  {
+    label: "Exportar CSV",
+    icon: "i-lucide-download",
+    onSelect: () => csvTools.value?.openExport(),
+  },
+  {
+    label: "Novo fornecedor",
+    icon: "i-lucide-plus",
+    onSelect: () => openSupplierCreate(),
+  },
+  {
+    label: "Atualizar",
+    icon: "i-lucide-refresh-cw",
+    kbds: ["R"],
+    onSelect: () => void refresh(),
+  },
 ];
 
 async function onSubmitSupplier(payload: Record<string, unknown>) {
@@ -117,60 +232,62 @@ const supplierSavedVersion = ref(0);
 async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierContact>[0]) {
   if (await saveSupplierContact(payload)) supplierSavedVersion.value += 1;
 }
+
+// O ponto da leitura no selo do trocador, abaixo de `lg` (o `#status` sai dali).
+const { tone: sealTone, time: sealTime } = usePurchaseReadSeal();
 </script>
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader
-      title="Base"
-      :actions="headerActions"
-      actions-label="Mais ações da Base"
-      :active-filters="activeFilters"
-      desk-only-filters
-    >
-      <template #status>
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" :title="openRef ? 'Fornecedor' : 'Base'" :actions="headerActions" actions-label="Mais ações da Base" :active-filters="activeFilters" desk-only-filters>
+      <template v-if="selectedCount || bulkUndo" #selection>
+        <PurchaseSupplierBulkBar
+          :count="selectedCount"
+          :pending="bulkPending"
+          :undo="bulkUndo"
+          @clear="
+            selection = {};
+            bulkUndo = null;
+          "
+          @archive="applyBulk"
+          @undo="applyBulk()"
+          @expire="bulkUndo = null"
+        />
+      </template>
+      <template v-if="!openRef" #status>
         <PurchaseReadStatus />
       </template>
-      <template #search>
-        <OperatorSuiteSearch
-          v-model="search"
-          screen-label="filtrando os fornecedores"
-          placeholder="Buscar fornecedor"
-          aria-label="Buscar fornecedor"
+      <template v-if="!openRef" #search>
+        <OperatorSuiteSearch v-model="search" screen-label="filtrando os fornecedores" placeholder="Buscar fornecedor" aria-label="Buscar fornecedor" />
+      </template>
+      <template v-if="!openRef" #filters-primary>
+        <PurchaseBaseSections
+          :counts="{
+            materials: materialList.total,
+            suppliers: supplierList.total,
+          }"
         />
       </template>
-      <template #filters-primary>
-        <PurchaseBaseSections :counts="{ materials: metrics.activeMaterials, suppliers: suppliers.length }" />
+      <template v-if="!openRef" #filter-panel>
+        <OperatorFilterPanel v-model="supplierFilters" :dimensions="dimensions" surface="purchase" screen="suppliers" data-base-supplier-filters />
       </template>
-      <template #filter-panel>
-        <OperatorFilterPanel
-          v-model="supplierFilters"
-          :dimensions="dimensions"
-          surface="purchase"
-          screen="suppliers"
-          data-base-supplier-filters
-        />
-      </template>
-      <template #filters>
-        <OperatorQuickFilters
-          v-model="quickModel"
-          :items="quickItems"
-          multiple
-          label="Fornecedores sem contato comercial"
-          data-base-supplier-no-contact
-        />
+      <template v-if="!openRef" #filters>
+        <OperatorQuickFilters v-model="quickModel" :items="quickItems" multiple label="Fornecedores sem contato comercial" data-base-supplier-no-contact />
         <OperatorTableView table-key="purchase-suppliers" />
       </template>
-      <template #filters-end>
-        <span class="text-xs text-muted tabular-nums">{{ plural(displayed.length, "fornecedor", "fornecedores") }}</span>
+      <template v-if="!openRef" #filters-end>
+        <span class="text-xs text-muted tabular-nums">{{ plural(supplierList.total, "fornecedor", "fornecedores") }}</span>
       </template>
     </OperatorPageHeader>
 
     <div class="flex min-h-0 flex-1">
-      <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" data-base-suppliers>
+      <section class="min-h-0 min-w-0 flex-1 overflow-auto p-4 sm:p-6" :class="openRef ? 'max-xl:hidden' : ''" data-base-suppliers>
+        <NuxtAlert v-if="bulkError" color="error" variant="subtle" title="Confira a alteração dos fornecedores" :description="bulkError" close class="mb-4" @update:open="bulkError = ''" />
         <PurchaseLoadState>
           <OperatorTable
             v-model:sorting="sorting"
+            v-model:row-selection="selection"
+            selectable
             :data="displayed"
             :columns="columns"
             :row-key="(row: SupplierRow) => row.supplier.ref"
@@ -180,9 +297,12 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
             view-key="purchase-suppliers"
             caption="Fornecedores da Base"
             empty-icon="i-lucide-truck"
-            :empty-title="!suppliers.length ? 'Nenhum fornecedor cadastrado ainda.' : `Nenhum fornecedor com “${search.trim()}”.`"
+            :empty-title="supplierEmptyTitle"
             data-base-suppliers-table
           >
+            <template v-if="supplierList.page > 1 || supplierList.has_next" #footer>
+              <NuxtPagination :page="supplierList.page" :total="supplierList.total" :items-per-page="supplierList.page_size" aria-label="Páginas de fornecedores" @update:page="goToPage" />
+            </template>
             <template #name-cell="{ row }">
               <span class="block font-semibold">{{ row.original.supplier.displayName }}</span>
               <span class="block font-mono text-xs text-muted">{{ row.original.supplier.ref }}</span>
@@ -194,23 +314,38 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
               <span class="tabular-nums">{{ row.original.preferredCount }}</span>
             </template>
             <template #reliability-cell="{ row }">
-              <span class="tabular-nums">{{ row.original.supplier.reliabilityPercent }}%</span>
+              <span class="tabular-nums">{{ supplierReliabilityLabel(row.original.supplier) }}</span>
             </template>
             <template #lead-cell="{ row }">
-              <span class="whitespace-nowrap tabular-nums">{{ row.original.supplier.leadTimeDays }} {{ row.original.supplier.leadTimeDays === 1 ? "dia" : "dias" }}</span>
+              <span class="whitespace-nowrap tabular-nums">{{ supplierLeadTimeLabel(row.original.supplier) }}</span>
             </template>
             <template #status-cell="{ row }">
-              <NuxtBadge :color="row.original.supplier.isActive ? 'success' : 'neutral'" :label="row.original.supplier.isActive ? 'Ativo' : 'Inativo'" />
+              <NuxtBadge :color="row.original.supplier.isActive ? 'success' : 'neutral'" :label="row.original.supplier.isActive ? 'Em uso' : 'Arquivado'" />
             </template>
           </OperatorTable>
           <MoreBelow />
         </PurchaseLoadState>
       </section>
 
-      <!-- O fornecedor aberto (rota filha): ao lado da tabela na mesa larga, numa folha
-           de lado abaixo do `xl`. -->
+      <!-- O fornecedor aberto (rota filha): ao lado da tabela na mesa larga e como
+           página abaixo do `xl`. -->
       <NuxtPage />
     </div>
+
+    <PurchaseSupplierBulkBar
+      v-if="selectedCount || bulkUndo"
+      placement="base"
+      :count="selectedCount"
+      :pending="bulkPending"
+      :undo="bulkUndo"
+      @clear="
+        selection = {};
+        bulkUndo = null;
+      "
+      @archive="applyBulk"
+      @undo="applyBulk()"
+      @expire="bulkUndo = null"
+    />
 
     <PurchaseSupplierFormPanel
       :open="supplierForm.open"
@@ -223,5 +358,6 @@ async function onSaveSupplierContact(payload: Parameters<typeof saveSupplierCont
       @save="onSubmitSupplier"
       @save-contact="onSaveSupplierContact"
     />
+    <PurchaseCsvTools ref="csvTools" entity="suppliers" @applied="refresh()" />
   </main>
 </template>

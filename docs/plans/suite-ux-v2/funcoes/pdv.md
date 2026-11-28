@@ -44,8 +44,8 @@ Papéis no código: operador de balcão (`cashman.operate_pos`), gerente (`backs
 | P39 | Dividir, transferir ou juntar comandas | atendente | venda | mesa divide, cliente troca de mesa | 0–20×/dia | segundos | COMPOR, CORRIGIR |
 | P40 | Renomear / liberar comanda | atendente | venda (barra) | número errado, comanda abandonada | 0–10×/dia | segundos | CORRIGIR |
 | P41 | Identificar o cliente (buscar, criar, resolver conflito, unificar) | atendente | venda / pagamento | fidelidade, nota com CPF, encomenda, entrega | 30–150×/dia | segundos, cliente esperando | LOCALIZAR, CORRIGIR |
-| P42 | Dizer como o cliente recebe (retirada/entrega, endereço, taxa) | atendente | venda (F7) | encomenda, telefone, delivery próprio | 5–40×/dia | segundos–minuto | COMPOR |
-| P43 | Dizer quando (data e janela) e montar encomenda | atendente | venda (F8, assistente) | cliente encomenda para outro dia | 5–40×/dia | minuto, cliente no telefone/balcão | PLANEJAR, COMPOR |
+| P42 | Dizer como o cliente recebe (retirada/entrega, endereço, taxa) | atendente | venda (F8) | encomenda, telefone, delivery próprio | 5–40×/dia | segundos–minuto | COMPOR |
+| P43 | Dizer quando (data e janela) e montar encomenda | atendente | venda (F7, assistente) | cliente encomenda para outro dia | 5–40×/dia | minuto, cliente no telefone/balcão | PLANEJAR, COMPOR |
 | P44 | Converter encomenda em venda de balcão | atendente | venda | cliente decide levar agora | raro | segundos | CORRIGIR |
 | P45 | Dar desconto na venda inteira | atendente (+ gerente) | pagamento (F9) | cortesia, acordo | 0–20×/dia | segundos | COMPOR, APROVAR |
 | P46 | Receber o pagamento (formas, cédulas, exato, troco) | atendente | pagamento | cliente vai pagar | 100–400×/dia | segundos, cliente esperando | REGISTRAR-QUANTIDADE |
@@ -321,14 +321,14 @@ Papéis no código: operador de balcão (`cashman.operate_pos`), gerente (`backs
 - Padrão: LOCALIZAR + CORRIGIR. Evidência: `PosCustomerModal.vue`, `PosCustomerSearch.vue`, `presentation/customerDecision.ts`, `POSCustomer{Lookup,Search,Resolve,Merge,ContactRelease,Profile}View`.
 
 **P42 · Dizer como o cliente recebe**
-- Onde: chip "Recebimento" (F7), mesma caixa na venda e no pagamento. Só no modo Encomendas.
-- Info mínima: retirada/entrega; se entrega: endereço (autocomplete Google, endereços salvos), número, complemento, instruções; taxa com ORIGEM explicada (distância/faixa/zona); exceção de taxa digitável.
+- Onde: chip "Recebimento" (F8, o terceiro da barra, depois de Cliente e Quando), mesma caixa na venda e no pagamento. Só no modo Encomendas.
+- Info mínima: retirada/entrega; se entrega: endereço (os já cadastrados do cliente em lista de linha inteira, com o padrão já marcado: Enter aceita, as setas trocam; ou autocomplete Google para um novo), número, complemento, instruções; taxa com ORIGEM explicada (distância/faixa/zona); exceção de taxa digitável. Dá para tirar o endereço da entrega em edição sem mexer no cadastro do cliente.
 - Efeito: taxa entra no total; janelas mudam; entrega pede cliente (telefone). Custo médio.
 - Exceções: taxa só resolve na review (fora dela a caixa diz isso); pedido mínimo de entrega; identidade fiscal da entrega (CPF obrigatório em certos casos).
 - Mínimo: 1 toque (retirada) / endereço (entrega). Padrão: COMPOR. Evidência: `PosFulfillmentModal.vue`, `PosAddressAutocomplete.vue`, `services/pos.py:_require_delivery_*`.
 
 **P43 · Dizer quando e montar a encomenda**
-- Onde: chip "Quando" (F8; padrão afirmativo "Para hoje"); assistente da encomenda (etapas cliente → recebimento → endereço → data) quando a venda está no modo Encomendas ou vem de "Nova encomenda".
+- Onde: chip "Quando" (F7, o segundo da barra; padrão afirmativo "Para hoje"); assistente da encomenda (etapas cliente → data → recebimento → endereço, se entrega; ordem do dono de 19/11/2026, #2754: "pra quando" vem em segundo porque diz respeito à disponibilidade) quando a venda está no modo Encomendas ou vem de "Nova encomenda".
 - Info mínima: datas que a casa opera, janelas do dia anotadas com a prontidão DESTE carrinho (gargalo, "pronto às"), limite de dias. Janela que vira impossível ao lançar item deixa o chip em conflito.
 - Entrada: escolher data e janela de listas curtas.
 - Efeito: `delivery_date/time_slot`; servidor recusa encomenda anônima (`customer_required_for_scheduled`) → chip de cliente pulsa.
@@ -472,7 +472,7 @@ Papéis no código: operador de balcão (`cashman.operate_pos`), gerente (`backs
    - Encomenda de hoje do cliente identificado na venda não aparece na venda; para entregar é preciso sair para `/preorders`.
    - Entrega em endereço aparece no PDV mas a ação mora no Gestor.
    - "Últimas vendas" é a casa da nota fiscal, mas está num ícone no topo; o estado da nota de cada venda some com a tela de resultado.
-6. **COMPOR o pedido tem dois tempos que o app já separou bem**: fatos do PEDIDO (cliente F6, recebimento F7, quando F8) ficam na barra e valem da abertura ao troco; fatos do PAGAMENTO (forma, troco, nota) ficam no pagamento. O assistente de encomenda é só a mesma barra perguntada em ordem.
+6. **COMPOR o pedido tem dois tempos que o app já separou bem**: fatos do PEDIDO (cliente F6, quando F7, recebimento F8) ficam na barra e valem da abertura ao troco; fatos do PAGAMENTO (forma, troco, nota) ficam no pagamento. O assistente de encomenda é só a mesma barra perguntada em ordem.
 7. **Um ator invisível: o mundo físico como autorização** (trava da gaveta, leitor de ticket, crachá). Proponho rótulo **TRAVA-FÍSICA**: o sistema espera um fato físico (gaveta fechada, papel bipado) em vez de um toque.
 8. **Duplicação real**: total parcial do carrinho, total interino do pagamento e total da tela do cliente já foram três contas e hoje são uma (`cartNetTotalQ`). Restam duplicados de forma: os três "receber dinheiro" (item 1) e os dois "contar às cegas" (item 3).
 

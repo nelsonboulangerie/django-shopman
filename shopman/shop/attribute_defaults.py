@@ -5,9 +5,9 @@ sobrevive a um teste transacional** (o `TransactionTestCase` trunca as tabelas
 no fim e não repõe o que a migração escreveu) nem a um `seed --flush`. A
 migração cobre quem já está no ar; o seed cobre quem reconstrói do zero.
 
-É a mesma razão pela qual `DEFAULT_COMPLEMENT_PARAMS` mora em
-`shop/rules/suggestion.py` e não só na 0030 — e o teste de drift compara as
-duas, para mudar uma sem a outra ficar vermelho.
+Os critérios de sugestão, ao contrário, são da casa e moram no descritor da
+Instância (`suggestion.complement`/`suggestion.substitute`); o teste de drift
+compara a 0030 com ele.
 """
 
 from __future__ import annotations

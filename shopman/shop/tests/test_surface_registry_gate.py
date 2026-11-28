@@ -95,6 +95,9 @@ def test_a_new_registry_entry_lists_every_place_that_still_lacks_it(repo: Path):
     registry["surfaces"]["loyalty"] = {
         "dir": "loyalty-nuxt",
         "kind": "operator",
+        "role": "loyalty-management",
+        "deployment": "digitalocean",
+        "uses_operator_kit": True,
         "dev_port": 3011,
         "service": "operator-office",
         "subdomain": "fidelidade",
@@ -152,6 +155,93 @@ def test_registry_rejects_unknown_fields_and_duplicated_ports(repo: Path):
     errors = guard.run(repo)
     assert "surfaces/registry.json: bi com campo desconhecido ['port']" in errors
     assert "surfaces/registry.json: dev_port 3006 repetido" in errors
+
+
+def test_registry_requires_the_operator_kit_dependency_as_a_boolean(repo: Path):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    registry["surfaces"]["kitchensink"]["uses_operator_kit"] = "yes"
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert "surfaces/registry.json: kitchensink precisa declarar uses_operator_kit como booleano" in guard.run(repo)
+
+
+@pytest.mark.parametrize("field", ["role", "deployment"])
+def test_registry_requires_role_and_deployment_on_every_surface(repo: Path, field: str):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    registry["surfaces"]["pos"].pop(field)
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert f"surfaces/registry.json: pos sem ['{field}']" in guard.run(repo)
+
+
+def test_registry_rejects_role_that_is_not_a_job_persona_slug(repo: Path):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    registry["surfaces"]["pos"]["role"] = "Operator Floor"
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert "surfaces/registry.json: pos precisa declarar role em kebab-case" in guard.run(repo)
+
+
+@pytest.mark.parametrize("deployment", [None, "external"])
+def test_internal_surface_requires_preview_deployment(repo: Path, deployment: str | None):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    if deployment is None:
+        registry["surfaces"]["kitchensink"].pop("deployment")
+    else:
+        registry["surfaces"]["kitchensink"]["deployment"] = deployment
+    (repo / "surfaces/registry.json").write_text(json.dumps(registry))
+
+    assert "surfaces/registry.json: kitchensink é internal e exige deployment 'preview'" in guard.run(repo)
+
+
+def test_internal_surface_keeps_technical_gates_without_becoming_operational(repo: Path):
+    registry = json.loads((repo / "surfaces/registry.json").read_text())
+    kitchensink = registry["surfaces"]["kitchensink"]
+    assert kitchensink["kind"] == "internal"
+    assert kitchensink["uses_operator_kit"] is True
+
+    contracts = json.loads((repo / "surfaces/contracts.json").read_text())
+    contract = contracts["surfaces"]["kitchensink"]
+    assert contract["kind"] == "internal"
+    assert set(contract["commands"]) == {"unit", "lint", "typecheck", "build"}
+    assert contract["capabilities"].get("visual") == "test:visual"
+    assert "pwa" not in contract["capabilities"]
+    assert guard.run(repo) == []
+
+
+def test_daily_catalog_customer_supply_stock_and_closing_work_has_a_product_surface():
+    registry = json.loads((REPO_ROOT / "surfaces/registry.json").read_text())
+    operators = {
+        surface_id
+        for surface_id, surface in registry["surfaces"].items()
+        if surface["kind"] == "operator" and surface["deployment"] == "digitalocean"
+    }
+    assert operators == {"hub", "pos", "kds", "orders", "production", "marketing", "bi", "purchase"}
+    assert registry["surfaces"]["orders"]["role"] == "operations-management"
+    assert registry["surfaces"]["purchase"]["role"] == "procurement"
+
+    expected_routes = {
+        "catálogo": "surfaces/orders-nuxt/app/pages/catalog.vue",
+        "clientes": "surfaces/orders-nuxt/app/pages/customers/index.vue",
+        "fornecedores": "surfaces/purchase-nuxt/app/pages/base/suppliers/index.vue",
+        "estoque": "surfaces/purchase-nuxt/app/pages/count.vue",
+        "fechamento": "surfaces/pos-nuxt/app/pages/session/closing.vue",
+    }
+    assert {name for name, rel in expected_routes.items() if not (REPO_ROOT / rel).is_file()} == set()
+
+
+def test_internal_preview_has_an_explicit_quality_job_name(repo: Path):
+    edit(
+        repo,
+        ".github/workflows/surfaces-gate.yml",
+        "    name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}\n",
+        "    name: ${{ matrix.dir }}\n",
+    )
+
+    assert guard.run(repo) == [
+        ".github/workflows/surfaces-gate.yml (app-quality): o nome precisa distinguir preview internal "
+        "com ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}",
+    ]
 
 
 def test_main_exits_nonzero_and_prints_the_file(repo: Path, capsys):

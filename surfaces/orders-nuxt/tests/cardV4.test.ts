@@ -4,13 +4,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   agoLabel,
+  cardAffordances,
   cardClock,
   cardSeal,
   customerFirstName,
   exitGesture,
   nextOutRef,
-  primaryVerb,
-  stationProgress,
+  kitchenWaiting,
+  productionLines,
   stripSummary,
   swipeHint,
   waitingStripText,
@@ -85,6 +86,38 @@ describe("cardSeal", () => {
     expect(cardSeal(card())).toEqual({ label: "Pronto", tone: "success" });
   });
 
+  // #2721 item 9 (coordenação, 21/11/2026, com o mandato do dono): vermelho só para o
+  // que pede alguém. A espera que anda sozinha mostra o estado, como "Esperando o lote".
+  it("espera que anda sozinha não é Bloqueado: Aguardando Pix e o dia da encomenda", () => {
+    for (const label of ["Aguardando Pix", "Aguardando o dia da encomenda…"]) {
+      expect(
+        cardSeal(
+          card({
+            status: "accepted",
+            status_label: "Aceito",
+            advance_block_label: label,
+            advance_block_reason: "Avança sozinho.",
+            advance_block_waits: true,
+            actions: [action("advance", false)],
+          }),
+        ),
+      ).toEqual({ label: "Aceito", tone: "info" });
+    }
+  });
+
+  it("a cobrança vencida segue Bloqueado, em vermelho: alguém precisa agir", () => {
+    expect(
+      cardSeal(
+        card({
+          advance_block_label: "Pix expirado",
+          advance_block_reason: "gerado às 9h · expirou às 9h30",
+          advance_block_waits: false,
+          actions: [action("advance", false)],
+        }),
+      ),
+    ).toEqual({ label: "Bloqueado", tone: "error" });
+  });
+
   it("frase sem gesto travado não vira bloqueio (o Marcar pronto que mora no menu)", () => {
     expect(
       cardSeal(
@@ -130,46 +163,24 @@ describe("cardClock e agoLabel", () => {
   });
 });
 
-describe("primaryVerb", () => {
-  const advance = {
-    ref: "advance" as const,
-    label: "Marcar como retirado",
-    disabled: false,
-  };
-  it("retirada pronta: entregar à pessoa, pelo primeiro nome", () => {
-    expect(primaryVerb(card(), advance)).toBe("Entregar a Ana");
+describe("o nome do gesto é o do servidor (WP-G09)", () => {
+  // "Entregar a Ana" e "Despachar U13" eram montados na tela, e a Tabela e o detalhe
+  // diziam "Marcar como retirado" do mesmo gesto. Agora o servidor nomeia
+  // (`order_queue._exit_gesture_actions`) e toda forma lê o rótulo da ação.
+  const server = (label: string, enabled = true) =>
+    [{ ref: "advance", label, enabled, priority: "primary", reason: enabled ? "" : "Pix pendente" }] as never;
+
+  it("o botão do cartão escreve o rótulo da ação, sem trocar palavra", () => {
+    for (const label of ["Entregar a Ana", "Entregar U13", "Despachar U13", "Iniciar preparo"]) {
+      const [primary] = cardAffordances(card({ actions: server(label) }));
+      expect(primary).toMatchObject({ ref: "advance", label, priority: "primary" });
+    }
   });
-  it("sem nome (ou telefone no lugar do nome): o código", () => {
-    expect(
-      primaryVerb(card({ customer_name: "(43) 99444-4444" }), advance),
-    ).toBe("Entregar U13");
+
+  it("o primeiro nome só serve ao gesto do polegar, que leva o código junto", () => {
+    expect(customerFirstName("(43) 99444-4444")).toBe("");
     expect(customerFirstName("")).toBe("");
-  });
-  it("saída para entrega: despachar o código", () => {
-    expect(
-      primaryVerb(
-        card({ fulfillment_type: "delivery", next_status: "dispatched" }),
-        { ...advance, label: "Marcar saída para entrega" },
-      ),
-    ).toBe("Despachar U13");
-  });
-  it("os outros passos e o gesto travado seguem com o rótulo do servidor", () => {
-    expect(
-      primaryVerb(card({ status: "accepted" }), {
-        ...advance,
-        label: "Iniciar preparo",
-      }),
-    ).toBe("Iniciar preparo");
-    expect(primaryVerb(card(), { ...advance, disabled: true })).toBe(
-      "Marcar como retirado",
-    );
-    expect(
-      primaryVerb(card(), {
-        ref: "confirm",
-        label: "Aceitar",
-        disabled: false,
-      }),
-    ).toBe("Aceitar");
+    expect(customerFirstName("Ana Souza")).toBe("Ana");
   });
 });
 
@@ -232,50 +243,52 @@ describe("swipeHint", () => {
   });
 });
 
-describe("stationProgress", () => {
-  it("um traço por estação e o que falta", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "Falta Café",
-      stations: [
-        station("Forno", "done"),
-        station("Lanches", "done"),
-        station("Café", "in_progress"),
-      ],
-    });
-    expect(progress?.segments.map((s) => s.state)).toEqual([
-      "done",
-      "done",
-      "working",
+describe("kitchenWaiting", () => {
+  it("diz só quem ainda falta, sem fração", () => {
+    expect(
+      kitchenWaiting({
+        order_pk: 1,
+        missing_label: "Faltam Café e Lanches",
+        stations: [
+          station("Forno", "done"),
+          station("Lanches", "pending"),
+          station("Café", "in_progress"),
+        ],
+      }),
+    ).toBe("Lanches e Café");
+  });
+  it("todas prontas ou sem Cozinha: nada", () => {
+    expect(
+      kitchenWaiting({
+        order_pk: 1,
+        missing_label: "",
+        stations: [station("Forno", "done"), station("Café", "done")],
+      }),
+    ).toBe("");
+    expect(kitchenWaiting(null)).toBe("");
+  });
+});
+
+describe("productionLines", () => {
+  const wo = (status: string, recipe_name = "Croissant") => ({
+    ref: `WO-${status}`,
+    status,
+    status_label: status,
+    output_sku: "CRO",
+    recipe_name,
+    planned_qty: "12",
+    finished_qty: "",
+    progress_pct: 0,
+  });
+  it("uma frase por ordem, com o nome da receita e o estado em palavras", () => {
+    expect(
+      productionLines({
+        awaiting_work_orders: [wo("planned"), wo("started", "Pão de queijo")],
+      }).map((l) => l.text),
+    ).toEqual([
+      "Produção de Croissant: não começou",
+      "Produção de Pão de queijo: em andamento",
     ]);
-    expect(progress?.summary).toBe("2 de 3 prontos");
-    expect(progress?.missing).toBe("falta Café");
-    expect(progress?.missingNames).toBe("Café");
-  });
-  it("todas prontas: quem concluiu", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "",
-      stations: [station("Forno", "done"), station("Café", "done")],
-    });
-    expect(progress).toMatchObject({
-      done: true,
-      summary: "Forno e Café prontos",
-      missing: "",
-    });
-  });
-  it("papel que não saiu: o traço no tom do bloqueio", () => {
-    const progress = stationProgress({
-      order_pk: 1,
-      missing_label: "Falta Lanches",
-      stations: [
-        station("Lanches", "pending", { prints: true, paper_failed: true }),
-      ],
-    });
-    expect(progress?.segments[0]?.state).toBe("alert");
-  });
-  it("sem Cozinha: nada", () => {
-    expect(stationProgress(null)).toBeNull();
   });
 });
 

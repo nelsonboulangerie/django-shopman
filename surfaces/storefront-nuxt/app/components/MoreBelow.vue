@@ -25,6 +25,11 @@
 // trabalha nas bordas e onde o conteúdo atrás tem contraste — um cartão, uma
 // foto, um bloco escuro. Está em 33% por decisão do Pablo.
 //
+// ⚠️ A SETA NUNCA SENTA SOBRE TEXTO. A lavagem é sólida na faixa da pílula (folga
+// + chevron, 60px) e só dissolve acima dela: com a lavagem toda em degradê, a
+// linha "Quando · A partir das 15h" do checkout aparecia legível ATRÁS do chevron
+// (OC-33 B1, capturas de 24/11; o main tinha o mesmo defeito).
+//
 // ⚠️ O DEGRADÊ ENCOSTA NO OBSTÁCULO. A folga de 12px é do chevron e mora no
 // recuo interno (`pb-3`), não no posicionamento: enquanto ela empurrava a dica
 // inteira para cima, sobrava uma faixa de conteúdo cru entre a lavagem e o card
@@ -32,7 +37,19 @@
 // estava; só o degradê desceu.
 import { HINT_GAP, hintMotionClass, hintScrollBehavior } from '~/presentation/moreBelow'
 
-const { sentinel, visible, offset, scrollToEnd } = useMoreBelow()
+// Dentro de uma caixa que rola (o corpo da folha, #2414), a dica mora na própria
+// caixa: grudada na base dela (`sticky`), sem teleporte, e o degradê desbota para
+// a cor da caixa, não da página.
+// `contained` decide o modo e não muda depois: o `container` chega só depois de a
+// caixa montar (a ref nasce vazia), e a decisão não pode esperar por ele.
+const props = withDefaults(defineProps<{
+  contained?: boolean
+  container?: HTMLElement | null
+  fadeFrom?: string
+}>(), { contained: false, container: null, fadeFrom: 'from-background' })
+const { sentinel, visible, offset, scrollToEnd } = useMoreBelow(
+  props.contained ? { container: () => props.container } : {}
+)
 
 // Menos movimento: a dica fica PARADA, não some. A informação é a mesma.
 const reducedMotion = ref(false)
@@ -63,7 +80,35 @@ function irAteOFim() {
     :style="{ scrollMarginBottom: `${offset}px` }"
     data-more-below-sentinel
   />
-  <ClientOnly>
+  <!-- Na caixa: altura zero e `sticky` na base, para a dica ficar na borda de baixo
+       da área à vista enquanto o conteúdo rola, sem somar altura ao fim dele. -->
+  <div v-if="contained" class="pointer-events-none sticky bottom-0 z-10 h-0" data-more-below-contained>
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      leave-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-to-class="opacity-0"
+    >
+      <div v-if="visible" class="absolute inset-x-0 bottom-0" data-more-below>
+        <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-75% to-transparent" :class="fadeFrom" aria-hidden="true" data-more-below-wash />
+        <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
+          <UiButton
+            type="button"
+            variant="ghost"
+            size="icon"
+            class="pointer-events-auto size-12 rounded-full bg-background/33 text-foreground ring-1 ring-border/40 backdrop-blur-sm hover:bg-background/60"
+            :class="motionClass"
+            aria-label="Ir para o fim do conteúdo"
+            data-more-below-jump
+            @click="irAteOFim"
+          >
+            <Icon name="lucide:chevron-down" class="size-6" />
+          </UiButton>
+        </div>
+      </div>
+    </Transition>
+  </div>
+  <ClientOnly v-else>
     <Teleport to="body">
       <Transition
         enter-active-class="transition-opacity duration-300"
@@ -77,7 +122,11 @@ function irAteOFim() {
                que é a própria mensagem. Mesmo par do bottom-sheet da loja.
                Mais alto que a pílula de propósito: ela precisa ficar DENTRO da
                lavagem, e a lavagem precisa chegar colada no card. -->
-          <div class="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background to-transparent" aria-hidden="true" />
+          <!-- A FAIXA DA PÍLULA É CHÃO LISO (OC-33 B1, Coordenação 24/11): os 60px de baixo
+               (folga + chevron) são cor de página, sem texto atrás; só os 20px de cima
+               dissolvem. A seta é chrome e nunca senta sobre conteúdo legível: o que rola
+               por baixo some como some atrás do card, e a pílula continua translúcida. -->
+          <div class="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-background from-75% to-transparent" aria-hidden="true" data-more-below-wash />
           <div class="relative flex justify-center" :style="{ paddingBottom: `${HINT_GAP}px` }">
             <!-- ⚠️ `UiButton`, nunca o controle nativo cru: a loja trava isso em
                  `app/pages` e `app/components` (tests/surfaceGuardrails), e a

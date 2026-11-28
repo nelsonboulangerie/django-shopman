@@ -6,6 +6,7 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 import RecipeHeader from "../../app/components/RecipeHeader.vue";
 import RecipeListPage from "../../app/pages/recipes/index.vue";
 import RecipeDetailPage from "../../app/pages/recipes/[ref]/index.vue";
+import RecipeEditPage from "../../app/pages/recipes/[ref]/edit.vue";
 import RecipeDuplicatePanel from "../../app/components/RecipeDuplicatePanel.vue";
 import RecipeExecutionFormPanel from "../../app/components/RecipeExecutionFormPanel.vue";
 import type { RecipeEntryCardProjection } from "../../app/types/recipeBook";
@@ -31,6 +32,10 @@ const OperatorPageHeaderStub = defineComponent({
         h("div", { "data-header-status": "" }, slots.status?.()),
         slots.search?.(),
         slots.actions?.(),
+        slots["filters-primary"]?.(),
+        slots["filter-panel"]?.(),
+        slots.filters?.(),
+        slots["filters-end"]?.(),
       ]);
   },
 });
@@ -46,6 +51,56 @@ const OperatorRecordNavStub = defineComponent({
   },
   setup(props) {
     return () => h("nav", { "data-record-nav": props.trail }, `${props.previousLabel} | ${props.nextLabel}`);
+  },
+});
+
+const OperatorQuickFiltersStub = defineComponent({
+  name: "OperatorQuickFilters",
+  props: { modelValue: Array, items: Array },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("div", { role: "toolbar" }, (props.items as { key: string; label: string }[]).map((item) =>
+      h("button", {
+        "data-quick-filter-item": item.key,
+        "aria-pressed": (props.modelValue as string[]).includes(item.key),
+        onClick: () => emit("update:modelValue", [...(props.modelValue as string[]), item.key]),
+      }, item.label),
+    ));
+  },
+});
+
+const OperatorScreenStateStub = defineComponent({
+  name: "OperatorScreenState",
+  props: { state: String, title: String },
+  setup(props, { slots }) {
+    return () => h("section", { "data-screen-state": props.state }, [props.title, slots.actions?.()]);
+  },
+});
+
+const OperatorFilterPanelStub = defineComponent({
+  name: "OperatorFilterPanel",
+  props: { dimensions: Array, modelValue: Object },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("div", { "data-filter-panel": (props.dimensions as { id: string }[]).map((item) => item.id).join(",") }, [
+      h("button", {
+        "data-filter-archived": "",
+        onClick: () => emit("update:modelValue", { ...(props.modelValue as object), archived: ["true"] }),
+      }, "Incluir arquivadas"),
+    ]);
+  },
+});
+
+const OperatorMoreMenuStub = defineComponent({
+  name: "OperatorMoreMenu",
+  props: { items: Array, label: String },
+  setup(props) {
+    return () => h("div", [
+      h("button", props.label || "Mais ações"),
+      ...(props.items as { label: string; onSelect?: () => void }[]).map((item) =>
+        h("button", { onClick: item.onSelect }, item.label),
+      ),
+    ]);
   },
 });
 
@@ -76,10 +131,14 @@ const stubs = {
   NuxtCard: passthrough("NuxtCard"),
   OperatorPageHeader: OperatorPageHeaderStub,
   OperatorSuiteSearch: true,
+  OperatorQuickFilters: OperatorQuickFiltersStub,
+  OperatorFilterPanel: OperatorFilterPanelStub,
+  OperatorScreenState: OperatorScreenStateStub,
   OperatorRecordNav: OperatorRecordNavStub,
   OperatorFormShell: OperatorFormShellStub,
   OperatorFormSection: passthrough("OperatorFormSection"),
   OperatorTable: true,
+  OperatorMoreMenu: OperatorMoreMenuStub,
   // O cabeçalho é o de verdade: é ele que repassa o `#status` ao `OperatorPageHeader`.
   RecipeHeader,
   FormulaLens: true,
@@ -101,7 +160,7 @@ function card(ref_: string, over: Partial<RecipeEntryCardProjection> = {}): Reci
     rating_display: "",
     rating_count: 0,
     draft_count: 0,
-    is_archived: false,
+    is_active: true,
     has_ficha: true,
     is_favorite: false,
     updated_at_display: "",
@@ -110,6 +169,7 @@ function card(ref_: string, over: Partial<RecipeEntryCardProjection> = {}): Reci
 }
 
 const entries = ref<RecipeEntryCardProjection[]>([]);
+const canEditRecipes = ref(true);
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -130,7 +190,7 @@ function installGlobals() {
       { value: "bread", label: "Pão" },
       { value: "cream", label: "Creme" },
     ]),
-    canEdit: computed(() => true),
+    canEdit: computed(() => canEditRecipes.value),
     forbidden: computed(() => false),
     pending: ref(false),
     error: ref(null),
@@ -147,6 +207,7 @@ beforeEach(() => {
   routeQuery = {};
   routeParams = {};
   entries.value = [];
+  canEditRecipes.value = true;
   installGlobals();
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -175,12 +236,27 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
-    const favorites = wrapper.findAll('[role="checkbox"]').find((box) => box.attributes("aria-label") === "Favoritas");
-    expect(favorites).toBeTruthy();
-    await favorites!.trigger("click");
+    const favorites = wrapper.find('[data-quick-filter-item="favorites"]');
+    expect(favorites.exists()).toBe(true);
+    await favorites.trigger("click");
     await nextTick();
 
     expect(remember).toHaveBeenLastCalledWith(["pao-a"], { from: "/recipes?favorites=1", label: "Favoritas" });
+  });
+
+  it("combines multiple quick filters without losing the active cut", async () => {
+    entries.value = [card("sem-sku", { is_favorite: true, output_sku: "" }), card("com-sku", { is_favorite: true })];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    await wrapper.find('[data-quick-filter-item="favorites"]').trigger("click");
+    await wrapper.find('[data-quick-filter-item="without_sku"]').trigger("click");
+    await nextTick();
+
+    expect(remember).toHaveBeenLastCalledWith(["sem-sku"], {
+      from: "/recipes?without_sku=1&favorites=1",
+      label: "Favoritas",
+    });
   });
 
   it("the star is a pressed-state toggle button, not a native control in the card link", async () => {
@@ -193,10 +269,55 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     expect(star.attributes("aria-label")).toContain("Receita pao-a");
     expect(star.element.closest("a")).toBeNull();
   });
+
+  it("offers an explicit edit route outside the card link", async () => {
+    entries.value = [card("pao-a")];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar");
+    expect(edit?.attributes("href")).toBe("/recipes/pao-a/edit");
+    expect(edit?.attributes("aria-label")).toBe("Editar Receita pao-a");
+    expect(edit?.element.parentElement?.closest("a")).toBeNull();
+  });
+
+  it("does not offer editing without permission or for an archived recipe", async () => {
+    entries.value = [card("arquivada", { is_active: false })];
+    let wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
+
+    wrapper.unmount();
+    entries.value = [card("ativa")];
+    canEditRecipes.value = false;
+    wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
+  });
+
+  it("uses the suite filter panel and screen state instead of parallel list controls", async () => {
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-filter-panel='kind,mode,archived']").exists()).toBe(true);
+    expect(wrapper.find('[data-screen-state="empty"]').text()).toContain("Nenhuma receita cadastrada");
+    expect(wrapper.findAll('[role="checkbox"]')).toHaveLength(0);
+  });
+
+  it("treats archived as an active filter when the list is empty", async () => {
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    await wrapper.find("[data-filter-archived]").trigger("click");
+    await nextTick();
+
+    expect(wrapper.find('[data-screen-state="empty"]').text()).toContain("corresponde aos filtros");
+    expect(remember).toHaveBeenLastCalledWith([], { from: "/recipes?archived=1", label: "Receitas" });
+  });
 });
 
 describe("Receita: anterior e próxima no cabeçalho", () => {
-  function installEntry(over: Record<string, unknown> = {}) {
+  function installEntry(over: Record<string, unknown> = {}, canEdit = true, versionOver: Record<string, unknown> = {}) {
     const version = {
       id: 1,
       number: 1,
@@ -204,7 +325,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       status_label: "Rascunho",
       label: "",
       yield_display: "",
-      lens: { items: [] },
+      lens: { ingredients: [] },
       steps: [],
       notes: "",
       revision: "2026-10-14T02:03:04+00:00",
@@ -228,6 +349,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       formula: {},
       yield_quantity: "1",
       yield_unit: "kg",
+      ...versionOver,
     };
     const entry = ref({
       ref: "pao-b",
@@ -237,7 +359,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
       output_sku: "",
       output_name: "",
       ficha_ref: "",
-      is_archived: false,
+      is_active: true,
       is_favorite: false,
       notes: "",
       current_version_number: null,
@@ -248,9 +370,9 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     });
     vi.stubGlobal("useRecipeEntry", () => ({
       entry,
-      canEdit: computed(() => true),
+      canEdit: computed(() => canEdit),
       versions: computed(() => [version]),
-      currentVersion: computed(() => null),
+      currentVersion: computed(() => entry.value.current_version_number === version.number ? version : null),
       versionByNumber: () => null,
       notFound: computed(() => false),
       forbidden: computed(() => false),
@@ -277,6 +399,53 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     }));
   }
 
+  it("avisa quem só lê que a versão em uso ainda precisa de conferência", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ current_version_number: 1 }, false, {
+      status: "published", review_status: "pending", review_label: "Não conferida",
+    });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    const warning = wrapper.findAll('[role="alert"]').find((item) => item.text().includes("Conferência pendente"));
+    expect(warning?.text()).toContain("Peça ao responsável para conferir ingredientes, rendimento e modo de preparo antes de usar.");
+    expect(warning?.findAll("button")).toHaveLength(0);
+  });
+
+  it("reads the batches each version made: the timeline line and the card of the selected one (#2387)", async () => {
+    routeParams = { ref: "pao-b" };
+    const usageRow = {
+      version_ref: "pao-b@1", version_number: 1, is_versioned: true, label: "Versão 1", batches: 12,
+      batches_display: "12 lotes", planned_display: "", finished_display: "", loss_display: "", yield_pct: "96",
+      yield_display: "96%", started_assumed_batches: 0, avg_loss: "", avg_loss_display: "", loss_pct_display: "",
+      summary_display: "12 lotes; aproveitamento médio 96%",
+      quality: [{ grade_ref: "a", label: "Primeira", quantity_display: "110", share_display: "92%" }],
+    };
+    installEntry(
+      { current_version_number: 1, usage: { date_from: "", date_to: "", bake_loss_basis: "", caveats: [], versions: [usageRow], unversioned: null } },
+      true,
+      { status: "published", status_label: "Publicada" },
+    );
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-version-usage]").text()).toBe("12 lotes · aproveitamento 96%");
+    const card = wrapper.find("[data-version-batches]");
+    expect(card.text()).toContain("Lotes da versão 1");
+    expect(card.text()).toContain("12 lotes; aproveitamento médio 96%.");
+    expect(card.text()).toContain("Primeira: 110 (92%)");
+  });
+
+  it("a version that never baked says so, without a usage line", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry();
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-version-usage]").exists()).toBe(false);
+    expect(wrapper.find("[data-version-batches]").text()).toContain("Nenhum lote fechado com esta versão.");
+  });
+
   it("puts OperatorRecordNav in the header status with the recipe trail and recipe addresses", async () => {
     routeParams = { ref: "pao-b" };
     installEntry();
@@ -290,6 +459,32 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     expect(nav.props("current")).toBe("pao-b");
     expect((nav.props("to") as (id: string) => string)("pao-c")).toBe("/recipes/pao-c");
     expect(nav.text()).toBe("Receita anterior | Próxima receita");
+  });
+
+  it("offers one direct Editar action in the detail header", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry();
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    const edit = wrapper.findAll("a").find((link) => link.text() === "Editar");
+    expect(edit?.attributes("href")).toBe("/recipes/pao-b/edit");
+    expect(wrapper.text()).not.toContain("Editar rascunho");
+    expect(wrapper.text()).not.toContain("Nova versão");
+  });
+
+  it("does not offer editing without permission or for an archived recipe", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({}, false);
+    let wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
+
+    wrapper.unmount();
+    installEntry({ is_active: false });
+    wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+    expect(wrapper.findAll("a").some((link) => link.text() === "Editar")).toBe(false);
   });
 
   it("publishing without SKU says why and leads to the fix", async () => {
@@ -309,7 +504,40 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await nextTick();
 
     expect(wrapper.find('[data-overlay="NuxtModal"]').exists()).toBe(false);
-    expect(wrapper.find('input[aria-label="SKU do produto"]').exists()).toBe(true);
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit");
+  });
+
+  it("an empty formula does not publish, and the header seal says only the version (PROD-02, PROD-14)", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ output_sku: "PAO-B" });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.findComponent(OperatorPageHeaderStub).props("eyebrow")).toBe("Receitas · Versão 1");
+    await wrapper.findAll("button").find((button) => button.text() === "Publicar")!.trigger("click");
+    await nextTick();
+
+    const dialog = wrapper.find('[data-overlay="NuxtModal"]');
+    expect(dialog.text()).toContain("Adicione ao menos um ingrediente antes de publicar.");
+    const confirm = dialog.findAll("button").filter((button) => button.text() === "Publicar").at(-1);
+    expect(confirm?.attributes("disabled")).toBeDefined();
+  });
+
+  it("shows the archived state and names the return gesture Desarquivar", async () => {
+    routeParams = { ref: "pao-b" };
+    installEntry({ is_active: false });
+    const wrapper = mount(RecipeDetailPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Arquivada");
+    const unarchive = wrapper.findAll("button").find((button) => button.text() === "Desarquivar receita");
+    expect(unarchive).toBeTruthy();
+    await unarchive!.trigger("click");
+    await nextTick();
+
+    const dialog = wrapper.find('[data-overlay="NuxtModal"]');
+    expect(dialog.text()).toContain("Desarquivar a receita");
+    expect(dialog.text()).toContain("Ela volta à lista de receitas e pode receber versões de novo.");
   });
 });
 
@@ -353,7 +581,7 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "2026-10-14T02:03:04+00:00",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
@@ -362,7 +590,7 @@ describe("Receitas: cadastros turbinados", () => {
     await inputs[2].setValue("4");
     await nextTick();
     expect(wrapper.find('[role="checkbox"][aria-label="Prazo revisado pelo responsável"]').attributes("aria-checked")).toBe("false");
-    await wrapper.findAll("button").find((button) => button.text() === "Salvar")!.trigger("click");
+    await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("save")?.[0]?.[0]).toMatchObject({
       shelfLifeDays: 4,
@@ -386,15 +614,159 @@ describe("Receitas: cadastros turbinados", () => {
       revision: "rev-1",
     };
     const wrapper = mount(RecipeExecutionFormPanel, {
-      props: { open: true, execution },
+      props: { execution },
       global: { stubs },
     });
     await nextTick();
     await wrapper.findAll("input")[2].setValue("1.5");
     await nextTick();
 
-    const shell = wrapper.findComponent(OperatorFormShellStub);
-    expect(shell.props("saveDisabled")).toBe(true);
-    expect(shell.props("saveDisabledReason")).toContain("número inteiro");
+    const saveButton = wrapper.findAll("button").find((button) => button.text() === "Salvar configuração")!;
+    expect(saveButton.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("número inteiro");
+  });
+});
+
+describe("Receitas: achados do beta de 05/11/2026", () => {
+  it("the list says a published recipe left production because another one uses the SKU (PROD-06)", async () => {
+    entries.value = [
+      card("pao-joyce-2", { has_ficha: false, ficha_status: "replaced", ficha_status_label: "Fora da produção", ficha_status_detail: "Pão Joyce usa este SKU" } as Partial<RecipeEntryCardProjection>),
+      card("pao-joyce", { has_ficha: true, ficha_status: "in_use", ficha_status_label: "", ficha_status_detail: "" } as Partial<RecipeEntryCardProjection>),
+    ];
+    const wrapper = mount(RecipeListPage, { global: { stubs } });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Fora da produção");
+    // Frase não vai dentro do selo (o selo sai em iniciais maiúsculas): fica ao lado.
+    expect(wrapper.find("[data-recipe-ficha-detail]").text()).toBe("Pão Joyce usa este SKU");
+    expect(wrapper.text()).not.toContain("Ainda não publicada");
+  });
+
+  const servedFormula = { anchor: { kind: "flour" }, basis_g: null, ingredients: [] };
+  const published = {
+    id: 1,
+    number: 1,
+    status: "published",
+    revision: "rev-1",
+    formula: servedFormula,
+    yield_quantity: "1500",
+    yield_unit: "g",
+    steps: [],
+    notes: "",
+    label: "",
+    origin: null,
+    lens: { ingredients: [] },
+  };
+
+  function installEditor(over: Record<string, unknown> = {}) {
+    const entry = ref({
+      ref: "pao-b",
+      name: "Pão Beta MG Joyce",
+      kind: "bread",
+      output_sku: "PAO-B",
+      notes: "",
+      is_active: true,
+      revision: "rev-entry",
+      versions: [published] as Record<string, unknown>[],
+      ...over,
+    });
+    const createVersion = vi.fn(async () => ({ ok: true, version: { number: 2, status: "draft" } }));
+    const updateDraft = vi.fn(async () => ({ ok: true }));
+    vi.stubGlobal("useRecipeEntry", () => ({
+      entry,
+      canEdit: computed(() => true),
+      latestDraft: computed(() => entry.value.versions.find((version) => version.status === "draft") ?? null),
+      versionByNumber: (number: number | null) => entry.value.versions.find((version) => version.number === number) ?? null,
+      notFound: computed(() => false),
+      forbidden: computed(() => false),
+      pending: ref(false),
+      error: ref(null),
+      refresh: vi.fn(),
+      busy: ref(false),
+      patchEntry: vi.fn(async () => ({ ok: true })),
+      saveExecution: vi.fn(async () => ({ ok: true })),
+      createVersion,
+      updateDraft,
+      publish: vi.fn(async () => ({ ok: true })),
+    }));
+    vi.stubGlobal("useFormulaLens", () => ({
+      lens: ref(null),
+      pending: ref(false),
+      error: ref(null),
+      standardizing: ref(false),
+      standardize: vi.fn(),
+    }));
+    vi.stubGlobal("useNextFocus", () => {});
+    vi.stubGlobal("useTouchPointer", () => ref(false));
+    vi.stubGlobal("useConfirm", () => vi.fn(async () => true));
+    vi.stubGlobal("onBeforeRouteLeave", () => {});
+    vi.stubGlobal("onMounted", () => {});
+    return { createVersion, updateDraft };
+  }
+
+  const editorStubs = {
+    ...stubs,
+    NuxtInputNumber: true,
+    NuxtSelectMenu: true,
+    IngredientPicker: true,
+    OperatorActionBar: true,
+    OperatorFieldRow: true,
+    RecipeExecutionFormPanel: true,
+    NuxtCard: passthrough("NuxtCard"),
+  };
+
+  it("opening the editor writes nothing: the draft is born on the first save (PROD-10)", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor();
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(createVersion).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(wrapper.text()).not.toContain("Preparando edição");
+
+    await wrapper.find('button[aria-label="Salvar rascunho"]').trigger("click");
+    await flushPromises();
+
+    expect(createVersion).toHaveBeenCalledTimes(1);
+    expect(createVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ from_version: 1, yield_quantity: "1500", yield_unit: "g", expectedRevision: "rev-entry" }),
+    );
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit?v=2", { replace: true });
+  });
+
+  it("an existing draft is reopened, not duplicated", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor({ versions: [{ ...published, number: 2, status: "draft", revision: "rev-2" }, published] });
+    mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(createVersion).not.toHaveBeenCalled();
+    expect(navigate).toHaveBeenCalledWith("/recipes/pao-b/edit?v=2", { replace: true });
+  });
+
+  it("the header carries the recipe name and a short seal, and publishing waits for an ingredient (PROD-11, PROD-02)", async () => {
+    routeParams = { ref: "pao-b" };
+    installEditor();
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    const header = wrapper.findComponent(OperatorPageHeaderStub);
+    expect(header.props("title")).toBe("Pão Beta MG Joyce");
+    expect(header.props("eyebrow")).toBe("Receitas · Nova versão");
+    const publish = wrapper.find('button[aria-label="Salvar e publicar"]');
+    expect(publish.attributes("disabled")).toBeDefined();
+    expect(publish.attributes("title")).toBe("Adicione ao menos um ingrediente antes de publicar.");
+  });
+
+  it("an archived recipe does not open an editor", async () => {
+    routeParams = { ref: "pao-b" };
+    const { createVersion } = installEditor({ is_active: false });
+    const wrapper = mount(RecipeEditPage, { global: { stubs: editorStubs } });
+    await flushPromises();
+
+    expect(wrapper.find("[data-editor-archived]").exists()).toBe(true);
+    expect(wrapper.find('button[aria-label="Salvar rascunho"]').exists()).toBe(false);
+    expect(createVersion).not.toHaveBeenCalled();
   });
 });

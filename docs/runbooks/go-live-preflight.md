@@ -91,7 +91,9 @@ com efeito real só acontecem com autorização explícita no momento da ação.
 
 ## 5. Segurança e operação física
 
-- [ ] contas reais sem credenciais triviais;
+- [ ] **antes do go-live**, trocar a senha provisória `admin/admin` do Admin de
+  produção por uma credencial forte do dono. Decisão de 29/10/2026: ela pode
+  permanecer durante o alpha, mas a troca é bloqueador obrigatório do corte;
 - [ ] enrollment/recovery de 2FA concluído antes de qualquer flag global;
 - [ ] ingress/admin aprovado; origem e proxy validados;
 - [ ] alerta sintético recebido por pessoa autorizada;

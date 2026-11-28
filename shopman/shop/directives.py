@@ -31,6 +31,8 @@ NOTIFICATION_PUSH_RECEIPT_SCOPE = "notification:push"
 # A lista fechada evita que um topic novo seja cancelado por acidente.
 PERSONAL_ORDER_DELIVERY_TOPICS = frozenset({NOTIFICATION_SEND, NOTIFICATION_PUSH})
 STOCK_ALERT_DELIVER = "stock_alert.deliver"
+# A reserva venceu: a vitrine relê o SKU no prazo (services/shelf_recheck.py, #2785).
+STOCK_SHELF_RECHECK = "stock.shelf_recheck"
 STOCK_ALERT_DELIVERY_RECEIPT_SCOPE = "stock_alert:delivery"
 
 # Receipts permanentes para a identidade de entrega. O envio original e os
@@ -90,6 +92,13 @@ KDS_TICKET_LATE = "kds.ticket_late"
 # data — esta directive é o despertador (available_at = meia-noite da data).
 PREORDER_ACTIVATE = "preorder.activate"
 
+# Estoque: insumo do item feito na hora (ADR-040)
+# A venda baixa o insumo da ficha marcada ``made_to_order`` (uma vez por pedido,
+# recibo permanente); o cancelamento acerta: o não preparado volta (RETURN), o
+# preparado vira perda (WASTE). ``services/made_to_order.py``.
+STOCK_CONSUME_MADE_TO_ORDER = "stock.consume_made_to_order"
+STOCK_SETTLE_MADE_TO_ORDER_CANCELLATION = "stock.settle_made_to_order_cancellation"
+
 
 # Fiscal
 FISCAL_EMIT_NFCE = "fiscal.emit_nfce"
@@ -134,6 +143,11 @@ ANNOUNCEMENT_NOTIFY = "announcement.notify"
 # irrelevante e a de disparar é de segundos. Uma relâmpago das 17h30 sai às 17h30.
 CAMPAIGN_OCCUR = "campaign.occur"
 
+
+# Incidentes (DEV-2026-066): um alerta com remédio na lista fechada ganha uma
+# directive que planeja, aciona o gesto do domínio e se reagenda para conferir.
+# Uma viva por alerta (dedupe ``incident.act:<alert_id>``). Docs: incidents.md.
+INCIDENT_ACT = "incident.act"
 
 # ── Queue helper ──
 

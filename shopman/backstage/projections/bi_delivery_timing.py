@@ -12,10 +12,15 @@ conta que o modelo vai usar. Nada é estimado aqui: são medianas do que acontec
   Recortado por SKU (o pedido entra em cada SKU que contém), hora e dia da semana
   do início.
 - **Chegada do entregador** = da corrida aberta na central
-  (``Order.data["courier"]["requested_at"]``) até o aceite (``status_at["A"]``) e
-  até a coleta (``status_at["E"]``). Inclui as corridas que falharam e foram
+  (``Order.data["courier"]["requested_at"]``) até o aceite (``RideState.ASSIGNED``) e
+  até a coleta (``RideState.ON_ROUTE``), pela hora de cada estado
+  (``delivery_services.state_since``). Inclui as corridas que falharam e foram
   arquivadas em ``attempts`` (só têm aceite se a central aceitou). Recortado por
   hora e dia da semana da chamada.
+- **Por serviço** (#2467): a mesma corrida, UMA vez por ``ride_ref`` (numa corrida
+  com três pedidos, cada pedido tem o seu bloco, e a corrida conta uma vez), com o
+  nome do cadastro do serviço e quatro medianas: até aceitar, até a coleta, na rua
+  (da coleta à última entrega) e o total (da chamada à última entrega).
 
 Tudo calculado na leitura (ADR-021 §3), janela default de 28 dias.
 """
@@ -27,6 +32,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+
+from shopman.shop.protocols import RideState
+from shopman.shop.services import delivery_services
 
 DEFAULT_WINDOW_DAYS = 28
 MAX_WINDOW_DAYS = 366
@@ -61,6 +69,45 @@ class BIDeliveryTimingReport:
     courier_accept_by_weekday: tuple[BITimingRow, ...]
     courier_pickup_by_hour: tuple[BITimingRow, ...]
     courier_pickup_by_weekday: tuple[BITimingRow, ...]
+    #: Um serviço por linha, na ordem do nome, e o total embaixo (``service`` = ``TOTAL_KEY``).
+    services: tuple[BIRideTimingService, ...] = ()
+
+
+#: A chave da linha do total na tabela por serviço.
+TOTAL_KEY = "__total__"
+
+
+@dataclass(frozen=True)
+class BIRideTimingService:
+    """Os tempos das corridas de um serviço: quantas e a mediana de cada trecho, em minutos.
+
+    ``None`` quando nenhuma corrida do serviço chegou àquele marco no período.
+    """
+
+    service: str
+    name: str
+    rides: int
+    accept_minutes: float | None
+    pickup_minutes: float | None
+    street_minutes: float | None
+    total_minutes: float | None
+
+
+@dataclass
+class _Ride:
+    service: str
+    requested: datetime
+    assigned: datetime | None = None
+    on_route: datetime | None = None
+    done: datetime | None = None
+
+
+def _earliest(current: datetime | None, other: datetime | None) -> datetime | None:
+    return other if current is None or (other is not None and other < current) else current
+
+
+def _latest(current: datetime | None, other: datetime | None) -> datetime | None:
+    return other if current is None or (other is not None and other > current) else current
 
 
 def _median(values: list[float]) -> float:
@@ -82,6 +129,14 @@ def _parse(value) -> datetime | None:
 
 def _minutes(start: datetime | None, end: datetime | None) -> float | None:
     if start is None or end is None or end <= start:
+        return None
+    return (end - start).total_seconds() / 60
+
+
+def _ride_minutes(start: datetime | None, end: datetime | None) -> float | None:
+    """Como ``_minutes``, mas o marco no mesmo instante da chamada vale zero: o entregador
+    da casa aceita quando é chamado, e esse zero é medida, não falta dela."""
+    if start is None or end is None or end < start:
         return None
     return (end - start).total_seconds() / 60
 
@@ -180,28 +235,40 @@ def build_bi_delivery_timing(*, date_from: date | None = None, date_to: date | N
     prep_hour, prep_weekday = _by_hour_and_weekday(list(measured.values()))
 
     # ── Chegada do entregador ──
-    accept: list[tuple[datetime, float]] = []
-    pickup: list[tuple[datetime, float]] = []
-    rides = 0
+    # Uma corrida por ``ride_ref``: cada pedido dela guarda o seu bloco, com a sua parada.
+    # A corrida chegou a cada marco quando o PRIMEIRO pedido chegou (aceite, coleta) e
+    # terminou quando o ÚLTIMO foi entregue.
+    from shopman.shop.models import DeliveryService
+
+    default = DeliveryService.default()
+    default_ref = default.ref if default else ""
+    rides_by_key: dict[str, _Ride] = {}
     courier_orders = Order.objects.filter(data__has_key="courier", created_at__gte=since - timedelta(days=1), created_at__lt=until)
     for order in courier_orders:
         block = (order.data or {}).get("courier") or {}
         if not isinstance(block, dict):
             continue
-        for ride in [*(block.get("attempts") or []), block]:
+        for index, ride in enumerate([*(block.get("attempts") or []), block]):
             if not isinstance(ride, dict):
                 continue
             requested = _parse(ride.get("requested_at"))
             if requested is None or not (since <= requested < until):
                 continue
-            rides += 1
-            status_at = ride.get("status_at") or {}
-            accepted = _minutes(requested, _parse(status_at.get("A")))
-            if accepted is not None:
-                accept.append((requested, accepted))
-            picked = _minutes(requested, _parse(status_at.get("E")))
-            if picked is not None:
-                pickup.append((requested, picked))
+            # A corrida arquivada antes de guardar o serviço abriu pelo do bloco (ou pelo padrão).
+            service = str(ride.get("service") or block.get("service") or default_ref)
+            reading = {**ride, "service": service}
+            key = str(ride.get("ride_ref") or "") or f"{order.pk}:{index}"
+            entry = rides_by_key.get(key)
+            if entry is None:
+                entry = rides_by_key[key] = _Ride(service=service, requested=requested)
+            entry.requested = min(entry.requested, requested)
+            # O estado da casa, não a letra do serviço (M1b-b, #2552).
+            entry.assigned = _earliest(entry.assigned, _parse(delivery_services.state_since(reading, RideState.ASSIGNED)))
+            entry.on_route = _earliest(entry.on_route, _parse(delivery_services.state_since(reading, RideState.ON_ROUTE)))
+            entry.done = _latest(entry.done, _parse(delivery_services.state_since(reading, RideState.DONE)))
+    rides = len(rides_by_key)
+    accept = [(r.requested, m) for r in rides_by_key.values() if (m := _ride_minutes(r.requested, r.assigned)) is not None]
+    pickup = [(r.requested, m) for r in rides_by_key.values() if (m := _ride_minutes(r.requested, r.on_route)) is not None]
     accept_hour, accept_weekday = _by_hour_and_weekday(accept)
     pickup_hour, pickup_weekday = _by_hour_and_weekday(pickup)
 
@@ -218,7 +285,41 @@ def build_bi_delivery_timing(*, date_from: date | None = None, date_to: date | N
         courier_accept_by_weekday=accept_weekday,
         courier_pickup_by_hour=pickup_hour,
         courier_pickup_by_weekday=pickup_weekday,
+        services=_service_rows(list(rides_by_key.values())),
     )
 
 
-__all__ = ["BIDeliveryTimingReport", "BITimingRow", "build_bi_delivery_timing", "prep_start"]
+def _service_rows(rides: list[_Ride]) -> tuple[BIRideTimingService, ...]:
+    """Um serviço por linha, na ordem do nome do cadastro, e o total embaixo."""
+    from shopman.shop.models import DeliveryService
+
+    if not rides:
+        return ()
+    names = dict(DeliveryService.objects.filter(ref__in={r.service for r in rides}).values_list("ref", "name"))
+
+    def row(service: str, name: str, group: list[_Ride]) -> BIRideTimingService:
+        def median(pairs) -> float | None:
+            values = [m for start, end in pairs if (m := _ride_minutes(start, end)) is not None]
+            return _median(values) if values else None
+
+        return BIRideTimingService(
+            service=service,
+            name=name,
+            rides=len(group),
+            accept_minutes=median((r.requested, r.assigned) for r in group),
+            pickup_minutes=median((r.requested, r.on_route) for r in group),
+            street_minutes=median((r.on_route, r.done) for r in group),
+            total_minutes=median((r.requested, r.done) for r in group),
+        )
+
+    by_service: dict[str, list[_Ride]] = defaultdict(list)
+    for ride in rides:
+        by_service[ride.service].append(ride)
+    rows = sorted(
+        (row(ref, names.get(ref) or delivery_services.SERVICE_FALLBACK_NAME, group) for ref, group in by_service.items()),
+        key=lambda item: item.name.lower(),
+    )
+    return (*rows, row(TOTAL_KEY, "Todos os serviços", rides))
+
+
+__all__ = ["TOTAL_KEY", "BIDeliveryTimingReport", "BIRideTimingService", "BITimingRow", "build_bi_delivery_timing", "prep_start"]

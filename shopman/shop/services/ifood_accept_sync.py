@@ -31,6 +31,7 @@ from dataclasses import dataclass
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
 
@@ -44,8 +45,6 @@ EVENT_FAILED = "ifood_accept_failed"
 EVENT_SENT = "ifood_accept_sent"
 EVENT_RETRIED = "ifood_accept_retried"
 EVENT_CONFIRMED = "ifood_accept_confirmed"
-EVENTS = (EVENT_FAILED, EVENT_SENT, EVENT_RETRIED, EVENT_CONFIRMED)
-
 _REMOTE_MARKERS = ("remote_confirmed", "remote_dispatched", "remote_concluded")
 
 
@@ -156,15 +155,11 @@ def deadline(order):
     return value if value is not None and timezone.is_aware(value) else None
 
 
-def notice_title() -> str:
-    return "O iFood ainda não recebeu o aceite"
-
-
 def notice_text(order) -> str:
     """A frase inteira, para o alerta e para o detalhe: o fato, o prazo e o gesto."""
     when = deadline(order)
     if when is not None and when > timezone.now():
-        clock = timezone.localtime(when).strftime("%H:%M")
+        clock = format_clock(when)
         deadline_line = f" Se não receber até {clock}, o iFood cancela o pedido sozinho."
     elif when is not None:
         deadline_line = " O prazo do iFood para o aceite já passou: confira no iFood se o pedido segue ativo."
@@ -297,7 +292,6 @@ __all__ = [
     "deadline",
     "latest_directives",
     "notice_text",
-    "notice_title",
     "on_attempt_failed",
     "on_remote_confirmed",
     "on_sent",

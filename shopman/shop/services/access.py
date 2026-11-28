@@ -13,10 +13,73 @@ SOURCE_TO_ORIGIN = {
 }
 
 
+#: As audiências que a porta da loja (``/a`` → ``api/v1/auth/access/``) troca por sessão
+#: (OC-09). Cada uma nomeia um lugar da loja: a entrada geral (WhatsApp, ``#menu``,
+#: código NB, aviso, travessia de navegador, Concierge), o Finalizar (link pessoal de
+#: campanha, ``campaign_identity``) e a Conta. ``web_support`` não tem porta na loja:
+#: um link cunhado para suporte não abre sessão de cliente aqui.
+STORE_ENTRY_AUDIENCES = ("web_general", "web_checkout", "web_account")
+
+#: Teto do prazo de um link pedido pela API servidor a servidor (``api/auth/access/create/``).
+#: O mesmo teto do link de campanha (``campaign_identity.MAX_HOURS``): a mensagem fica no
+#: dispositivo para sempre, o crachá dentro dela não.
+S2S_LINK_MAX_TTL_MINUTES = 24 * 60
+
+
+def token_audience(token_str: str) -> str:
+    """A audiência do token, lida antes do resgate (``""`` quando o token não existe)."""
+    if not token_str:
+        return ""
+    try:
+        from shopman.doorman.models import AccessLink
+
+        token = AccessLink.get_by_token(token_str)
+        return getattr(token, "audience", "") or "" if token else ""
+    except Exception:
+        logger.exception("access_link_token_audience_failed")
+        return ""
+
+
+def s2s_link_request_error(*, ttl_minutes, audience) -> str:
+    """Por que a API servidor a servidor não cunha este link, ou ``""`` quando cunha.
+
+    Prazo acima do teto é RECUSADO, não truncado: quem chama é uma máquina configurada
+    uma vez (o External Request do ManyChat), e truncar em silêncio deixaria a
+    configuração errada viva para sempre, prometendo um prazo que o link não tem. O
+    contrato documentado não manda ``ttl_minutes`` (vale o padrão de 5 minutos), então
+    a entrada pelo WhatsApp não muda. Audiência sem porta na loja também é recusada
+    aqui, na hora de cunhar: um link que nenhuma porta aceita chegaria ao cliente como
+    "este link expirou".
+    """
+    if ttl_minutes is not None:
+        if isinstance(ttl_minutes, bool) or not isinstance(ttl_minutes, int | float):
+            return "ttl_minutes deve ser um número de minutos."
+        if ttl_minutes > S2S_LINK_MAX_TTL_MINUTES:
+            return f"ttl_minutes passa do teto de {S2S_LINK_MAX_TTL_MINUTES} minutos (24 horas)."
+    if audience is not None and audience not in STORE_ENTRY_AUDIENCES:
+        return "audience sem porta na loja: use " + ", ".join(STORE_ENTRY_AUDIENCES) + "."
+    return ""
+
+
 def exchange_token(token_str: str, request):
     from shopman.doorman import get_access_link_service
+    from shopman.doorman.error_codes import ErrorCode
+    from shopman.doorman.services.access_link import AuthResult
 
     from shopman.shop.services.customer_sign_in import mark_method
+
+    # A audiência é aplicada na troca (OC-09). O ``required_audience`` do doorman
+    # compara UMA audiência; a porta da loja aceita as suas (``STORE_ENTRY_AUDIENCES``),
+    # então a régua é lida aqui, antes do resgate. A audiência não muda depois de
+    # cunhada, então ler antes do lock não abre corrida.
+    audience = token_audience(token_str)
+    if audience and audience not in STORE_ENTRY_AUDIENCES:
+        logger.warning("access_link_exchange_wrong_audience audience=%s", audience)
+        return AuthResult(
+            success=False,
+            error="Wrong audience for the store entry.",
+            error_code=ErrorCode.TOKEN_INVALID,
+        )
 
     AccessLinkService = get_access_link_service()
     mark_method(request, "access_link")
@@ -25,6 +88,34 @@ def exchange_token(token_str: str, request):
         request=request,
         preserve_session_keys=["cart_session_key"],
     )
+
+
+def redeem_without_session(token_str: str) -> bool:
+    """Gasta o link de uso único SEM abrir sessão: o convite que leva só a sacola (OC-18, #3529).
+
+    A mesma régua da troca que abre sessão (``exchange_token``): a audiência da porta da
+    loja e o portão de validade do doorman (``Gates.access_link_validity``: usado, vencido),
+    sob a trava da linha do link. O link é marcado usado sem usuário: ninguém entrou. Quem
+    o recebe é a sacola, nunca a conta (condição 1); ele vale uma vez e no mesmo prazo do
+    convite de hoje (condição 2). ``False`` quando não vale, sem dizer por quê.
+    """
+    from django.db import transaction
+    from shopman.doorman.exceptions import GateError
+    from shopman.doorman.gates import Gates
+    from shopman.doorman.models import AccessLink
+
+    if not token_str:
+        return False
+    with transaction.atomic():
+        token = AccessLink.get_by_token(token_str, for_update=True)
+        if token is None or token.audience not in STORE_ENTRY_AUDIENCES:
+            return False
+        try:
+            Gates.access_link_validity(token)
+        except GateError:
+            return False
+        token.mark_used(None)
+    return True
 
 
 def token_metadata(token_str: str) -> dict:
@@ -116,7 +207,7 @@ def resolve_origin(result) -> str:
 
         token = (
             AccessLink.objects.filter(
-                customer_id=result.customer.uuid,
+                customer_id=result.customer.subject_id,
             )
             .order_by("-created_at")
             .first()
@@ -132,6 +223,93 @@ def resolve_origin(result) -> str:
         logger.exception("access_link_resolve_origin_failed")
 
     return SOURCE_TO_ORIGIN.get(source, "web")
+
+
+# ── Login do site pelo WhatsApp: o destino fica com o navegador que começou ─────
+#
+# ⚠️ DEV-2026-092 (fala do dono): a cliente tocou em Finalizar, entrou pelo WhatsApp e
+# caiu fora do checkout, tendo de tocar em Finalizar de novo. O destino viaja com a
+# referência NB-… da mensagem pronta, e a referência é de uso único: a mesma mensagem
+# processada duas vezes (reenvio, repetição do External Request), o texto que não chega
+# ao ManyChat ou a referência vencida deixam o link da resposta só com o destino genérico
+# do ManyChat (``"/menu"``). O botão da resposta abre a loja numa aba nova do MESMO
+# navegador, e ali a sacola estava (o cookie é o mesmo), mas o destino não.
+#
+# Por isso o servidor guarda o destino também na SESSÃO do navegador que começou a
+# entrar, junto da tentativa (``WhatsAppVerifyStartView``). A troca do link lê esse
+# destino quando o link não traz o do site. Navegador que não começou a entrar não tem
+# nada guardado, e quem decide é o link, como sempre.
+LOGIN_DESTINATION_SESSION_KEY = "shopman:login-destination"
+#: Rotas que nunca são destino de volta: voltar para a entrada é um laço.
+_AUTH_ROUTES = ("/entrar", "/a")
+
+
+def _destination_path(raw: str) -> str:
+    """Só caminho interno da loja, e nunca a própria entrada."""
+    value = str(raw or "").strip()
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return ""
+    bare = value.split("?", 1)[0].split("#", 1)[0].rstrip("/") or "/"
+    if any(bare == route or bare.startswith(f"{route}/") for route in _AUTH_ROUTES):
+        return ""
+    return value
+
+
+def remember_login_destination(request, next_path: str) -> None:
+    """Guarda na sessão deste navegador para onde a tentativa de entrar volta.
+
+    Vale pelo mesmo prazo da referência NB-… (``LINK_STATE_TTL_SECONDS``). Tentativa
+    sem destino apaga o anterior: o que vale é o último gesto da pessoa.
+    """
+    import time
+
+    from shopman.doorman.conf import get_doorman_settings
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    path = _destination_path(next_path)
+    if not path:
+        session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+        return
+    session[LOGIN_DESTINATION_SESSION_KEY] = {
+        "path": path,
+        "until": time.time() + get_doorman_settings().LINK_STATE_TTL_SECONDS,
+    }
+
+
+def pop_login_destination(request) -> str:
+    """O destino que este navegador guardou ao começar a entrar (uso único), ou ``""``."""
+    import time
+
+    session = getattr(request, "session", None)
+    if session is None:
+        return ""
+    stored = session.pop(LOGIN_DESTINATION_SESSION_KEY, None)
+    if not isinstance(stored, dict):
+        return ""
+    try:
+        until = float(stored.get("until") or 0)
+    except (TypeError, ValueError):
+        return ""
+    if until < time.time():
+        return ""
+    return _destination_path(str(stored.get("path") or ""))
+
+
+def link_carries_site_context(metadata) -> bool:
+    """O link nasceu da referência NB-… do site, resolvida (destino e sacola vieram nela).
+
+    A referência sempre deixa uma marca no link: ``site_return`` (login começado no
+    celular), ``released`` (a aba do computador ficou liberável) ou a sacola que viajou.
+    Sem nenhuma delas, o ``next`` do link é o genérico de quem o pediu (o ``"/menu"`` do
+    ManyChat), nunca o destino do site.
+    """
+    if not isinstance(metadata, dict):
+        return False
+    return bool(
+        metadata.get("site_return") or metadata.get("released") or metadata.get("cart_session_key")
+    )
 
 
 # ── Login do site pelo WhatsApp: a aba de origem entra sozinha ──────────────────
@@ -160,19 +338,155 @@ def site_origin_label(request) -> str:
     return describe_user_agent(str(request.META.get("HTTP_USER_AGENT", "") or ""))[:60]
 
 
+# ⚠️ A escada sem fricção do Doorman (decisão do dono, 23/10): a resposta do WhatsApp traz
+# o botão de volta, e ONDE a entrada acontece depende de onde o login começou.
+#
+# - No CELULAR, a entrada acontece no navegador que o botão "Voltar à loja" abrir, e nunca
+#   é liberada para outra aba. Liberar a aba de origem por conta própria era abrir uma
+#   porta que a pessoa não via: quem convence alguém a enviar a mensagem com o código dele
+#   entrava sem ela tocar em nada.
+# - No COMPUTADOR, a mensagem chega no celular e a aba fica do outro lado da mesa. O botão
+#   nomeia o que libera ("Liberar o Chrome no Windows"), e só o toque nele solta a aba.
+#
+# Agente de usuário desconhecido conta como celular: na dúvida, nada é liberado à distância.
+_PHONE_USER_AGENT_MARKERS = ("iphone", "ipod", "mobi", "windows phone")
+_KNOWN_BROWSERS = ("Chrome", "Firefox", "Safari", "Edge")
+_RELEASE_CONFIRM_KEY = "shopman:site-release-offer:{}"
+
+
+def site_origin_is_phone(request) -> bool:
+    """O login começou num celular? Decide se a mensagem libera a aba ou só a loja."""
+    user_agent = str(request.META.get("HTTP_USER_AGENT", "") or "").lower()
+    if not user_agent:
+        return True
+    return any(marker in user_agent for marker in _PHONE_USER_AGENT_MARKERS)
+
+
+def _origin_parts(origin_label: str) -> tuple[str, str]:
+    parts = [part.strip() for part in str(origin_label or "").split("/") if part.strip()]
+    browser = next((part for part in parts if part in _KNOWN_BROWSERS), "")
+    system = next((part for part in parts if part not in _KNOWN_BROWSERS), "")
+    return browser, system
+
+
+def release_target(origin_label: str) -> str:
+    """"o Chrome no Windows": o que o botão da mensagem libera, dito como a pessoa diria."""
+    browser, system = _origin_parts(origin_label)
+    if browser and system:
+        return f"o {browser} no {system}"
+    if browser:
+        return f"o {browser}"
+    if system:
+        return f"o navegador no {system}"
+    return "o navegador do computador"
+
+
+def release_caption(origin_label: str) -> str:
+    """O rótulo do botão, dentro do limite de 20 caracteres do botão do WhatsApp."""
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY, ACCESS_BUTTON_MAX_CHARS
+
+    template = ACCESS_BUTTON_COPY["release"]
+    full = template.format(target=release_target(origin_label))
+    if len(full) <= ACCESS_BUTTON_MAX_CHARS:
+        return full
+    browser, _system = _origin_parts(origin_label)
+    if browser:
+        short = template.format(target=f"o {browser}")
+        if len(short) <= ACCESS_BUTTON_MAX_CHARS:
+            return short
+    return ACCESS_BUTTON_COPY["release_fallback"]
+
+
+def offer_site_release(revoke_ref: str) -> str:
+    """A referência do botão "Liberar o Chrome no Windows" (vai no fragmento do link).
+
+    É separada da referência do "Não foi você?": quem tem o link de liberar não ganha,
+    só por isso, o poder de derrubar a conta inteira, e vice-versa.
+    """
+    import secrets
+
+    from django.core.cache import cache
+    from shopman.doorman.conf import get_doorman_settings
+
+    if not revoke_ref:
+        return ""
+    release_ref = secrets.token_urlsafe(24)
+    cache.set(
+        _RELEASE_CONFIRM_KEY.format(release_ref),
+        revoke_ref,
+        timeout=get_doorman_settings().LINK_STATE_TTL_SECONDS,
+    )
+    return release_ref
+
+
+def confirm_site_release(release_ref: str) -> str | None:
+    """O toque no botão: a aba de origem pode entrar. Devolve o rótulo da origem
+    ("Chrome / Windows"), ou None se a oferta venceu ou foi encerrada.
+
+    Repetir o toque não estraga nada: a confirmação já está lá, e a resposta é a mesma.
+    """
+    from django.core.cache import cache
+    from django.utils import timezone
+    from shopman.doorman.services.link_state import get_revocation, store_revocation
+
+    if not release_ref:
+        return None
+    revoke_ref = cache.get(_RELEASE_CONFIRM_KEY.format(release_ref))
+    if not revoke_ref:
+        return None
+    record = get_revocation(str(revoke_ref))
+    if record is None:
+        # O "Não foi você?" chegou antes: não há mais o que liberar.
+        return None
+    if not record.get("confirmed_at"):
+        record["confirmed_at"] = timezone.now().isoformat()
+        store_revocation(str(revoke_ref), record)
+    return str(record.get("origin_label") or "")
+
+
 def pop_site_release(request) -> dict | None:
-    """A liberação pendente para ESTE navegador (uso único), se a mensagem já chegou."""
-    from shopman.doorman.services.link_state import origin_fingerprint, pop_release
+    """A liberação para ESTE navegador (uso único), se o botão da mensagem já foi tocado.
+
+    A mensagem deixa a liberação esperando; sem o toque em "Liberar o Chrome no Windows"
+    ela volta para a espera e a aba continua do lado de fora.
+
+    Três respostas, porque a tela diz coisas diferentes em cada uma (#3271):
+
+    - ``None``: nada chegou para este navegador (a mensagem não chegou, ou o "Não foi
+      você?" desfez a entrada);
+    - ``{"confirmed": False}``: a mensagem chegou e a liberação espera o toque no botão
+      da resposta. Ela volta para a espera intacta; o que sai daqui não abre nada;
+    - ``{"confirmed": True, "token": …, "revoke_ref": …}``: o botão foi tocado, a aba
+      pode entrar, e a liberação foi consumida.
+    """
+    from shopman.doorman.services.link_state import (
+        get_revocation,
+        origin_fingerprint,
+        pop_release,
+        release_to_origin,
+    )
 
     session = getattr(request, "session", None)
     if session is None or not session.session_key:
         return None
-    return pop_release(origin_fingerprint(session.session_key))
+    origin = origin_fingerprint(session.session_key)
+    release = pop_release(origin)
+    if not release:
+        return None
+    revoke_ref = str(release.get("revoke_ref") or "")
+    record = get_revocation(revoke_ref) if revoke_ref else None
+    if record is None:
+        return None
+    if not record.get("confirmed_at"):
+        release_to_origin(origin, token=str(release.get("token") or ""), revoke_ref=revoke_ref)
+        return {"confirmed": False}
+    return {**release, "confirmed": True}
 
 
 def record_site_release_login(revoke_ref: str, *, request, response) -> None:
     """Depois da troca: guarda a sessão e o dispositivo nascidos dela, para o
     "Não foi você?" da mensagem poder derrubar os dois."""
+    from django.utils import timezone
     from shopman.doorman.conf import get_doorman_settings
     from shopman.doorman.models import TrustedDevice
     from shopman.doorman.services.link_state import get_revocation, store_revocation
@@ -180,6 +494,9 @@ def record_site_release_login(revoke_ref: str, *, request, response) -> None:
     record = get_revocation(revoke_ref)
     if record is None:
         return
+    # A hora do login marca a janela: passkey criada depois dela pode ser de quem
+    # entrou no lugar da dona, e o "Não foi você?" a derruba junto.
+    record["logged_in_at"] = timezone.now().isoformat()
     record["session_key"] = getattr(getattr(request, "session", None), "session_key", "") or ""
     cookie = response.cookies.get(get_doorman_settings().DEVICE_TRUST_COOKIE_NAME)
     if cookie is not None and cookie.value:
@@ -190,16 +507,27 @@ def record_site_release_login(revoke_ref: str, *, request, response) -> None:
 
 
 def revoke_site_release(ref: str) -> bool:
-    """"Não foi você?": cancela a liberação pendente ou derruba o acesso que ela abriu.
+    """"Não foi você?": cancela a liberação pendente e derruba TUDO o que ela pode ter aberto.
 
     Quem tem a referência é quem recebeu a mensagem — o dono do número. Idempotente
     do ponto de vista dele: a segunda vez só não encontra mais nada.
+
+    Derrubar só a sessão e o dispositivo nascidos da liberação não basta: na janela entre
+    o login e o toque, quem entrou pode ter aberto outra sessão, confiado outro navegador
+    ou cadastrado uma passkey, e cada um desses sobrevive sozinho. Por isso o toque
+    encerra todas as sessões e todos os dispositivos lembrados da conta, e apaga as
+    passkeys criadas depois daquele login. A dona volta a entrar com um código, que só
+    chega no número dela.
     """
+    from datetime import datetime
     from importlib import import_module
 
     from django.conf import settings
-    from shopman.doorman.models import TrustedDevice
+    from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice
     from shopman.doorman.services.link_state import pop_release, pop_revocation
+
+    from shopman.shop.services import customer_sign_in
+    from shopman.shop.services import devices as device_service
 
     record = pop_revocation(ref)
     if record is None:
@@ -218,8 +546,26 @@ def revoke_site_release(ref: str) -> bool:
         if device is not None:
             device.revoke()
 
+    # Todas as sessões e dispositivos lembrados do cliente; passkeys desde o login. Sem
+    # hora de login (a liberação ainda não tinha sido trocada quando a dona tocou), nenhuma
+    # passkey nasceu daquele acesso, e as dela ficam.
+    customer_id = str(record.get("customer_id") or "")
+    sessions = devices = passkeys = 0
+    if customer_id:
+        link = CustomerUser.objects.filter(customer_id=customer_id).select_related("user").first()
+        if link is not None:
+            sessions = customer_sign_in.revoke_other_sessions(user=link.user, current_session_key="")
+        devices = device_service.revoke_all(customer_id=customer_id)
+        try:
+            since = datetime.fromisoformat(str(record.get("logged_in_at") or ""))
+        except ValueError:
+            since = None
+        if since is not None:
+            passkeys, _ = Passkey.objects.filter(customer_id=customer_id, created_at__gte=since).delete()
+
     logger.warning(
-        "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s",
-        bool(session_key), bool(device_id),
+        "access_link.site_release_revoked tinha_sessao=%s tinha_dispositivo=%s "
+        "sessoes=%s dispositivos=%s passkeys=%s",
+        bool(session_key), bool(device_id), sessions, devices, passkeys,
     )
     return True

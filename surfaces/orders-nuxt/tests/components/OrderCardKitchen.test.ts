@@ -53,11 +53,10 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ref: "WEB-20261003-A47",
     status: "preparing",
     status_label: "Em preparo",
-    status_color: "",
     channel_ref: "web",
+    channel_name: "Loja online",
     channel_icon: "language",
     customer_name: "Ana",
-    created_at_display: "14:50",
     created_at_iso: "",
     server_now_iso: "",
     elapsed_seconds: 600,
@@ -65,28 +64,22 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     items_summary: "2× Pão",
     items_count: 2,
     total_display: "R$ 15,00",
-    fulfillment_icon: "storefront",
     fulfillment_label: "Retirada",
     fulfillment_type: "pickup",
     delivery_address: "",
-    delivery_instructions: "",
     can_confirm: false,
     can_advance: false,
     next_status: "",
-    next_action_label: "",
     payment_method: "cash",
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
-    ifood_pickup_code: "",
     ifood_schedule_label: "",
     ifood_remote_ahead_label: "",
     ifood_negotiations: [],
     payment_status: "captured",
     payment_pending: false,
     can_settle_delivery_cash: false,
-    fiscal_status_label: "",
     fiscal_status: "",
-    has_kitchen_note: false,
     has_customer_note: false,
     is_gift: false,
     gift_has_recipient: false,
@@ -94,7 +87,6 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     awaiting_work_orders: [],
     confirmation_deadline_iso: "",
     confirmation_action: "",
-    revisions: {},
     actions: [],
     undo: null,
     kitchen: null,
@@ -198,17 +190,11 @@ describe("OrderCard: a Cozinha no cartão", () => {
         ),
       }),
     );
-    // v4: um traço por estação e a frase "0 de 2 prontos · faltam Cafés e Lanches".
-    expect(wrapper.get("[data-kitchen-missing]").text()).toBe(
-      "faltam Cafés e Lanches",
+    // Sem barra (dono, 02/11/2026): o lugar do botão diz quem falta.
+    expect(wrapper.find("[data-kitchen-station]").exists()).toBe(false);
+    expect(wrapper.get("[data-card-waiting]").text()).toContain(
+      "Aguardando Lanches e Cafés",
     );
-    expect(wrapper.get("[data-kitchen]").text()).toContain("0 de 2 prontos");
-    expect(wrapper.findAll("[data-kitchen-station]")).toHaveLength(2);
-    expect(
-      wrapper
-        .findAll("[data-kitchen-station]")
-        .map((s) => s.attributes("aria-label")),
-    ).toEqual(["Lanches: na fila", "Cafés: em preparo"]);
     // a estação que pede alguém é uma pílula; o Pronto mora no Popover dela
     await wrapper.get('[data-card-notice="station-lanches"]').trigger("click");
     const ready = wrapper.get("[data-kitchen-ready]");
@@ -230,7 +216,7 @@ describe("OrderCard: a Cozinha no cartão", () => {
         ]),
       }),
     );
-    expect(wrapper.find("[data-kitchen]").exists()).toBe(false);
+    expect(wrapper.find("[data-card-progress]").exists()).toBe(false);
     expect(wrapper.find("[data-card-recall]").exists()).toBe(false);
     await wrapper.get("[data-card-menu]").trigger("click");
     const recall = wrapper.get("[data-card-recall]");
@@ -241,22 +227,31 @@ describe("OrderCard: a Cozinha no cartão", () => {
 
   it("sem Cozinha no pedido: nada de bloco, e o ⋯ sem Voltar para…", async () => {
     const wrapper = mountCard(card());
-    expect(wrapper.find("[data-kitchen]").exists()).toBe(false);
-    expect(wrapper.find("[data-kitchen-progress]").exists()).toBe(false);
+    expect(wrapper.find("[data-card-progress]").exists()).toBe(false);
     await wrapper.get("[data-card-menu]").trigger("click");
     expect(wrapper.find("[data-card-recall]").exists()).toBe(false);
   });
 
-  it("pedido pronto: a barra cheia diz quem concluiu", () => {
+  it("produção esperada: uma frase com o nome, sem porcentagem", () => {
     const wrapper = mountCard(
       card({
-        status: "ready",
-        kitchen: kitchen([station({ state: "done", state_label: "pronto" })]),
+        awaiting_work_orders: [
+          {
+            ref: "WO-1",
+            status: "planned",
+            status_label: "Planejada",
+            output_sku: "CRO",
+            recipe_name: "Croissant",
+            planned_qty: "12",
+            finished_qty: "",
+            progress_pct: 0,
+          },
+        ],
       }),
     );
-    expect(wrapper.get("[data-kitchen-progress]").text()).toContain(
-      "Cafés pronto",
-    );
+    const line = wrapper.get("[data-card-progress]").text();
+    expect(line).toBe("Produção de Croissant: não começou");
+    expect(line).not.toContain("%");
   });
 
   it("posto de saída: mantém a densidade canônica padrão", async () => {

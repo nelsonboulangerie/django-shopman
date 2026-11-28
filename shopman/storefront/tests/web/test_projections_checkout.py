@@ -7,8 +7,6 @@ degradation when services are unavailable.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 from django.test import RequestFactory
 
@@ -16,8 +14,9 @@ from shopman.shop.projections.types import PickupSlotProjection
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation.checkout import CheckoutProjection, build_checkout
 from shopman.storefront.presentation.types import PaymentMethodOptionProjection
+from shopman.storefront.tests.identity_fakes import make_identity_view
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _request_with_cart_session(client):
@@ -33,6 +32,15 @@ def _request_anonymous(client):
     request.session = client.session  # type: ignore[attr-defined]
     request.customer = None
     return request
+
+
+def _identity(customer):
+    return make_identity_view(
+        subject_id=customer.uuid,
+        name=customer.name,
+        phone=customer.phone,
+        email=customer.email or None,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -97,11 +105,7 @@ class TestCheckoutProjectionShape:
 
     def test_authenticated_cart_can_checkout(self, cart_session, customer):
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -129,9 +133,7 @@ class TestCheckoutProjectionShape:
             customer=cust, label="home", formatted_address="Home", is_default=True,
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=cust.uuid, phone=cust.phone, name=cust.name,
-        )
+        request.customer = _identity(cust)
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
         assert proj.preselected_address_id == default_addr.id
         # Structured fields are surfaced for the picker.
@@ -156,11 +158,7 @@ class TestCheckoutProjectionShape:
         monkeypatch.setattr(LoyaltyService, "get_balance", fail_balance)
         monkeypatch.setattr(customer_context.logger, "debug", record_debug)
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -189,11 +187,7 @@ class TestCheckoutProjectionShape:
         monkeypatch.setattr(address_service, "addresses", fail_addresses)
         monkeypatch.setattr(customer_context.logger, "debug", record_debug)
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
-            name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -222,11 +216,13 @@ class TestPaymentMethods:
         assert proj.payment_methods[0].is_default is True
         assert proj.default_payment_method == proj.payment_methods[0].ref
 
-    def test_no_channel_falls_back_to_cash(self, cart_session):
+    def test_unmaterialized_channel_fails_closed(self, cart_session):
+        """Sem canal no banco não há meio de pagamento a inventar: falha fechado (#1868)."""
+        from shopman.shop.config import InstanceConfigurationError
+
         request = _request_with_cart_session(cart_session)
-        proj = build_checkout(request=request, channel_ref="nonexistent-channel")
-        assert len(proj.payment_methods) == 1
-        assert proj.payment_methods[0].ref == "cash"
+        with pytest.raises(InstanceConfigurationError):
+            build_checkout(request=request, channel_ref="nonexistent-channel")
 
     def test_pix_method_has_portuguese_label(self, cart_session, channel):
         channel.config = channel.config or {}
@@ -267,9 +263,7 @@ class TestPaymentMethods:
             },
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid, phone=customer.phone, name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -291,9 +285,7 @@ class TestPaymentMethods:
             },
         )
         request = _request_with_cart_session(cart_session)
-        request.customer = SimpleNamespace(
-            uuid=customer.uuid, phone=customer.phone, name=customer.name,
-        )
+        request.customer = _identity(customer)
 
         proj = build_checkout(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
 
@@ -328,9 +320,12 @@ class TestPickupSlots:
 
     def test_slots_use_delivery_date_from_projection_context(self, cart_session, monkeypatch):
         seen_dates = []
+        seen_channels = []
 
-        def fake_slots(cart_skus, *, delivery_date=""):
+        def fake_slots(cart_skus, *, delivery_date="", channel_ref=None):
             seen_dates.append(delivery_date)
+            # O canal chega à grade: é ele que diz o prazo de aceite (#3266).
+            seen_channels.append(channel_ref)
             return {
                 "pickup_slots": [
                     {
@@ -338,7 +333,7 @@ class TestPickupSlots:
                         "label": "A partir das 9h",
                         "starts_at": "09:00",
                         "enabled": False,
-                        "reason": "Sem tempo de preparo",
+                        "reason": "SKU sai às 11:30.",
                         "is_earliest": False,
                     },
                     {
@@ -367,9 +362,10 @@ class TestPickupSlots:
         )
 
         assert seen_dates == ["2026-05-17"]
+        assert seen_channels == [STOREFRONT_CHANNEL_REF]
         assert proj.earliest_slot_ref == "slot-12"
         assert proj.pickup_slots[0].enabled is False
-        assert proj.pickup_slots[0].reason == "Sem tempo de preparo"
+        assert proj.pickup_slots[0].reason == "SKU sai às 11:30."
 
 
 # ──────────────────────────────────────────────────────────────────────

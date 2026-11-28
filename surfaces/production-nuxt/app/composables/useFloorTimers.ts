@@ -1,5 +1,5 @@
 // Timers da bancada — UM mecanismo para o chão de produção inteiro: o timer do
-// forno (armado por fornada no Fechamento, que ainda DECLARA enfornou/retirou ao
+// forno (armado por fornada na Finalização, que ainda DECLARA enfornou/retirou ao
 // servidor via useOvenFacts) e os timers avulsos (fermentação, descanso, o que o
 // padeiro quiser lembrar), criados do cabeçalho em qualquer tela. Decisão do
 // Pablo (2026-09-16): o timer ajuda o operador a lembrar; não tenta descrever
@@ -13,6 +13,11 @@
 // Som: "dim-dom" quente em triangle wave, duas frases curtas, volume moderado
 // — fácil de ouvir, fácil de conviver. Repete a cada 45s enquanto ninguém
 // marca ``Visto``. O alerta não conclui o forno, o QC nem a produção.
+//
+// O navegador só libera o som depois de um toque na página. Depois de recarregar,
+// o timer restaurado volta CORRENDO e MUDO até alguém tocar na tela: por isso o
+// estado do som é reativo (`soundOff`), a tela escreve "Som desligado. Toque para
+// ligar." enquanto houver timer que vai tocar, e qualquer toque na página liga.
 import { countdownLabel } from "~/presentation/production";
 
 export type FloorTimerKind = "oven" | "free";
@@ -60,7 +65,11 @@ const chimes = new Map<string, { lastAt: number }>();
 const lastMinutes = ref<number | null>(null);
 let ticker: ReturnType<typeof setInterval> | null = null;
 let audio: AudioContext | null = null;
+// O som está liberado? Só o navegador sabe; o ref espelha `audio.state`.
+const audioRunning = ref(false);
 let loaded = false;
+let unlockListening = false;
+const UNLOCK_EVENTS = ["click", "touchend", "keydown"] as const;
 
 export function restoreFloorTimers(
   parsed: Record<string, FloorTimer>,
@@ -90,6 +99,21 @@ export function nextFreeTimerTitle(
   return `Timer ${n}`;
 }
 
+/**
+ * Nome dado que já está num timer ativo ganha número: "Freezer 20 min 2". Dois
+ * cartões idênticos não se distinguem na hora de encerrar (beta 05/11).
+ */
+export function distinctTimerLabel(
+  label: string,
+  existing: Record<string, FloorTimer>,
+): string {
+  const taken = new Set(Object.values(existing).map((timer) => timer.label ?? ""));
+  if (!taken.has(label)) return label;
+  let n = 2;
+  while (taken.has(`${label} ${n}`)) n += 1;
+  return `${label} ${n}`;
+}
+
 export function floorTimerMode(t: FloorTimer, now: number): FloorTimerMode {
   if (t.seenAt != null) return "seen";
   return t.endsAt <= now ? "ringing" : "running";
@@ -115,6 +139,27 @@ function load() {
     timers.value = {};
   }
   ensureTicker();
+  listenForUnlock();
+}
+
+/**
+ * Qualquer toque na página destrava o som (é a única hora em que o navegador
+ * deixa). Ouvido na captura, uma vez por toque, até o som estar ligado.
+ */
+function listenForUnlock() {
+  if (unlockListening || !import.meta.client || audioRunning.value) return;
+  unlockListening = true;
+  const onGesture = () => {
+    unlockAudio();
+    if (!audioRunning.value) return;
+    for (const name of UNLOCK_EVENTS) {
+      window.removeEventListener(name, onGesture, true);
+    }
+    unlockListening = false;
+  };
+  for (const name of UNLOCK_EVENTS) {
+    window.addEventListener(name, onGesture, true);
+  }
 }
 
 function persist() {
@@ -142,15 +187,25 @@ function ensureTicker() {
   }, 1000);
 }
 
-/** O gesto de armar é interação do usuário — aproveita para destravar o áudio. */
+function syncAudioState() {
+  audioRunning.value = audio?.state === "running";
+}
+
+/** Todo toque é interação do usuário: aproveita para destravar o áudio. */
 function unlockAudio() {
   if (!import.meta.client) return;
   try {
-    audio = audio ?? new AudioContext();
-    if (audio.state === "suspended") void audio.resume();
+    if (!audio) {
+      audio = new AudioContext();
+      audio.addEventListener?.("statechange", syncAudioState);
+    }
+    if (audio.state === "suspended") {
+      void audio.resume().then(syncAudioState, syncAudioState);
+    }
   } catch {
     audio = null;
   }
+  syncAudioState();
 }
 
 function chime() {
@@ -218,16 +273,30 @@ export function useFloorTimers() {
     const key = `${FREE_KEY_PREFIX}${Date.now().toString(36)}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
-    const label = (meta.label ?? "").trim() || nextFreeTimerTitle(timers.value);
+    const named = (meta.label ?? "").trim();
+    const label = named
+      ? distinctTimerLabel(named, timers.value)
+      : nextFreeTimerTitle(timers.value);
     arm(key, minutes, { ...meta, kind: "free", label });
     return key;
   }
 
-  function clear(key: string) {
+  /** Encerra e devolve o timer encerrado, para o Desfazer recolocá-lo. */
+  function clear(key: string): FloorTimer | null {
+    const removed = timers.value[key] ?? null;
     const { [key]: _, ...rest } = timers.value;
     timers.value = rest;
     chimes.delete(key);
     persist();
+    return removed;
+  }
+
+  /** Desfazer o Encerrar: o timer volta com o mesmo fim (o tempo não parou). */
+  function restore(key: string, timer: FloorTimer) {
+    if (timers.value[key]) return;
+    timers.value = { ...timers.value, [key]: timer };
+    persist();
+    ensureTicker();
   }
 
   /** Marca que alguém viu o alerta; não altera qualquer fato produtivo. */
@@ -297,11 +366,19 @@ export function useFloorTimers() {
   const ringingCount = computed(
     () => entries.value.filter((entry) => entry.mode === "ringing").length,
   );
+  // Som desligado só importa enquanto há timer que ainda vai tocar (ou toca
+  // agora); o visto já cumpriu e não pede som.
+  const soundOff = computed(
+    () =>
+      !audioRunning.value &&
+      entries.value.some((entry) => entry.mode !== "seen"),
+  );
 
   return {
     arm,
     create,
     clear,
+    restore,
     seen,
     extend,
     get,
@@ -312,5 +389,8 @@ export function useFloorTimers() {
     entries,
     activeCount,
     ringingCount,
+    soundOff,
+    /** O toque no aviso "Som desligado": liga o som ali mesmo. */
+    enableSound: unlockAudio,
   };
 }

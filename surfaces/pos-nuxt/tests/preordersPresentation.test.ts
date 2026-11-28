@@ -26,6 +26,7 @@ import {
   checkPaymentNotice,
   customerLine,
   dayColumnTitle,
+  dayCountLine,
   dayToReceiveLine,
   filterChips,
   filterDays,
@@ -35,12 +36,15 @@ import {
   flattenDays,
   groupByWindow,
   hasFilters,
-  isoWeek,
   itemsCountLabel,
   listSummary,
+  cardsToReceive,
   matchesFilters,
-  mondayOf,
+  dayOpen,
+  flipDay,
+  todayIndicators,
   moneyLine,
+  moneyBadge,
   moneyPieces,
   parsePaymentFilter,
   parseView,
@@ -122,14 +126,14 @@ function day(partial: Partial<PreorderDay> = {}): PreorderDay {
 }
 
 function view(partial: Partial<PreordersView> = {}): PreordersView {
-  return { mode: "week", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
+  return { mode: "next7d", date: HOJE, to: "", ...NO_FILTERS, q: "", completed: false, ...partial };
 }
 
 // ── O estado na URL ─────────────────────────────────────────────────────────
 
 describe("o estado da tela mora na URL", () => {
-  it("sem query: a semana de hoje, sem filtro e sem busca", () => {
-    expect(DEFAULT_MODE).toBe("week");
+  it("sem query: os 7 dias a partir de hoje, sem filtro e sem busca (dono, 03/11)", () => {
+    expect(DEFAULT_MODE).toBe("next7d");
     expect(parseView({}, HOJE)).toEqual(view());
   });
 
@@ -162,27 +166,27 @@ describe("o estado da tela mora na URL", () => {
   });
 });
 
-// ── A semana ────────────────────────────────────────────────────────────────
+// ── Os 7 dias a partir de hoje (dono, 03/11/2026) ─────────────────────────
 
-describe("a semana começa na SEGUNDA (decisão do dono, 28/09)", () => {
-  it("a segunda de qualquer dia, inclusive do domingo", () => {
-    expect(mondayOf("2026-09-28")).toBe("2026-09-28");
-    expect(mondayOf("2026-10-01")).toBe("2026-09-28");
-    expect(mondayOf("2026-10-04")).toBe("2026-09-28"); // domingo é o FIM da semana
-    expect(mondayOf("2026-10-05")).toBe("2026-10-05");
-  });
-
-  it("a semana ISO que o servidor lê, inclusive na virada do ano", () => {
-    expect(isoWeek("2026-09-28")).toBe("2026-W40");
-    expect(isoWeek("2026-10-04")).toBe("2026-W40");
-    expect(isoWeek("2027-01-01")).toBe("2026-W53"); // sexta: ainda a última de 2026
-    expect(isoWeek("2027-01-04")).toBe("2027-W01");
-    expect(isoWeek("2025-12-29")).toBe("2026-W01");
-  });
-
-  it("o período pedido ao servidor: o dia pelas datas, a semana pela semana ISO", () => {
+describe("a semana começa HOJE, e só hoje vem aberto", () => {
+  it("o período pedido ao servidor: o dia pelas datas; os 7 dias de hoje até hoje + 6", () => {
     expect(periodParams({ mode: "day", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-01" });
-    expect(periodParams({ mode: "week", date: "2026-10-01", to: "" })).toEqual({ week: "2026-W40" });
+    expect(periodParams({ mode: "next7d", date: "2026-10-01", to: "" })).toEqual({ date_from: "2026-10-01", date_to: "2026-10-07" });
+  });
+
+  it("a semana de segunda a domingo saiu do PDV", () => {
+    expect(parseView({ mode: "week" }, HOJE).mode).toBe("next7d");
+  });
+
+  it("hoje nasce aberto, o resto recolhido; virar um dia vale para hoje também", () => {
+    const hoje = { date: HOJE, is_today: true };
+    const amanha = { date: "2026-09-29", is_today: false };
+    expect(dayOpen(hoje, new Set())).toBe(true);
+    expect(dayOpen(amanha, new Set())).toBe(false);
+    const aberto = flipDay(new Set(), amanha.date);
+    expect(dayOpen(amanha, aberto)).toBe(true);
+    expect(dayOpen(amanha, flipDay(aberto, amanha.date))).toBe(false);
+    expect(dayOpen(hoje, flipDay(new Set(), HOJE))).toBe(false);
   });
 });
 
@@ -201,8 +205,8 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
     const custom = view({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
     expect(viewQuery(custom, HOJE)).toEqual({ mode: "custom", date: "2026-10-01", to: "2026-10-20" });
     expect(parseView(viewQuery(custom, HOJE), HOJE)).toEqual(custom);
-    const ahead = view({ mode: "next7d" });
-    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next7d" });
+    const ahead = view({ mode: "next14d" });
+    expect(viewQuery(ahead, HOJE)).toEqual({ mode: "next14d" });
     expect(parseView(viewQuery(ahead, HOJE), HOJE)).toEqual(ahead);
     // Personalizado sem o fim não é intervalo.
     expect(parseView({ mode: "custom", date: "2026-10-01" }, HOJE)).toEqual(view({ date: "2026-10-01" }));
@@ -211,14 +215,12 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
   });
 
   it("a ponte com o controle vai e volta, e hoje é âncora vazia", () => {
-    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "week", from: "", to: "" });
-    expect(periodSelectionOf(view({ date: "2026-10-01" }), HOJE)).toEqual({ preset: "week", from: "", to: "" });
-    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "week", from: "2026-10-07", to: "" });
-    expect(periodSelectionOf(view({ mode: "next7d" }), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view(), HOJE)).toEqual({ preset: "next7d", from: "", to: "" });
+    expect(periodSelectionOf(view({ date: "2026-10-07" }), HOJE)).toEqual({ preset: "next7d", from: "2026-10-07", to: "" });
     expect(periodSelectionOf(view({ mode: "7d", date: "2026-09-20" }), HOJE)).toEqual({ preset: "7d", from: "", to: "2026-09-20" });
     for (const state of [
       view({ mode: "day", date: "2026-10-02" }),
-      view({ mode: "week", date: "2026-10-07" }),
+      view({ mode: "next7d", date: "2026-10-07" }),
       view({ mode: "month", date: "2026-11-03" }),
       view({ mode: "next14d", date: "2026-10-12" }),
       view({ mode: "28d", date: "2026-09-01" }),
@@ -231,7 +233,7 @@ describe("o Período das Encomendas olha para a frente (e para trás, quando ped
 
   it("as frases dizem o período, qualquer que seja", () => {
     expect(periodEmptyMessage("month")).toBe("Nenhuma encomenda neste mês.");
-    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda neste período.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda nos próximos 7 dias.");
     expect(filterEmptyMessage("custom")).toBe("Nenhuma encomenda com estes filtros neste período.");
     expect(periodSummaryLabel("month")).toBe("No mês");
     expect(periodSummaryLabel("next28d")).toBe("No período");
@@ -259,7 +261,7 @@ describe("contagens — zero é frase, nunca '0'", () => {
 
   it("período vazio por extenso", () => {
     expect(periodEmptyMessage("day")).toBe("Nenhuma encomenda neste dia.");
-    expect(periodEmptyMessage("week")).toBe("Nenhuma encomenda nesta semana.");
+    expect(periodEmptyMessage("next7d")).toBe("Nenhuma encomenda nos próximos 7 dias.");
   });
 
   it("A receber: a mesma frase no período e no dia, e zero é frase", () => {
@@ -267,6 +269,27 @@ describe("contagens — zero é frase, nunca '0'", () => {
     expect(toReceiveLine(0, "R$ 0,00")).toBe("Nada a receber");
     expect(dayToReceiveLine(day({ to_receive_q: 1200, to_receive_display: "R$ 12,00" }))).toBe("A receber R$ 12,00");
     expect(dayToReceiveLine(day())).toBe("");
+  });
+
+  it("D4: sem a soma (Caixa e Gerente), conta encomendas e nunca inventa dinheiro", () => {
+    // O servidor manda as somas `null` para quem não audita o caixa.
+    const hidden = { total_q: null, total_display: null, to_receive_q: null, to_receive_display: null };
+    const deve = card({ ref: "D" });
+    const pago = card({ ref: "P", payment_state: "paid", balance_q: 0 });
+    expect(listSummary(20, null)).toBe("20 encomendas");
+    expect(listSummary(20, "R$ 4.241,00")).toBe("20 encomendas · R$ 4.241,00");
+    expect(cardsToReceive([deve, pago, card({ ref: "D2" })])).toBe(2);
+    expect(toReceiveLine(null, null, 2)).toBe("2 encomendas com pagamento pendente");
+    expect(toReceiveLine(null, null, 0)).toBe("Nada a receber");
+    const caixaDay = day({ ...hidden, orders_count: 2, orders: [deve, pago] });
+    expect(dayCountLine(caixaDay)).toBe("2 encomendas");
+    expect(dayCountLine(day({ orders_count: 2, total_display: "R$ 72,00" }))).toBe("2 encomendas · R$ 72,00");
+    expect(dayToReceiveLine(caixaDay)).toBe("1 encomenda com pagamento pendente");
+    expect(dayToReceiveLine(day({ ...hidden, orders: [pago] }))).toBe("");
+    const facts = todayFacts(caixaDay);
+    expect(facts.find((f) => f.key === "to_receive")).toMatchObject({ text: "1 encomenda com pagamento pendente", urgent: true });
+    expect(todayIndicators(facts).find((i) => i.key === "to_receive")?.value).toBe("1");
+    expect(facts.map((f) => f.text).join(" ")).not.toMatch(/R\$/);
   });
 });
 
@@ -281,7 +304,7 @@ describe("a linha de dinheiro — saldo primeiro, 'não sei' nunca vira 'pago'",
 
   it("pago · na conta da casa · a conferir", () => {
     expect(moneyLine(card({ balance_q: 0, situation: "paid" }))).toBe("R$ 36,00 pago");
-    expect(moneyLine(card({ balance_q: 0, situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
+    expect(moneyLine(card({ balance_q: 0, payment_state: "on_account", situation: "on_account" }))).toBe("R$ 36,00 na conta da casa");
     expect(moneyLine(card({ balance_q: null, situation: "check_payment" }))).toBe("R$ 36,00 · pagamento a conferir");
   });
 
@@ -296,6 +319,8 @@ describe("o tom da situação — amarelo só para o que pede gesto", () => {
   it("cobrar e conferir pedem gesto; pronto é verde; o resto é neutro", () => {
     expect(situationTone("to_pay")).toBe("warning");
     expect(situationTone("check_payment")).toBe("warning");
+    // O pedido que ninguém aceitou pede um gesto (#3166).
+    expect(situationTone("new")).toBe("warning");
     expect(situationTone("ready")).toBe("success");
     expect(situationTone("out_for_delivery")).toBe("info");
     expect(situationTone("paid")).toBe("neutral");
@@ -403,7 +428,7 @@ describe("filtros combináveis, com a contagem de cada chip", () => {
 
   it("o filtro que esvazia a lista diz o que não há", () => {
     expect(filterEmptyMessage("day")).toBe("Nenhuma encomenda com estes filtros neste dia.");
-    expect(filterEmptyMessage("week")).toBe("Nenhuma encomenda com estes filtros nesta semana.");
+    expect(filterEmptyMessage("next7d")).toBe("Nenhuma encomenda com estes filtros nos próximos 7 dias.");
   });
 });
 
@@ -596,9 +621,9 @@ describe("a linha 'Hoje': o que falta para o dia, sem leitura nova", () => {
 
   it("o resumo do período sai quando o período é só hoje (repetiria a linha 'Hoje')", () => {
     expect(periodIsToday({ mode: "day", date: HOJE }, HOJE)).toBe(true);
-    expect(periodIsToday({ mode: "week", date: HOJE }, HOJE)).toBe(false);
+    expect(periodIsToday({ mode: "next7d", date: HOJE }, HOJE)).toBe(false);
     expect(periodIsToday({ mode: "day", date: "2026-09-29" }, HOJE)).toBe(false);
-    expect(periodSummaryLabel("week")).toBe("Na semana");
+    expect(periodSummaryLabel("next7d")).toBe("Nos 7 dias");
     expect(periodSummaryLabel("day")).toBe("No dia");
   });
 });
@@ -633,6 +658,8 @@ describe("a linha da encomenda: uma forma só", () => {
     expect(rowShowsSituation("paid")).toBe(false);
     expect(rowShowsSituation("on_account")).toBe(false);
     expect(rowShowsSituation("check_payment")).toBe(false);
+    // O pedido que ninguém aceitou: o dinheiro não diz isso (#3166).
+    expect(rowShowsSituation("new")).toBe(true);
     expect(rowShowsSituation("ready")).toBe(true);
     expect(rowShowsSituation("out_for_delivery")).toBe(true);
     expect(rowShowsSituation("delivered")).toBe(true);
@@ -686,4 +713,81 @@ describe("OBS0310-D: grade ou lista, e mudar de dia", () => {
     expect(moveConfirmLabel("qui, 09/10")).toBe("Mudar para qui, 09/10");
     expect(moveConfirmLabel("Amanhã")).toBe("Mudar para amanhã");
   });
+});
+
+describe("Hoje no celular: só indicadores, e o toque mostra a frase (dono, 03/11/2026)", () => {
+  it("o número aparece quando pede gesto; o que está em ordem é um visto; a frase segue inteira", () => {
+    const pending = todayIndicators([
+      { key: "leaving", text: "2 para entregar", urgent: false },
+      { key: "to_receive", text: "A receber R$ 86,00", urgent: true },
+      { key: "tickets", text: "1 sem Via Pedido", urgent: true },
+      { key: "check", text: "1 com pagamento a conferir", urgent: true },
+    ]);
+    expect(pending.map((i) => i.value)).toEqual(["2", "R$ 86,00", "1", "1"]);
+    expect(pending.map((i) => i.text)).toContain("A receber R$ 86,00");
+    const settled = todayIndicators([
+      { key: "leaving", text: "Todas entregues", urgent: false },
+      { key: "to_receive", text: "Nada a receber", urgent: false },
+      { key: "tickets", text: "Todas as vias impressas", urgent: false },
+    ]);
+    expect(settled.map((i) => i.value)).toEqual(["✓", "✓", "✓"]);
+  });
+});
+
+describe("selos da linha (dono, 03/11/2026)", () => {
+  it("o dinheiro vira valor + selo semântico", async () => {
+    const { moneyBadge } = await import("../app/presentation/preorders");
+    const base = { total_q: 6000, total_display: "R$ 60,00", balance_display: "R$ 0,00", payment_state: "to_receive" as const };
+    expect(moneyBadge({ ...base, balance_q: 6000, balance_display: "R$ 60,00" })).toEqual({ amount: "R$ 60,00", of: "", label: "A receber", tone: "warning", pending: true });
+    expect(moneyBadge({ ...base, balance_q: 2000, balance_display: "R$ 20,00" })).toEqual({ amount: "R$ 20,00", of: "de R$ 60,00", label: "A receber", tone: "warning", pending: true });
+    expect(moneyBadge({ ...base, balance_q: 0, payment_state: "paid" })).toMatchObject({ label: "Pago", tone: "success", pending: false });
+    expect(moneyBadge({ ...base, balance_q: null })).toMatchObject({ label: "Conferir pagamento", tone: "warning", pending: true });
+  });
+});
+
+describe("Via Pedido que falta: uma régua só", () => {
+  // Beta test de 05/11/2026 (PDV2-14): o chip contava "Sem Via Pedido 12" e o
+  // resumo de hoje "9 sem Via Pedido". O chip contava as 3 já entregues.
+  const cards = [
+    card({ ref: "NB-1" }),
+    card({ ref: "NB-2" }),
+    card({ ref: "NB-3", situation: "delivered", situation_label: "Entregue" }),
+  ];
+
+  it("o chip, o filtro, o lote e o resumo contam o mesmo número", () => {
+    const quick = quickFilterItems(cards, NO_FILTERS).find((item) => item.key === "unprinted");
+    expect(quick?.count).toBe(2);
+    const facts = todayFacts(day({ orders: cards, orders_count: 3 }));
+    expect(facts.find((fact) => fact.key === "tickets")?.text).toBe("2 sem Via Pedido");
+    const filtered = filterDays([day({ orders: cards })], { ...NO_FILTERS, print: "pending" });
+    expect(filtered[0]!.orders.map((c) => c.ref)).toEqual(["NB-1", "NB-2"]);
+    expect(printPlan({ date_from: HOJE, date_to: HOJE }, [day({ orders: cards })]).refs).toEqual(["NB-1", "NB-2"]);
+  });
+});
+
+// A situação da mercadoria não muda o estado do dinheiro.
+it("conta da casa continua explícita depois de entregar (S80/L34)", () => {
+  expect(
+    moneyLine(
+      card({
+        balance_q: 0,
+        payment_state: "on_account",
+        situation: "delivered",
+      }),
+    ),
+  ).toBe("R$ 36,00 na conta da casa");
+  expect(
+    moneyLine(
+      card({ balance_q: 0, payment_state: "paid", situation: "delivered" }),
+    ),
+  ).toBe("R$ 36,00 pago");
+});
+it("o total geral deixa explícito que não acompanha os recortes", () => {
+  expect(periodSummaryLabel("next28d", true)).toBe(
+    "Total do período, sem filtros",
+  );
+});
+
+it("o selo do dinheiro também preserva conta da casa após a entrega", () => {
+  expect(moneyBadge(card({ balance_q: 0, payment_state: "on_account", situation: "delivered" }))).toMatchObject({ label: "Na conta da casa", tone: "info" });
 });

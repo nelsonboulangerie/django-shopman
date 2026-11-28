@@ -32,8 +32,7 @@ function product (overrides: Partial<ProductDetailProjection> = {}): ProductDeta
     seo_description: 'Croissant artesanal francês, folhado em camadas, assado fresco todo dia.',
     seo_keywords: ['croissant', 'padaria francesa', 'café da manhã'],
     image_url: '/media/produtos/croissant.jpg',
-    base_price_q: 1290,
-    price_display: 'R$ 12,90',
+    quote: { qty: '1', listing_ref: 'web', list_unit_price_q: 1290, list_line_total_q: 1290, final_unit_price_q: 1290, final_line_total_q: 1290, adjustments: [] },
     availability: 'available',
     availability_label: 'Disponível',
     ...overrides
@@ -132,6 +131,51 @@ describe('productJsonLd', () => {
     expect(offer.availability).toBe('https://schema.org/InStock')
     expect(offer.itemCondition).toBe('https://schema.org/NewCondition')
     expect(offer.url).toBe(url)
+  })
+  // #2652: o Offer diz o mesmo que a página. Promessa de hoje = em estoque,
+  // na loja nomeada; promessa de outro dia = encomenda, com o dia.
+  it('promessa de hoje: em estoque na loja da página', () => {
+    const ld = productJsonLd({
+      product: product({
+        can_add_to_cart: true,
+        promise: { kind: 'batch', date: '2026-11-17', ready_at: '15:00', day_label: 'hoje', text: 'Disponível a partir das 15h' },
+        pickup_store: { name: 'Nelson Boulangerie', address: 'Rua das Flores, 100, Centro' }
+      }),
+      origin: ORIGIN,
+      url: 'x'
+    })
+    const offer = ld.offers as Record<string, unknown>
+    expect(offer.availability).toBe('https://schema.org/InStock')
+    expect(offer.availabilityStarts).toBeUndefined()
+    expect(offer.availableAtOrFrom).toEqual({
+      '@type': 'Place',
+      '@id': 'https://loja.exemplo.com/#business',
+      name: 'Nelson Boulangerie',
+      address: { '@type': 'PostalAddress', streetAddress: 'Rua das Flores, 100, Centro' }
+    })
+  })
+  it('promessa de amanhã: encomenda, a partir do dia da promessa', () => {
+    const ld = productJsonLd({
+      product: product({
+        availability: 'available',
+        can_add_to_cart: true,
+        promise: { kind: 'preorder', date: '2026-11-18', ready_at: '09:00', day_label: 'amanhã, quarta', text: 'Disponível amanhã, quarta, a partir das 9h' }
+      }),
+      origin: ORIGIN,
+      url: 'x'
+    })
+    const offer = ld.offers as Record<string, unknown>
+    expect(offer.availability).toBe('https://schema.org/PreOrder')
+    expect(offer.availabilityStarts).toBe('2026-11-18')
+    expect(offer.availableAtOrFrom).toBeUndefined()
+  })
+  it('indisponível não vira encomenda nem em estoque', () => {
+    const ld = productJsonLd({
+      product: product({ availability: 'unavailable', can_add_to_cart: false, promise: null }),
+      origin: ORIGIN,
+      url: 'x'
+    })
+    expect((ld.offers as Record<string, unknown>).availability).toBe('https://schema.org/OutOfStock')
   })
   it('declara a marca e os identificadores do Catálogo, não os da loja', () => {
     const ld = productJsonLd({

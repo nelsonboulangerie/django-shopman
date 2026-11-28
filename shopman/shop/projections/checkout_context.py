@@ -1,50 +1,22 @@
 """Checkout context — read-side facades for the checkout flow.
 
-Clean read facades (policy/data, no presentation): customer name lookup,
-saved-address resolution, channel payment methods, preorder config, session
-held qty, loyalty balance, and the availability read. Lives in the
+Clean read facades (policy/data, no presentation): channel payment methods,
+preorder config, session held qty and loyalty balance. The stock decision is not here: it is
+Stockman's, read through ``catalog_context.session_line_promise``. Lives in the
 orchestrator read-side (``shop/projections/``).
 
-The repricing and stock-shortfall read-models (which embedded ``format_money``
-and copy) drained to ``shop/projections/checkout.py`` (data) +
-``storefront/presentation/checkout.py`` (display).
+The checkout read-models (dates, remembered defaults) live in
+``shop/projections/checkout.py`` (data) + ``storefront/presentation/checkout.py``
+(display).
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import date
+from decimal import Decimal
 
 logger = logging.getLogger(__name__)
-
-
-def customer_name_by_phone(phone: str) -> str:
-    from shopman.guestman.services import customer as customer_service
-
-    customer = customer_service.get_by_phone(phone)
-    if customer and customer.first_name:
-        return customer.name
-    return ""
-
-
-def saved_address_text(*, customer_uuid, address_id_raw: str) -> str:
-    """Resolve a customer saved address to the flat checkout address string."""
-    try:
-        from shopman.guestman.services import address as address_service
-        from shopman.guestman.services import customer as customer_service
-
-        customer_obj = customer_service.get_by_uuid(customer_uuid)
-        if not customer_obj:
-            return ""
-        addr = address_service.get_address(customer_obj.ref, int(address_id_raw))
-        if not addr:
-            return ""
-        parts = [addr.formatted_address]
-        if addr.complement:
-            parts.append(f"- {addr.complement}")
-        return " ".join(parts)
-    except (ValueError, Exception):
-        return ""
 
 
 def payment_methods(channel_ref: str) -> list[str]:
@@ -72,17 +44,21 @@ def preorder_config() -> tuple[int, list]:
         return 30, []
 
 
-def session_held_qty(session_key: str, *, target_date: date | None = None) -> dict[str, int]:
+def session_held_qty(session_key: str, *, target_date: date | None = None) -> dict[str, Decimal]:
+    """Quanto a própria sessão já reserva, por SKU (uma consulta).
+
+    Com ``target_date``, só as reservas daquela data; sem data, todas as ativas.
+    ``Decimal``: produto vendido por peso não pode perder a fração.
+    """
     if not session_key:
         return {}
     from shopman.stockman import StockHolds
 
-    holds = StockHolds.find_active_by_reference(session_key)
-    held: dict[str, int] = {}
-    for hold in holds:
+    held: dict[str, Decimal] = {}
+    for hold in StockHolds.find_active_by_reference(session_key):
         if target_date is not None and hold.target_date != target_date:
             continue
-        held[hold.sku] = held.get(hold.sku, 0) + int(hold.quantity)
+        held[hold.sku] = held.get(hold.sku, Decimal("0")) + Decimal(str(hold.quantity))
     return held
 
 
@@ -107,30 +83,3 @@ def loyalty_balance(customer_uuid) -> int:
     except Exception:
         logger.exception("loyalty_balance_failed")
         return 0
-
-
-def _availability_for_sku(
-    sku: str,
-    *,
-    channel_ref: str,
-    target_date: date | None = None,
-) -> dict | None:
-    try:
-        from shopman.stockman.services.availability import availability_for_sku
-
-        from shopman.shop.adapters import stock as stock_adapter
-
-        scope = stock_adapter.get_channel_scope(channel_ref)
-        return availability_for_sku(
-            sku,
-            target_date=target_date,
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
-            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
-        )
-    except Exception as e:
-        logger.warning("checkout_availability_lookup_failed sku=%s: %s", sku, e, exc_info=True)
-        return None

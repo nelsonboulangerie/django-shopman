@@ -15,21 +15,23 @@ const emit = defineEmits<{
 </script>
 
 <template>
+  <!-- Minimalista (dono, 13/11/2026): o nome, o número e, no fim, o gesto da coluna e
+       o recolher. O que a coluna guarda vai no título do nome, não numa segunda frase. -->
   <div class="flex w-full min-w-max items-center gap-2" data-board-heading>
-    <Icon :name="zone.icon" class="size-4 text-muted-foreground" />
-    <h2 class="op-eyebrow">{{ zone.title }}</h2>
-    <OperatorCountChip :count="cards.length" />
+    <h2 class="font-semibold text-highlighted" :title="zone.subtitle">
+      {{ zone.title }}
+    </h2>
     <span
-      class="hidden truncate op-micro text-muted-foreground sm:block"
-      :title="zone.subtitle"
+      class="rounded-full bg-default px-2 op-micro font-semibold tnum text-highlighted"
+      data-board-count
+      >{{ cards.length }}</span
     >
-      {{ zone.subtitle }}
-    </span>
-
-    <div class="ms-auto flex items-center">
+    <div class="ms-auto flex items-center gap-1">
+      <!-- O gesto da coluna inteira (em Prontos, "Juntar entregas"), antes do recolher. -->
+      <slot name="actions" />
       <NuxtButton
         v-if="canCollapse"
-        icon="i-lucide-panel-left-close"
+        icon="i-lucide-chevrons-left"
         color="neutral"
         variant="ghost"
         square

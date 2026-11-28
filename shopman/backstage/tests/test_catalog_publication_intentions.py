@@ -156,7 +156,9 @@ def test_display_preview_skips_outside_membership_and_never_creates_price(client
     display.refresh_from_db()
     assert display.config["display"]["paused_skus"] == ["BOLO"]
     assert ListingItem.objects.count() == before
-    assert client.post(URL, {**data, "preview": True, "is_published": False}, content_type="application/json").status_code == 400
+    hidden = client.post(URL, {**data, "preview": True, "is_published": False}, content_type="application/json")
+    assert hidden.status_code == 200  # feed também oculta (display.hidden_skus)
+    assert hidden.json()["preview"]["cells"][0]["after"] == {"is_published": False, "is_sellable": False}
 
 
 def test_other_person_cannot_apply_preview_or_read_receipt(client, operator, catalog, django_user_model):

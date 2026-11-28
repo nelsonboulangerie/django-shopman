@@ -67,7 +67,7 @@ describe("o aviso no painel do entregador", () => {
     } finally { w.unmount(); }
   });
 
-  it("na hora: o aviso leva o Chamar (que arma a mesma confirmação) e o Dispensar, sem botão repetido", async () => {
+  it("na hora: o aviso leva o Chamar (que abre o MESMO sheet de chamar) e o Dispensar, sem botão repetido", async () => {
     nowMs.value = minutes(11);
     const w = mountPanel();
     try {
@@ -75,22 +75,11 @@ describe("o aviso no painel do entregador", () => {
       expect(aviso.text()).toContain("Pedido 0042 em preparo há 11 min. Já dá para chamar o entregador?");
       expect(w.findAll("button").filter((item) => item.text() === "Chamar entregador")).toHaveLength(1);
       await button(w, "Chamar entregador")!.trigger("click");
+      // Um toque nunca chama: pede o sheet, onde se confere e se chama (#2876).
       expect(w.emitted("dispatch")).toBeUndefined();
-      expect(w.get('[data-testid="courier-dispatch-question"]').text()).toBe(question);
-      expect(button(w, "Chamar entregador")).toBeUndefined();
-      await button(w, "Confirmar chamada")!.trigger("click");
-      expect(w.emitted("dispatch")).toHaveLength(1);
+      expect(w.emitted("call")).toHaveLength(1);
       await button(w, "Dispensar")!.trigger("click");
       expect(w.emitted("dismissReminder")).toHaveLength(1);
-    } finally { w.unmount(); }
-  });
-
-  it("vindo do cartão (#courier-call), abre com a pergunta já armada", () => {
-    nowMs.value = minutes(11);
-    const w = mountPanel({ armDispatch: true });
-    try {
-      expect(w.get('[data-testid="courier-dispatch-question"]').text()).toBe(question);
-      expect(button(w, "Confirmar chamada")).toBeTruthy();
     } finally { w.unmount(); }
   });
 
@@ -103,26 +92,26 @@ describe("o aviso no painel do entregador", () => {
   });
 });
 
-describe("o aviso no cartão do quadro", () => {
+describe("o aviso no cartão do painel", () => {
   function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     return {
-      ref: "NB-261013-0042", status: "preparing", status_label: "Em preparo", status_color: "",
-      channel_ref: "web", channel_icon: "language", customer_name: "Ana", created_at_display: "19:00",
+      ref: "NB-261013-0042", status: "preparing", status_label: "Em preparo",
+      channel_ref: "web", channel_name: "Loja online", channel_icon: "language", customer_name: "Ana",
       created_at_iso: "", server_now_iso: "", elapsed_seconds: 600, timer_class: "timer-ok",
-      items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00", fulfillment_icon: "local_shipping",
+      items_summary: "2× Pão", items_count: 2, total_display: "R$ 15,00",
       fulfillment_label: "Entrega", fulfillment_type: "delivery", delivery_address: "Rua das Flores, 123",
-      delivery_instructions: "", can_confirm: false, can_advance: false, next_status: "ready",
-      next_action_label: "", payment_method: "pix", payment_method_label: "PIX",
-      ifood_cancellation_notice: "", ifood_pickup_code: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
+      can_confirm: false, can_advance: false, next_status: "ready",
+      payment_method: "pix", payment_method_label: "PIX",
+      ifood_cancellation_notice: "", ifood_schedule_label: "", ifood_remote_ahead_label: "",
       ifood_negotiations: [], payment_status: "captured", payment_pending: false, can_settle_delivery_cash: false,
-      fiscal_status_label: "", fiscal_status: "", has_kitchen_note: false, has_customer_note: false, is_gift: false,
+      fiscal_status: "", has_customer_note: false, is_gift: false,
       gift_has_recipient: false, assigned_operator: "", awaiting_work_orders: [], confirmation_deadline_iso: "",
-      confirmation_action: "confirm", revisions: {}, actions: [], courier_reminder: reminder, ...over,
+      confirmation_action: "confirm", actions: [], courier_reminder: reminder, ...over,
     } as OrderCardProjection;
   }
   const stubs = { Icon: true, NuxtLink: { template: "<a><slot /></a>" } };
 
-  it("pílula amarela na hora; o Chamar abre o pedido com a pergunta e o Dispensar vai ao quadro", async () => {
+  it("pílula amarela na hora; o Chamar abre o pedido com a pergunta e o Dispensar vai ao painel", async () => {
     nowMs.value = minutes(12);
     const w = mount(OrderCard, { props: { card: card() }, global: { stubs } });
     try {

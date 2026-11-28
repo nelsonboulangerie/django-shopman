@@ -15,6 +15,7 @@ permissão NÃO ouve, porque PIN nenhum resolveria.
 
 from __future__ import annotations
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
@@ -23,6 +24,8 @@ from shopman.cashman.models import Shift
 
 from shopman.backstage.tests.support import trust_station
 from shopman.shop.models import Shop
+
+pytestmark = pytest.mark.channels("pdv")
 
 POS_URL = "/api/v1/backstage/pos/"
 

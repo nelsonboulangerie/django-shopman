@@ -9,7 +9,8 @@ import { quickBarLayout, quickBarProblems } from "../../../operator-kit/app/pres
 
 // V4-PROD: as etapas do lote moram no rail da suíte (e na barra do polegar no
 // celular). Era a fileira de abas do cabeçalho; o contrato (ordem, rótulo, rota,
-// tecla) continua o mesmo, decidido no #1433.
+// tecla) continua o mesmo, decidido no #1433. O modelo de navegação (31/10/2026) só
+// acrescenta a forma de cada uma.
 describe("seções da Produção no rail", () => {
   it("o ciclo do lote, de Planejamento a Qualidade, com Alt+1 a Alt+5", () => {
     const stages = stageSections().map((section) => [
@@ -20,28 +21,47 @@ describe("seções da Produção no rail", () => {
     expect(stages).toEqual([
       ["/plan", "Planejamento", "Alt+1"],
       ["/mise-en-place", "Preparação", "Alt+2"],
-      ["/", "Abertura", "Alt+3"],
-      ["/close", "Fechamento", "Alt+4"],
+      ["/", "Produção", "Alt+3"],
+      ["/close", "Finalização", "Alt+4"],
       ["/quality", "Qualidade", "Alt+5"],
     ]);
   });
 
-  it("barra inferior do shell: as quatro primeiras etapas e o Mais, que abre a gaveta", () => {
-    const sections = productionSections({ canViewRecipes: true, timersActive: 1 });
-    expect(quickBarProblems(sections)).toEqual([]);
-    const layout = quickBarLayout(sections);
-    expect(layout.items.map((s) => s.key)).toEqual(["plan", "mise-en-place", "open", "close"]);
-    expect(layout.more).toBe(true);
+  it("leva o dia consultado ao planejamento sem fixar a URL do tablet", () => {
+    const sections = productionSections({ date: "2026-11-06", qualityPending: 2 });
+    expect(sections.find((section) => section.key === "plan")?.to).toBe("/plan?date=2026-11-06");
+    expect(sections.find((section) => section.key === "quality")?.to).toBe("/quality");
+    expect(sections.find((section) => section.key === "timers")?.to).toBe("/timers");
+    expect(productionSections().find((section) => section.key === "plan")?.to).toBe("/plan");
   });
 
-  it("depois do ciclo, um traço, Timers e Ajustes (v4 plano-porque, R02); nada no pé", () => {
+  it("forma de cada seção: o chão no celular é a barra de baixo, as cinco, sem Mais", () => {
     const sections = productionSections({ canViewRecipes: true, canViewReports: true });
-    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "settings"]);
+    expect(sections.map((s) => [s.key, s.form])).toEqual([
+      ["plan", "office"],
+      ["mise-en-place", "floor"],
+      ["open", "floor"],
+      ["close", "floor"],
+      ["quality", "floor"],
+      ["timers", "floor"],
+      ["recipes", "office"],
+      ["reports", "office"],
+      ["board", "wall"],
+    ]);
+    const floor = sections.filter((s) => s.form === "floor");
+    expect(quickBarProblems(floor)).toEqual([]);
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.key)).toEqual(["mise-en-place", "open", "close", "quality", "timers"]);
+    expect(layout.more).toBe(false);
+  });
+
+  it("depois do ciclo, um traço, Timers e as ferramentas diretas; nada no pé", () => {
+    const sections = productionSections({ canViewRecipes: true, canViewReports: true });
+    expect(sections.map((section) => section.key)).toEqual(["plan", "mise-en-place", "open", "close", "quality", "timers", "recipes", "reports", "board"]);
     expect(sections.some((section) => section.foot)).toBe(false);
     expect(sections.find((s) => s.key === "timers")?.divider).toBe(true);
-    // Receitas, Relatórios e o Letreiro moram em Ajustes: a seção acende lá.
-    expect(activeSectionKey("/recipes/abc", sections)).toBe("settings");
-    expect(activeSectionKey("/board", sections)).toBe("settings");
+    expect(activeSectionKey("/recipes/abc", sections)).toBe("recipes");
+    expect(activeSectionKey("/board", sections)).toBe("board");
   });
 
   it("o selo de Timers conta os ativos e o ponto avisa quando um toca", () => {
@@ -67,11 +87,11 @@ describe("seções da Produção no rail", () => {
     expect(quality.badge).toBe("8");
   });
 
-  it("a rota acende a seção certa; Receitas acende Ajustes, onde ela mora", () => {
+  it("a rota acende a seção direta correspondente", () => {
     const sections = productionSections({ canViewRecipes: true });
     expect(activeSectionKey("/", sections)).toBe("open");
     expect(activeSectionKey("/close", sections)).toBe("close");
-    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("settings");
+    expect(activeSectionKey("/recipes/PAO/edit", sections)).toBe("recipes");
     expect(activeSectionKey("/timers/", sections)).toBe("timers");
   });
 });

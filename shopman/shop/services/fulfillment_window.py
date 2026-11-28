@@ -55,10 +55,12 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, time
 
+from shopman.utils.formatting import format_clock
+
 logger = logging.getLogger(__name__)
 
 
-def _window_start(slot: dict) -> time | None:
+def slot_start(slot: dict) -> time | None:
     """A que horas esta janela COMEÇA.
 
     Duas grades, dois formatos, e por isso a hora sai do próprio slot:
@@ -128,7 +130,7 @@ def canonical_slots() -> list[dict]:
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
-def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
+def hour_pair(slot_ref: str) -> tuple[time, time] | None:
     """``"14:00-14:30"`` → as duas pontas; qualquer outra coisa → ``None``.
 
     A meia hora do expediente se lê SOZINHA porque o ref dela É o par de horas
@@ -147,7 +149,7 @@ def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
     return hora_inicio, hora_fim
 
 
-def window_label(slot_ref: str | None) -> str:
+def window_label(slot_ref: str | None, *, for_customer: bool = False) -> str:
     """Rótulo humano da janela combinada — tolerando os DOIS vocabulários da chave.
 
     ``Order.data["delivery_time_slot"]`` carrega duas grades (data-schemas):
@@ -160,19 +162,26 @@ def window_label(slot_ref: str | None) -> str:
     ``fulfillment_type`` erra na encomenda de ENTREGA (ref canônico num pedido
     de entrega) e na retirada de hoje no balcão (par de horas numa retirada).
 
-    Ref desconhecido devolve o próprio ref: um ref cru é feio, uma janela em
-    branco é o compromisso sumindo do papel.
+    Ref que nenhuma das duas grades conhece (a casa tirou a janela do Admin, ou
+    o dado nasceu errado) grita no log como erro e sai com a frase de quem lê:
+    a equipe (Gestor, Cozinha, PDV, Admin, ficha) lê "horário não reconhecido",
+    o cliente (acompanhamento, notificação, Concierge, exportação da conta)
+    lê "horário a confirmar", com ``for_customer=True``; o cliente não lê
+    frase de erro do sistema (coordenação, 17/11/2026, #2555). Nunca o ref cru ("manha" na tela é identificador vazando), e
+    nunca em branco (em branco o compromisso some e o card diria "sem horário
+    combinado", que é falso: houve um combinado, só não se sabe ler).
     """
     ref = str(slot_ref or "").strip()
     if not ref:
         return ""
-    par = _hour_pair(ref)
+    par = hour_pair(ref)
     if par is not None:
-        return f"{par[0]:%H:%M} às {par[1]:%H:%M}"
+        return f"{format_clock(par[0])} às {format_clock(par[1])}"
     for slot in canonical_slots():
         if str(slot.get("ref") or "") == ref:
             return str(slot.get("label") or "").strip() or ref
-    return ref
+    logger.error("fulfillment_window: slot ref %r is not in the house grid", ref)
+    return "horário a confirmar" if for_customer else "horário não reconhecido"
 
 
 def window_start_time(slot_ref: str | None) -> time | None:
@@ -186,12 +195,12 @@ def window_start_time(slot_ref: str | None) -> time | None:
     ref = str(slot_ref or "").strip()
     if not ref:
         return None
-    par = _hour_pair(ref)
+    par = hour_pair(ref)
     if par is not None:
         return par[0]
     for slot in canonical_slots():
         if str(slot.get("ref") or "") == ref:
-            return _window_start(slot)
+            return slot_start(slot)
     return None
 
 
@@ -224,6 +233,37 @@ def promised_at(source) -> datetime | None:
             return None
         day = timezone.localtime(created_at).date()
     return timezone.make_aware(datetime.combine(day, start))
+
+
+def window_end(source) -> datetime | None:
+    """A hora em que a janela combinada TERMINA, no dia combinado: o prazo da entrega.
+
+    Só a meia hora tem fim (``"14:00-14:30"`` → 14h30); o turno da encomenda
+    (*A partir das 12h*) é aberto por desenho e devolve ``None``, como o pedido
+    sem hora combinada. iFood agendado termina onde o iFood disse
+    (``delivery_end_at``). É a régua de quem não pode juntar uma entrega que
+    chegaria depois do prometido (``ride_plan``, #2875).
+    """
+    from django.utils import timezone
+
+    from shopman.shop.services import ifood_schedule
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if source is None:
+        return None
+    if ifood_schedule.is_scheduled(source):
+        return ifood_schedule.delivery_end(source)
+    data = getattr(source, "data", None) or {}
+    par = hour_pair(str(data.get("delivery_time_slot") or "").strip())
+    if par is None:
+        return None
+    day = get_commitment_date(source)
+    if day is None:
+        created_at = getattr(source, "created_at", None)
+        if created_at is None:
+            return None
+        day = timezone.localtime(created_at).date()
+    return timezone.make_aware(datetime.combine(day, par[1]))
 
 
 def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict]:
@@ -259,7 +299,7 @@ def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict
     abre, fecha = janela
     dentro = []
     for slot in slots:
-        inicio = _window_start(slot)
+        inicio = slot_start(slot)
         if inicio is None or (abre <= inicio < fecha):
             dentro.append(slot)
     return dentro
@@ -394,7 +434,7 @@ def annotate(
     este carrinho não cabe neste dia. Quem consome precisa saber distinguir os
     dois para dizer a frase certa.
     """
-    from shopman.shop.services.product_readiness import ReadinessUnavailable, format_clock
+    from shopman.shop.services.product_readiness import ReadinessUnavailable, clock_hhmm
 
     is_today = day == _local_today(now=now, shop=shop)
     raw = _grid_for(day, now=now, shop=shop)
@@ -421,7 +461,7 @@ def annotate(
     earliest_ref = ""
     for slot in raw:
         ref = str(slot.get("ref") or "")
-        start = _window_start(slot)
+        start = slot_start(slot)
         enabled = True
         reason = ""
         # O corte é o mesmo nas duas grades. Numa meia hora ele apaga
@@ -438,7 +478,7 @@ def annotate(
     return {
         "windows": windows,
         "earliest_ref": earliest_ref,
-        "ready_at": format_clock(ready_at),
+        "ready_at": clock_hhmm(ready_at),
         "bottleneck_sku": sku,
         "bottleneck_name": name,
         # Qual grade veio: a tela fala "horário" numa e "turno" na outra.
@@ -486,10 +526,9 @@ def validate(
     # a configuração da casa. Só quando o ref não está na grade é que ele tenta
     # se explicar sozinho — o que funciona para a meia hora ("14:00-14:30") e é
     # justamente o caso do pedido antigo, depois de a casa mudar o expediente.
-    from shopman.shop.services.product_readiness import format_clock
 
     conhecido = next((w for w in context["windows"] if w.get("ref") == ref), None)
-    start = _window_start(conhecido) if conhecido else _window_start({"ref": ref})
+    start = slot_start(conhecido) if conhecido else slot_start({"ref": ref})
 
     # ⚠️ Janela de HOJE que já começou NÃO é recusada, e a decisão é deliberada.
     #

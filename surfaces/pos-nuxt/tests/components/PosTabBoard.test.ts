@@ -70,8 +70,9 @@ it("todo estado do cartão sai no MESMO selo: NuxtBadge soft, um tamanho, só co
     expect(b.classes()).not.toContain("bg-success");
     expect(b.classes()).not.toContain("bg-warning");
     expect(b.classes()).toContain("text-xs");
-    // Não se corta: o texto é o mesmo do aria, e o ícone fica quando o texto sai.
-    expect(b.find("[data-tab-badge-label]").text()).toBe(b.attributes("aria-label"));
+    // Não se corta: o texto é o mesmo do aria (o selo só põe as iniciais em maiúscula,
+    // regra do kit), e o ícone fica quando o texto sai.
+    expect(b.find("[data-tab-badge-label]").text().toLowerCase()).toBe(b.attributes("aria-label")?.toLowerCase());
     expect(b.attributes("title")?.startsWith(`${b.attributes("aria-label")}: `)).toBe(true);
     expect(b.find("[data-tab-badge-label]").classes()).toEqual(["hidden", "@[9rem]:inline"]);
   }
@@ -109,5 +110,19 @@ it("a barra do quadro é um grupo do rótulo que cabe: completo, curto à mão e
   expect(next.html()).toContain("Próxima #2");
   // "Não pago" usa o ícone do pagamento da suíte (o do botão de pagar), não a chama.
   expect(w.find('[data-tab-badge="unpaid"]').html()).not.toContain("flame");
+  w.unmount();
+});
+
+it("Enter no campo vazio é a Próxima livre (P2-3); com referência, segue abrindo a digitada", async () => {
+  const w = await board([tab({ ref: "1", session_key: "sk-1", state: "in_use", item_count: 1 })]);
+  const input = w.find("input");
+  await input.trigger("keydown", { key: "Enter" });
+  // A Próxima livre pede a reserva (o servidor escolhe, #2443): não abre pelo número.
+  expect(w.emitted("openNextFree")).toHaveLength(1);
+  expect(w.emitted("open")).toBeUndefined();
+
+  await w.setProps({ modelValue: "7" });
+  await w.find("form").trigger("submit");
+  expect(w.emitted("open")).toEqual([["7"]]);
   w.unmount();
 });

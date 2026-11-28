@@ -24,7 +24,7 @@ import {
   formatMoney,
   formatMoneyCompact,
   missingLabel,
-  rangeLabel,
+  betweenLabel,
   shortDate,
 } from "~/presentation/bi";
 import {
@@ -84,12 +84,25 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!--
       O período mora na linha de recortes, como no Histórico do Gestor, com o frescor
       da leitura no fim da linha. No cabeçalho ele empurrava o título para fora da tela
       no tablet.
     -->
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes; o tempo da leitura fica na faixa logo abaixo. -->
+    <BiCompactBar title="Projeção" :options="readingActions">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="period"
+          :presets="presets"
+          compact
+          align="start"
+          label="Período que você está planejando"
+        />
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="O que esperar?" :actions="readingActions" :actions-label="readingLabel">
       <!-- Celular: período e frescor são os dois primários; não há painel de filtros. -->
       <template #filters-primary>
@@ -170,7 +183,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                 v-if="single.revenue_q"
                 variant="soft"
                 :title="ordinaryWeekdayLabel(single.weekday_label)"
-                :value="formatMoney(Math.round(single.revenue_q.expected))"
+                :value="formatMoneyCompact(single.revenue_q.expected)"
                 hint="O contraponto: a diferença é o que a data acrescenta."
               />
             </div>
@@ -206,8 +219,8 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                 <OperatorMetric
                   variant="soft"
                   title="Faturamento provável"
-                  :value="formatMoney(Math.round(single.revenue_q.expected))"
-                  :hint="`Metade dos dias parecidos ficou entre ${rangeLabel(single.revenue_q.low, single.revenue_q.high)}.`"
+                  :value="formatMoneyCompact(single.revenue_q.expected)"
+                  :hint="`Metade dos dias parecidos ficou entre ${betweenLabel(single.revenue_q.low, single.revenue_q.high)}.`"
                 />
                 <OperatorMetric
                   variant="soft"
@@ -267,7 +280,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
                   variant="soft"
                   title="Troco provável"
                   :value="formatMoney(Math.round(singleChange.change_q.expected))"
-                  :hint="`Entre ${rangeLabel(singleChange.change_q.low, singleChange.change_q.high)}.`"
+                  :hint="`Entre ${betweenLabel(singleChange.change_q.low, singleChange.change_q.high)}.`"
                 />
                 <OperatorMetric
                   v-if="change.mix && singleChange.coin_floor_q !== null"
@@ -311,10 +324,10 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
           <div class="grid gap-3 sm:grid-cols-3">
             <OperatorMetric
               title="Faturamento provável no período"
-              :value="report.total_revenue_q ? formatMoney(Math.round(report.total_revenue_q.expected)) : 'sem dado'"
+              :value="report.total_revenue_q ? formatMoneyCompact(report.total_revenue_q.expected) : 'sem dado'"
               :hint="
                 report.total_revenue_q
-                  ? `Entre ${rangeLabel(report.total_revenue_q.low, report.total_revenue_q.high)}.`
+                  ? `Entre ${betweenLabel(report.total_revenue_q.low, report.total_revenue_q.high)}.`
                   : 'Um dia do período ficou sem base, então o total não sai.'
               "
             />
@@ -328,7 +341,7 @@ const daysCsv = computed(() => forecastDaysCsv(days.value));
               :value="change?.total_change_q ? formatMoney(Math.round(change.total_change_q.expected)) : 'sem dado'"
               :hint="
                 change?.total_change_q
-                  ? `Entre ${rangeLabel(change.total_change_q.low, change.total_change_q.high)}.`
+                  ? `Entre ${betweenLabel(change.total_change_q.low, change.total_change_q.high)}.`
                   : change?.missing_reason
                     ? missingLabel(change.missing_reason)
                     : 'Um dia do período ficou sem base, então o total não sai.'

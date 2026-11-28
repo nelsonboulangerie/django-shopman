@@ -1,6 +1,6 @@
 """Encomendas do PDV — a leitura que o balcão faz do que a casa prometeu.
 
-A seção "Encomendas" do PDV (``docs/plans/ENCOMENDAS-PDV-PLAN.md``) é uma tela
+A seção "Encomendas" do PDV (``docs/plans/completed/ENCOMENDAS-PDV-PLAN.md``) é uma tela
 só e responde três perguntas do balcão: *vim buscar a encomenda da Ana* (a
 busca, :func:`build_preorder_search`), *o que sai hoje?* (o modo Dia) e *quanto
 temos para sábado?* (o modo Semana, de segunda a domingo). Dia e Semana são a
@@ -29,6 +29,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from django.utils import formats, timezone
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,9 @@ _CHANNEL_FALLBACK_LABELS = {
 #: :func:`_situation`: o que aconteceu com a MERCADORIA vence o que aconteceu
 #: com o dinheiro, porque o saldo tem campo próprio no card e a mercadoria não.
 SITUATION_LABELS = {
+    # O pedido que ninguém aceitou ainda (#3166): o mesmo nome do Gestor. Antes
+    # ele caía no estado do dinheiro e o balcão lia "Pago" num pedido "Novo".
+    "new": "Novo",
     "to_pay": "A pagar",
     "paid": "Pago",
     "on_account": "Na conta da casa",
@@ -112,7 +116,7 @@ class PreorderCardProjection:
     commitment_date: str  # ISO
     commitment_date_display: str  # "hoje" · "amanhã" · "sáb, 27/09"
     window_label: str  # "" quando não houve janela combinada
-    window_start: str  # "HH:MM" ou ""
+    window_start: str  # "12h45" (como a tela lê) ou ""
     status: str
     situation: str
     situation_label: str
@@ -148,12 +152,15 @@ class PreorderDayProjection:
     day_display: str  # "27/09"
     is_today: bool
     orders_count: int
-    total_q: int
-    total_display: str
+    # As SOMAS do dia são apuração, não operação: só saem para quem audita o
+    # caixa (``cashman.audit_shift``); para o resto, ``None`` (ver
+    # :func:`build_preorder_list`). O valor de CADA encomenda segue no cartão.
+    total_q: int | None
+    total_display: str | None
     # A soma dos saldos das encomendas "a receber" do dia (conta da casa e
     # pagamento a conferir ficam de fora — ver :data:`PAYMENT_STATES`).
-    to_receive_q: int
-    to_receive_display: str
+    to_receive_q: int | None
+    to_receive_display: str | None
     orders: tuple[PreorderCardProjection, ...]
 
 
@@ -163,10 +170,11 @@ class PreorderListProjection:
     date_to: str
     today: str
     count: int
-    total_q: int
-    total_display: str
-    to_receive_q: int
-    to_receive_display: str
+    # Somas do período: ``None`` para quem não audita o caixa (como no dia).
+    total_q: int | None
+    total_display: str | None
+    to_receive_q: int | None
+    to_receive_display: str | None
     # TODOS os dias do intervalo, inclusive os vazios: a grade semanal tem sete
     # colunas mesmo quando terça não tem nada, e a coluna vazia é informação.
     days: tuple[PreorderDayProjection, ...]
@@ -221,6 +229,13 @@ class PreorderHandOverProjection:
     # o pronto, como o "Marcar pronto" do Gestor. A linha que a tela mostra
     # antes de confirmar; vazio quando a encomenda já está pronta.
     kitchen_notice: str = ""
+    # O Pix do saldo cobrado no balcão (#2897) ainda pagável: o QR no formato da
+    # venda (``pos._pos_payment_response``), para a tela de Pagamento voltar a
+    # ele. ``None`` quando não há Pix do balcão vivo.
+    counter_pix: dict | None = None
+    # Por que o saldo NÃO pode ser cobrado em Pix no balcão agora (a forma fica
+    # apagada com esta frase); vazio quando pode.
+    pix_block_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -327,8 +342,16 @@ def parse_range(raw_from, raw_to, *, week=None, today: date | None = None) -> tu
     return date_from, date_to
 
 
-def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjection:
-    """As encomendas do período (o dia, ou a semana), agrupadas por dia."""
+def build_preorder_list(*, date_from: date, date_to: date, show_money_sums: bool = False) -> PreorderListProjection:
+    """As encomendas do período (o dia, ou a semana), agrupadas por dia.
+
+    ``show_money_sums``: as SOMAS em dinheiro (total e "a receber", do período e
+    de cada dia) só saem para quem audita o caixa (``cashman.audit_shift``). A
+    contagem do fechamento é cega, e "20 encomendas · R$ 4.241,00" na aba do
+    balcão é o gabarito dela (D4 do plano de excelência do PDV). Fechado por
+    padrão: quem esquecer de perguntar a permissão entrega menos, não mais. O
+    valor de CADA encomenda segue no cartão: é com ele que o balcão recebe.
+    """
     from shopman.backstage.services import order_ticket
 
     orders = order_ticket.orders_for_period(date_from, date_to)
@@ -352,10 +375,10 @@ def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjec
                 day_display=formats.date_format(cursor, "d/m"),
                 is_today=cursor == today,
                 orders_count=len(day_cards),
-                total_q=day_total,
-                total_display=_money(day_total),
-                to_receive_q=day_to_receive,
-                to_receive_display=_money(day_to_receive),
+                total_q=day_total if show_money_sums else None,
+                total_display=_money(day_total) if show_money_sums else None,
+                to_receive_q=day_to_receive if show_money_sums else None,
+                to_receive_display=_money(day_to_receive) if show_money_sums else None,
                 orders=tuple(day_cards),
             )
         )
@@ -368,10 +391,10 @@ def build_preorder_list(*, date_from: date, date_to: date) -> PreorderListProjec
         date_to=date_to.isoformat(),
         today=today.isoformat(),
         count=len(cards),
-        total_q=total,
-        total_display=_money(total),
-        to_receive_q=to_receive,
-        to_receive_display=_money(to_receive),
+        total_q=total if show_money_sums else None,
+        total_display=_money(total) if show_money_sums else None,
+        to_receive_q=to_receive if show_money_sums else None,
+        to_receive_display=_money(to_receive) if show_money_sums else None,
         days=tuple(days),
         max_batch=order_ticket.MAX_BATCH,
     )
@@ -473,11 +496,16 @@ def build_counter_block(order, *, user=None) -> CounterOrderProjection:
 
 
 def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHandOverProjection:
-    from shopman.shop.services import counter_takeover, operator_orders
+    from shopman.shop.services import counter_pix, counter_takeover, operator_orders
 
     reason = operator_orders.counter_hand_over_block(order, balance_q=card.balance_q)
     amount = int(card.balance_q or 0)
     digital = counter_takeover.pending_digital_method(order) if amount > 0 and not reason else ""
+    pix_proof = counter_pix.live_proof(order) if amount > 0 and not reason else None
+    if digital and counter_pix.governs(order):
+        notice = COUNTER_PIX_NOTICE
+    else:
+        notice = counter_takeover.notice_for(digital) if digital else ""
     return PreorderHandOverProjection(
         allowed=not reason,
         needs_payment=amount > 0,
@@ -485,9 +513,26 @@ def _hand_over(order, card: PreorderCardProjection, method: str) -> PreorderHand
         amount_display=_money(amount),
         suggested_method=method if method in {"cash", "debit", "credit"} else "",
         block_reason=reason,
-        digital_charge_notice=counter_takeover.notice_for(digital) if digital else "",
+        digital_charge_notice=notice,
         kitchen_notice=KITCHEN_NOTICE if not reason and order.status != "ready" else "",
+        counter_pix=pix_proof,
+        pix_block_reason=_counter_pix_block(order, amount) if amount > 0 and not reason else "",
     )
+
+
+#: O Pix do balcão que ainda espera: receber de outra forma cancela ele antes.
+COUNTER_PIX_NOTICE = "O Pix gerado no balcão será cancelado."
+
+
+def _counter_pix_block(order, amount_q: int) -> str:
+    """A frase de por que o saldo não sai em Pix no balcão agora; vazio quando sai."""
+    from shopman.shop.services import pix_policy
+
+    try:
+        pix_policy.enforce_pix_test_amount_limit(amount_q)
+    except pix_policy.PixPaymentPolicyError as exc:
+        return exc.message
+    return ""
 
 
 #: Entregar antes do pronto da cozinha: o que acontece com a tela dela.
@@ -590,7 +635,7 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
         commitment_date=commitment.isoformat(),
         commitment_date_display=_date_display(commitment, timezone.localdate()),
         window_label=window_label(slot),
-        window_start=start.strftime("%H:%M") if start else "",
+        window_start=format_clock(start) if start else "",
         status=order.status,
         situation=situation,
         situation_label=SITUATION_LABELS[situation],
@@ -609,8 +654,11 @@ def _card(order, *, reads, channel_labels: dict[str, str]) -> PreorderCardProjec
 #: A corrida ainda não foi pedida e já pode ser: a frase da linha e do painel.
 COURIER_NOT_CALLED_LABEL = "Entregador não chamado"
 
-#: O tom de cada estado da corrida (a letra da TaOn), para o selo do balcão.
-_COURIER_TONES = {"N": "danger", "C": "danger", "F": "success", "A": "info", "S": "info", "E": "info"}
+#: O tom de cada estado da corrida (``RideState``), para o selo do balcão.
+_COURIER_TONES = {
+    "not_served": "danger", "cancelled": "danger", "done": "success",
+    "assigned": "info", "at_store": "info", "on_route": "info",
+}
 
 
 def courier_line(block: dict | None) -> tuple[str, str]:
@@ -623,9 +671,8 @@ def courier_line(block: dict | None) -> tuple[str, str]:
         return "", ""
     if block.get("can_dispatch_again"):
         return str(block.get("status_label") or ""), "warning"
-    status = str(block.get("status") or "")
-    if status:
-        return str(block.get("status_label") or ""), _COURIER_TONES.get(status, "neutral")
+    if block.get("status"):
+        return str(block.get("status_label") or ""), _COURIER_TONES.get(str(block.get("ride_state") or ""), "neutral")
     if block.get("can_dispatch"):
         return COURIER_NOT_CALLED_LABEL, "warning"
     return "", ""
@@ -685,6 +732,8 @@ def _situation(order, payment_state: str) -> str:
         return "out_for_delivery"
     if order.status == "ready":
         return "ready"
+    if order.status == "new":
+        return "new"
     return _SITUATION_BY_PAYMENT_STATE[payment_state]
 
 

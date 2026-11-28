@@ -334,9 +334,9 @@ o lugar onde cada uma é cobrada, está em
 | WP | estado |
 |---|---|
 | WP-UX-1 barra de seções | PR aberta (esta) — Gestor, B.I., Marketing e Compras |
-| WP-UX-3 erro com saída (PDV) | **PR #977**, na fila — 38 mensagens reescritas |
-| WP-UX-4 jargão e rótulos | **PR #978** — 31 frases; aguarda baseline visual do Marketing |
-| WP-UX-7 (1ª metade) deep links com contexto | **PR #976**, na fila — o link do fechamento carrega `?date=&q=<ref>` |
+| WP-UX-3 erro com saída (PDV) | entregue: **PR #977**, mergeado em 22/09 — 38 mensagens reescritas |
+| WP-UX-4 jargão e rótulos | entregue: **PR #978**, mergeado em 22/09 — 31 frases |
+| WP-UX-7 (1ª metade) deep links com contexto | entregue: **PR #976**, mergeado em 22/09 — o link do fechamento carrega `?date=&q=<ref>` |
 | WP-UX-2, 5, 6, 8, 9 | não iniciados — proposta visual com prévias, padrões por intenção e trava de não-regressão em [SUITE-UX-V2-PLAN](SUITE-UX-V2-PLAN.md) (03/10/2026) |
 
 ---
@@ -346,4 +346,4 @@ o lugar onde cada uma é cobrada, está em
 - `surfaces/operator-kit/README.md` — contrato das peças da layer
 - `docs/reference/omotenashi-copy.md` — os oito defeitos de copy com nome
 - `docs/reference/marketing-surface-contract.md` — contrato factual do Marketing
-- `docs/decisions/adr-026-operator-surface-security-envelope.md` — envelope de segurança
+- `docs/decisions/adr-038-operator-surface-security-envelope.md` — envelope de segurança

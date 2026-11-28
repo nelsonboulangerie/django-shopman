@@ -99,6 +99,8 @@ _PURCHASE = "cadastro de compra da casa"
 _USER_CASCADE = "do operador; some só junto da conta de cliente, se houver"
 _YOOGA = "histórico real (Yooga) e sua curadoria"
 _FRAMEWORK = "infraestrutura do Django"
+_AI_METER = "medidor da IA: gasto real em dólar, sem texto nem cliente; apagar zeraria o teto do dia"
+_PAID_API_METER = "medidor das APIs pagas: custo estimado em dólar, sem coordenada nem cliente; apagar zeraria o teto do dia"
 
 POLICY: dict[str, Rule] = {
     # Django e bibliotecas
@@ -157,6 +159,8 @@ POLICY: dict[str, Rule] = {
     "orderman.FulfillmentItem": _purge(_ORDERS),
     "orderman.Directive": _purge(_ORDERS),
     "orderman.IdempotencyKey": _purge(_ORDERS),
+    # fiscalman
+    "fiscalman.FiscalDocument": _purge("notas de homologação dos pedidos do ensaio; vão junto com os pedidos"),
     # payman
     "payman.PaymentIntent": _purge(_ORDERS),
     "payman.PaymentTransaction": _purge(_ORDERS),
@@ -211,21 +215,38 @@ POLICY: dict[str, Rule] = {
     "shop.OmotenashiCopy": _keep(_CONFIG),
     "shop.HistoricalOmotenashiCopy": _keep(_CONFIG),
     "shop.FAQEntry": _keep(_CONFIG),
+    "shop.KitchenNoteTag": _keep(_CONFIG),
+    "shop.KitchenNoteTag_collections": _keep(_CONFIG),
+    "shop.KitchenNoteTag_products": _keep(_CONFIG),
     "shop.HistoricalFAQEntry": _keep(_CONFIG),
     "shop.DeliveryZone": _keep(_CONFIG),
     "shop.DeliveryDistanceBand": _keep(_CONFIG),
+    "shop.DeliveryService": _keep(_CONFIG),
+    "shop.Courier": _keep("entregadores da casa (cadastro real, não dado de teste)"),
+    "shop.CourierRate": _keep(_CONFIG),
+    "shop.CourierLink": _purge("links de rota dos pedidos de ensaio; vão junto com os pedidos"),
     "shop.Promotion": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.Promotion_channels": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.Coupon": _keep("promoções e cupons: entram ou não no Dia 1 é decisão do dono"),
     "shop.AttributeDefinition": _keep(_CATALOG),
-    "shop.RetiredProduct": _keep("lápides do catálogo (URL antiga responde 410)"),
+    "shop.InstanceApplyRecord": _keep("trilha do descritor de Instância (base do próximo apply)"),
     "shop.QualityGrade": _keep(_CONFIG),
     "shop.QualityDefect": _keep(_CONFIG),
     "shop.CatalogSnapshot": _keep("vínculo do catálogo com o iFood"),
     "shop.CatalogBinding": _keep("vínculo do catálogo com o iFood"),
     "shop.CatalogSyncState": _keep("vínculo do catálogo com o iFood"),
+    "shop.ChannelAddonGroup": _keep("complementos do item no catálogo do iFood"),
+    "shop.ChannelAddon": _keep("complementos do item no catálogo do iFood"),
+    "shop.CatalogImageUpload": _purge("cache do imagePath do catálogo iFood; derivado do merchant remoto"),
     "shop.IFoodStoreStatus": _keep("estado da loja no iFood"),
     "shop.OperatorPasskey": _keep("passkey dos operadores"),
+    "shop.AIConnection": _keep("conexões de IA da loja (chave cifrada)"),
+    "shop.AiInvocation": _keep(_AI_METER),
+    "shop.AiSpendDay": _keep(_AI_METER),
+    "shop.PaidApiCall": _keep(_PAID_API_METER),
+    # A PTAX do Banco Central que diz em reais o gasto com IA: dado público, sem cliente;
+    # apagar mudaria o real dos dias passados no B.I.
+    "shop.UsdBrlQuote": _keep("cotação PTAX do BCB usada no B.I.: dado público, sem cliente"),
     "shop.PushSubscription": _keep("aviso no dispositivo do operador"),
     "shop.AnnouncementTemplate": _keep(_CONFIG),
     "shop.Campaign": _keep(_CONFIG),
@@ -237,6 +258,15 @@ POLICY: dict[str, Rule] = {
     "shop.Conversation": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ConversationBinding": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ConversationMessage": _purge("conversas do ensaio (WhatsApp)"),
+    # A decisão em sombra (N5) deriva da entrada: sai com a conversa, como a própria entrada.
+    "shop.ConversationalDecision": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
+    "shop.ConversationalOutcome": _purge("decisão em sombra das conversas do ensaio (WhatsApp)"),
+    # O armazenamento do framework conversacional (N8): episódios, registros e caixa de saída
+    # das conversas do ensaio saem com elas.
+    "shop.ConversationalEpisode": _purge("episódios do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalRecord": _purge("registros do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalWork": _purge("caixa de saída do framework conversacional das conversas do ensaio"),
+    "shop.ConversationalCommitment": _purge("compromissos do motor do framework das conversas do ensaio"),
     "shop.OutboundAttempt": _purge("conversas do ensaio (WhatsApp)"),
     "shop.ContactRelease": _purge("conversas do ensaio (WhatsApp)"),
     "shop.PrivacyRequestReceipt": _purge(_CUSTOMER),
@@ -261,6 +291,10 @@ POLICY: dict[str, Rule] = {
     # storefront
     "storefront.CatalogStructureHead": _keep(_CATALOG),
     "storefront.IntentCategory": _keep(_CONFIG),
+    # A amostra de aprendizado (#2851): anonimizada na cópia, sem conversa, cliente ou
+    # telefone ligados, sem prazo de retenção. Não é dado de ninguém, e apagá-la jogaria
+    # fora a curadoria do que a Concierge aprende.
+    "storefront.ConversationCorpusEntry": _keep("amostra anonimizada de aprendizado da Concierge, sem pessoa ligada"),
     "storefront.CustomerFavorite": _purge(_CUSTOMER),
     "storefront.StockAlertSubscription": _purge(_CUSTOMER),
     "storefront.StockAlertOccurrence": _purge(_CUSTOMER),
@@ -276,6 +310,7 @@ POLICY: dict[str, Rule] = {
     "backstage.KDSInstance_collections": _keep(_CONFIG),
     "backstage.POSTab": _keep("comandas físicas"),
     "backstage.PrintAgentCredential": _keep("credencial da impressora do balcão"),
+    "backstage.IncidentReaderCredential": _keep("credencial da ponte de incidentes (GitHub); vale no Dia 1"),
     "backstage.OperationTaskTemplate": _keep(_CONFIG),
     "backstage.OperationChecklistTemplate": _keep(_CONFIG),
     "backstage.OperationChecklistTemplateTask": _keep(_CONFIG),
@@ -288,6 +323,9 @@ POLICY: dict[str, Rule] = {
     "backstage.RecipeVersionRatingScore": _keep(_RECIPES),
     "backstage.OperatorRecipeFavorite": _keep(_RECIPES),
     "backstage.SavedView": _keep("visões salvas dos operadores"),
+    "backstage.SupportTicket": _purge("chamados do Suporte no ensaio"),
+    "backstage.SupportMessage": _purge("mensagens do Suporte no ensaio"),
+    "backstage.SupportDecision": _purge("decisões do Suporte no ensaio"),
     "backstage.ConsumptionRole": _keep(_CATALOG),
     "backstage.ProductConsumptionTag": _keep(_CATALOG),
     "backstage.BIAlertRule": _keep(_CONFIG),
@@ -307,12 +345,14 @@ POLICY: dict[str, Rule] = {
     "backstage.OvenRun": _purge("produção do ensaio"),
     "backstage.BlindPrepCode": _purge("produção do ensaio"),
     "backstage.PlanCarryNote": _purge("produção do ensaio"),
+    "backstage.PrepChecklistMark": _purge("produção do ensaio"),
     "backstage.DayClosing": _purge("fechamento do ensaio"),
     "backstage.OperationChecklistRun": _purge("rotina do ensaio"),
     "backstage.OperationTaskRun": _purge("rotina do ensaio"),
     "backstage.OperationEpisode": _purge(_AUDIT),
     "backstage.ShelfOutage": _purge(_AUDIT),
     "backstage.OperatorAlert": _purge(_AUDIT),
+    "backstage.IncidentAction": _purge(_AUDIT),
     "backstage.BIAlertEvent": _purge(_AUDIT),
     "backstage.SignInEvent": _purge(_AUDIT),
     "backstage.PrintJob": _purge("impressões do ensaio"),

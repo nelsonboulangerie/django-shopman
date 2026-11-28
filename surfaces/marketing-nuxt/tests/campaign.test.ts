@@ -220,7 +220,7 @@ describe("zeroExplanation", () => {
         empty_selection: false,
         parts: [
           { label: "Etiquetas", count: 2 },
-          { label: "Faixa de preço", count: 2 },
+          { label: "Grupo", count: 2 },
         ],
       }),
     ).toBe("As regras acharam gente, mas ninguém pode receber. Nada será enviado.");

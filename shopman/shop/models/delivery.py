@@ -21,7 +21,7 @@ class DeliveryZone(models.Model):
 
     Matching order (prioridade):
       1. cep_prefix  — prefixo do CEP (ex: "860" cobre 860xx-xxx)
-      2. neighborhood — bairro exato (case-insensitive)
+      2. neighborhood — bairro exato, sem distinguir maiúscula nem acento
 
     fee_q == 0 → entrega grátis (só relevante no modo ``override``).
     """
@@ -105,10 +105,15 @@ class DeliveryZone(models.Model):
 
         Retorna None se nenhuma zona coincide.
         """
+        from shopman.shop.services.delivery_distance import normalize_locality
+
         zones = cls.objects.filter(is_active=True).order_by("sort_order", "name")
 
         postal_digits = "".join(c for c in (postal_code or "") if c.isdigit())
-        neighborhood_lower = (neighborhood or "").strip().lower()
+        # Bairro digitado à mão chega sem acento ("Bela Suica") e o cadastrado
+        # tem ("Bela Suíça"): a mesma régua de cidade/UF, senão a zona não casa
+        # e o cliente paga a taxa da faixa de distância.
+        neighborhood_key = normalize_locality(neighborhood)
 
         # 1. CEP prefix — o prefixo MAIS LONGO vence (zona "860" e "8605"
         # sobrepostas: a mais específica decide), desempate por sort_order.
@@ -122,7 +127,7 @@ class DeliveryZone(models.Model):
 
         # 2. Neighborhood
         for zone in zones.filter(zone_type=cls.ZONE_TYPE_NEIGHBORHOOD):
-            if neighborhood_lower and zone.match_value.strip().lower() == neighborhood_lower:
+            if neighborhood_key and normalize_locality(zone.match_value) == neighborhood_key:
                 return zone
 
         return None

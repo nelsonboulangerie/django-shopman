@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useProductionKds } from "~/composables/useProductionKds";
+import { useProductionKds, validationIssues } from "~/composables/useProductionKds";
 
 const env = installNuxtGlobals();
 
@@ -19,6 +19,22 @@ function kdsPayload(cards: unknown[] = [], overrides: Record<string, unknown> = 
           ref: "void:7",
           enabled: true,
           proof: "void-proof",
+          expected_rev: 5,
+        },
+        {
+          ref: "register_old_dough:7",
+          enabled: true,
+          method: "POST",
+          href: "/api/projected/old-dough/7/",
+          proof: "old-dough-proof",
+          expected_rev: 5,
+        },
+        {
+          ref: "authorize_formula_deviation:7",
+          enabled: true,
+          method: "POST",
+          href: "/api/projected/formula-deviation/7/",
+          proof: "deviation-proof",
           expected_rev: 5,
         },
       ],
@@ -92,6 +108,91 @@ describe("useProductionKds — per-WO writes", () => {
     );
   });
 
+  it("registra massa velha no href projetado com envelope e campos do lote", async () => {
+    env.fetchData.value = kdsPayload();
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      sku: "MASSA-VELHA-PAO-FRANCES",
+      name: "Massa Velha de Pão Francês",
+      batch_ref: "MV-42",
+      quantity_g: "1250",
+      expiry_date: "2099-01-04",
+      recipe_version_ref: "pao-frances:v3",
+      replayed: false,
+    });
+    const { registerOldDough } = useProductionKds();
+
+    const result = await registerOldDough(7, 5, {
+      quantity: "1.25",
+      unit: "kg",
+      expiryDate: "2099-01-04",
+      positionRef: "bancada-1",
+      note: "Aparas do turno",
+    });
+
+    expect(result.data?.batch_ref).toBe("MV-42");
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/projected/old-dough/7/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          quantity: "1.25",
+          unit: "kg",
+          expiry_date: "2099-01-04",
+          position_ref: "bancada-1",
+          note: "Aparas do turno",
+          expected_rev: 5,
+          action_ref: "register_old_dough:7",
+          action_proof: "old-dough-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("autoriza desvio no href projetado e preserva o impacto recalculado", async () => {
+    env.fetchData.value = kdsPayload();
+    env.fetchMock.mockResolvedValueOnce({
+      ok: true,
+      ingredient_ref: "levain",
+      ingredient_sku: "LEVAIN",
+      ingredient_name: "Levain",
+      expected: { minimum: "20", target: "20", maximum: "20" },
+      actual: "18",
+      reason: "Fermentação ajustada",
+      impact: {
+        bom: [{ sku: "FARINHA", quantity: "910", unit: "g" }],
+        batch_ref: "",
+      },
+      work_order_rev: 6,
+      replayed: false,
+    });
+    const { authorizeFormulaDeviation } = useProductionKds();
+
+    const result = await authorizeFormulaDeviation(7, 5, {
+      ingredientRef: "levain",
+      actualQuantity: "18",
+      reason: "Fermentação ajustada",
+    });
+
+    expect(result.data?.impact.bom[0]?.quantity).toBe("910");
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/projected/formula-deviation/7/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          ingredient_ref: "levain",
+          actual_quantity: "18",
+          reason: "Fermentação ajustada",
+          expected_rev: 5,
+          action_ref: "authorize_formula_deviation:7",
+          action_proof: "deviation-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
   it("guards a second in-flight action on the same WO", async () => {
     env.fetchData.value = kdsPayload();
     let release!: () => void;
@@ -135,5 +236,34 @@ describe("useProductionKds — per-WO writes", () => {
     expect((await voidOrder(7, 5, reason)).blocked?.code).toBe("offline");
     expect(reason).toBe("queimou");
     expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("validationIssues — a recusa campo a campo", () => {
+  beforeEach(() => {
+    installNuxtGlobals();
+  });
+  it("lê error.issues do 400 e guarda a primeira mensagem de cada campo", () => {
+    const error = {
+      status: 400,
+      data: {
+        detail: "Corrija os campos indicados e tente novamente.",
+        error: {
+          code: "validation_error",
+          issues: [
+            { field: "quantity", message: "Até 50 kg por registro. Confira o número." },
+            { field: "expiry_date", message: "A validade da massa velha não pode estar no passado." },
+            { field: "quantity", message: "segunda" },
+          ],
+        },
+      },
+    };
+    expect(validationIssues(error)).toEqual({
+      quantity: "Até 50 kg por registro. Confira o número.",
+      expiry_date: "A validade da massa velha não pode estar no passado.",
+    });
+  });
+  it("outro erro não vira recusa de campo", () => {
+    expect(validationIssues({ status: 409, data: { error: { code: "stale_projection" } } })).toBeNull();
   });
 });

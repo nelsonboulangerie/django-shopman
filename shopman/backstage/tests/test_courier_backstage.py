@@ -20,7 +20,7 @@ from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.models import Shop
 from shopman.shop.services import courier
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood", "pdv", "web")]
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
 
@@ -130,6 +130,9 @@ def test_detail_active_ride_shows_driver_and_labels(client, operator, shop):
     client.force_login(operator)
     block = _detail(client, order.ref)["courier"]
     assert block["status"] == "A"
+    # A tela lê o estado da casa, não a letra (M1b-b2, #3117), e o nome do serviço vem pronto.
+    assert block["ride_state"] == "assigned"
+    assert isinstance(block["service_name"], str)
     assert block["status_label"] == "Entregador a caminho da loja"
     assert block["active"] is True
     assert block["driver"]["name"] == "Entregador Mock"
@@ -148,7 +151,7 @@ def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, 
     courier.request_dispatch(order, actor="test")
     CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
     order.refresh_from_db()
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "A")
     courier_mock.set_progress(ride, {"pickup_eta_at": "2026-10-13T18:49:00+00:00", "trip_minutes": 9})
     courier.apply_snapshot(order, courier_mock.read_ride(ride), source="poll")
@@ -173,9 +176,22 @@ def test_detail_carries_the_ride_progress_and_the_reading_gap(client, operator, 
 
 def test_on_hold_is_not_at_the_shop():
     """S é "em espera" (termina outra entrega antes), não "na loja"."""
-    from shopman.backstage.projections.order_queue import COURIER_STATUS_LABELS
+    from shopman.backstage.projections.order_queue import courier_state_label
 
-    assert "loja" not in COURIER_STATUS_LABELS["S"]
+    assert "loja" not in courier_state_label({"status": "S"})
+
+
+def test_a_frase_vem_do_estado_e_a_nuance_do_servico():
+    """O Gestor lê o ``RideState`` (M1b-b2, #3117); a letra só acrescenta o que o
+    serviço sabe a mais ("Aguardando aceite"), e letra estranha não vira frase."""
+    from shopman.backstage.projections.order_queue import courier_state_label
+
+    assert courier_state_label({"status": "D"}) == "Procurando entregador"
+    assert courier_state_label({"status": "G"}) == "Aguardando aceite"
+    assert courier_state_label({"status": "A"}) == "Entregador a caminho da loja"
+    assert courier_state_label({"status": "E"}) == "Saiu para entrega"
+    assert courier_state_label({"status": "Z"}) == ""
+    assert courier_state_label({}) == ""
 
 
 # ── Ações ───────────────────────────────────────────────────────────
@@ -311,13 +327,12 @@ def test_courier_actions_require_manage_orders(client, shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_board_card_carries_courier_badge(client, operator, shop):
     order = _delivery_order(
-        courier={"provider": "machine", "id_mch": "1", "status": "E"},
+        courier={"provider": "machine", "ride_ref": "1", "status": "E"},
     )
     Order.objects.filter(pk=order.pk).update(status=Order.Status.DISPATCHED)
     client.force_login(operator)
     resp = client.get(reverse("api-backstage-orders"))
     cards = resp.json()["queue"]["expedition_delivery_transit"]
-    assert cards[0]["courier_status"] == "E"
     assert cards[0]["courier_status_label"] == "Saiu para entrega"
 
 
@@ -410,3 +425,67 @@ def test_detail_says_the_ride_carries_the_old_charge(client, operator, shop):
         "collected": False,
     }
     assert block["can_cancel"] is True
+
+
+# ── Uma corrida para várias entregas ────────────────────────────────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_board_offers_one_ride_for_ready_deliveries_and_calls_it(client, operator, shop):
+    paid = {"method": "pix", "status": "captured"}
+    first = _delivery_order(ref="CRB-R1", payment=paid)
+    second = _delivery_order(ref="CRB-R2", payment=paid)
+    client.force_login(operator)
+
+    queue = client.get(reverse("api-backstage-orders")).json()["queue"]
+    assert [row["ref"] for row in queue["ride_candidates"]] == ["CRB-R1", "CRB-R2"]
+
+    # A fila entrega a ação pronta: quem a tela leu e a revisão de cada candidato.
+    action = queue["ride_action"]
+    assert action["ref"] == "courier-ride" and action["enabled"]
+    assert set(action["payload_schema"]["base_revisions"]) == {"CRB-R1", "CRB-R2"}
+    body = {**action["payload_schema"], "refs": ["CRB-R1", "CRB-R2"]}
+
+    response = client.post(reverse("api-backstage-order-courier-ride"), body,
+                           content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-1")
+    assert response.status_code == 200, response.content
+    task = Directive.objects.get(pk=response.json()["directive_id"])
+    assert task.payload["order_refs"] == ["CRB-R1", "CRB-R2"]
+    assert (response.json()["ride_number"], response.json()["ride_letter"]) == (1, "A")
+
+    # A mesma corrida pedida de novo (outra chave, em outra ordem) já existe: é
+    # feito, não recusa, e nenhuma segunda tarefa nasce.
+    again = client.post(reverse("api-backstage-order-courier-ride"), {**body, "refs": [second.ref, first.ref]},
+                        content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-2")
+    assert again.status_code == 200, again.content
+    assert again.json()["already_called"] is True
+    assert again.json()["ride_letter"] == "A"
+    assert Directive.objects.filter(topic=COURIER_DISPATCH).count() == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_one_ride_refuses_the_order_with_the_card_machine_by_name(client, operator, shop):
+    _delivery_order(ref="CRB-R1", payment={"method": "pix", "status": "captured"})
+    _delivery_order(ref="CRB-R3", payment={"method": "credit", "collection": "on_delivery"})
+    client.force_login(operator)
+    revisions = {ref: courier.dispatch_revision(Order.objects.get(ref=ref)) for ref in ("CRB-R1", "CRB-R3")}
+    response = client.post(reverse("api-backstage-order-courier-ride"),
+                           {"refs": ["CRB-R1", "CRB-R3"], "base_revisions": revisions, "expected_actor_id": operator.pk},
+                           content_type="application/json", HTTP_IDEMPOTENCY_KEY="ride-machine")
+    assert response.status_code == 400
+    assert response.json()["outcome"] == "not_applied"
+    assert "maquininha" in response.json()["detail"]
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+
+
+@pytest.mark.parametrize("ride_status", ["F", "C", "N"])
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_ended_ride_keeps_local_status_without_expired_tracking(client, operator, shop, ride_status):
+    order = _delivery_order(status=Order.Status.COMPLETED, courier={"provider": "machine", "ride_ref": 123, "status": ride_status, "tracking_url": "https://rastreio.mock/ended"})
+    before = order.data.copy()
+    client.force_login(operator)
+    block = _detail(client, order.ref)["courier"]
+    assert block["tracking_url"] == ""
+    assert block["status_label"]
+    order.refresh_from_db()
+    assert order.data == before

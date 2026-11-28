@@ -270,7 +270,7 @@ ligar a entrega.**
     agrupa primeiro os apps do gestor e deixa balcão e cozinha para depois, com evidência.
   - **Deploy:** hoje mudar o PDV reconstrói só o PDV. Com um service, **toda mudança em
     qualquer app de operador reinicia os 8** e derruba as conexões SSE do KDS e do PDV.
-  - **Envelope de segurança (ADR-026):** a CSP com nonce é opt-in por app. Juntar não
+  - **Envelope de segurança (ADR-038):** a CSP com nonce é opt-in por app. Juntar não
     pode enfraquecer o Marketing (piloto) nem ativar o envelope nos apps não migrados.
   - **CPU:** uma vCPU compartilhada para os 8 event loops, incluindo SSE e SSR.
 - **Efeito em performance:** o custo de deploy piora para os apps de operador, e o do

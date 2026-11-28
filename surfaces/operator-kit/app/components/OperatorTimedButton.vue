@@ -30,8 +30,9 @@
 //     mostra o número de segundos ("4 s"), que muda uma vez por segundo.
 //   - Acessível: o nome do botão é o rótulo, fixo (ou o `aria-label` de quem chama).
 //     O tempo vai numa descrição fixa, "Disponível até 10:42:15", que não muda a cada
-//     segundo; uma região educada fala duas vezes, ao abrir e ao fechar a janela. O
-//     número visível é `aria-hidden`.
+//     segundo; uma região educada fala duas vezes, ao abrir e ao fechar a janela, e
+//     se esvazia depois de falar (não repete a descrição). O número visível é
+//     `aria-hidden`.
 //   - Ao fim, `expire` sai uma vez, e o botão some (`when-expired="hide"`, o padrão)
 //     ou fica desabilitado (`"disable"`).
 //
@@ -162,11 +163,21 @@ function clearTimers() {
   secondTimer = undefined;
 }
 
+// Quanto tempo o aviso fica na região depois de entrar: o bastante para o leitor de
+// tela falar. Depois ele sai: parado ali, repetia a descrição do botão, e quem lia a
+// página via "Desfazer: disponível até…" em dobro (beta 06/11).
+const ANNOUNCEMENT_LINGER_MS = 3000;
+let clearAnnouncementTimer: ReturnType<typeof setTimeout> | undefined;
+
 function announce(text: string) {
   // A região já existe na página; o texto entra um instante depois, para o leitor
   // de tela perceber a mudança.
   if (announceTimer) clearTimeout(announceTimer);
-  announceTimer = setTimeout(() => (announcement.value = text), 50);
+  if (clearAnnouncementTimer) clearTimeout(clearAnnouncementTimer);
+  announceTimer = setTimeout(() => {
+    announcement.value = text;
+    clearAnnouncementTimer = setTimeout(() => (announcement.value = ""), ANNOUNCEMENT_LINGER_MS);
+  }, 50);
 }
 
 function close() {
@@ -223,6 +234,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearTimers();
   if (announceTimer) clearTimeout(announceTimer);
+  if (clearAnnouncementTimer) clearTimeout(clearAnnouncementTimer);
   document.removeEventListener("visibilitychange", onVisibility);
 });
 watch(

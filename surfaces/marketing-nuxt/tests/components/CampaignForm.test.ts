@@ -217,9 +217,24 @@ describe("CampaignForm — composer V2", () => {
     expect(rows[0]!.text()).toContain("Publicação pública");
     expect(rows[0]!.text()).toContain("Feed");
     expect(rows[0]!.text()).not.toContain("WhatsApp");
-    expect(wrapper.text()).toContain(
-      "Recursos apenas catalogados para o futuro não entram nesta campanha",
+    // Beta 05/11 (ge:MKT-10): a mesma regra, na voz do operador.
+    expect(wrapper.text()).toContain("Aqui aparecem só os formatos que já podem ser enviados.");
+  });
+
+  it("discarding from review restores the initial step together with the draft", async () => {
+    const wrapper = form(
+      makeRule({ trigger: "production_finished", platforms: ["instagram"] }),
+      "operator:7",
     );
+    await wrapper.find("#rule-name").setValue("Mudança descartada");
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0, ctrlKey: false,
+    });
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe("5. Revisar");
+    wrapper.findComponent(DraftRecoveryNotice).vm.$emit("discard");
+    await flushPromises();
+    expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe("1. Objetivo");
+    expect((wrapper.find("#rule-name").element as HTMLInputElement).value).toBe("Relâmpago das 17h30");
   });
 
   it("mantém o salto para uma etapa pronta mesmo usando o primitive canônico", async () => {
@@ -233,6 +248,24 @@ describe("CampaignForm — composer V2", () => {
     expect(wrapper.find('[aria-current="step"]').attributes("aria-label")).toBe(
       "5. Revisar",
     );
+  });
+
+  it("o resumo da revisão contém um nome longo sem espaço na coluna dele (ge:MKT-28)", async () => {
+    const longName = "x".repeat(100);
+    const wrapper = form(
+      makeRule({ name: longName, trigger: "production_finished", platforms: ["instagram"] }),
+    );
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    const summary = wrapper.find("[data-campaign-review-summary]");
+    expect(summary.text()).toContain(longName);
+    // Item de grade sem `min-w-0` cresce até o conteúdo; sem quebra em qualquer ponto,
+    // a palavra única vaza para a coluna vizinha.
+    expect(summary.classes()).toContain("[&>div]:min-w-0");
+    expect(summary.classes()).toContain("[&_dd]:[overflow-wrap:anywhere]");
   });
 
   it("não avança de Destinos enquanto nenhuma plataforma foi escolhida", async () => {
@@ -827,5 +860,81 @@ describe("CampaignForm — a voz do gestor", () => {
     expect(text).toContain("Seu rascunho: Sem glúten");
     expect(text).not.toContain("{");
     expect(text).not.toMatch(/\b(favorites|alerts|tags)\b/);
+  });
+});
+
+describe("CampaignForm — campanha exclusiva do grupo", () => {
+  function exclusiveBox(wrapper: ReturnType<typeof form>) {
+    return wrapper
+      .find('[data-testid="campaign-exclusive-tiers"]')
+      .find('[role="checkbox"]');
+  }
+
+  it("marca o grupo e manda exclusive_price_tiers, fora das regras de público", async () => {
+    const wrapper = form(makeRule({ trigger: "production_finished" }));
+
+    expect(wrapper.text()).toContain(
+      "Nenhum marcado: a campanha vale para o público escolhido acima.",
+    );
+    await exclusiveBox(wrapper).trigger("click");
+    expect(wrapper.text()).toContain(
+      "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima.",
+    );
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.exclusive_price_tiers).toEqual(["atacado"]);
+    expect(payload.audience_rules).toEqual({});
+  });
+
+  it("relê a exclusividade salva e a mostra na revisão", async () => {
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        exclusive_price_tiers: ["atacado"],
+      }),
+    );
+
+    expect(exclusiveBox(wrapper).attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("Só para Atacado");
+    await wrapper.find("form").trigger("submit");
+    const [payload] = wrapper.emitted("submit")![0] as [
+      Record<string, unknown>,
+    ];
+    expect(payload.exclusive_price_tiers).toEqual(["atacado"]);
+  });
+
+  it("avisa e não salva exclusiva com postagem pública escolhida", async () => {
+    const wrapper = form(
+      makeRule({
+        trigger: "production_finished",
+        platforms: ["whatsapp", "instagram"],
+        exclusive_price_tiers: ["atacado"],
+      }),
+    );
+
+    const conflict = wrapper.find('[data-testid="campaign-exclusive-conflict"]');
+    expect(conflict.exists()).toBe(true);
+    expect(conflict.text()).toContain(
+      "Campanha exclusiva sai só pelo WhatsApp. Desmarque Instagram em Destinos.",
+    );
+    expect(conflict.text()).toContain("Ir para Destinos");
+    await wrapper.find("form").trigger("submit");
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+});
+
+
+describe("oferta indisponível de campanha existente", () => {
+  it("mantém a referência e explica a pendência na revisão, sem chamar de Sem oferta", async () => {
+    const wrapper = form(makeRule({ promotion_ref: "oferta-expirada" }));
+    await wrapper.find('button[aria-label="5. Revisar"]').trigger("mousedown", {
+      button: 0, ctrlKey: false,
+    });
+    expect(wrapper.text()).toContain("Oferta indisponível (oferta-expirada)");
+    expect(wrapper.text()).toContain("não está disponível para campanha");
+    expect(wrapper.text()).not.toContain("Sem oferta");
   });
 });

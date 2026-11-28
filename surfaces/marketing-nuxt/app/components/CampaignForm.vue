@@ -15,13 +15,16 @@ import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import {
   audienceRulesSummary,
   choiceLabels,
+  exclusiveSummary,
   platformsSummary,
+  publicationPlatforms,
 } from "~/presentation/campaign";
 import {
   platformReadinessNote,
   readinessByPlatform,
   readinessStatusClass,
 } from "~/presentation/platformReadiness";
+import { campaignOfferLabel, campaignOfferWarning } from "~/presentation/offers";
 import type { PlatformReadiness } from "~/presentation/platformReadiness";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
@@ -80,7 +83,7 @@ const COMPOSER_STEPS = [
   { label: "Destinos", hint: "Escolha onde cada consequência acontecerá." },
   { label: "Conteúdo", hint: "Confira o modelo, a oferta e as composições." },
   { label: "Público e momento", hint: "Defina público, horário e revisão." },
-  { label: "Revisar", hint: "Confira o que será salvo antes de criar." },
+  { label: "Revisar", hint: "Confira o que será salvo." },
 ] as const;
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
@@ -109,6 +112,9 @@ const vipFirstMinutes = ref(0);
 const preferredHourWindowHours = ref(0);
 const audienceMatch = ref<"any" | "all">("any");
 const selectedPriceTiers = ref<string[]>([]);
+// Grupos (`PriceTier`) que têm esta campanha como exclusiva. Não é regra de público: é um
+// limite sobre qualquer público, gravado pelo servidor na vantagem do grupo.
+const exclusivePriceTiers = ref<string[]>([]);
 const selectedTags = ref<string[]>([]);
 const selectedRfmSegments = ref<string[]>([]);
 const churnRiskOn = ref(false);
@@ -159,6 +165,7 @@ const DRAFT_LABELS = {
   is_active: "Campanha ligada",
   schedule: "Agendamento",
   audience_rules: "Público",
+  exclusive_price_tiers: "Exclusiva do grupo",
 };
 
 // ⚠️ A tela imprimia a CHAVE do JSON ("collections, skus", "bought_skus") quando
@@ -247,6 +254,12 @@ function describeDraftValue(field: string, value: unknown): string | undefined {
   if (field === "audience_rules" && value && typeof value === "object") {
     return audienceRulesSummary(value as AudienceRules, audienceLabels.value);
   }
+  if (field === "exclusive_price_tiers" && Array.isArray(value)) {
+    return (
+      exclusiveSummary(value.map(String), audienceLabels.value.priceTiers) ||
+      "Não é exclusiva"
+    );
+  }
   if (field === "schedule" && value && typeof value === "object") {
     return scheduleDraftSummary(value as Record<string, unknown>);
   }
@@ -278,6 +291,7 @@ watch(
     expiresAfterMinutes.value = rule?.expires_after_minutes ?? 0;
     promotionRef.value = rule?.promotion_ref ?? props.initialPromotionRef ?? "";
     isActive.value = rule?.is_active ?? true;
+    exclusivePriceTiers.value = [...(rule?.exclusive_price_tiers ?? [])];
     currentStep.value = 0;
 
     const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
@@ -343,6 +357,32 @@ const recurrencePeriod = computed({
   },
 });
 
+/** Postagem pública escolhida numa campanha exclusiva: o mural é visto por todos, então
+ *  a exclusividade não vale lá. O servidor recusa o par; a tela avisa antes. */
+const exclusivePublicPlatforms = computed(() =>
+  exclusivePriceTiers.value.length
+    ? publicationPlatforms(
+        platforms.value,
+        Object.fromEntries(
+          (props.deliveryCapabilities ?? []).map((capability) => [
+            capability.platform,
+            capability.delivery_kind,
+          ]),
+        ),
+      )
+    : [],
+);
+const exclusiveConflict = computed(
+  () => exclusivePublicPlatforms.value.length > 0,
+);
+const exclusiveConflictTitle = computed(
+  () =>
+    `Campanha exclusiva sai só pelo WhatsApp. Desmarque ${platformsSummary(
+      exclusivePublicPlatforms.value,
+      props.platformLabels,
+    )} em Destinos.`,
+);
+
 const canSubmit = computed(
   () =>
     !props.busy &&
@@ -350,6 +390,7 @@ const canSubmit = computed(
     trigger.value !== "" &&
     templateId.value !== null &&
     platforms.value.length > 0 &&
+    !exclusiveConflict.value &&
     (!schedules.value || scheduleReady.value),
 );
 
@@ -357,7 +398,7 @@ const stepReady = computed(() => [
   name.value.trim().length > 0 && trigger.value !== "",
   platforms.value.length > 0,
   templateId.value !== null,
-  !schedules.value || scheduleReady.value,
+  (!schedules.value || scheduleReady.value) && !exclusiveConflict.value,
   canSubmit.value,
 ]);
 
@@ -427,6 +468,7 @@ function buildSchedule(): Record<string, unknown> {
   const [rawHour, rawMinute] = fireAt.value.split(":");
   const hour = Number(rawHour) || 0;
   const minute = Number(rawMinute) || 0;
+  // hora-ok: o "HH:MM" da janela que o servidor grava, lido por código
   const end = `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   return {
     ...preserved,
@@ -556,6 +598,7 @@ function campaignPayload(): MarketingDraftPayload {
     is_active: isActive.value,
     ...(schedules.value ? { schedule: buildSchedule() } : {}),
     audience_rules: buildAudienceRules(),
+    exclusive_price_tiers: [...exclusivePriceTiers.value],
   };
   if (props.rule?.trigger === "schedule" && !schedules.value) {
     payload.schedule = eventScheduleAfterTriggerChange();
@@ -586,6 +629,7 @@ function campaignBase(): MarketingDraftPayload {
           }
         : {}),
       audience_rules: {},
+      exclusive_price_tiers: [],
     };
   }
   return {
@@ -601,6 +645,7 @@ function campaignBase(): MarketingDraftPayload {
       ? { schedule: cloneRecord(rule.schedule) }
       : {}),
     audience_rules: cloneRecord(rule.audience_rules),
+    exclusive_price_tiers: [...(rule.exclusive_price_tiers ?? [])],
   };
 }
 
@@ -617,6 +662,7 @@ function applyCampaignDraft(payload: MarketingDraftPayload) {
   promotionRef.value =
     typeof payload.promotion_ref === "string" ? payload.promotion_ref : "";
   isActive.value = payload.is_active !== false;
+  exclusivePriceTiers.value = stringList(payload.exclusive_price_tiers);
 
   const audience = cloneRecord(payload.audience_rules);
   baseAudienceRules.value = audience;
@@ -671,6 +717,11 @@ const draft = useMarketingDraft({
   current: campaignPayload,
   apply: applyCampaignDraft,
 });
+
+async function discardCampaignDraft() {
+  await draft.discard();
+  currentStep.value = 0;
+}
 
 /** O texto do modelo escolhido — é ele que a prévia resolve. */
 const chosenBody = computed(
@@ -750,11 +801,8 @@ const selectedTriggerLabel = computed(
     props.triggers.find((item) => item.value === trigger.value)?.label ??
     trigger.value,
 );
-const selectedOfferLabel = computed(
-  () =>
-    props.offers.find((item) => item.value === promotionRef.value)?.label ??
-    "Sem oferta",
-);
+const selectedOfferLabel = computed(() => campaignOfferLabel(promotionRef.value, props.offers));
+const offerWarning = computed(() => campaignOfferWarning(promotionRef.value, props.offers));
 const reviewAudience = computed(() =>
   platforms.value.includes("whatsapp")
     ? audienceRulesSummary(
@@ -762,6 +810,9 @@ const reviewAudience = computed(() =>
         audienceLabels.value,
       )
     : "Público das contas selecionadas",
+);
+const reviewExclusive = computed(() =>
+  exclusiveSummary(exclusivePriceTiers.value, audienceLabels.value.priceTiers),
 );
 
 // As listas com busca (`NuxtSelectMenu`) devolvem o ITEM escolhido; o formulário
@@ -849,7 +900,7 @@ function submit() {
       :describe="describeDraftValue"
       @keep-local="draft.keepLocal()"
       @keep-server="draft.keepServer()"
-      @discard="draft.discard()"
+      @discard="discardCampaignDraft()"
     />
 
     <!-- As cinco etapas. O título carrega o número para o leitor de tela ("2. Destinos")
@@ -888,6 +939,7 @@ function submit() {
         id="rule-name"
         v-model="name"
         type="text"
+        :maxlength="100"
         placeholder="Lote de pães → redes"
         class="w-full"
       />
@@ -955,7 +1007,7 @@ function submit() {
          para a oferta e o clique monta a sacola com o preço resolvido NA HORA, e não no
          envio, que é quando o preço envelheceria. -->
     <NuxtFormField
-      v-if="offers.length"
+      v-if="offers.length || promotionRef"
       v-show="currentStep === 2"
       label="Anunciar a oferta"
       description="Com oferta, quem toca no link já recebe a sacola montada."
@@ -970,6 +1022,8 @@ function submit() {
         @update:model-value="chooseOffer"
       />
     </NuxtFormField>
+
+    <NuxtAlert v-if="offerWarning && (currentStep === 0 || currentStep === 2)" color="warning" variant="subtle" :description="offerWarning" data-campaign-offer-warning />
 
     <!-- Sem este bloco, "agendado" era escolhível e insatisfazível: o gestor salvava e
          a campanha nunca disparava. -->
@@ -1236,7 +1290,7 @@ function submit() {
           :items="priceTiers"
           orientation="horizontal"
         >
-          <template #legend>Faixa de preço</template>
+          <template #legend>Grupo</template>
         </NuxtCheckboxGroup>
 
         <NuxtCheckboxGroup
@@ -1287,6 +1341,29 @@ function submit() {
           </span>
         </NuxtFormField>
 
+        <!-- Não é mais um critério de público: é um LIMITE sobre qualquer público. Por
+             isso fica fora da soma/cruzamento, separado por linha, e diz o efeito. -->
+        <div
+          v-if="priceTiers?.length"
+          class="space-y-1.5 border-t border-default pt-4"
+          data-testid="campaign-exclusive-tiers"
+        >
+          <NuxtCheckboxGroup
+            v-model="exclusivePriceTiers"
+            :items="priceTiers"
+            orientation="horizontal"
+          >
+            <template #legend>Exclusiva do grupo</template>
+          </NuxtCheckboxGroup>
+          <p class="text-xs text-muted-foreground">
+            {{
+              exclusivePriceTiers.length
+                ? "Só quem está num grupo marcado recebe, mesmo com outro público escolhido acima."
+                : "Nenhum marcado: a campanha vale para o público escolhido acima."
+            }}
+          </p>
+        </div>
+
         <p
           v-if="preservedAudienceKeys.length"
           class="text-xs text-muted-foreground"
@@ -1306,6 +1383,19 @@ function submit() {
       Estas publicações vão para o público geral das plataformas. A lista de
       contatos só é usada quando o WhatsApp está selecionado.
     </p>
+
+    <NuxtAlert
+      v-if="exclusiveConflict"
+      v-show="currentStep === 3"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-lock"
+      :title="exclusiveConflictTitle"
+      data-testid="campaign-exclusive-conflict"
+      :actions="alertActions('warning', [
+        { label: 'Ir para Destinos', size: 'md', onClick: () => goToStep(1) },
+      ])"
+    />
 
     <div v-show="currentStep === 3" class="space-y-3">
       <NuxtCheckbox v-model="requiresApproval" label="Revisar antes de publicar" />
@@ -1352,7 +1442,12 @@ function submit() {
           </p>
         </div>
 
-        <dl class="grid gap-3 text-sm sm:grid-cols-2">
+        <!-- `min-w-0` e quebra em qualquer ponto: um nome de 100 letras sem espaço
+             vazava da coluna e invadia "Quando começa" (beta 05/11, ge:MKT-28). -->
+        <dl
+          class="grid gap-3 text-sm sm:grid-cols-2 [&>div]:min-w-0 [&_dd]:[overflow-wrap:anywhere]"
+          data-campaign-review-summary
+        >
           <div>
             <dt class="text-xs text-muted-foreground">Objetivo interno</dt>
             <dd class="font-medium">{{ name || "Sem nome" }}</dd>
@@ -1370,10 +1465,15 @@ function submit() {
           <div>
             <dt class="text-xs text-muted-foreground">Oferta</dt>
             <dd class="font-medium">{{ selectedOfferLabel }}</dd>
+            <dd v-if="offerWarning" class="text-warning">{{ offerWarning }}</dd>
           </div>
           <div class="sm:col-span-2">
             <dt class="text-xs text-muted-foreground">Público</dt>
             <dd class="font-medium">{{ reviewAudience }}</dd>
+          </div>
+          <div v-if="reviewExclusive" class="sm:col-span-2">
+            <dt class="text-xs text-muted-foreground">Exclusiva</dt>
+            <dd class="font-medium">{{ reviewExclusive }}</dd>
           </div>
         </dl>
 
@@ -1401,8 +1501,7 @@ function submit() {
         </div>
 
         <p class="text-xs text-muted-foreground">
-          Aqui aparecem somente formatos que o Shopman já consegue despachar.
-          Recursos apenas catalogados para o futuro não entram nesta campanha.
+          Aqui aparecem só os formatos que já podem ser enviados.
         </p>
       </div>
     </NuxtCard>

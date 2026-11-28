@@ -2,7 +2,7 @@
 
 > Documento vivo. Quem assume a coordenação lê isto inteiro, depois o `CLAUDE.md`,
 > e atualiza a seção "Estado" ao encerrar o turno. Vale para Claude, Codex,
-> DeepSeek ou humano. Atualizado em 14/10/2026.
+> DeepSeek ou humano. Atualizado em 23/10/2026.
 
 ## 1. O papel
 
@@ -93,7 +93,24 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
 - **Escrita no alpha vivo por terminal é barrada** no modo automático. Escrita no vivo
   vai pelo Admin, no Chrome do dono, com a palavra dele.
 
-## 5. Estado em 14/10/2026 (tarde)
+## 5. Estado em 21/10/2026
+
+- **A lista técnica da antiga seção 10 fechou no `main`.** A reauditoria desta data
+  não encontrou bloqueio de código conhecido para o go-live; os gates restantes são
+  os externos e operacionais da matriz canônica.
+- **Ambiente vivo saudável, mas ainda de ensaio:** `/health/` e `/ready/` em 200;
+  `production-readiness` com 5 OK e 3 FAIL por perfil staging/mock, dinheiro/fiscal
+  sem prova de produção e chaves de corte ausentes. O drift do spec está verde.
+
+- **Laudo de soberania inteiro no `main`:** #1873 a #1889 mergeados (identidade de
+  dispositivo e origem, identificador antigo não autentica, GET sem escrita em todas
+  as superfícies, instância como fonte única, promessa sem cópia, elegibilidade de
+  promoção). O que falta para 100% está na seção 10.
+- **Planos concluídos arquivados** em `docs/plans/completed/` (faxina de 19/10); a
+  árvore viva de `docs/plans/` guarda só frente aberta, referência de go-live e
+  backlog explícito.
+
+Estado de 14/10/2026 (tarde), ainda válido:
 
 - **Fila de merge vazia.** A auditoria dos cenários de pedido
   (`docs/reference/cenarios-de-pedido.md`) fechou: P0 6/6, P1 15/15, P2 17/17
@@ -129,7 +146,35 @@ Coordenar o Shopman da Nelson Boulangerie até a virada para produção.
   da TaOn de 13/10 e **volta a R$ 25** (Admin, "Pedidos e entrega") quando a prova
   terminar.
 
-## 7. Frentes novas pedidas pelo dono (14/10), ainda não iniciadas
+### Decisões do dono de 23/10/2026 (não reabrir)
+
+Tomadas depois do laudo adversarial de 23/10 (`docs/reports/2026-10-23-laudo-adversarial-go-live.md`).
+
+- **Licença:** `FSL-1.1-ALv2` em todo o repositório, já, antes do go-live; licenciante
+  Pablo Valentini. Marca, fotos, textos legais e dados da Nelson ficam fora (`NOTICE.md`).
+  Motivo: o dono quer poder vender o Shopman hospedado; licença se afrouxa depois, nunca se aperta.
+- **Doorman, a escada sem fricção:** (1) T5 do laudo já; (2) dispositivo confiável renova a
+  cada uso e vence depois de **180 dias** sem uso (hoje 30 dias fixos); (3) ligar a entrada por
+  passkey (hoje só existe o cadastro); (4) a resposta do WhatsApp traz o botão "Voltar à loja": no
+  celular a entrada acontece no navegador que o botão abre e nunca é liberada para outra aba; no
+  computador o botão nomeia o que libera ("Liberar o Chrome no Windows"); (5) SMS com a última
+  linha `@www.nelsonboulangerie.com.br #<código>` (preenchimento automático preso ao domínio).
+- **Versão visível:** fases R0 e R1 do `WP-RELEASE-01` entram antes do go-live (endereço de
+  versão por app, versão na tela, sonda que confere o commit do `main`).
+- **Repositório:** dividir depois do go-live, produto público e operação da Nelson privada. Fechar
+  o repositório inteiro está fora: a CI pública é gratuita e privada custaria milhares de dólares por mês.
+- **Banco:** sem nó de reserva por ora; reavaliar quando a loja online pesar no faturamento.
+- **Multi-loja:** alvo é um schema do Postgres por loja (o singleton `Shop` vira singleton por
+  schema, Core intacto). Agora só a trava barata: nenhuma configuração ou credencial nova de uma loja
+  entra por variável de ambiente ou `settings`.
+
+## 7. Frentes pedidas pelo dono em 14/10: especificação preservada
+
+As três frentes abaixo já foram implementadas no `main`; o texto detalhado fica como
+registro das decisões, não como fila aberta. Grupos fecharam nos #1784, #1812, #1822,
+#1899, #1912, #1913, #1916 e #1919. O CRUD turbo fechou as jornadas centrais e a
+Onda 4 nos #1957 a #1961, #1964 e #1969. Watchman fechou a fundação nos #1809,
+#1813, #1818, #1821, #1833 a #1835, #1840 e #1865.
 
 ### 7.1 Grupos de clientes com vantagens comerciais
 
@@ -172,13 +217,18 @@ desconto vence e não soma" já valendo contra a Xepa.
    texto por grupo, editável no Admin.
 6. Antes de implementar, relatório curto ao dono: o que existe, o que falta, proposta.
 
-**Relatório do passo 6 (14/10, contra `origin/main` 9b7320580), ainda não levado ao dono:**
+**Relatório histórico do passo 6 (14/10, contra `origin/main` 9b7320580):**
 - Existe: desconto automático por faixa (#1766; `shop/services/promotions.py`
   `customer_group_promotion`, Admin `shop/admin/price_tier.py`), aplicado pelo
   `DiscountModifier` (`shop/modifiers.py`, maior desconto vence) e gravado por linha em
   `pricing.discount.items[]` (`type: "promotion"`, nome, original, desconto). Na NFC-e o
   desconto de linha sai embutido no preço do item (`adapters/fiscal_focusnfe.py`).
-- **Defeito latente:** a cascata "faixa do cliente → listing" de
+- **Resolvido no `main` (conferido em 04/11/2026):** a cascata recebe o cliente
+  (`shop/modifiers.py`, `ctx["customer"]` com o melhor `listing_ref` dos grupos), a
+  `EmployeeRule` saiu, há arredondamento e `discount_kind` (`shop/services/customer_groups.py`),
+  o B.I. lê o desconto por tipo (`backstage/projections/bi_sales.py`) e a mensagem de
+  economia por grupo existe (`shop/modifiers.py`). O diagnóstico abaixo é histórico.
+- **Defeito latente (histórico):** a cascata "faixa do cliente → listing" de
   `shop/handlers/pricing.py` depende de `ctx["customer"]`, que nenhum chamador preenche.
   Hoje `PriceTier.listing_ref` não muda preço nenhum. Consertar ou remover, com teste.
 - **Duas regras para a mesma Equipe:** `EmployeeRule` (`shop/rules/pricing.py`, faixa
@@ -290,3 +340,56 @@ desempenho, reaproveitável em outros projetos. Plano completo:
 - Roteiro completo: `docs/runbooks/go-live-cutover.md` e
   `docs/plans/GO-LIVE-READINESS-PLAN.md`; `make production-readiness target=1` diz o
   que falta.
+
+## 10. O que falta (medido 21/10/2026)
+
+Medido contra `origin/main` em `4541f0a8a040`. A fonte operacional de estado é a
+[matriz canônica](GO-LIVE-READINESS-PLAN.md); esta seção só resume a divisão entre
+código e dependências externas.
+
+### Bloqueia o go-live: nada de código, só dono ou externo
+
+Perfil vivo ainda em staging/mock · certificado Efí de homologação e chaves ou
+homologações de produção (Efí, Stripe live, Focus, iFood, Machine) · 2FA, senha e
+PIN do staff · R2 · contador e advogado · NFC-e em contingência (build Linux da
+Focus) e hardware · QA física por papel · impressão, gaveta e som · reapontamento
+para banco restaurado · dados reais do Dia 1 · GO/NO-GO.
+
+### Código antes do go-live
+
+> **Atualização de 23/10/2026:** o [laudo adversarial de 23/10](../reports/2026-10-23-laudo-adversarial-go-live.md)
+> contesta o parágrafo abaixo: 0 P0 de código, mas 19 P1 com prova e 1 bloqueio a
+> provar em homologação (cartão na NFC-e). As tarefas T1 a T12 (Onda 1) são a fila de
+> código antes do go-live; T13 a T15 vêm depois; P1 a P8 são o produto adotável.
+
+> **Atualização de 02/11/2026:** a Onda 1 do laudo está entregue: T1 #2002, T2 #1996,
+> T3 #1997/#2011/#2023 (forma `99` não provada em homologação; `17` x `20` do Pix de
+> balcão é do contador), T4 #2004, T5 #2006, T6 #2005/#2067, T7 #2008, T8 #1999,
+> T9 #2007, T10 #2001, T11 #2003, T12 #2000. As provas de `evidence/glr-2026-10-23/`
+> foram apagadas (10 de 11 já falhavam no `main`). **Fechados até 04/11:** T13 #2088,
+> T14 #2077/#2078/#2079, T15 (28 checks obrigatórios), Doorman (2) a (5) #2082/#2084 e
+> WP-RELEASE-01 R0/R1 (#2076, #2080). Segue aberto só o WP-RELEASE-01 de R2 em diante.
+
+> **Atualização de 10/11/2026:** a [auditoria do reset arquitetural](../reports/2026-11-10-auditoria-reset-arquitetural.md)
+> (veredito: aprova com reparos) abriu três linhas de código na matriz, por decisão do
+> dono (D-037, D-038): o pacote de reparos de dias, o `FiscalDocument` e as colunas do
+> carimbo dos fatos. O Concierge saiu do escopo que segura a tag (D-035), e trocar kernel
+> por sistema externo ficou sem prazo (D-036). O parágrafo abaixo vale para a data dele.
+
+**Nenhum bloqueio de código conhecido nesta reauditoria.** A lista de 19/10 foi
+fechada por entregas já no `main`: drift Watchman e fallbacks (#1894, #1898, #1906,
+#1909, #1918); grupos (#1899, #1912, #1913, #1916, #1919); encomenda (#1902,
+#1911, #1943, #1956); PDV (#1901, #1920); iFood (#1905, #1927 a #1929, #1931,
+#1962, #1965); CRUD turbo (#1895, #1900, #1957 a #1961, #1964, #1969); restos do
+laudo (#1897, #1904, #1907, #1917, #1921, #1925, #1930, #1932 a #1935); e
+produção (#1903, #1915, #1942, #1949, #1950).
+
+O ensaio autorizado da loja de teste do iFood fechou em 20/10 com restauração
+exata; isso não prova credencial, catálogo ou homologação comercial de produção.
+Da mesma forma, código verde não promove nenhum gate externo da matriz canônica.
+
+### Depois do go-live (C)
+
+NF-e 55, Google Merchant push, TEF Stone, SSE de impressão, trava por dispositivo,
+Concierge V2, chamada antecipada do entregador, índices e desempenho, devolução no PDV,
+telas de parede, IDENT-PT-BR.

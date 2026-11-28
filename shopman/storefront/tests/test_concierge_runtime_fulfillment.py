@@ -12,7 +12,7 @@ from shopman.orderman.models import Directive, Fulfillment, Order
 from shopman.shop.handlers.fulfillment import FulfillmentUpdateHandler
 from shopman.shop.services import fulfillment
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.channels("web")]
 
 
 def make_order():

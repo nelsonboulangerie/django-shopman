@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-019",
+  "tipo": "solicitacao",
+  "origem": "chat 2026-11-12",
+  "compromisso": "E sim, se for a única solução, teremos que embutir o widget! (Widget do iFood no Gestor, issue #2321)",
+  "dono": "Engenharia · iFood",
+  "criado": "2026-11-12",
+  "revisar_em": "2026-11-19",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

@@ -60,6 +60,10 @@ def _delivery_payload(shift, *, client_request_id: str, **overrides) -> dict:
 
 
 def _close(operator, payload):
+    review = pos_service.review_sale(
+        channel_ref="pdv", payload=payload, operator_username=operator.username,
+    )
+    payload["expected_total_q"] = review.total_q
     return pos_service.close_sale(
         channel_ref="pdv",
         payload=payload,
@@ -148,7 +152,7 @@ def test_cpf_com_taxa_de_entrega_chega_ao_adapter_fiscal(counter, monkeypatch, d
     backend = Mock()
     backend.emit.return_value = FiscalDocumentResult(success=True, access_key="1" * 44, status="authorized")
     monkeypatch.setattr(fiscal.fiscal_pool, "get_backend", lambda: backend)
-    monkeypatch.setattr(fiscal, "emission_resolver", lambda order: True)
+    monkeypatch.setattr(fiscal, "emission_resolver", lambda order, **_kw: True)
     address = {"formatted_address": "Rua Pará, 86", "route": "Rua Pará", "street_number": "86", "neighborhood": "Centro", "postal_code": "86010000", "city": "Londrina", "state_code": "PR"}
     result = _close(operator, _delivery_payload(shift, client_request_id="cpf-delivery", fiscal_tax_id="52998224725", receipt_identity_choices=[{
         "field": "tax_id", "value": "52998224725", "customer_ref": "", "owner_ref": "",

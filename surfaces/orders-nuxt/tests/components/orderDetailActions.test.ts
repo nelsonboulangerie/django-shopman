@@ -22,7 +22,26 @@ const resendPaymentLink = vi.fn();
 const requeueFiscal = vi.fn();
 const equipmentBack = vi.fn();
 const saveNotes = vi.fn();
+const confirmFn = vi.fn();
+const advanceFn = vi.fn();
+const fetchCancellationReasons = vi.fn(async () => []);
+// Não retirado (WP-G11): o gesto, o desafio do gerente e a assinatura.
+const markNotPickedUp = vi.fn();
+// Tentar o estorno de novo (WP-G13).
+const retryRefund = vi.fn();
+// Estornar UM pedido (#2727, item 5).
+const refundOrder = vi.fn();
+const authorize = vi.fn();
+// A releitura do pedido (o diálogo "Resolver" a pede quando o pedido muda).
+const refreshDetail = vi.fn();
+const managerChallenge = ref<{ code: string; message: string; action: string } | null>(null);
 const readError = ref<unknown>(null);
+// Por que a leitura falhou (P1-20): a conta não abre o detalhe, ou o pedido não existe.
+const readForbidden = ref(false);
+const readNotFound = ref(false);
+// A DANFE no detalhe (P1-14): o mesmo gesto do cartão do painel.
+const printDanfe = vi.fn();
+const danfePrinting = ref(false);
 // A impressora desta estação (a Via Pedido sai por ela; P2-19).
 const estacao = ref<{ can_print: boolean; agent_url?: string; token?: string; reason: string } | null>(null);
 
@@ -54,38 +73,64 @@ vi.stubGlobal("useVolumeCheck", () => ({
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
 vi.stubGlobal("useNowTick", () => ref(Date.now()));
 vi.stubGlobal("useScreen", () => ({ ready: ref(true), belowSm: ref(false), belowMd: ref(false), belowLg: ref(false), belowXl: ref(false) }));
+// O widget do iFood sobe na casca (app.vue); o detalhe só lê o estado dele.
+const ifoodWidgetState = ref<"off" | "loading" | "ready" | "failed">("off");
+beforeEach(() => { ifoodWidgetState.value = "off"; });
+const setViewingIFoodOrder = vi.fn();
+vi.stubGlobal("useIFoodWidget", () => ({ state: ifoodWidgetState, start: vi.fn(), setViewingIFoodOrder }));
 vi.stubGlobal("useOutsideStore", () => ({ askConsent: ref(false), away: ref(false), allow: vi.fn(), decline: vi.fn(), showAll: vi.fn() }));
+// O sheet de chamar (#2876) é o mesmo das Entregas e tem testes próprios
+// (`courierCallSheet.test.ts`, `useCourierCall.test.ts`); aqui só a ligação da página.
+const courierCallOpen = vi.fn();
+vi.stubGlobal("useOrderCourierCall", () => ({
+  calling: ref(""), open: courierCallOpen, sheet: computed(() => ({ open: false })),
+  closeSheet: vi.fn(), confirmSheet: vi.fn(), confirmAlone: vi.fn(), toggleCompanion: vi.fn(),
+  setChange: vi.fn(), chooseMachine: vi.fn(), chooseCarrier: vi.fn(), setNote: vi.fn(),
+}));
 vi.stubGlobal("useOrderDetail", () => ({
   order: computed(() => detalhe.value),
   deviceAgent: computed(() => estacao.value),
   pending: ref(false),
   error: readError,
-  refresh: vi.fn(),
+  forbidden: readForbidden,
+  notFound: readNotFound,
+  printDanfe,
+  danfePrinting,
+  refresh: refreshDetail,
   busy: ref(false),
-  confirm: vi.fn(),
-  advance: vi.fn(),
+  confirm: confirmFn,
+  advance: advanceFn,
   reject: vi.fn(),
   cancel: vi.fn(),
-  fetchCancellationReasons: vi.fn(async () => []),
+  fetchCancellationReasons,
+  courierBack: vi.fn(async () => true),
   settleCash: vi.fn(),
   equipmentBack,
   requeueFiscal,
   resendPaymentLink: resendPaymentLink,
   saveNotes,
   addComment: vi.fn(),
-  courierDispatch: vi.fn(),
   courierCancel: vi.fn(),
   courierQuote: vi.fn(),
+  markNotPickedUp,
+  retryRefund,
+  refundOrder,
+  authorize,
+  managerChallenge,
+  dismissManagerChallenge: vi.fn(),
 }));
 
 const { default: OrderDetailPage } = await import("../../app/pages/[ref].vue");
+const { default: OperatorScreenState } = await import("../../../operator-kit/app/components/OperatorScreenState.vue");
 
-function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjection {
+/** `advance_label`: o nome que o servidor dá ao avanço (o rótulo da ação `advance`). */
+function order(
+  { advance_label, ...over }: Partial<OperatorOrderProjection> & { advance_label?: string } = {},
+): OperatorOrderProjection {
   return {
     ref: "WEB-20260625-0007",
     status: "new",
     status_label: "Novo",
-    status_color: "",
     customer_name: "Ana",
     customer_phone: "",
     customer_phone_uri: "",
@@ -112,7 +157,6 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     payment_status: "pending",
     can_confirm: true,
     can_advance: false,
-    next_action_label: "",
     advance_block_label: "",
     advance_block_reason: "",
     can_settle_delivery_cash: false,
@@ -125,10 +169,9 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     gift_recipient_phone: "",
     gift_message: "",
     gift_hide_values: false,
-    cancellation_presets: [],
+    cancel_reasons: [],
     kitchen_note_tags: [],
     equipment_options: [],
-    equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
     dispatch_needs_machine: false,
@@ -142,8 +185,14 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     customer_relay_expires_at: "",
     payment_link_notice: "",
     customer_profile: null,
+    pending: [],
+    cancelled_money: null,
+    danfe_printable: false,
+    danfe_printed: false,
+    danfe_state: "",
+    danfe_problem: "",
     revisions: {},
-    actions: fixtureActions({ can_confirm: true, ...over }),
+    actions: fixtureActions({ can_confirm: true, advance_label, ...over }),
     ...over,
   } as OperatorOrderProjection;
 }
@@ -172,6 +221,9 @@ function profile(over: Partial<CustomerProfileProjection> = {}): CustomerProfile
 
 const stubs = {
   Icon: true,
+  OperatorCountChip: { props: ["count"], template: "<span data-count>{{ count }}</span>" },
+  // O estado da tela entra de verdade: a recusa do detalhe (P1-20) é a frase dele.
+  OperatorScreenState,
   // O cabeçalho de uma linha (G14) carrega a ação primária e o ⋯: os slots entram.
   OperatorPageHeader: { template: "<header><slot name='lead' /><slot name='status' /><slot name='actions' /><slot name='phone-actions' /></header>" },
   OperatorLiveStatus: true,
@@ -186,8 +238,14 @@ const stubs = {
   }),
   NuxtLink: { template: "<a><slot /></a>" },
   OrderCourierPanel: true,
+  CourierCallSheet: true,
   OrderIFoodNegotiations: true,
   OrderReasonDialog: true,
+  OrderRefundDialog: defineComponent({ name: "OrderRefundDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
+  OrderNoShowDialog: defineComponent({ name: "OrderNoShowDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, busy: Boolean }, emits: ["update:open", "confirm"], template: "<div />" }),
+  OrderPromiseResolveDialog: defineComponent({ name: "OrderPromiseResolveDialog", props: { open: Boolean, orderRef: { type: String, default: "" }, managers: { type: Array, default: () => [] } }, emits: ["update:open", "changed", "cancel"], template: "<div />" }),
+  OperatorManagerAuth: defineComponent({ name: "OperatorManagerAuth", props: { open: Boolean, action: { type: String, default: "" }, detail: { type: String, default: "" } }, emits: ["update:open", "authorize", "authorize-badge"], template: "<div />" }),
+  CourierBackDialog: defineComponent({ name: "CourierBackDialog", props: { card: { type: Object, default: null }, busy: Boolean }, template: "<div />" }),
   UiDialog: { template: "<div><slot /></div>" },
   UiDialogContent: { template: "<div><slot /></div>" },
   UiDialogHeader: { template: "<div><slot /></div>" },
@@ -222,6 +280,36 @@ describe("detalhe do pedido — o aviso leva à negociação iFood", () => {
   });
 });
 
+// #2876: "Chamar entregador" no detalhe abre o MESMO sheet das Entregas; vindo do
+// lembrete do cartão (`#courier-call`), a página abre já com ele.
+describe("detalhe do pedido — o sheet de chamar o entregador", () => {
+  beforeEach(() => {
+    courierCallOpen.mockClear();
+    routeHash.value = "";
+  });
+  const courier = { status: "", can_quote: false, can_dispatch: true, can_cancel: false, attempts_count: 0 };
+  it("o painel pede o sheet, e a página abre para este pedido", async () => {
+    const w = abrir(order({ courier } as never));
+    await flushPromises();
+    expect(courierCallOpen).not.toHaveBeenCalled();
+    w.findComponent({ name: "OrderCourierPanel" }).vm.$emit("call");
+    expect(courierCallOpen).toHaveBeenCalledWith("WEB-20260625-0007");
+  });
+  it("com #courier-call no endereço, abre sozinho uma vez", async () => {
+    routeHash.value = "#courier-call";
+    abrir(order({ courier } as never));
+    await flushPromises();
+    expect(courierCallOpen).toHaveBeenCalledTimes(1);
+    expect(courierCallOpen).toHaveBeenCalledWith("WEB-20260625-0007");
+  });
+  it("sem poder chamar, o endereço não abre nada", async () => {
+    routeHash.value = "#courier-call";
+    abrir(order({ courier: { ...courier, can_dispatch: false } } as never));
+    await flushPromises();
+    expect(courierCallOpen).not.toHaveBeenCalled();
+  });
+});
+
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
   it("preserva a quantidade fracionária projetada sem arredondar", () => {
     const fractional = order();
@@ -244,12 +332,36 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
       status: "accepted",
       can_confirm: false,
       can_advance: true,
-      next_action_label: "Iniciar preparo",
+      advance_label: "Iniciar preparo",
     }));
 
     expect(w.find('[data-action="confirm"]').exists()).toBe(false);
     expect(w.find('[data-action="reject"]').exists()).toBe(false);
     expect(w.find('[data-action="advance"]').text()).toContain("Iniciar preparo");
+  });
+
+  it("encomenda que espera a hora da Cozinha: \"Adiantar\" à vista, nunca como botão principal (WP-G02)", () => {
+    const actions = fixtureActions({ can_advance: true, advance_label: "Adiantar" }).map((action) =>
+      action.ref === "advance" ? { ...action, priority: "secondary" } : action,
+    );
+    const w = abrir(order({
+      status: "accepted",
+      can_confirm: false,
+      can_advance: true,
+      advance_label: "Adiantar",
+      kitchen_release_label: "Vai para a Cozinha às 16h15",
+      actions,
+    }));
+
+    expect(w.find('[data-action="advance"]').exists()).toBe(false);
+    expect(w.get('[data-action="advance-secondary"]').text()).toContain("Adiantar");
+    expect(w.get("[data-detail-kitchen-wait]").text()).toContain("Vai para a Cozinha às 16h15");
+  });
+
+  it("pedido que não espera a Cozinha: nenhum selo de espera", () => {
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
+
+    expect(w.find("[data-detail-kitchen-wait]").exists()).toBe(false);
   });
 
   it("avanço bloqueado: o lugar continua ocupado dizendo o motivo, sem aceitar clique", () => {
@@ -332,9 +444,9 @@ describe("detalhe do pedido — presente", () => {
     expect(w.find("[data-gift-phone]").exists()).toBe(false);
   });
 
-  it("gift_hide_values vira instrução visível: 'Não mostrar valores'", () => {
+  it("gift_hide_values vira instrução visível: 'Sem preços no papel'", () => {
     const w = abrir(order({ is_gift: true, gift_hide_values: true }));
-    expect(w.find("[data-gift-hide-values]").text()).toContain("Não mostrar valores");
+    expect(w.find("[data-gift-hide-values]").text()).toContain("Sem preços no papel");
   });
 
   it("sem hide_values o selo não aparece", () => {
@@ -640,6 +752,199 @@ it("keeps a confirmed note when the following useful read fails", async () => {
   } finally { readError.value = null; w.unmount(); }
 });
 
+// Não retirado (WP-G11): quem decide se a porta existe, e se já pode ser tocada, é
+// o servidor, pela ação `no-show` de `order.actions`. A tela não repete a régua
+// (pronto, de retirada, fora do iFood, a hora): sem a ação, não há item.
+describe("detalhe do pedido — não retirado", () => {
+  const noShow = (over: Partial<OperatorOrderProjection["actions"][number]> = {}) => ({
+    ...fixtureActions({ can_confirm: true })[0]!,
+    ref: "no-show",
+    label: "Não retirado",
+    priority: "menu",
+    payload_schema: { base_revision: "detail-base", expected_actor_id: 1 },
+    confirmation: { required: true, manager_approval: true },
+    ...over,
+  });
+  const ready = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "ready", status_label: "Pronto", can_confirm: false, actions: [noShow()], ...over });
+  const moneySentence = "R$ 12,00 serão estornados ao Pix do cliente. R$ 8,00 ficam com a loja, pelo que se perdeu.";
+
+  beforeEach(() => {
+    markNotPickedUp.mockReset();
+    authorize.mockReset();
+    managerChallenge.value = null;
+    vi.mocked(useSonner.success).mockClear();
+  });
+
+  it("a ação veio do servidor: o item existe, avisa que pede gerente e abre o diálogo", async () => {
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="no-show"]');
+
+    expect(item.text()).toContain("Não retirado (pede gerente)");
+    expect(item.attributes("disabled")).toBeUndefined();
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+
+    await item.trigger("click");
+    const dialog = w.getComponent({ name: "OrderNoShowDialog" });
+    expect(dialog.props("open")).toBe(true);
+    expect(dialog.props("orderRef")).toBe("WEB-1");
+    w.unmount();
+  });
+
+  it("antes da hora: o item fica no lugar, desabilitado, com o motivo do servidor à vista", async () => {
+    const reason = "Pedido pago: o não retirado libera no corte do dia, às 18h.";
+    const w = abrir(ready({ actions: [noShow({ enabled: false, reason })] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="no-show"]');
+
+    expect(item.attributes("disabled")).toBeDefined();
+    expect(item.attributes("title")).toBe(reason);
+    expect(item.text()).toContain(reason);
+    await item.trigger("click");
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("pedido sem a ação (iFood, entrega, ainda não pronto): o item não existe", async () => {
+    const semAcao = [
+      order({ status: "ready", can_confirm: false, channel_ref: "ifood", actions: [] }),
+      order({ status: "ready", can_confirm: false, fulfillment_type: "delivery", actions: [] }),
+      order({ status: "new" }),
+    ];
+    for (const projection of semAcao) {
+      const w = abrir(projection);
+      await w.get('[data-action="menu"]').trigger("click");
+      expect(w.find('[data-action="no-show"]').exists()).toBe(false);
+      w.unmount();
+    }
+  });
+
+  it("confirmar leva a ação da PRÉVIA; o gerente lê a frase do dinheiro e, assinado, o diálogo fecha", async () => {
+    const contract = noShow({ label: "Encerrar como não retirado", priority: "danger", payload_schema: { base_revision: "preview-base", expected_actor_id: 1 } });
+    // O servidor pede o gerente: o gesto volta `false` e o desafio sobe.
+    markNotPickedUp.mockImplementationOnce(async () => {
+      managerChallenge.value = { code: "manager_approval_required", message: "Não retirado pede a autorização de um gerente.", action: "no-show" };
+      return false;
+    });
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      return true;
+    });
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="no-show"]').trigger("click");
+
+    w.getComponent({ name: "OrderNoShowDialog" }).vm.$emit("confirm", { contract, moneySentence });
+    await flushPromises();
+    expect(markNotPickedUp).toHaveBeenCalledWith(contract);
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(true);
+    expect(auth.props("action")).toBe("order_no_show");
+    expect(auth.props("detail")).toBe(moneySentence);
+    // O diálogo do gesto continua por baixo da assinatura.
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(true);
+
+    auth.vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+    expect(authorize).toHaveBeenCalledWith({ username: "joyce", pin: "1234" });
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(false);
+    expect(useSonner.success).toHaveBeenCalledWith("Pedido encerrado como não retirado.");
+    w.unmount();
+  });
+
+  it("PIN recusado: o diálogo do gesto continua aberto e nada é dado como feito", async () => {
+    markNotPickedUp.mockImplementationOnce(async () => {
+      managerChallenge.value = { code: "manager_approval_required", message: "", action: "no-show" };
+      return false;
+    });
+    authorize.mockResolvedValueOnce(false);
+    const w = abrir(ready());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="no-show"]').trigger("click");
+    w.getComponent({ name: "OrderNoShowDialog" }).vm.$emit("confirm", { contract: noShow(), moneySentence });
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "0000");
+    await flushPromises();
+    expect(w.getComponent({ name: "OrderNoShowDialog" }).props("open")).toBe(true);
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("o cancelamento de pedido pago segue com o ato e o motivo dele", async () => {
+    managerChallenge.value = { code: "manager_approval_required", message: "", action: "cancel" };
+    const w = abrir(ready({ cancel_money_effect: "R$ 5,10 serão estornados no cartão do cliente." } as Partial<OperatorOrderProjection>));
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("action")).toBe("cancel_order");
+    expect(auth.props("detail")).toBe("R$ 5,10 serão estornados no cartão do cliente.");
+    w.unmount();
+  });
+});
+
+// Beta 06/11: o atalho "Bem assado" só preenchia o rascunho; o operador tocou
+// Aceitar sem ver o "Salvar nota" e o ticket da Cozinha saiu sem a nota.
+describe("nota da cozinha vai junto com o gesto do momento", () => {
+  beforeEach(() => {
+    saveNotes.mockReset();
+    confirmFn.mockReset();
+    advanceFn.mockReset();
+  });
+  const tocarAtalho = async (w: ReturnType<typeof abrir>, tag: string) =>
+    w.findAll("button").find((button) => button.text() === tag)!.trigger("click");
+
+  it("Aceitar com o atalho no rascunho grava a nota ANTES de aceitar", async () => {
+    const calls: string[] = [];
+    saveNotes.mockImplementation(async (text: string) => {
+      calls.push(`notes:${text}`);
+      detalhe.value = { ...detalhe.value!, kitchen_note: text };
+      return true;
+    });
+    confirmFn.mockImplementation(() => { calls.push("confirm"); });
+    const w = abrir(order({ kitchen_note_tags: ["Bem assado"] }));
+    await tocarAtalho(w, "Bem assado");
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(calls).toEqual(["notes:Bem assado", "confirm"]);
+    expect(w.findAll("button").some((button) => button.text() === "Salvar nota")).toBe(false);
+    w.unmount();
+  });
+
+  it("Avançar também leva o texto digitado", async () => {
+    saveNotes.mockImplementation(async (text: string) => {
+      detalhe.value = { ...detalhe.value!, kitchen_note: text };
+      return true;
+    });
+    const w = abrir(order({ status: "accepted", can_confirm: false, can_advance: true, advance_label: "Iniciar preparo" }));
+    await w.get("#order-notes").setValue("Sem gergelim");
+    await w.get('[data-action="advance"]').trigger("click");
+    await flushPromises();
+    expect(saveNotes).toHaveBeenCalledWith("Sem gergelim", "");
+    expect(advanceFn).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("se a nota não grava, o pedido NÃO é aceito e o rascunho fica", async () => {
+    saveNotes.mockImplementation(async () => false);
+    const w = abrir(order({ kitchen_note_tags: ["Bem assado"] }));
+    await tocarAtalho(w, "Bem assado");
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(confirmFn).not.toHaveBeenCalled();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Bem assado");
+    w.unmount();
+  });
+
+  it("sem rascunho, Aceitar não grava nota nenhuma", async () => {
+    const w = abrir(order({ kitchen_note: "Bem assado" }));
+    await w.get('[data-action="confirm"]').trigger("click");
+    await flushPromises();
+    expect(saveNotes).not.toHaveBeenCalled();
+    expect(confirmFn).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+});
+
 describe("detalhe iFood", () => {
   it("mostra o aviso de cancelamento pendente e os valores a cobrar sem liberar avanço", () => {
     const notice = "Cancelamento solicitado ao iFood. Aguardando confirmação.";
@@ -655,6 +960,37 @@ describe("detalhe iFood", () => {
     expect(w.get('[data-action="advance-blocked"]').attributes("disabled")).toBeDefined();
     expect(w.find('[data-action="advance"]').exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
+  });
+});
+
+describe("chat do cliente iFood (widget do iFood, DEV-2026-019)", () => {
+  it("pedido do iFood com o widget pronto: diz que o chat está no botão do iFood", () => {
+    ifoodWidgetState.value = "ready";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").attributes("data-ifood-chat-state")).toBe("ready");
+    expect(w.get("[data-ifood-chat]").text()).toContain("botão do iFood");
+  });
+
+  it("o widget não carregou: manda responder pelo Gestor do iFood", () => {
+    ifoodWidgetState.value = "failed";
+    const w = abrir(order({ channel_ref: "ifood" }));
+    expect(w.get("[data-ifood-chat]").text()).toContain("Gestor do iFood");
+  });
+
+  it("o detalhe de pedido iFood avisa que o botão do iFood deve aparecer; o de outro canal, não", () => {
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "ifood" })).unmount();
+    expect(setViewingIFoodOrder.mock.calls.map((c) => c[0])).toEqual([true, false]);
+    setViewingIFoodOrder.mockClear();
+    abrir(order({ channel_ref: "web" }));
+    expect(setViewingIFoodOrder).toHaveBeenCalledWith(false);
+    expect(setViewingIFoodOrder).not.toHaveBeenCalledWith(true);
+  });
+
+  it("widget desligado na loja, ou pedido de outro canal: nada aparece", () => {
+    expect(abrir(order({ channel_ref: "ifood" })).find("[data-ifood-chat]").exists()).toBe(false);
+    ifoodWidgetState.value = "ready";
+    expect(abrir(order({ channel_ref: "web" })).find("[data-ifood-chat]").exists()).toBe(false);
   });
 });
 
@@ -677,16 +1013,17 @@ describe("segunda assinatura no cancelamento", () => {
 
 describe("contato de pedido do iFood", () => {
   // 21/09: o detalhe oferecia WhatsApp para o 0800 da central do iFood.
-  it("relé mostra a central e o código, sem WhatsApp", () => {
+  // 12/11/2026: a central vira rodapé pró-forma, um link discreto, sem botão.
+  it("relé mostra a central e o código no rodapé, sem WhatsApp", () => {
     const w = abrir(order({
       customer_phone: "", customer_whatsapp_url: "",
       customer_phone_uri: "tel:08007053040,89338721",
       customer_relay_phone: "0800 705 3040", customer_relay_code: "89338721",
     }));
     expect(w.find("[data-contact-whatsapp]").exists()).toBe(false);
-    expect(w.get("[data-contact-relay-code]").text()).toBe("Código 89338721");
-    expect(w.get("[data-contact-phone]").text()).toContain("Ligar pela central");
-    expect(w.get("[data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
+    expect(w.get("[data-contact-relay-code]").text()).toBe("89338721");
+    expect(w.get("[data-contact-relay] [data-contact-phone]").text()).toBe("0800 705 3040");
+    expect(w.get("[data-contact-relay] [data-contact-phone]").attributes("href")).toBe("tel:08007053040,89338721");
   });
   it("código vencido diz que a central não repassa e não oferece ligação", () => {
     const w = abrir(order({
@@ -694,7 +1031,7 @@ describe("contato de pedido do iFood", () => {
       customer_relay_phone: "0800 705 3040", customer_relay_code: "",
     }));
     expect(w.find("[data-contact-phone]").exists()).toBe(false);
-    expect(w.get("[data-contact-relay-expired]").text()).toContain("Código vencido");
+    expect(w.get("[data-contact-relay-expired]").text()).toContain("o código venceu");
   });
 });
 
@@ -729,5 +1066,652 @@ describe("G14: o detalhe em duas colunas com a ação primária no cabeçalho", 
     ).toBeUndefined();
     comImpressora.unmount();
     estacao.value = null;
+  });
+});
+
+// Beta test de 05/11/2026 (frente gestor-pedidos).
+describe("detalhe do pedido: achados do beta 05/11", () => {
+  const mutation = (ref: string, label: string, over: Record<string, unknown> = {}) => ({
+    ref, label, enabled: true, reason: "", priority: "primary", kind: "mutation", href: "", method: "POST",
+    payload_schema: { expected_actor_id: 1, base_revision: "b" }, idempotency: "required", confirmation: {}, ...over,
+  });
+  beforeEach(() => {
+    routeHash.value = "";
+    fetchCancellationReasons.mockClear();
+  });
+
+  // GES-10 / GES-15: pedido cancelado continuava com a nota da cozinha editável.
+  it("pedido encerrado: a nota da cozinha não tem editor", () => {
+    const w = abrir(order({
+      status: "cancelled", can_confirm: false, kitchen_note: "Bem assado",
+      actions: [mutation("notes", "Salvar nota", { enabled: false, reason: "Pedido encerrado." })] as never,
+    }));
+    expect(w.find("#order-notes").exists()).toBe(false);
+    expect(w.text()).toContain("Bem assado");
+    w.unmount();
+  });
+
+  // Com o iFood (ou a Cozinha) conduzindo, o pronto vem como "menu": do md para cima
+  // ele fica à vista, secundário, em vez de escondido no ⋯ (dono, 14/11/2026).
+  it("pronto que não é o gesto do momento fica à vista no desktop", async () => {
+    const w = abrir(order({
+      status: "preparing", channel_ref: "ifood", can_confirm: false,
+      actions: [mutation("advance", "Marcar pronto", { priority: "menu" })] as never,
+    }));
+    expect(w.get('[data-action="advance-secondary"]').text()).toContain("Marcar pronto");
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.find("[data-detail-menu] [data-action='advance']").exists()).toBe(false);
+    w.unmount();
+  });
+
+  // GES-12: o detalhe dizia "Marcar como entregue" e escondia troco e maquininha.
+  it("na rua com troco: o gesto é Entregador voltou e a custódia aparece", async () => {
+    const w = abrir(order({
+      status: "dispatched", fulfillment_type: "delivery", can_confirm: false,
+      change_label: "Entregador levou R$ 26,00 de troco", equipment_label: "Saiu com a maquininha de demonstração",
+      courier_return_lines: ["R$ 50,00 em dinheiro"], courier_return_orders: ["WEB-20260625-0007"],
+      actions: [mutation("advance", "Marcar como entregue"), mutation("courier-back", "Entregador voltou", { confirmation: { required: true } })] as never,
+    }));
+    expect(w.get('[data-action="courier-back"]').text()).toContain("Entregador voltou");
+    expect(w.get("[data-detail-custody]").text()).toContain("Entregador levou R$ 26,00 de troco");
+    expect(w.get("[data-detail-custody]").text()).toContain("Saiu com a maquininha de demonstração");
+    await w.get('[data-action="courier-back"]').trigger("click");
+    await flushPromises();
+    const dialog = w.findComponent({ name: "CourierBackDialog" });
+    expect(dialog.props("card")).toMatchObject({ courier_return_lines: ["R$ 50,00 em dinheiro"] });
+    // Com espaço (md+), o "Marcar como entregue" fica à vista ao lado do primário, e não
+    // escondido no ⋯ (dono, 14/11/2026).
+    const secondary = w.get('[data-action="advance-secondary"]');
+    expect(secondary.text()).toContain("Marcar como entregue");
+    expect(secondary.attributes("title")).toBe("O que saiu com o entregador continua em aberto.");
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.find("[data-detail-menu] [data-action='advance']").exists()).toBe(false);
+    w.unmount();
+  });
+
+  // GES-05 / GES-16: Pix vencido tinha só o botão morto; cancelar exigia achar o ⋯.
+  // WP-G05 (P1-16): o fato é um só e mora na faixa "O que falta", com o gesto ao lado.
+  it("Pix vencido: a faixa do que falta traz Cancelar com o motivo já marcado", async () => {
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_cancel: true, payment_lapsed: true,
+      advance_block_label: "Pix expirado", advance_block_reason: "gerado às 05h51 · expirou às 05h57",
+      pending: [{
+        key: "payment", tone: "error", label: "Pix expirado", reason: "Gerado às 05h51 · expirou às 05h57.",
+        actions: [{ ref: "cancel", label: "Cancelar pedido", enabled: true, reason: "", href: "" }],
+      }],
+    }));
+    // Um fato só: o aviso de bloqueio em vermelho deixou de existir à parte.
+    expect(w.findAll("[data-detail-block]")).toHaveLength(1);
+    expect(w.get('[data-pending="payment"]').text()).toContain("Pix expirado");
+    await w.get('[data-pending-action="cancel"]').trigger("click");
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("initial-key")).toBe("payment_not_confirmed");
+    // Loja online: não há lista viva de códigos para buscar (GES-06).
+    expect(fetchCancellationReasons).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("o cartão da Fila chega com #cancel-unpaid e o cancelar já abre", async () => {
+    routeHash.value = "#cancel-unpaid";
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_cancel: true, payment_lapsed: true,
+      advance_block_label: "Pix expirado", advance_block_reason: "expirou às 05:57",
+    }));
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).toBe("true");
+    w.unmount();
+  });
+});
+
+
+describe("atalhos gerais da nota do pedido", () => {
+  it("explica o escopo sem inferir etiquetas pelo produto nem alterar o cadastro", () => {
+    const tags = ["Bem assado", "Pouco assado"];
+    const w = abrir(order({ kitchen_note_tags: tags }));
+    // P2-28: o rótulo diz o que o toque faz; a instrução ao operador saiu.
+    expect(w.get("[data-kitchen-note-tags-scope]").text()).toBe("Acrescentar à nota:");
+    expect(w.text()).not.toContain("Use apenas os que se aplicam");
+    expect(w.text()).not.toContain("KDS");
+    expect(w.text()).toContain("Aparece no ticket deste pedido, na tela da Cozinha.");
+    expect(w.findAll("button").some(b => b.text() === "Bem assado")).toBe(true);
+    expect(detalhe.value?.kitchen_note_tags).toEqual(tags);
+    w.unmount();
+  });
+  it("sem atalhos cadastrados, não explica uma lista inexistente", () => {
+    const w = abrir(order({ kitchen_note_tags: [] }));
+    expect(w.find("[data-kitchen-note-tags-scope]").exists()).toBe(false);
+    w.unmount();
+  });
+});
+
+
+// WP-G05: o detalhe abre com "O que falta neste pedido", e cada linha tem o gesto que a
+// página já sabia fazer. A faixa só aponta: quem decide o que falta é o servidor.
+describe("detalhe do pedido — o que falta, com o gesto ao lado", () => {
+  const line = (over: Partial<OperatorOrderProjection["pending"][number]>) => ({
+    key: "nfce", tone: "error", label: "NFC-e não autorizada", reason: "", actions: [], failure: "", ...over,
+  });
+  const gesture = (ref: string, label: string, over: Record<string, unknown> = {}) => ({
+    ref, label, enabled: true, reason: "", href: "", ...over,
+  });
+  beforeEach(() => {
+    requeueFiscal.mockClear();
+    resendPaymentLink.mockClear();
+    printDanfe.mockClear();
+    danfePrinting.value = false;
+  });
+
+  it("sem pendência e sem dinheiro de cancelado, a faixa não existe", () => {
+    const w = abrir(order({ can_confirm: false }));
+    expect(w.find("[data-order-pending]").exists()).toBe(false);
+    w.unmount();
+  });
+
+  it("a nota recusada traz a resposta do emissor e o Reprocessar na própria linha (P1-13)", async () => {
+    const w = abrir(order({
+      status: "ready", can_confirm: false, fiscal_status: "failed", fiscal_status_label: "NFC-e não autorizada",
+      pending: [line({
+        reason: "Resposta do emissor: Rejeição 778: NCM inexistente. Se reprocessar não resolver, chame o contador.",
+        actions: [gesture("requeue-fiscal", "Reprocessar NFC-e")],
+      })],
+    }));
+    const row = w.get('[data-pending="nfce"]');
+    expect(row.attributes("data-pending-tone")).toBe("error");
+    expect(row.text()).toContain("Rejeição 778: NCM inexistente");
+    await w.get('[data-pending-action="requeue-fiscal"]').trigger("click");
+    expect(requeueFiscal).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("a DANFE que não saiu se imprime da faixa, e o ⋯ do pedido também imprime (P1-14)", async () => {
+    const w = abrir(order({
+      status: "dispatched", can_confirm: false, fulfillment_type: "delivery",
+      danfe_printable: true, danfe_printed: false, danfe_state: "not_printed",
+      danfe_problem: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+      pending: [line({
+        key: "danfe", tone: "warning", label: "DANFE não impressa",
+        reason: "A impressora de Balcão não buscou a DANFE. Confira se o computador dela está ligado.",
+        actions: [gesture("print-danfe", "Imprimir DANFE")],
+      })],
+    }));
+    await w.get('[data-pending-action="print-danfe"]').trigger("click");
+    expect(printDanfe).toHaveBeenCalledTimes(1);
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.findAll("button").find((button) => button.text().includes("Imprimir DANFE") && !button.attributes("data-pending-action"))!;
+    await item.trigger("click");
+    expect(printDanfe).toHaveBeenCalledTimes(2);
+    w.unmount();
+  });
+
+  it("DANFE já impressa: o ⋯ do pedido oferece Reimprimir, sem linha na faixa", async () => {
+    const w = abrir(order({
+      status: "ready", can_confirm: false, danfe_printable: true, danfe_printed: true, danfe_state: "printed",
+    }));
+    expect(w.find("[data-order-pending]").exists()).toBe(false);
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.findAll("button").some((button) => button.text().includes("Reimprimir DANFE"))).toBe(true);
+    w.unmount();
+  });
+
+  it("sem nota, o ⋯ do pedido não oferece DANFE", async () => {
+    const w = abrir(order({ status: "ready", can_confirm: false }));
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.findAll("button").some((button) => button.text().includes("DANFE"))).toBe(false);
+    w.unmount();
+  });
+
+  it("o link que pode não ter chegado se reenvia da faixa", async () => {
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, payment_method: "link",
+      pending: [line({
+        key: "payment", tone: "warning", label: "Aguardando pagamento", reason: "O envio do link falhou. Reenvie o link.",
+        actions: [gesture("resend-payment-link", "Reenviar link de pagamento")],
+      })],
+    }));
+    await w.get('[data-pending-action="resend-payment-link"]').trigger("click");
+    expect(resendPaymentLink).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("espera saudável: sem cor de erro, e o botão travado guarda o nome do gesto (P2-26)", () => {
+    // Como o servidor manda: a ação travada guarda o nome do gesto, e o motivo vai em `reason`.
+    const actions = fixtureActions({ can_advance: true, advance_label: "Iniciar preparo" }).map((action) =>
+      action.ref === "advance"
+        ? { ...action, enabled: false, reason: "Encomenda para uma data futura. O preparo abre no dia combinado." }
+        : action,
+    );
+    const w = abrir(order({
+      status: "accepted", can_confirm: false, can_advance: false, actions,
+      advance_block_label: "Aguardando o dia da encomenda…",
+      advance_block_reason: "Encomenda para uma data futura. O preparo abre no dia combinado.",
+      pending: [line({
+        key: "advance", tone: "info", label: "Aguardando o dia da encomenda",
+        reason: "Combinado: Amanhã · 08h às 10h. O preparo abre nesse dia.",
+      })],
+    }));
+    const row = w.get('[data-pending="advance"]');
+    expect(row.attributes("data-pending-tone")).toBe("info");
+    expect(row.text()).toContain("Combinado: Amanhã · 08h às 10h");
+    // O fato não se repete no rótulo do botão principal.
+    const blocked = w.get('[data-action="advance-blocked"]');
+    expect(blocked.text()).toContain("Iniciar preparo");
+    expect(blocked.text()).not.toContain("Aguardando");
+    expect(blocked.attributes("disabled")).toBeDefined();
+    w.unmount();
+  });
+
+  it("cancelado com estorno pedido, e depois estornado, com a frase que o cliente lê (P1-15, P2-25)", async () => {
+    const w = abrir(order({
+      status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estorno pedido",
+      cancelled_money: { state: "refund_requested", label: "Estorno pedido", amount_display: "R$ 18,70", customer_line: "Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.", settled: false },
+      pending: [line({
+        key: "refund", tone: "info", label: "Estorno pedido",
+        reason: "A devolução de R$ 18,70 foi pedida e ainda não foi confirmada. O cliente lê na loja: “Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.”",
+      })],
+      actions: [],
+    }));
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estorno pedido");
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estamos devolvendo os R$ 18,70 do seu Pix para a mesma conta.");
+    expect(w.find("[data-order-money]").exists()).toBe(false);
+
+    detalhe.value = order({
+      status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estornado",
+      cancelled_money: { state: "refunded", label: "Estornado", amount_display: "R$ 18,70", customer_line: "Devolvemos os R$ 18,70 do seu Pix para a mesma conta.", settled: true },
+      pending: [], actions: [],
+    });
+    await w.vm.$nextTick();
+    expect(w.find('[data-pending="refund"]').exists()).toBe(false);
+    const money = w.get("[data-order-money]");
+    expect(money.attributes("data-order-money-state")).toBe("refunded");
+    expect(money.text()).toContain("Dinheiro do pedido cancelado: Estornado");
+    expect(money.text()).toContain("O cliente lê na loja: “Devolvemos os R$ 18,70 do seu Pix para a mesma conta.”");
+    w.unmount();
+  });
+});
+
+// WP-G13: a linha "Estorno não saiu" tem o gesto. O valor é do servidor, o gerente o lê
+// no diálogo de sempre, e o que a tela diz depois sai do pedido relido.
+describe("detalhe do pedido — tentar o estorno de novo", () => {
+  const failedMoney = { state: "refund_failed", label: "Estorno não saiu", amount_display: "R$ 22,00", customer_line: "", settled: false };
+  const retryLine = (failure = "") => ({
+    key: "refund", tone: "error", label: "Estorno não saiu", failure,
+    reason: "A devolução de R$ 22,00 não chegou ao Pix do cliente.",
+    actions: [{ ref: "refund-retry", label: "Tentar o estorno de novo", enabled: true, reason: "", href: "" }],
+  });
+  const cancelled = (over: Partial<OperatorOrderProjection> = {}) => order({
+    status: "cancelled", can_confirm: false, payment_method_label: "Pix", payment_status_label: "Estorno não saiu",
+    cancelled_money: failedMoney, pending: [retryLine()], actions: [], ...over,
+  });
+  const challenge = () => {
+    managerChallenge.value = { code: "manager_approval_required", message: "Tentar o estorno de novo pede a autorização de um gerente.", action: "refund-retry" };
+    return false;
+  };
+
+  beforeEach(() => {
+    retryRefund.mockReset();
+    authorize.mockReset();
+    managerChallenge.value = null;
+    vi.mocked(useSonner.success).mockClear();
+    vi.mocked(useSonner.error).mockClear();
+  });
+
+  it("o toque pede o estorno; o servidor pede o gerente, que lê o valor antes de assinar", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    const w = abrir(cancelled());
+
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    expect(retryRefund).toHaveBeenCalledTimes(1);
+    const auth = w.getComponent({ name: "OperatorManagerAuth" });
+    expect(auth.props("open")).toBe(true);
+    expect(auth.props("action")).toBe("refund_retry");
+    expect(auth.props("detail")).toBe("Estorno de R$ 22,00, pedido de novo ao meio de pagamento.");
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("assinado e confirmado pelo meio de pagamento: a tela diz Estornado, com a palavra do servidor", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      detalhe.value = cancelled({
+        payment_status_label: "Estornado", pending: [],
+        cancelled_money: { state: "refunded", label: "Estornado", amount_display: "R$ 22,00", customer_line: "Devolvemos os R$ 22,00 do seu Pix para a mesma conta.", settled: true },
+      });
+      return true;
+    });
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+
+    expect(authorize).toHaveBeenCalledWith({ username: "joyce", pin: "1234" });
+    expect(useSonner.success).toHaveBeenCalledWith("Estornado: o meio de pagamento confirmou a devolução.");
+    expect(w.find('[data-pending="refund"]').exists()).toBe(false);
+    expect(w.get("[data-order-money]").text()).toContain("Dinheiro do pedido cancelado: Estornado");
+    w.unmount();
+  });
+
+  it("o meio de pagamento recusa de novo: nada de Estornado, e a resposta fica escrita na linha", async () => {
+    const failure = "Última tentativa, em 18/11 às 14h32: O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockImplementationOnce(async () => {
+      managerChallenge.value = null;
+      detalhe.value = cancelled({ pending: [retryLine(failure)] });
+      return true;
+    });
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "1234");
+    await flushPromises();
+
+    expect(useSonner.success).not.toHaveBeenCalled();
+    const row = w.get('[data-pending="refund"]');
+    expect(row.text()).toContain("Estorno não saiu");
+    expect(row.get("[data-pending-failure]").text()).toBe(failure);
+    // O gesto continua de pé para uma tentativa nova.
+    expect(w.get('[data-pending-action="refund-retry"]').attributes("disabled")).toBeUndefined();
+    w.unmount();
+  });
+
+  it("PIN recusado: nada é dado como feito", async () => {
+    retryRefund.mockImplementationOnce(async () => challenge());
+    authorize.mockResolvedValueOnce(false);
+    const w = abrir(cancelled());
+    await w.get('[data-pending-action="refund-retry"]').trigger("click");
+    await flushPromises();
+
+    w.getComponent({ name: "OperatorManagerAuth" }).vm.$emit("authorize", "joyce", "0000");
+    await flushPromises();
+
+    expect(useSonner.success).not.toHaveBeenCalled();
+    expect(w.get('[data-pending="refund"]').text()).toContain("Estorno não saiu");
+    w.unmount();
+  });
+});
+
+// P1-20: quem só expede abre um pedido pelo sino. O servidor recusa o detalhe (403 de
+// permissão), e a tela dizia "Pedido não encontrado ou falha ao carregar".
+// WP-G08: a promessa em risco no detalhe. A lista de Encomendas e o aviso do painel
+// chegam com `#promise`; o diálogo "Resolver" do painel chega com `#cancel` (cancelar o
+// pedido inteiro). Na linha da promessa, na faixa "O que falta neste pedido", o gesto é
+// "Resolver", que abre o diálogo das escolhas.
+describe("detalhe do pedido — promessa em risco", () => {
+  const promiseLine = (over: Record<string, unknown> = {}) => ({
+    key: "promise", tone: "error", label: "Promessa em risco",
+    reason: "Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.",
+    next_step: "Nenhum produto parecido livre para amanhã.",
+    actions: [{ ref: "resolve", label: "Resolver", enabled: true, reason: "", href: "", priority: "primary" }],
+    ...over,
+  });
+  const emRisco = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "accepted", can_confirm: false, can_cancel: true, pending: [promiseLine()] as never, ...over });
+  const resolver = (w: ReturnType<typeof abrir>) => w.getComponent({ name: "OrderPromiseResolveDialog" });
+  beforeEach(() => {
+    reveal.mockClear();
+    routeHash.value = "";
+  });
+
+  it("a linha diz o item e o porquê, com UM gesto: \"Resolver\"", () => {
+    const w = abrir(emRisco());
+    const row = w.get('[data-pending="promise"]');
+    expect(row.text()).toContain("Promessa em risco");
+    expect(row.text()).toContain("Faltam 4x Baguete de tradição. O lote de amanhã foi cancelado.");
+    expect(row.get("[data-pending-next-step]").text()).toBe("Nenhum produto parecido livre para amanhã.");
+    expect(row.findAll("[data-pending-action]").map((button) => [button.text(), button.attributes("variant")])).toEqual([
+      ["Resolver", "solid"],
+    ]);
+    w.unmount();
+  });
+
+  it("o diálogo \"Resolver\" é montado uma vez, fechado, com o pedido desta página e os gerentes dele", () => {
+    const managers = [{ username: "ana", name: "Ana" }];
+    const w = abrir(emRisco({ managers } as never));
+    expect(w.findAllComponents({ name: "OrderPromiseResolveDialog" })).toHaveLength(1);
+    expect(resolver(w).props()).toMatchObject({ open: false, orderRef: "WEB-1", managers });
+    w.unmount();
+  });
+
+  it("\"Resolver\" abre o diálogo das escolhas; fechar devolve a página como estava", async () => {
+    const w = abrir(emRisco());
+    await w.get('[data-pending-action="resolve"]').trigger("click");
+    expect(resolver(w).props("open")).toBe(true);
+    // Abrir o diálogo não abre o cancelar nem grava nada.
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    resolver(w).vm.$emit("update:open", false);
+    await flushPromises();
+    expect(resolver(w).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("\"Cancelar o pedido inteiro\" no diálogo abre o MESMO cancelar do menu, sem motivo marcado", async () => {
+    const w = abrir(emRisco());
+    await w.get('[data-pending-action="resolve"]').trigger("click");
+    resolver(w).vm.$emit("update:open", false);
+    resolver(w).vm.$emit("cancel", "WEB-1");
+    await flushPromises();
+    const dialog = w.get("order-reason-dialog-stub");
+    expect(dialog.attributes("open")).toBe("true");
+    expect(dialog.attributes("initial-key") ?? "").toBe("");
+    expect(resolver(w).props("open")).toBe(false);
+    w.unmount();
+  });
+
+  it("o diálogo avisa que o pedido mudou: a página relê o pedido", async () => {
+    const w = abrir(emRisco());
+    refreshDetail.mockClear();
+    resolver(w).vm.$emit("changed");
+    await flushPromises();
+    expect(refreshDetail).toHaveBeenCalledTimes(1);
+    w.unmount();
+  });
+
+  it("chega com #promise: a página vai à linha da promessa", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get('[data-pending="promise"]').attributes("data-focus-target")).toBe("pending:promise");
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    w.unmount();
+  });
+
+  it("#promise num pedido que já não está em risco não rola a página", async () => {
+    routeHash.value = "#promise";
+    const w = abrir(order({ status: "accepted", can_confirm: false, pending: [] as never }));
+    await flushPromises();
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("chega com #cancel: o diálogo de cancelar abre", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco());
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).toBe("true");
+    expect(reveal).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("#cancel num pedido que não pode ser cancelado leva à linha da promessa, onde está o \"Resolver\"", async () => {
+    routeHash.value = "#cancel";
+    const w = abrir(emRisco({ can_cancel: false }));
+    await flushPromises();
+    expect(w.get("order-reason-dialog-stub").attributes("open")).not.toBe("true");
+    expect(reveal).toHaveBeenCalledWith("pending:promise");
+    expect(w.get('[data-pending-action="resolve"]').text()).toBe("Resolver");
+    w.unmount();
+  });
+});
+
+describe("detalhe do pedido — a leitura que falhou diz por quê", () => {
+  const sessao = (role: string) => vi.stubGlobal("useNuxtData", () => ({ data: ref({ operator: { id: 1 }, surface_role: role }) }));
+  beforeEach(() => {
+    readForbidden.value = false;
+    readNotFound.value = false;
+    readError.value = null;
+    sessao("orders");
+  });
+  const semLeitura = () => {
+    detalhe.value = null;
+    return mount(OrderDetailPage, { global: { stubs, mocks: { $router: { go: vi.fn() } } } });
+  };
+
+  it("quem só expede lê por que não abre, e volta para a Saída", () => {
+    sessao("expedition");
+    readError.value = { statusCode: 403, data: { detail: "Sem permissão." } };
+    readForbidden.value = true;
+    const w = semLeitura();
+    try {
+      const denial = w.get("[data-order-forbidden]");
+      expect(denial.text()).toContain("Sua conta não abre o detalhe do pedido");
+      expect(denial.text()).toContain("é de quem gerencia pedidos.");
+      expect(denial.text()).toContain("Os pedidos prontos para sair ficam no painel da Saída, onde você marca a saída e a retirada.");
+      expect(denial.text()).not.toContain("continua");
+      expect(denial.text()).toContain("Abrir a Saída");
+      expect(w.text()).not.toContain("não encontrado");
+      expect(w.find("[data-order-error]").exists()).toBe(false);
+      // A rede respondeu; quem não abre é a conta. O cabeçalho não diz "Sem conexão"
+      // nem oferece o menu de um pedido que a pessoa não pode ler.
+      expect(w.text()).not.toContain("Sem conexão");
+      expect(w.text()).not.toContain("Atualização falhou");
+      expect(w.find('[data-action="menu"]').exists()).toBe(false);
+    } finally { w.unmount(); }
+  });
+
+  it("outra conta sem a permissão: pede o acesso a um gerente", () => {
+    sessao("catalog");
+    readError.value = { statusCode: 403 };
+    readForbidden.value = true;
+    const w = semLeitura();
+    try {
+      expect(w.get("[data-order-forbidden]").text()).toContain("Peça o acesso a um gerente.");
+      expect(w.get("[data-order-forbidden]").text()).toContain("Voltar ao Gestor");
+    } finally { w.unmount(); }
+  });
+
+  it("pedido que não existe diz o código procurado", () => {
+    readError.value = { statusCode: 404 };
+    readNotFound.value = true;
+    const w = semLeitura();
+    try {
+      expect(w.find("[data-order-forbidden]").exists()).toBe(false);
+      expect(w.get("[data-order-error]").text()).toContain("Pedido não encontrado");
+      expect(w.get("[data-order-error]").text()).toContain("Não existe pedido com o código WEB-1.");
+    } finally { w.unmount(); }
+  });
+
+  it("falha de rede não é pedido inexistente", () => {
+    readError.value = { statusCode: 503 };
+    const w = semLeitura();
+    try {
+      const failure = w.get("[data-order-error]").text();
+      expect(failure).toContain("Não foi possível carregar o pedido");
+      expect(failure).toContain("A leitura falhou. Confira a conexão e toque em Atualizar, no menu do pedido.");
+      expect(failure).not.toContain("não encontrado");
+    } finally { w.unmount(); }
+  });
+});
+
+// Estornar UM pedido (#2727, item 5): a porta é a ação `refund` do servidor, que só
+// chega a quem tem a permissão. A tela não decide nada: sem a ação, não há item.
+describe("detalhe do pedido — estornar", () => {
+  const refund = (over: Partial<OperatorOrderProjection["actions"][number]> = {}) => ({
+    ...fixtureActions({ can_confirm: true })[0]!,
+    ref: "refund",
+    label: "Estornar",
+    priority: "danger",
+    payload_schema: { base_revision: "detail-base", expected_actor_id: 1 },
+    confirmation: { required: true },
+    ...over,
+  });
+  const paid = (over: Partial<OperatorOrderProjection> = {}) =>
+    order({ status: "completed", status_label: "Concluído", can_confirm: false, actions: [refund()], ...over });
+
+  beforeEach(() => {
+    refundOrder.mockReset();
+    vi.mocked(useSonner.success).mockClear();
+    vi.mocked(useSonner.error).mockClear();
+  });
+
+  it("a ação veio do servidor: o item existe e abre o diálogo deste pedido", async () => {
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="refund"]');
+
+    expect(item.text()).toContain("Estornar");
+    expect(item.attributes("disabled")).toBeUndefined();
+    await item.trigger("click");
+    const dialog = w.getComponent({ name: "OrderRefundDialog" });
+    expect(dialog.props("open")).toBe(true);
+    expect(dialog.props("orderRef")).toBe("WEB-1");
+    w.unmount();
+  });
+
+  it("travada pelo servidor: o item fica no lugar, desabilitado, dizendo por quê", async () => {
+    const reason = "O valor desta cobrança já voltou inteiro ao cliente.";
+    const w = abrir(paid({ actions: [refund({ enabled: false, reason })] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    const item = w.get('[data-action="refund"]');
+
+    expect(item.attributes("disabled")).toBeDefined();
+    expect(item.text()).toContain(reason);
+    w.unmount();
+  });
+
+  it("sem a ação (sem a permissão, sem cobrança online): o item não existe", async () => {
+    const w = abrir(paid({ actions: [] }));
+    await w.get('[data-action="menu"]').trigger("click");
+    expect(w.find('[data-action="refund"]').exists()).toBe(false);
+    w.unmount();
+  });
+
+  it("o dinheiro voltou: o diálogo fecha e diz quanto", async () => {
+    const contract = refund({ payload_schema: { base_revision: "preview-base", expected_actor_id: 1 } });
+    refundOrder.mockResolvedValueOnce({ outcome: "refunded", amount_q: 1250, refunded_q: 1250, available_q: 1750, message: "" });
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract, amountQ: 1250 });
+    await flushPromises();
+
+    expect(refundOrder).toHaveBeenCalledWith(contract, 1250, undefined);
+    expect(w.getComponent({ name: "OrderRefundDialog" }).props("open")).toBe(false);
+    expect(useSonner.success).toHaveBeenCalledWith("R$ 12,50 devolvidos ao cliente pelo mesmo meio do pagamento.");
+    w.unmount();
+  });
+
+  it("o meio de pagamento recusou: a frase do balcão vira o aviso", async () => {
+    const message = "O Pix não aceitou o estorno. Nada foi devolvido ao cliente. Chame o suporte.";
+    refundOrder.mockResolvedValueOnce({ outcome: "refused", amount_q: 1250, refunded_q: 0, available_q: 3000, message });
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract: refund(), amountQ: 1250 });
+    await flushPromises();
+
+    expect(useSonner.error).toHaveBeenCalledWith(message);
+    expect(useSonner.success).not.toHaveBeenCalled();
+    w.unmount();
+  });
+
+  it("nada foi aplicado: o diálogo continua aberto", async () => {
+    refundOrder.mockResolvedValueOnce(null);
+    const w = abrir(paid());
+    await w.get('[data-action="menu"]').trigger("click");
+    await w.get('[data-action="refund"]').trigger("click");
+
+    w.getComponent({ name: "OrderRefundDialog" }).vm.$emit("confirm", { contract: refund(), amountQ: 1250 });
+    await flushPromises();
+
+    expect(w.getComponent({ name: "OrderRefundDialog" }).props("open")).toBe(true);
+    w.unmount();
   });
 });

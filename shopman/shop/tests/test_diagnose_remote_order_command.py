@@ -6,7 +6,7 @@ import pytest
 from django.core.management import call_command
 from shopman.orderman.models import Directive, Order
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def test_diagnose_remote_order_reports_payment_directives_and_recommendations():

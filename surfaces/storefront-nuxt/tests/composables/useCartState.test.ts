@@ -52,6 +52,18 @@ describe('useCartState', () => {
     fetchMock.mockReset()
   })
 
+  it('a PDP pública sem sacola preserva o snapshot recebido pelo shell', async () => {
+    const store = await loadStore()
+    store.setFromServer(serverCart() as never)
+    const shellCart = store.cart.value
+
+    store.setFromServer(undefined)
+
+    expect(store.cart.value).toBe(shellCart)
+    expect(store.qtyForSku('CROISSANT')).toBe(2)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('optimistic update reconciles to server truth on drain', async () => {
     fetchMock.mockResolvedValue({ cart: serverCart() })
     const store = await loadStore()
@@ -71,7 +83,7 @@ describe('useCartState', () => {
     const issuePayload = {
       title: 'Sem estoque',
       detail: 'Croissant esgotou.',
-      error_code: 'insufficient_stock',
+      error_code: 'insufficient_supply',
       sku: 'CROISSANT',
       name: 'Croissant',
       requested_qty: 3,
@@ -87,7 +99,7 @@ describe('useCartState', () => {
 
     await expect(store.setSkuQty(meta, 3)).rejects.toThrow()
 
-    expect(store.cartIssue.value?.error_code).toBe('insufficient_stock')
+    expect(store.cartIssue.value?.error_code).toBe('insufficient_supply')
     expect(store.cartIssue.value?.sku).toBe('CROISSANT')
     expect(store.cartIssue.value?.available_qty).toBe(1)
     expect(store.cartIssue.value?.substitutes).toHaveLength(1)
@@ -97,7 +109,27 @@ describe('useCartState', () => {
 
     // Um snapshot passivo NÃO pode apagar o aviso de substitutos.
     store.setFromServer(serverCart({ items: [], items_count: 0, is_empty: true }) as never)
-    expect(store.cartIssue.value?.error_code).toBe('insufficient_stock')
+    expect(store.cartIssue.value?.error_code).toBe('insufficient_supply')
+  })
+
+  it('a recusa do servidor faz as páginas abertas relerem na hora (WP-L04)', async () => {
+    const { useLiveStore, resetLiveStoreForTests } = await import('~/composables/useLiveStore')
+    resetLiveStoreForTests()
+    const onChange = vi.fn()
+    const live = useLiveStore(onChange)
+    live.start()
+    fetchMock
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_supply', sku: 'CROISSANT', requested_qty: 1, available_qty: 0 }))
+      .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
+    const store = await loadStore()
+
+    await expect(store.setSkuQty(meta, 1)).rejects.toThrow()
+
+    // O produto e os cards não esperam aviso nem janela: a recusa já é a verdade.
+    expect(onChange).toHaveBeenCalledTimes(1)
+    expect(onChange).toHaveBeenCalledWith('refusal')
+    live.stop()
+    resetLiveStoreForTests()
   })
 
   it('429 captures rate-limit recovery with retry-after', async () => {
@@ -121,7 +153,7 @@ describe('useCartState', () => {
 
     await expect(store.setSkuQty(meta, 2)).rejects.toThrow()
 
-    expect(store.lastError.value).toBe('Não foi possível atualizar o carrinho.')
+    expect(store.lastError.value).toBe('Não foi possível atualizar a sacola.')
     expect(store.cartIssue.value).toBeNull()
     expect(store.rateLimitRecovery.value).toBeNull()
   })
@@ -175,7 +207,7 @@ describe('useCartState', () => {
 
   it('acceptAvailableQty re-submits with the available quantity from a 409', async () => {
     fetchMock
-      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CROISSANT', requested_qty: 5, available_qty: 2 }))
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_supply', sku: 'CROISSANT', requested_qty: 5, available_qty: 2 }))
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
       .mockResolvedValueOnce({ cart: serverCart() })
     const store = await loadStore()
@@ -234,7 +266,7 @@ describe('useCartState', () => {
   it('addSubstitute swaps the out-of-stock item for an alternative', async () => {
     fetchMock
       .mockRejectedValueOnce(fetchError(409, {
-        error_code: 'insufficient_stock', sku: 'CROISSANT', requested_qty: 2, available_qty: 0,
+        error_code: 'insufficient_supply', sku: 'CROISSANT', requested_qty: 2, available_qty: 0,
         substitutes: [{ sku: 'PAO', name: 'Pão', price_q: 400, can_order: true, target_qty: 2 }]
       }))
       .mockResolvedValueOnce({ cart: serverCart({ items: [], items_count: 0, is_empty: true }) })
@@ -285,7 +317,7 @@ describe('useCartState', () => {
 
   it('dismissCartIssue clears the banner', async () => {
     fetchMock
-      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CROISSANT' }))
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_supply', sku: 'CROISSANT' }))
       .mockResolvedValueOnce({ cart: serverCart() })
     const store = await loadStore()
 
@@ -331,7 +363,9 @@ describe('useCartState com escolhas no produto', () => {
       unit_price_q: 3200,
       total_price_q: 3200,
       price_display: 'R$ 32,00',
-      total_display: 'R$ 32,00',
+      line_total_display: 'R$ 32,00',
+      line_total_struck_display: null,
+      list_price_q: 3200,
       image_url: null,
       is_available: true,
       available_qty: null,
@@ -425,7 +459,7 @@ describe('useCartState com escolhas no produto', () => {
 
   it('409 na inclusão com escolhas: "Levar N" manda só a diferença, com as mesmas escolhas', async () => {
     fetchMock
-      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_stock', sku: 'CQMO', available_qty: 3, line_qty: 2 }))
+      .mockRejectedValueOnce(fetchError(409, { error_code: 'insufficient_supply', sku: 'CQMO', available_qty: 3, line_qty: 2 }))
       .mockResolvedValueOnce({ cart: serverCart() })
       .mockResolvedValueOnce({ cart: serverCart({ items: twoLines() }) })
     const store = await loadStore()
@@ -438,6 +472,69 @@ describe('useCartState com escolhas no produto', () => {
     const [url, options] = fetchMock.mock.calls[2]!
     expect(String(url)).toContain('/api/v1/cart/lines/')
     expect(options).toMatchObject({ method: 'POST', body: { sku: 'CQMO', qty: 1, options: [{ group: 'adicionais', ref: 'ovo' }] } })
+  })
+
+  // Recusa de estoque no ENVIO do pedido (#2687): a linha já está na sacola e passou
+  // do teto. A folha sobe no checkout com o corpo da recusa, e as ações miram a linha.
+  const refusedLine = { error_code: 'insufficient_supply', sku: 'CQMO', name: 'Croque Monsieur', requested_qty: 2, available_qty: 1, line_qty: null, line_id: 'L-1', is_notifiable: true }
+
+  it('a recusa do envio sobe a folha mirando a linha, sem mutação para refazer', async () => {
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+
+    store.raiseStockIssue({ ...refusedLine, substitutes: [{ sku: 'QUICHE', name: 'Quiche', price_q: 2800, can_order: true }] })
+
+    expect(store.cartIssue.value).toMatchObject({ sku: 'CQMO', line_id: 'L-1', available_qty: 1, line_qty: null, isNotifiable: true })
+    expect(store.cartIssue.value?.substitutes.map(sub => sub.sku)).toEqual(['QUICHE'])
+    expect(store.lastMutation.value).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('"Levar N" na recusa do envio encolhe AQUELA linha até o que dá', async () => {
+    fetchMock.mockResolvedValueOnce({ cart: serverCart({ items: [line({ line_id: 'L-1', qty: 1 }), twoLines()[1]], items_count: 2 }) })
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+    store.raiseStockIssue(refusedLine)
+
+    await store.acceptAvailableQty()
+
+    const [url, options] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/v1/cart/lines/L-1/')
+    expect(options).toMatchObject({ method: 'PUT', body: { qty: 1 } })
+    expect(store.cartIssue.value).toBeNull()
+  })
+
+  it('o substituto na recusa do envio entra no lugar só do que falta, e a linha fica com o que dá', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ cart: serverCart({ items: [line({ line_id: 'L-1', qty: 1 }), twoLines()[1]], items_count: 2 }) })
+      .mockResolvedValueOnce({ cart: serverCart({ items: [line({ line_id: 'L-1', qty: 1 }), twoLines()[1], line({ line_id: 'L-3', sku: 'QUICHE', qty: 1 })], items_count: 3 }) })
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+    store.raiseStockIssue({ ...refusedLine, substitutes: [{ sku: 'QUICHE', name: 'Quiche', price_q: 2800, can_order: true, available_qty: 9 }] })
+
+    await store.addSubstitute(store.cartIssue.value!.substitutes[0]!)
+
+    const [first, second] = fetchMock.mock.calls
+    expect(String(first![0])).toContain('/api/v1/cart/lines/L-1/')
+    expect(first![1]).toMatchObject({ method: 'PUT', body: { qty: 1 } })
+    expect(String(second![0])).toContain('/api/v1/cart/skus/QUICHE/')
+    expect(second![1]).toMatchObject({ method: 'PUT', body: { qty: 1 } })
+  })
+
+  it('sem nada para levar, o substituto troca a linha inteira', async () => {
+    fetchMock
+      .mockResolvedValueOnce({ cart: serverCart({ items: [twoLines()[1]], items_count: 1 }) })
+      .mockResolvedValueOnce({ cart: serverCart({ items: [twoLines()[1], line({ line_id: 'L-3', sku: 'QUICHE', qty: 2 })], items_count: 3 }) })
+    const store = await loadStore()
+    store.setFromServer(serverCart({ items: twoLines(), items_count: 3 }) as never)
+    store.raiseStockIssue({ ...refusedLine, available_qty: 0, substitutes: [{ sku: 'QUICHE', name: 'Quiche', price_q: 2800, can_order: true, available_qty: 9 }] })
+
+    await store.addSubstitute(store.cartIssue.value!.substitutes[0]!)
+
+    const [first, second] = fetchMock.mock.calls
+    expect(String(first![0])).toContain('/api/v1/cart/lines/L-1/')
+    expect(first![1]).toMatchObject({ body: { qty: 0 } })
+    expect(second![1]).toMatchObject({ body: { qty: 2 } })
   })
 
   it('setSkuQty (produto sem escolhas) não encosta na linha com escolhas do mesmo SKU', async () => {

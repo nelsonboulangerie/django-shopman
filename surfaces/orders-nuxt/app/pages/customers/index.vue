@@ -8,16 +8,21 @@
 import type { ActiveFilters, FilterDimension } from "../../../../operator-kit/app/types/filters";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import {
-  customersCsv,
   listQueryFromRoute,
   routeQueryFromList,
   type CustomerFilter,
   type CustomerSort,
 } from "~/presentation/customers";
+import { downloadCsv } from "../../../../operator-kit/app/presentation/csv";
 import type { OperatorBulkItem } from "../../../../operator-kit/app/presentation/bulkBar";
 import type { CustomerFormOptionsProjection } from "~/generated/ordersContract";
 import type { CustomerBulkOperation, CustomerMutationPayload } from "~/types/customers";
-import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
+import type { CustomerGroupMembersOperation } from "~/types/customerGroups";
+import {
+  customerGroupsLabel,
+  groupMembersResultMessage,
+} from "~/presentation/customerGroupMembers";
+import { contactOwner, mutationFieldErrors, type ContactOwner } from "~/utils/mutationFieldErrors";
 
 useHead({ title: "Clientes" });
 
@@ -67,13 +72,15 @@ const createOpen = ref(false);
 const createBusy = ref(false);
 const createError = ref("");
 const createFieldErrors = ref<Record<string, string>>({});
+const createContactOwner = ref<ContactOwner | null>(null);
 watch(createOpen, (open) => {
   if (!open) return;
   createError.value = "";
   createFieldErrors.value = {};
+  createContactOwner.value = null;
 });
 let createKey = crypto.randomUUID();
-const emptyForm: CustomerFormOptionsProjection = { customer_types: [], price_tiers: [] };
+const emptyForm: CustomerFormOptionsProjection = { customer_types: [], price_tiers: [], default_price_tier_refs: [] };
 const formOptions = computed(() => list.value?.form ?? emptyForm);
 
 async function saveCustomer(payload: CustomerMutationPayload) {
@@ -81,6 +88,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   createBusy.value = true;
   createError.value = "";
   createFieldErrors.value = {};
+  createContactOwner.value = null;
   try {
     const response = await createCustomer(payload, createKey);
     if (response.outcome !== "applied" || !response.customer) {
@@ -95,6 +103,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   } catch (failure) {
     createError.value = httpErrorMessage(failure, "Não foi possível cadastrar o cliente.");
     createFieldErrors.value = mutationFieldErrors(failure);
+    createContactOwner.value = contactOwner(failure);
     if (httpError(failure).status) createKey = crypto.randomUUID();
   } finally {
     createBusy.value = false;
@@ -106,6 +115,8 @@ type CustomerRow = (typeof items.value)[number];
 // O painel de filtros único (fase 2, K4): os recortes da lista como um campo de
 // escolha única, e os favoritos da pessoa. As abas continuam como os filtros rápidos à
 // vista; o painel e as abas mexem no mesmo `?filter=`.
+// O grupo comercial é a segunda dimensão: é por ele que se acha quem tirar de um grupo.
+const groupOptions = computed(() => formOptions.value.price_tiers);
 const panelDimensions = computed<FilterDimension[]>(() => [
   {
     id: "filter",
@@ -115,11 +126,28 @@ const panelDimensions = computed<FilterDimension[]>(() => [
       .filter((option) => option.ref !== "all")
       .map((option) => ({ value: option.ref, label: option.label })),
   },
+  {
+    id: "group",
+    label: "Grupo",
+    type: "single-select",
+    options: groupOptions.value.map((option) => ({ value: option.value, label: option.label })),
+  },
 ]);
 const panelFilters = computed<ActiveFilters>({
-  get: (): ActiveFilters =>
-    listQuery.value.filter === "all" ? {} : { filter: [String(listQuery.value.filter)] },
-  set: (next: ActiveFilters) => setFilter(next.filter?.[0] ?? "all"),
+  get: (): ActiveFilters => ({
+    ...(listQuery.value.filter === "all" ? {} : { filter: [String(listQuery.value.filter)] }),
+    ...(listQuery.value.group ? { group: [listQuery.value.group] } : {}),
+  }),
+  set: (next: ActiveFilters) => {
+    router.replace({
+      query: routeQueryFromList({
+        ...listQuery.value,
+        filter: (next.filter?.[0] ?? "all") as CustomerFilter,
+        group: next.group?.[0] ?? "",
+        page: 1,
+      }),
+    });
+  },
 });
 const activeFilters = computed(() =>
   filterBarActiveFilters(panelDimensions.value, panelFilters.value, (next) => {
@@ -132,10 +160,11 @@ const filterItems = computed(() =>
     label: option.label,
   })),
 );
-// Cliente é a chave (fixada); Pedidos é de apoio (some no celular).
+// Cliente é a chave (fixada); Grupos e Pedidos são de apoio (somem no celular).
 const customerColumns = [
   { id: "customer", header: "Cliente", enableHiding: false },
   { id: "contact", header: "Contato" },
+  { id: "groups", header: "Grupos", meta: { supporting: true } },
   { id: "orders", header: "Pedidos", meta: { supporting: true } },
 ];
 
@@ -152,13 +181,19 @@ const customerRowSelection = computed<Record<string, boolean>>({
 function clearSelection() {
   selected.value = new Set();
 }
-watch(() => [listQuery.value.q, listQuery.value.filter] as const, clearSelection);
+watch(
+  () => [listQuery.value.q, listQuery.value.filter, listQuery.value.group] as const,
+  clearSelection,
+);
 
 const bulkScope = computed(() => {
   const current = (list.value?.filters ?? []).find(
     (option) => option.ref === listQuery.value.filter,
   );
-  return current && current.ref !== "all" ? current.label : "";
+  const group = groupOptions.value.find((option) => option.value === listQuery.value.group);
+  return [current && current.ref !== "all" ? current.label : "", group ? `grupo ${group.label}` : ""]
+    .filter(Boolean)
+    .join(" · ");
 });
 
 const bulkOpen = ref(false);
@@ -172,9 +207,18 @@ watch(bulkOpen, (open) => {
 function bulkItems(_placement: "toolbar" | "base"): OperatorBulkItem[] {
   return [
     {
+      label: "Mudar grupo…",
+      shortLabel: "Grupo…",
+      icon: "i-lucide-badge-percent",
+      disabled: bulkBusy.value || groupBusy.value,
+      onSelect: () => {
+        groupOpen.value = true;
+      },
+    },
+    {
       label: "Etiquetar…",
       icon: "i-lucide-tags",
-      disabled: bulkBusy.value,
+      disabled: bulkBusy.value || groupBusy.value,
       onSelect: () => {
         bulkOpen.value = true;
       },
@@ -224,17 +268,73 @@ async function saveBulkTags({
     bulkBusy.value = false;
   }
 }
+// Mudar grupo em lote: pôr a seleção num grupo, ou tirar dele, numa ida. A chave
+// de intenção vale para o par grupo + gesto; trocar qualquer um gera outra.
+const groupOpen = ref(false);
+const groupBusy = ref(false);
+const groupError = ref("");
+let groupKey = crypto.randomUUID();
+let groupKeyScope = "";
+watch(groupOpen, (open) => {
+  if (open) groupError.value = "";
+});
+async function saveGroupMembers({
+  operation,
+  groupRef,
+}: {
+  operation: CustomerGroupMembersOperation;
+  groupRef: string;
+}) {
+  if (groupBusy.value || selected.value.size === 0) return;
+  const scope = operation + ":" + groupRef + ":" + [...selected.value].sort().join(",");
+  if (scope !== groupKeyScope) {
+    groupKey = crypto.randomUUID();
+    groupKeyScope = scope;
+  }
+  groupBusy.value = true;
+  groupError.value = "";
+  try {
+    const response = await changeCustomerGroupMembers(
+      groupRef,
+      { operation, refs: [...selected.value] },
+      groupKey,
+    );
+    if (response.outcome !== "applied") {
+      groupError.value = "O resultado ainda não foi confirmado. Tente de novo; a mesma intenção será reutilizada.";
+      return;
+    }
+    groupKey = crypto.randomUUID();
+    groupKeyScope = "";
+    groupOpen.value = false;
+    useSonner.success(groupMembersResultMessage(response));
+    clearSelection();
+    await refresh();
+  } catch (failure) {
+    groupError.value = httpErrorMessage(failure, "Não foi possível mudar o grupo.");
+    if (httpError(failure).status) {
+      groupKey = crypto.randomUUID();
+      groupKeyScope = "";
+    }
+  } finally {
+    groupBusy.value = false;
+  }
+}
 function exportSelectionCsv() {
   const chosen = items.value.filter((row) => selected.value.has(row.ref));
   if (!chosen.length) return;
-  const csv = customersCsv(chosen);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "clientes-" + new Date().toISOString().slice(0, 10) + ".csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
+  downloadCsv(
+    {
+      header: ["Cliente", "Referência", "Telefone", "CPF/CNPJ", "Pedidos"],
+      rows: chosen.map((row) => [
+        row.name,
+        row.ref,
+        row.phone_display,
+        row.document_display,
+        row.orders_label,
+      ]),
+    },
+    "clientes-" + new Date().toISOString().slice(0, 10) + ".csv",
+  );
 }
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
 // celular"): as ações da toolbar vão para o ⋯ da barra do topo e a leitura (frescor)
@@ -249,9 +349,10 @@ const phoneHeaderActions = computed(() => [
 
 <template>
   <main class="flex min-h-0 flex-1 flex-col">
+    <!-- A barra quebra a linha (GES-18): no tablet de 1024 px, Grupos, Unificações e
+         a ordenação saíam da tela numa linha só, sem rolagem que as alcançasse. -->
     <OperatorPageHeader
       title="Clientes"
-      :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       desk-only-filters
       :active-filters="activeFilters"
@@ -265,7 +366,7 @@ const phoneHeaderActions = computed(() => [
         <OperatorSuiteSearch
           v-model="search"
           screen-label="filtrando os clientes"
-          placeholder="Nome, telefone, CPF…"
+          placeholder="Nome, telefone, CPF/CNPJ…"
           aria-label="Buscar cliente"
         />
       </template>
@@ -296,7 +397,7 @@ const phoneHeaderActions = computed(() => [
         />
       </template>
       <template #filters>
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3" data-customers-toolbar>
           <NuxtButton
             icon="i-lucide-user-round-plus"
             label="Cadastrar cliente"
@@ -402,14 +503,24 @@ const phoneHeaderActions = computed(() => [
           </div>
         </template>
         <template #contact-cell="{ row }">
+          <!-- O telefone não quebra no meio ("(43) 98000-" / "1212"). -->
           <span
+            class="whitespace-nowrap"
             :class="row.original.phone_display ? '' : 'text-muted-foreground'"
+            data-customer-phone
             >{{ row.original.phone_display || "Sem telefone" }}</span
           >
           <span
             v-if="row.original.document_display"
             class="block text-xs text-muted-foreground"
-            >CPF {{ row.original.document_display }}</span
+            >CPF/CNPJ {{ row.original.document_display }}</span
+          >
+        </template>
+        <template #groups-cell="{ row }">
+          <span
+            :class="row.original.groups.length ? '' : 'text-muted-foreground'"
+            :data-customer-groups="row.original.ref"
+            >{{ customerGroupsLabel(row.original.groups) || "Sem grupo" }}</span
           >
         </template>
         <template #orders-cell="{ row }">
@@ -448,6 +559,16 @@ const phoneHeaderActions = computed(() => [
       @clear="clearSelection"
     />
 
+    <CustomerGroupBulkDialog
+      v-model:open="groupOpen"
+      :count="selected.size"
+      :groups="groupOptions"
+      :initial-group="listQuery.group"
+      :busy="groupBusy"
+      :error="groupError"
+      @save="saveGroupMembers"
+    />
+
     <CustomerBulkTagsPanel
       v-model:open="bulkOpen"
       :count="selected.size"
@@ -462,6 +583,7 @@ const phoneHeaderActions = computed(() => [
       :busy="createBusy"
       :error="createError"
       :field-errors="createFieldErrors"
+      :contact-owner="createContactOwner"
       @save="saveCustomer"
     />
   </main>

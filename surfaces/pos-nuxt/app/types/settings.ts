@@ -32,6 +32,10 @@ export interface PosKitchenStationSetting {
 export interface PosSettingsResponse {
   terminal_ref: string;
   terminal_label: string;
+  /** O terminal acima é o deste dispositivo (vinculado ao posto). */
+  terminal_is_this_device: boolean;
+  /** Quem lê grava maquininha e impressora (Gerente e Dono; decisão do dono, 05/11/2026). */
+  can_manage_setup: boolean;
   printers: PosPrinterSetting[];
   roll_widths: number[];
   cut_modes: Array<{ value: string; label: string }>;

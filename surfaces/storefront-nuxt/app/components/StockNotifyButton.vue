@@ -19,9 +19,11 @@ const props = defineProps<{
   subscribed?: boolean
 }>()
 
-const label = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
+// O nome acessível COMEÇA pelo texto visível (WCAG 2.5.3): quem comanda por voz diz
+// "Me avise" e o botão atende. O resto diz de qual produto é, entre muitos cartões.
+const label = computed(() => props.name ? `Me avise sempre que ${props.name} voltar` : 'Me avise sempre que voltar')
 const subscribedLabel = computed(() => props.name ? `Anotado para ${props.name}. Gerenciar aviso` : 'Anotado. Gerenciar aviso')
-const anonymousLabel = computed(() => props.name ? `Ativar avisos recorrentes quando ${props.name} voltar` : 'Ativar avisos recorrentes quando voltar')
+const retryLabel = (visible: string) => props.name ? `${visible}: aviso de ${props.name}` : visible
 
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
@@ -236,7 +238,7 @@ const managementHref = computed(() => managementUrl.value || (
 
   <!-- Logado: retorno do login retoma a prova; uso comum pede a declaração. -->
   <template v-else-if="isAuthenticated">
-    <p v-if="terminalError && !compact && !pill" class="shop-meta text-destructive" role="alert">
+    <p v-if="terminalError && !compact && !pill" class="shop-meta text-destructive" role="alert" data-decisive="error">
       {{ terminalError }}
     </p>
     <p v-else-if="hasMatchingIntent && submitting && !compact && !pill" class="shop-meta text-muted-foreground" role="status">
@@ -250,8 +252,8 @@ const managementHref = computed(() => managementUrl.value || (
       :loading="submitting"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
       :disabled="!!terminalError"
-      :aria-label="label"
-      :title="label"
+      :aria-label="hasMatchingIntent && resumeFailed ? retryLabel('Tentar de novo') : label"
+      :title="hasMatchingIntent && resumeFailed ? retryLabel('Tentar de novo') : label"
       @click="hasMatchingIntent && resumeFailed ? restartIntent() : openConsent()"
     >
       {{ hasMatchingIntent && resumeFailed ? 'Tentar de novo' : 'Me avise' }}
@@ -264,8 +266,8 @@ const managementHref = computed(() => managementUrl.value || (
       :loading="submitting"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
       :disabled="!!terminalError"
-      :aria-label="label"
-      :title="label"
+      :aria-label="hasMatchingIntent && resumeFailed ? retryLabel('Tentar ativar aviso') : label"
+      :title="hasMatchingIntent && resumeFailed ? retryLabel('Tentar ativar aviso') : label"
       @click="hasMatchingIntent && resumeFailed ? restartIntent() : openConsent()"
     >
       {{ hasMatchingIntent && resumeFailed ? 'Tentar ativar aviso' : 'Me avise sempre' }}
@@ -280,8 +282,8 @@ const managementHref = computed(() => managementUrl.value || (
       size="sm"
       icon="lucide:bell"
       class="h-10 w-full justify-center gap-1 rounded-full px-3 text-sm tracking-tight shadow-sm"
-      :aria-label="anonymousLabel"
-      :title="anonymousLabel"
+      :aria-label="label"
+      :title="label"
       @click="openConsent"
     >
       Me avise
@@ -292,8 +294,8 @@ const managementHref = computed(() => managementUrl.value || (
       variant="default"
       icon="lucide:bell"
       :class="[compact ? '' : 'w-full', inverted ? 'shop-action-inverted' : '']"
-      :aria-label="anonymousLabel"
-      :title="anonymousLabel"
+      :aria-label="label"
+      :title="label"
       @click="openConsent"
     >
       Me avise sempre
@@ -314,7 +316,7 @@ const managementHref = computed(() => managementUrl.value || (
         <UiCheckbox v-model="adultDeclared" aria-label="Confirmar maioridade" class="mt-0.5" />
         <span>Declaro ter 18 anos ou mais e quero receber estes avisos.</span>
       </label>
-      <p v-if="declarationError" class="shop-meta text-destructive" role="alert">{{ declarationError }}</p>
+      <p v-if="declarationError" class="shop-meta text-destructive" role="alert" data-decisive="error">{{ declarationError }}</p>
       <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
         {{ isAuthenticated ? 'Ativar aviso' : 'Continuar para entrar' }}
       </UiButton>

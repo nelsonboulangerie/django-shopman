@@ -33,14 +33,26 @@ def parse_money_to_q(raw) -> int:
     Entrada ilegível levanta POSError — devolver 0 silencioso num fechamento
     CEGO transformaria um typo ("12,,30") numa diferença gigante sem aviso.
     """
-    from decimal import InvalidOperation
+    from decimal import Decimal, InvalidOperation
 
     from shopman.utils.monetary import brl_to_q
 
-    text = str(raw or "").strip().replace("R$", "").replace(" ", "").replace(",", ".")
+    text = str(raw or "").strip().replace("R$", "").replace(" ", "")
+    # Com vírgula, a vírgula é o decimal e o ponto é milhar ("5.000,00", que é como
+    # o próprio sistema escreve o valor de volta). Antes o ponto sobrava e o
+    # "5.000,00" virava "Valor ilegível", enquanto o "5000" passava calado.
+    # Sem vírgula, o ponto continua sendo o decimal ("12.34").
+    if "," in text:
+        text = text.replace(".", "")
+    text = text.replace(",", ".")
     if not text:
         return 0
     try:
+        # "NaN" e "Infinity" são Decimal válidos e passam pelo parse; quebravam
+        # adiante, no int(), com ValueError (500 no acerto de conta, mensagem
+        # interna nos outros). Valor que não é número finito é valor inválido.
+        if not Decimal(text).is_finite():
+            raise POSError("Valor inválido.")
         # brl_to_q usa ROUND_HALF_UP (não banker's rounding), consistente com
         # o resto do sistema.
         return brl_to_q(text)
@@ -152,6 +164,8 @@ def register_cash_movement(
         )
 
     kind = MOVEMENT_KIND_BY_API[api_kind]
+    if kind == "cash_out":
+        _refuse_withdrawal_above_drawer(shift, amount_q)
     signed_q = -amount_q if kind == "cash_out" else amount_q
     return _record(
         kind,
@@ -161,6 +175,21 @@ def register_cash_movement(
         approved_by=approved_by,
         reason=reason,
     )
+
+
+def _refuse_withdrawal_above_drawer(shift, amount_q: int) -> None:
+    """Retirada maior do que a gaveta tem é dedo trocado, não sangria.
+
+    A gaveta física não entrega o que não tem: um "5000" lido como R$ 5.000,00
+    passava pelo PIN do gerente e deixava o livro negativo. A recusa vem DEPOIS
+    da assinatura do gerente (``validate_manager_override`` roda antes), então
+    sondar o esperado tentando valores custa um PIN de gerente por tentativa, e
+    a mensagem não diz o número: a contagem continua cega para o balcão.
+    """
+    from shopman.cashman import services as cash
+
+    if amount_q > cash.balance(shift):
+        raise POSError("A gaveta não tem esse valor. Confira o valor digitado.")
 
 
 def register_drawer_opening(*, operator, reason: str = "", terminal_ref: str = ""):
@@ -425,6 +454,7 @@ def unlock_drawer(
 #: O motivo da linha ``refund`` no livro do turno, por ``payment.refund_reason``.
 _CASH_REFUND_LEDGER_REASONS = {
     "cancelled": "devolução de venda cancelada",
+    "not_picked_up": "devolução de pedido não retirado",
     "returned": "devolução de venda devolvida",
     "partial_return": "devolução de parte da venda",
     "reduced": "devolução da diferença da encomenda editada",
@@ -504,19 +534,40 @@ def record_card_machine_refund(*, operator, order_ref: str, manager_approval: di
 
 
 def settle_account(
-    *, operator, customer_ref: str, amount_raw: str, method: str, terminal_ref: str = ""
+    *,
+    operator,
+    customer_ref: str,
+    amount_raw: str,
+    method: str,
+    terminal_ref: str = "",
+    manager_approval: dict | None = None,
 ):
     """O cliente acertou (parte d)a conta. Em dinheiro, entra no turno ABERTO de quem recebeu.
 
-    Entrada não exige PIN (suprimento também não). O shop captura os intents
-    ``account`` mais antigos inteiros até o valor e, em dinheiro, grava
-    ``account_settled`` no livro na mesma transação; pix/cartão/external são
-    atestados no balcão (``gateway_data.settled_with``).
+    Em dinheiro não exige PIN (suprimento também não): a nota entra na gaveta e a
+    contagem do fim do turno confere. O shop captura os intents ``account`` mais
+    antigos inteiros até o valor e grava ``account_settled`` no livro na mesma
+    transação.
+
+    Pix, cartão e "outro" NÃO passam pela gaveta: nada no fim do turno confere
+    que o dinheiro entrou. Sem segunda assinatura, a Caixa zerava a conta de
+    qualquer cliente tocando "Pix" (beta 07/11: R$ 156,00 quitados sem cobrança
+    nenhuma). Fora do dinheiro, o gerente assina, como na devolução e no estorno.
     """
 
     from shopman.shop.services import house_account
+    from shopman.shop.services.pos import validate_manager_override
 
     method = str(method or "").strip().lower()
+    approved_by = None
+    if method and method != "cash":
+        approved_by = validate_manager_override(
+            manager_approval or {},
+            operator_username=operator.get_username(),
+            action="settle_account",
+            message="Acerto fora do dinheiro precisa de um gerente.",
+            recovery_required="Confira o Pix ou o comprovante da maquininha e chame um gerente para aprovar.",
+        )
     # Em dinheiro isto GRAVA no livro da gaveta, então vale a mesma recusa das outras
     # mutações. Nos outros meios não há gaveta envolvida, e não há o que desambiguar.
     shift = current_shift(terminal_ref, strict=True) if method == "cash" else None
@@ -527,6 +578,7 @@ def settle_account(
             method,
             shift=shift,
             actor=operator,
+            approved_by=approved_by,
         )
     except house_account.HouseAccountError as exc:
         raise POSError(str(exc)) from exc
@@ -625,7 +677,6 @@ def request_change(
     )
 
 
-@transaction.atomic
 def serve_change_request(
     *, operator, request_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
 ):
@@ -636,25 +687,28 @@ def serve_change_request(
     sem a segunda assinatura, "atender um pedido" viraria um jeito de abrir a
     gaveta sem ninguém olhando — o buraco que este fluxo existe para fechar.
     """
-    from shopman.shop.services.pos import validate_manager_override
+    from shopman.shop.services.pos import manager_pin_checked_before_transaction, validate_manager_override
 
-    approved_by = validate_manager_override(
-        manager_approval or {},
-        operator_username=operator.get_username(),
-        action="cash_change_request_serve",
-    )
+    # O PIN se confere antes da transação: dentro dela, a recusa desfazia o
+    # registro do erro e a trava do gerente nunca armava.
+    with manager_pin_checked_before_transaction(manager_approval), transaction.atomic():
+        approved_by = validate_manager_override(
+            manager_approval or {},
+            operator_username=operator.get_username(),
+            action="cash_change_request_serve",
+        )
 
-    shift = _open_shift_or_raise(operator, terminal_ref)
-    request = _pending_request(shift, request_ref)
-    entry = _record(
-        "change_served",
-        shift=shift,
-        operator=operator,
-        approved_by=approved_by,
-        parent=request,
-    )
-    _resolve_change_alert(request, operator)
-    return entry
+        shift = _open_shift_or_raise(operator, terminal_ref)
+        request = _pending_request(shift, request_ref)
+        entry = _record(
+            "change_served",
+            shift=shift,
+            operator=operator,
+            approved_by=approved_by,
+            parent=request,
+        )
+        _resolve_change_alert(request, operator)
+        return entry
 
 
 @transaction.atomic
@@ -724,7 +778,9 @@ def change_request_state(shift, entry_id: int) -> dict:
     return {"entry_id": entry_id}
 
 
-def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", terminal_ref: str = ""):
+def close_cash_shift(
+    *, actor_user, closing_amount_raw="0", notes: str = "", terminal_ref: str = "", manager_approval: dict | None = None,
+):
     """Fechamento cego da GAVETA no fim do expediente. Um caminho, um dono.
 
     Existiam dois: este e um ``close_blocking_shift`` "supervisório", que servia
@@ -741,6 +797,12 @@ def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", ter
     aberta e as vendas do dia seguinte caem no turno de ontem. É o mesmo risco
     que já existe (há turno aberto no staging desde 19/08), agora com uma porta a
     menos. Afrouxar é uma linha: somar ``can_operate_pos`` ao teste abaixo.
+
+    **Venda sem conexão "a conferir"** (dono, 03/11/2026): a venda cobrada por
+    um preço que o catálogo não explica entrou (o dinheiro já estava na gaveta),
+    mas o turno só fecha com o gerente: escolhido da lista, uma autorização, PIN
+    conferido no servidor (``validate_manager_override``). A assinatura fica em
+    cada pedido (``pos.offline.pricing.acknowledged_by``).
     """
     from shopman.backstage.permissions import can_close_day
 
@@ -750,7 +812,28 @@ def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", ter
     shift = current_shift(terminal_ref, strict=True)
     if not shift:
         raise POSError("Caixa não aberto.")
-    _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
+    from shopman.shop.services import pos_offline_sale
+    from shopman.shop.services.pos import manager_pin_checked_before_transaction, validate_manager_override
+
+    # O PIN se confere antes da transação: dentro dela, a recusa desfazia o
+    # registro do erro e a trava do gerente nunca armava.
+    with manager_pin_checked_before_transaction(manager_approval), transaction.atomic():
+        review = pos_offline_sale.review_sales(shift)
+        if review:
+            count = len({row["order_ref"] for row in review})
+            approver = validate_manager_override(
+                manager_approval or {},
+                operator_username=actor_user.get_username(),
+                action="cash_close_offline_review",
+                message=(
+                    "1 venda sem conexão está a conferir: o caixa só fecha com o gerente."
+                    if count == 1
+                    else f"{count} vendas sem conexão estão a conferir: o caixa só fecha com o gerente."
+                ),
+                recovery_required="Peça a um gerente para conferir as vendas e autorizar com o PIN ou o crachá.",
+            )
+            pos_offline_sale.acknowledge_review_sales(shift, approved_by=approver.get_username())
+        _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
     return shift
 
 

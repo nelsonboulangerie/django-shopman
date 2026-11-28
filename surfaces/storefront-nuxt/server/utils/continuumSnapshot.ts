@@ -7,6 +7,7 @@ import {
   type H3Event
 } from 'h3'
 import { resolveDjangoBaseUrl } from './djangoBaseUrl'
+import { ssrErrorCode } from './ssrRead'
 
 const FORWARDED_HEADERS = [
   'cache-control',
@@ -45,6 +46,7 @@ export async function proxyPublicContinuumCatalog (event: H3Event) {
   const ifNoneMatch = getRequestHeader(event, 'if-none-match')
   if (ifNoneMatch) headers['if-none-match'] = ifNoneMatch
 
+  const startedAt = performance.now()
   const response = await $fetch.raw<ArrayBuffer>(
     `${djangoBaseUrl}/api/v1/storefront/continuum/v0.2/catalog-structure/`,
     {
@@ -53,12 +55,22 @@ export async function proxyPublicContinuumCatalog (event: H3Event) {
       responseType: 'arrayBuffer',
       ignoreResponseError: true
     }
-  )
+  ).catch((error) => {
+    const failureCode = ssrErrorCode(error)
+    console.warn('[continuum] upstream sem resposta', { failureCode: failureCode || 'unclassified' })
+    setResponseHeader(event, 'server-timing', [
+      `bff;dur=${Math.max(0, performance.now() - startedAt).toFixed(2)}`,
+      failureCode ? `upstream_error;desc="${failureCode}"` : ''
+    ].filter(Boolean).join(', '))
+    throw error
+  })
   setResponseStatus(event, response.status)
   for (const name of FORWARDED_HEADERS) {
     const value = response.headers.get(name)
     if (value) setResponseHeader(event, name, value)
   }
+  const upstreamTiming = response.headers.get('server-timing')
+  setResponseHeader(event, 'server-timing', [upstreamTiming, `bff;dur=${Math.max(0, performance.now() - startedAt).toFixed(2)}`].filter(Boolean).join(', '))
   // Nunca repassa Cookie/Authorization ao Django nem Set-Cookie ao navegador.
   if (response.status === 304 || event.method === 'HEAD') return null
   if (!response._data) throw createError({ statusCode: 502, statusMessage: 'Bad Gateway' })

@@ -1,10 +1,15 @@
 """
 Meta Catalog Projection adapter — Commerce Catalog via Graph ``items_batch``.
 
-Implements ``CatalogProjectionBackend`` (Offerman) by pushing the internal catalog
-(``ProjectedItem`` snapshots) to a **Meta Commerce Catalog**, which backs Instagram
-Shopping + Facebook Shop (and, curated, WhatsApp — Arc G). One adapter, three
-surfaces: the catalog is the single source Meta fans out from.
+Implements ``CatalogProjectionBackend`` (Offerman) by pushing the platform channel
+(``meta-catalog``) to a **Meta Commerce Catalog**, which backs Instagram Shopping +
+Facebook Shop (and, curated, WhatsApp — Arc G). One adapter, three surfaces: the
+catalog is the single source Meta fans out from. Este envio é o ESCRITOR ÚNICO do
+catálogo na Meta (``docs/plans/CATALOG-PUSH-GOOGLE-META-PLAN.md``).
+
+A decisão de cada item (entra, preço, disponível, oculto) NÃO mora aqui: o handler
+entrega ``ProjectedItem.metadata["display"]``, a decisão de ``services/display_catalog``
+que o XML do feed também lê. Este módulo só traduz para a grafia da Meta.
 
 Contract (Graph API, ``POST /v{N}/{catalog_id}/items_batch``)
 -------------------------------------------------------------
@@ -23,23 +28,21 @@ Body::
 - ``retailer_id`` is our stable SKU — re-syncing upserts the same product instead of
   duplicating (``allow_upsert`` makes UPDATE create-if-missing, so we never need to
   track Meta's internal id).
-- **project** → ``method: "UPDATE"`` with the full ``data`` (title, description,
-  availability, condition, price, link, image_link, brand, google_product_category,
-  custom_label_0 = primary collection). Reads ``ProjectedItem.metadata["social"]``.
-- **retract** → ``method: "UPDATE"`` with ``data: {"availability": "out of stock"}``.
-  Non-destructive and reversible (mirrors the iFood adapter's UNAVAILABLE toggle); a
-  later project flips it back. DELETE is the alternative but throws away the item, so
-  we prefer availability. (Batch cap ≤5000 requests/call; Meta throttles ~100 calls/h.)
+- **project** → ``method: "UPDATE"`` with the full ``data``. Pausado sai
+  ``availability: "out of stock"`` ("esgotado" na loja, fora dos anúncios); oculto sai
+  ``status: "archived"`` ("Only active items can be seen by people in your ads,
+  shops", developers.facebook.com/docs/commerce-platform/catalog/fields).
+- **retract** → ``method: "UPDATE"`` with ``data: {"status": "archived"}``: o item
+  saiu da composição do canal. Arquivar é reversível, e DELETE jogaria fora o item.
+  (Batch cap ≤5000 requests/call; Meta throttles ~100 calls/h.)
 
 Price format (documented choice)
 --------------------------------
 Meta's **batch** API takes ``price`` as an **integer in the currency's minor unit**
 (cents) plus a separate ``currency`` (ISO 4217) — NOT the ``"9.99 BRL"`` string the
-CSV/RSS *feed* uses. That lines up 1:1 with our ``_q`` centavos convention: we send
-``item.price_q`` verbatim and ``currency`` from config (default ``BRL``).
+CSV/RSS *feed* uses. That lines up 1:1 with our ``_q`` centavos convention.
 
-Availability enum is ``"in stock"`` / ``"out of stock"`` (with the space), condition
-defaults to ``"new"``.
+Availability enum is ``"in stock"`` / ``"out of stock"`` (with the space).
 
 Authentication is a System User token via
 :mod:`shopman.shop.services.meta_auth` (Bearer). Config lives in ``SHOPMAN_META``:
@@ -49,8 +52,6 @@ Authentication is a System User token via
     api_version:   Graph version (default ``v21.0``).
     api_base:      Base URL (default ``https://graph.facebook.com``).
     currency:      ISO 4217 for ``price`` (default ``BRL``).
-    store_url:     Public storefront base, used to build each item's ``link``.
-    default_brand: Fallback ``brand`` when a product has none in its PIM.
     batch_size:    Max requests per ``items_batch`` call (default 5000, capped there).
 """
 
@@ -61,7 +62,7 @@ import logging
 import requests
 from shopman.offerman.protocols.projection import ProjectedItem, ProjectionResult
 
-from shopman.shop.services import meta_auth
+from shopman.shop.services import display_catalog, meta_auth
 
 logger = logging.getLogger(__name__)
 
@@ -106,86 +107,52 @@ def _chunk(seq: list, size: int):
         yield seq[start : start + size]
 
 
-def _product_link(sku: str, cfg: dict) -> str:
-    """Public storefront URL for the product (Meta requires a non-empty link on create)."""
-    store_url = str(cfg.get("store_url") or "").rstrip("/")
-    return f"{store_url}/{sku}" if store_url else ""
-
-
-def _item_data(item: ProjectedItem, cfg: dict, *, in_stock: bool = True) -> dict:
-    """Build the Meta ``data`` object for one product from a ProjectedItem + its PIM.
-
-    ``in_stock`` é a resposta de :mod:`shopman.shop.services.external_availability`:
-    vendável zerado sai ``out of stock``, e a pausa (``is_sellable``) continua vencendo.
-    """
-    social = item.metadata.get("social") if isinstance(item.metadata, dict) else {}
-    social = social if isinstance(social, dict) else {}
-    available = item.is_published and item.is_sellable and in_stock
-
+def item_data(item: display_catalog.DisplayItem, cfg: dict) -> dict:
+    """O ``data`` de um produto, traduzido da decisão de ``display_catalog``."""
     data: dict = {
-        "title": item.name,
-        "description": item.description or item.name,
-        "availability": _AVAILABILITY_IN if available else _AVAILABILITY_OUT,
-        "condition": str(social.get("condition") or "new"),
+        "title": item.title,
+        "description": item.description,
+        "availability": _AVAILABILITY_IN if item.available else _AVAILABILITY_OUT,
+        "status": "archived" if item.hidden else "active",
+        "condition": item.condition or "new",
         # Integer minor units (cents) + separate currency — see module docstring.
         "price": int(item.price_q),
         "currency": str(cfg.get("currency") or "BRL"),
-        "link": _product_link(item.sku, cfg),
-        "image_link": item.image_url or "",
+        "link": item.link,
+        "image_link": item.image_link,
+        "product_type": item.product_type,
+        "custom_label_0": item.custom_label_0,  # coleção do canal (segmentação de ads)
     }
-
-    brand = str(social.get("brand") or cfg.get("default_brand") or "").strip()
-    if brand:
-        data["brand"] = brand
-    if social.get("gtin"):
-        data["gtin"] = str(social["gtin"])
-    if social.get("google_product_category"):
-        data["google_product_category"] = str(social["google_product_category"])
-    if item.category:
-        data["custom_label_0"] = item.category  # coleção primária (segmentação de ads)
-
+    if item.brand:
+        data["brand"] = item.brand
+    if item.gtin:
+        data["gtin"] = item.gtin
+    if item.google_product_category:
+        data["google_product_category"] = item.google_product_category
     # Galeria → additional_image_link (string separada por vírgula, até 10 no Meta).
-    gallery = item.metadata.get("gallery") if isinstance(item.metadata, dict) else None
-    if isinstance(gallery, (list, tuple)):
-        extra = [str(u) for u in gallery if u and str(u) != (item.image_url or "")][:10]
-        if extra:
-            data["additional_image_link"] = ",".join(extra)
-
+    if item.additional_image_links:
+        data["additional_image_link"] = ",".join(item.additional_image_links)
     return data
 
 
-def build_batch_requests(
-    items: list[ProjectedItem], cfg: dict, *, stock: dict[str, bool] | None = None,
-) -> list[dict]:
+def build_batch_requests(items: list[ProjectedItem], cfg: dict) -> list[dict]:
     """The ``requests`` list for a project (upsert) — one UPDATE per item.
 
-    ``stock`` (``{sku: tem estoque}``) ausente ou sem o SKU vale "tem estoque".
+    Item sem a decisão do canal (``metadata["display"]``) não tem o que dizer à
+    Meta e falha alto: enviar adivinhando seria publicar o que a casa não decidiu.
     """
-    stock = stock or {}
-    return [
-        {
-            "method": "UPDATE",
-            "retailer_id": item.sku,
-            "data": _item_data(item, cfg, in_stock=stock.get(item.sku, True)),
-        }
-        for item in items
-    ]
-
-
-def stock_for(items: list[ProjectedItem], *, channel: str) -> dict[str, bool]:
-    """Estoque dos itens que as flags já deixariam vender (os outros saem fora de estoque igual)."""
-    from shopman.shop.services import external_availability
-
-    sellable = [item.sku for item in items if item.is_published and item.is_sellable]
-    return external_availability.in_stock_map(sellable, channel_ref=channel)
+    requests_list = []
+    for item in items:
+        decided = item.metadata.get("display") if isinstance(item.metadata, dict) else None
+        if not isinstance(decided, display_catalog.DisplayItem):
+            raise ValueError(f"{item.sku}: item sem a decisão do canal (display_catalog)")
+        requests_list.append({"method": "UPDATE", "retailer_id": item.sku, "data": item_data(decided, cfg)})
+    return requests_list
 
 
 def build_retract_requests(skus: list[str]) -> list[dict]:
-    """The ``requests`` list for a retract — UPDATE availability to out of stock."""
-    return [
-        {"method": "UPDATE", "retailer_id": sku, "data": {"availability": _AVAILABILITY_OUT}}
-        for sku in skus
-    ]
+    """The ``requests`` list for a retract — o item saiu do canal: arquivado."""
+    return [{"method": "UPDATE", "retailer_id": sku, "data": {"status": "archived"}} for sku in skus]
 
 
 def _check_rate_limit(resp: requests.Response) -> None:
@@ -211,7 +178,7 @@ def _post_batch(requests_list: list[dict], cfg: dict, headers: dict) -> None:
 
 
 class MetaCatalogProjection:
-    """Pushes catalog items to a Meta Commerce Catalog (Graph items_batch)."""
+    """Pushes the platform channel to a Meta Commerce Catalog (Graph items_batch)."""
 
     def project(
         self,
@@ -231,8 +198,7 @@ class MetaCatalogProjection:
 
         errors: list[str] = []
         projected = 0
-        stock = stock_for(items, channel=channel)
-        for chunk in _chunk(build_batch_requests(items, cfg, stock=stock), _batch_size(cfg)):
+        for chunk in _chunk(build_batch_requests(items, cfg), _batch_size(cfg)):
             try:
                 _post_batch(chunk, cfg, headers)
                 projected += len(chunk)

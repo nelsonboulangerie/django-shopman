@@ -2,8 +2,7 @@
 
 A Cloudflare na frente do ``api.`` ignora ``Vary: Cookie``: uma resposta
 ``public`` é servida a QUALQUER requisição da mesma URL, com ou sem cookie
-(medido em 30/09/2026: ``sku-redirects/`` sai ``public`` com ``Vary: Cookie`` e
-dá HIT). Por isso a mesma URL não pode ser pública para o anônimo e privada para
+Por isso a mesma URL não pode ser pública para o anônimo e privada para
 o cliente: o corpo de um iria para o outro.
 
 A saída é por URL, não por cabeçalho:
@@ -30,10 +29,17 @@ from rest_framework.exceptions import ParseError
 # TTL curto: a home e o catálogo mostram disponibilidade, preço de horário e se a
 # loja está aberta. 30 s na borda, mais 30 s servindo o velho enquanto revalida,
 # é o atraso máximo que o anônimo vê; sacola e checkout recalculam no servidor.
+# É também o teto do X8: nenhuma resposta pública que carrega copy resolvida passa
+# de 60 s somados na borda (``test_public_edge_cache.py`` reprova quem passar).
 # O navegador não guarda nada (max-age=0): quem cacheia é a borda.
 PUBLIC_EDGE_CACHE_CONTROL = (
     "public, max-age=0, s-maxage=30, stale-while-revalidate=30, stale-if-error=120"
 )
+# As sugestões da PDP são a lista de "quem se parece com este produto", e os cards
+# trazem copy resolvida no servidor (o selo de disponibilidade). Ficam na mesma
+# régua do resto: o X8 da Etapa III promete copy editada no Admin na loja em até
+# 60 s, e a borda é parte desse prazo (s-maxage + stale-while-revalidate ≤ 60 s).
+RECOMMENDATIONS_EDGE_CACHE_CONTROL = PUBLIC_EDGE_CACHE_CONTROL
 PRIVATE_NO_STORE = "private, no-store"
 
 _CREDENTIAL_HEADERS = (
@@ -49,14 +55,14 @@ def carries_credentials(request) -> bool:
     return any(request.headers.get(name) for name in _CREDENTIAL_HEADERS) or bool(request.GET)
 
 
-def mark_public(response):
+def mark_public(response, cache_control: str = PUBLIC_EDGE_CACHE_CONTROL):
     """Carimba cache de borda, e falha fechado se a resposta não for pública.
 
     Só 200 vira público. Resposta que define cookie é, por definição, de alguém:
     volta a ser privada em vez de ir para a borda.
     """
     if response.status_code == status.HTTP_200_OK and not response.cookies:
-        response["Cache-Control"] = PUBLIC_EDGE_CACHE_CONTROL
+        response["Cache-Control"] = cache_control
     else:
         response["Cache-Control"] = PRIVATE_NO_STORE
     return response
@@ -65,10 +71,14 @@ def mark_public(response):
 class PublicReadMixin:
     """Rota que não lê o request: pública na própria URL."""
 
+    # O TTL é da rota, não do mixin: leitura de estrutura (home, catálogo) e rail
+    # de sugestões envelhecem em ritmos diferentes.
+    edge_cache_control: str = PUBLIC_EDGE_CACHE_CONTROL
+
     def dispatch(self, request, *args, **kwargs):
         response = super().dispatch(request, *args, **kwargs)
         if request.method in ("GET", "HEAD"):
-            return mark_public(response)
+            return mark_public(response, self.edge_cache_control)
         return response
 
 

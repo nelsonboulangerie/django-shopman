@@ -30,7 +30,7 @@ export function workspaceProps(overrides: Record<string, unknown> = {}) {
     fulfillmentOptions: [{ ref: "pickup", label: "Retirada", description: "", requires_address: false }],
     paymentMethods: [
       { ref: "cash", label: "Dinheiro" },
-      { ref: "pix", label: "PIX" },
+      { ref: "pix", label: "Pix" },
       { ref: "card", label: "Cartão" },
       { ref: "mixed", label: "Misto" },
     ],
@@ -46,8 +46,7 @@ export function workspaceProps(overrides: Record<string, unknown> = {}) {
     discountType: "percent",
     discountValue: "",
     discountReason: "",
-    managerUsername: "",
-    managerPin: "",
+    managerApproved: false,
     managerApprovalError: "",
     managers: [],
     fulfillmentType: "pickup",

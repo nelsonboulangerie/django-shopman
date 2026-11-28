@@ -4,8 +4,11 @@ import type {
   OperatorSwipeCommit,
 } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
 import type { AffordanceRef, ZoneView } from "~/presentation/board";
-import { exitGesture, swipeHint, zoneEmptyText } from "~/presentation/board";
+import { exitGesture, exitRows, swipeHint, zoneEmptyText } from "~/presentation/board";
 import type { OrderCardProjection } from "~/types/orders";
+import type { DeliveryRideProjection } from "~/generated/ordersContract";
+import { withHouseRides, type HouseGesture } from "~/presentation/houseCouriers";
+import { awaitingPayment } from "~/presentation/queue";
 
 const props = withDefaults(
   defineProps<{
@@ -15,6 +18,9 @@ const props = withDefaults(
     nextRef: string;
     phone: boolean;
     wide: boolean;
+    /** Única coluna aberta do Painel: cartões em até duas colunas, para seguirem
+     *  horizontais em vez de esticar na largura toda (dono, 14/11). */
+    twoUp?: boolean;
     canOpen: boolean;
     selecting: boolean;
     canCollapse: boolean;
@@ -25,8 +31,16 @@ const props = withDefaults(
     danfePrinting: (ref: string) => boolean;
     swipeActions: (card: OrderCardProjection) => OperatorSwipeAction[];
     heading?: boolean;
+    /** As corridas da casa (M3d, #2937): na Saída, viram um cartão por corrida. */
+    houseRides?: DeliveryRideProjection[];
+    /** `{chave da corrida: gesto rodando}`. */
+    houseBusy?: Record<string, string>;
+    /** Os prontos de entrega que dá para chamar agora: o cartão ganha o botão (#2876). */
+    courierCallRefs?: string[];
+    /** A faixa "Aguardando entregador: N · Montar corridas" (decisão 4 = A), na Saída. */
+    waitingBand?: { text: string; action: string; suggested: boolean } | null;
   }>(),
-  { heading: true },
+  { heading: true, houseRides: () => [], houseBusy: () => ({}), courierCallRefs: () => [], waitingBand: null },
 );
 
 const emit = defineEmits<{
@@ -41,6 +55,8 @@ const emit = defineEmits<{
   volumes: [cardRef: string, count: number, context: "exit" | "orders"];
   swipe: [card: OrderCardProjection, key: string];
   collapse: [];
+  houseGesture: [ride: DeliveryRideProjection, gesture: HouseGesture];
+  houseBack: [ride: DeliveryRideProjection];
 }>();
 
 // F7 (dono, 09/10/2026: "deslizar no mobile é sempre bom"): na Saída do celular,
@@ -61,6 +77,20 @@ function commitExit(card: OrderCardProjection) {
   if (gesture && !props.isBusy(card.ref))
     emit("action", card.ref, gesture.action);
 }
+// Prontos em "A coletar" e "Saiu para entrega"; as outras colunas, sem partes.
+// A corrida da casa entra no lugar do primeiro pedido dela (forma E), e os outros saem.
+const band = computed(() => (props.zone.key === "expedition" ? props.waitingBand : null));
+// Novos: o pedido que só espera o Pix ou o cartão fica recolhido no fim (DEV-2026-091).
+const awaiting = computed(() => awaitingPayment(props.zone.awaiting ?? [], props.nowMs));
+const rows = computed(() =>
+  props.zone.key === "expedition"
+    ? withHouseRides(exitRows(props.cards), props.houseRides).map((row) =>
+        // Com a faixa, o rótulo "A coletar" vem antes dela: o cartão não o repete.
+        band.value && row.heading === "A coletar" ? { ...row, heading: "" } : row,
+      )
+    : props.cards.map((card) => ({ card, heading: "" as string, house: undefined })),
+);
+const callRefs = computed(() => new Set(props.courierCallRefs));
 const hint = computed(() =>
   swipeHint(props.zone.key, exitColumn.value ? props.cards : [], props.canOpen),
 );
@@ -70,40 +100,100 @@ const hint = computed(() =>
   <!-- No Splitter a coluna ocupa o painel (h-full, min-h-0); solta no contêiner que
        rola (abas do celular e do tablet), ela tem a altura da área visível, senão
        encolhe a zero ao lado da negociação e dos agendados. -->
+  <!-- Na mesa, a coluna é um bloco só (dono, 13/11/2026, prévia `gestor-d`): fundo
+       suave, cantos arredondados e o cabeçalho DENTRO dele, sem faixa nem linha. -->
   <section
-    class="flex min-w-0 flex-col gap-3"
-    :class="phone ? 'min-h-full flex-1' : 'h-full min-h-0 w-full'"
+    class="flex min-w-0 flex-col"
+    :class="
+      phone
+        ? 'min-h-full flex-1 gap-3'
+        : 'h-full min-h-0 w-full rounded-xl bg-elevated/60'
+    "
     :data-zone="zone.key"
   >
-    <OperatorToolbar v-if="!phone && heading" as="header">
+    <header
+      v-if="!phone && heading"
+      class="flex h-11 shrink-0 items-center px-3"
+    >
       <OrderBoardHeading
         :zone="zone"
         :cards="cards"
         :can-collapse="canCollapse"
         :shortcut="shortcut"
         @collapse="emit('collapse')"
-      />
-    </OperatorToolbar>
+      >
+        <template #actions><slot name="heading-actions" /></template>
+      </OrderBoardHeading>
+    </header>
+
+    <!-- A faixa da Saída (decisão 4 = A do dono): abre a parte "A coletar" e leva às
+         Entregas, onde se montam as corridas. -->
+    <div v-if="band" class="flex shrink-0 flex-col gap-1.5" :class="phone ? undefined : 'px-2 pb-1'" data-exit-waiting-band>
+      <h3 class="op-micro font-semibold text-muted-foreground" data-exit-part>A coletar</h3>
+      <NuxtCard variant="soft">
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- A frase tem largura mínima: na coluna estreita o botão desce para a
+               linha de baixo em vez de cobrir a contagem. -->
+          <span class="flex min-w-48 flex-1 items-center gap-2 op-body font-semibold text-highlighted">
+            <Icon name="lucide:bike" class="size-4 shrink-0 text-muted" />
+            {{ band.text }}
+          </span>
+          <NuxtButton
+            to="/delivery"
+            icon="i-lucide-route"
+            class="min-h-11"
+            :label="band.action"
+            :color="band.suggested ? 'primary' : 'neutral'"
+            :variant="band.suggested ? 'solid' : 'outline'"
+            data-build-rides
+          />
+        </div>
+      </NuxtCard>
+    </div>
 
     <NuxtEmpty
       v-if="!cards.length"
+      :class="phone ? undefined : 'mx-2 mb-2'"
       icon="i-lucide-circle-check"
       :title="zoneEmptyText(zone.key)"
     />
 
-    <!-- p-px: o contorno do Card é um ring 1 px para fora; sem o respiro, a área que
-         rola o cortava no topo e na lateral. items-start: cada cartão com a altura do
+    <!-- Respiro de 8 px (com a margem negativa, os cartões ficam no mesmo alinhamento):
+         o contorno do Card é um ring para fora, e o próximo a sair leva o halo de 6 px
+         do KDS; sem o respiro, a área que rola os cortava no topo e na lateral (dono,
+         02/11/2026). items-start: cada cartão com a altura do
          que tem; esticado até o mais alto da linha, o curto ganhava uma faixa vazia
          acima do rodapé (dono, 08/10/2026). -->
-    <template v-else-if="wide">
+    <template v-else-if="wide || twoUp">
       <div
-        class="grid min-h-0 flex-1 auto-rows-max items-start gap-3 overflow-y-auto p-px pb-3 [grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]"
+        class="grid min-h-0 flex-1 auto-rows-max items-start gap-2 overflow-y-auto px-2 pt-1 pb-2"
+        :class="
+          wide
+            ? '[grid-template-columns:repeat(auto-fill,minmax(17rem,1fr))]'
+            : '[grid-template-columns:repeat(auto-fill,minmax(max(17rem,calc(50%-0.25rem)),1fr))]'
+        "
         data-zone-cards
       >
+        <template v-for="{ card, heading: part, house } in rows" :key="card.ref">
+        <h3
+          v-if="part"
+          class="col-span-full op-micro font-semibold text-muted-foreground"
+          data-exit-part
+        >
+          {{ part }}
+        </h3>
+        <HouseRideCard
+          v-if="house"
+          :ride="house"
+          :busy="houseBusy[house.key] ?? ''"
+          data-exit-house-ride
+          @gesture="(item) => emit('houseGesture', house!, item)"
+          @back="emit('houseBack', house!)"
+        />
         <OrderCard
-          v-for="card in cards"
-          :key="card.ref"
+          v-else
           :card="card"
+          :compact="!phone"
           :busy="isBusy(card.ref)"
           :error="actionError(card.ref)"
           :selected="isSelected(card.ref)"
@@ -111,6 +201,7 @@ const hint = computed(() =>
           :next="card.ref === nextRef"
           :danfe-printing="danfePrinting(card.ref)"
           :can-open="canOpen"
+          :call-courier="callRefs.has(card.ref)"
           @action="(action) => emit('action', card.ref, action)"
           @dismiss-error="emit('dismissError', card.ref)"
           @toggle-select="emit('toggleSelect', card.ref)"
@@ -125,17 +216,34 @@ const hint = computed(() =>
           "
           @volumes="(count) => emit('volumes', card.ref, count, 'exit')"
         />
+        </template>
       </div>
     </template>
 
     <div
       v-else
-      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-px pb-3"
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      :class="phone ? '-mx-2 -mt-2 gap-3 px-2 pt-2 pb-3' : 'gap-2 px-2 pt-1 pb-2'"
       data-zone-cards
     >
+      <template v-for="{ card, heading: part, house } in rows" :key="card.ref">
+      <h3
+        v-if="part"
+        class="op-micro font-semibold text-muted-foreground"
+        data-exit-part
+      >
+        {{ part }}
+      </h3>
+      <HouseRideCard
+        v-if="house"
+        :ride="house"
+        :busy="houseBusy[house.key] ?? ''"
+        data-exit-house-ride
+        @gesture="(item) => emit('houseGesture', house!, item)"
+        @back="emit('houseBack', house!)"
+      />
       <OperatorSwipeRow
-        v-for="card in cards"
-        :key="card.ref"
+        v-else
         :actions="phone ? swipeActions(card) : []"
         :commit="swipeCommit(card)"
         :label="`Pedido ${card.ref}`"
@@ -144,6 +252,7 @@ const hint = computed(() =>
       >
         <OrderCard
           :card="card"
+          :compact="!phone"
           :swipe-reject="phone"
           :busy="isBusy(card.ref)"
           :error="actionError(card.ref)"
@@ -152,6 +261,7 @@ const hint = computed(() =>
           :next="card.ref === nextRef"
           :danfe-printing="danfePrinting(card.ref)"
           :can-open="canOpen"
+          :call-courier="callRefs.has(card.ref)"
           @action="(action) => emit('action', card.ref, action)"
           @dismiss-error="emit('dismissError', card.ref)"
           @toggle-select="emit('toggleSelect', card.ref)"
@@ -175,6 +285,7 @@ const hint = computed(() =>
           "
         />
       </OperatorSwipeRow>
+      </template>
       <p
         v-if="phone && cards.length"
         class="flex items-center justify-center gap-1.5 py-1 op-micro text-muted-foreground"
@@ -182,6 +293,9 @@ const hint = computed(() =>
       >
         <Icon name="lucide:hand" class="size-4" />{{ hint }}
       </p>
+    </div>
+    <div v-if="awaiting.length" class="shrink-0" :class="phone ? undefined : 'px-2 pb-2'">
+      <AwaitingPaymentBand :rows="awaiting" :can-open="canOpen" />
     </div>
   </section>
 </template>

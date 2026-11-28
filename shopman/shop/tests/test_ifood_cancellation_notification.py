@@ -31,8 +31,8 @@ def make_order(channel, external_ref):
 
 def reject(order):
     operator_orders.reject_order(
-        order, reason="Sem estoque", actor="operator:a", rejected_by="a", cancellation_code="501",
-        prepared_identity=(order.channel_ref, order.external_ref),
+        order, reason="Sem estoque", actor="operator:a", rejected_by="a",
+        reason_key="out_of_stock", prepared_identity=(order.channel_ref, order.external_ref),
     )
     order.refresh_from_db()
 

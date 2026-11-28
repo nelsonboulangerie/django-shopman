@@ -59,6 +59,8 @@ class TestShopStatusVsBusinessHoursRule:
 
         assert st["message"] == "Fechado agora. Abrimos hoje às 9h."
         assert st["label"] == "Fechado agora. Abrimos hoje às 9h"
+        # A próxima abertura sai sozinha também, para a PDP escrever a própria frase.
+        assert st["next_opening"] == "hoje às 9h"
 
     def test_shop_status_label_open_until_closing_hour(self):
         """Aberto com horário de fechamento → "Aberto até {hora}" (registro)."""

@@ -2,8 +2,9 @@
 // O fornecedor aberto na Base: prazo, entrega, pagamento, para quem vai o pedido de
 // compra e a carteira (os custos dele por insumo).
 import type { Material, Supplier, SupplierMaterialCost } from "~/types/purchase";
-import { costPerBaseUnitQ, formatMoney, formatShortDate, isApproximateCost, purchaseUnitLabel } from "~/presentation/purchase";
+import { costPerReadingUnitQ, formatMoney, formatShortDate, isApproximateCost, pricedUnitLabel, readingUnit } from "~/presentation/purchase";
 import { materialPath } from "~/presentation/purchaseSections";
+import { supplierLeadTimeLabel, supplierReliabilityLabel } from "~/presentation/purchaseUi";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
 
 const props = defineProps<{ supplier: Supplier }>();
@@ -12,7 +13,7 @@ const { costs, materials, conversions, openSupplierEdit } = usePurchaseDesk();
 // Contato inativo continua no cadastro (histórico), mas não na tela de quem vai ligar hoje.
 const activeContacts = computed(() => props.supplier.contacts.filter((person) => person.isActive));
 
-type PortfolioRow = { cost: SupplierMaterialCost; material: Material; unitLabel: string; baseCostQ: number; approximate: boolean };
+type PortfolioRow = { cost: SupplierMaterialCost; material: Material; unitLabel: string; readingCostQ: number; readingLabel: string; approximate: boolean };
 const portfolio = computed(() =>
   costs.value
     .filter((cost) => cost.supplierRef === props.supplier.ref)
@@ -22,8 +23,9 @@ const portfolio = computed(() =>
       return {
         cost,
         material,
-        unitLabel: purchaseUnitLabel(cost, material, conversions.value),
-        baseCostQ: costPerBaseUnitQ(cost, conversions.value),
+        unitLabel: pricedUnitLabel(cost, material, conversions.value),
+        readingCostQ: costPerReadingUnitQ(cost, material, conversions.value),
+        readingLabel: readingUnit(material.unit).label,
         approximate: isApproximateCost(cost, conversions.value),
       };
     })
@@ -48,11 +50,19 @@ const portfolio = computed(() =>
     </div>
 
     <dl class="grid grid-cols-2 gap-3">
-      <div><dt class="text-xs text-muted">Prazo de entrega</dt><dd class="text-sm font-semibold">{{ supplier.leadTimeDays }} {{ supplier.leadTimeDays === 1 ? "dia" : "dias" }}</dd></div>
-      <div><dt class="text-xs text-muted">Entregas no prazo</dt><dd class="text-sm font-semibold tabular-nums">{{ supplier.reliabilityPercent }}%</dd></div>
+      <div><dt class="text-xs text-muted">Prazo de entrega</dt><dd class="text-sm font-semibold">{{ supplierLeadTimeLabel(supplier) }}</dd></div>
+      <div><dt class="text-xs text-muted">Entregas no prazo</dt><dd class="text-sm font-semibold tabular-nums">{{ supplierReliabilityLabel(supplier) }}</dd></div>
       <div><dt class="text-xs text-muted">Última entrega</dt><dd class="text-sm font-semibold tabular-nums">{{ formatShortDate(supplier.lastDeliveryAt) }}</dd></div>
       <div><dt class="text-xs text-muted">Pagamento</dt><dd class="text-sm font-semibold">{{ supplier.paymentTerm || "a combinar" }}</dd></div>
     </dl>
+
+    <section class="border-t border-default pt-4">
+      <h3 class="text-sm font-semibold">Envio de pedidos</h3>
+      <p class="mt-1 text-xs text-muted">
+        <template v-if="supplier.sendDirectly">Enviar direto: o pedido sai ao tocar em Enviar pedido.</template>
+        <template v-else>Por revisão: o pedido só sai depois da confirmação do conteúdo.</template>
+      </p>
+    </section>
 
     <section class="border-t border-default pt-4">
       <h3 class="text-sm font-semibold">Contatos</h3>
@@ -95,7 +105,7 @@ const portfolio = computed(() =>
               <span class="block text-xs text-muted tabular-nums">{{ formatMoney(row.cost.costQ) }} / {{ row.unitLabel }}</span>
             </span>
             <span class="shrink-0 text-sm font-semibold tabular-nums">
-              <span v-if="row.approximate">≈ </span>{{ formatMoney(row.baseCostQ) }} / {{ row.material.unit }}
+              <span v-if="row.approximate">≈ </span>{{ formatMoney(row.readingCostQ) }} / {{ row.readingLabel }}
             </span>
           </NuxtLink>
         </li>

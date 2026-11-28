@@ -27,6 +27,7 @@ from shopman.backstage.projections.production import (
     resolve_production_access,
 )
 from shopman.backstage.services import print_jobs
+from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 
 
 class PrintJobAPIError(APIException):
@@ -178,6 +179,12 @@ class ProductionWeighingPrintJobCreateView(APIView):
                     status_code=409,
                 )
             )
+        if not projection.codes_ready:
+            allocate_blind_prep_codes(
+                recipe_refs=tuple(ticket.recipe_ref for ticket in projection.tickets),
+                selected_date=body["selected_date"],
+            )
+            projection = _weighing_for_request(request, body)
         try:
             job = print_jobs.create_job(
                 projection=projection,
@@ -244,10 +251,19 @@ class OperatorPrintJobMixin:
             )
         return job
 
+    def command_job(self, request, ref):
+        """O trabalho com o veredito do relógio GRAVADO, antes de um comando.
+
+        O poll (GET) só lê o estado vencido (``read_job_state``); o comando é
+        que precisa do estado persistido, porque é dele que repetir e
+        reimprimir partem.
+        """
+        return print_jobs.reconcile_job_state(self.job(request, ref))
+
 
 class ProductionPrintJobStatusView(OperatorPrintJobMixin, APIView):
     def get(self, request, job_ref):
-        job = print_jobs.reconcile_job_state(self.job(request, job_ref))
+        job = print_jobs.read_job_state(self.job(request, job_ref))
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
 
 
@@ -255,7 +271,7 @@ class ProductionPrintJobRetryView(OperatorPrintJobMixin, APIView):
     def post(self, request, job_ref):
         body = _validated(IdempotentJobActionSerializer, request.data)
         try:
-            job = print_jobs.retry_job(job=self.job(request, job_ref), actor=request.user, idempotency_key=body["idempotency_key"])
+            job = print_jobs.retry_job(job=self.command_job(request, job_ref), actor=request.user, idempotency_key=body["idempotency_key"])
         except print_jobs.PrintJobError as error:
             raise PrintJobAPIError(error) from error
         return Response({"print_job": print_jobs.job_data(job, include_document=True)})
@@ -266,7 +282,7 @@ class ProductionPrintJobReprintView(OperatorPrintJobMixin, APIView):
         body = _validated(ReprintJobSerializer, request.data)
         try:
             job = print_jobs.reprint_job(
-                job=self.job(request, job_ref),
+                job=self.command_job(request, job_ref),
                 actor=request.user,
                 station_ref=station_trust.station_ref(request),
                 transport=body["transport"],
@@ -282,7 +298,7 @@ class ProductionPrintJobConfirmView(OperatorPrintJobMixin, APIView):
         body = _validated(ConfirmPrintJobSerializer, request.data)
         try:
             job = print_jobs.confirm_job(
-                job=self.job(request, job_ref),
+                job=self.command_job(request, job_ref),
                 actor=request.user,
                 result=body["result"],
                 detail=body["detail"],
@@ -298,7 +314,7 @@ class ProductionPrintJobBrowserResultView(OperatorPrintJobMixin, APIView):
         body = _validated(BrowserResultSerializer, request.data)
         try:
             job = print_jobs.record_browser_result(
-                job=self.job(request, job_ref),
+                job=self.command_job(request, job_ref),
                 actor=request.user,
                 result=body["result"],
                 detail=body["detail"],

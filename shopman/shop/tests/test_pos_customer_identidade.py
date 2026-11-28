@@ -24,6 +24,7 @@ import pytest
 from shopman.guestman.models import ContactPoint, Customer, CustomerAddress
 
 from shopman.shop.models import Channel, Shop
+from shopman.shop.services import pos as pos_service
 from shopman.shop.services.pos import (
     PosCustomerConflict,
     PosCustomerMergeError,
@@ -50,6 +51,13 @@ def _customer(first_name: str, last_name: str, phone: str = "", **extra) -> Cust
         phone=phone,
         **extra,
     )
+
+
+def test_pos_customer_resolution_returns_the_customer_for_the_exact_phone(_pdv):
+    customer = _customer("Ana", "Prado", "+5543999990011")
+
+    assert pos_service.resolve_customer(customer.phone) == customer
+    assert pos_service.resolve_customer("") is None
 
 
 # ── 1 · O BUG: telefone de outro cliente trocava o dono do pedido ────────────
@@ -94,7 +102,7 @@ def test_a_recusa_nao_escreve_nada_em_ninguem(_pdv):
 
     b.refresh_from_db()
     a.refresh_from_db()
-    assert b.name == "Cliente 0022"          # `_should_refresh_name` não foi alcançado
+    assert b.name == "Cliente 0022"          # `should_refresh_name` não foi alcançado
     assert a.phone == "+5543999990011"       # e A ficou como estava
     assert Customer.objects.count() == 2     # nem cadastro novo nasceu
 
@@ -202,9 +210,8 @@ def test_com_a_palavra_do_operador_o_telefone_errado_tem_conserto(_pdv):
     assert a.phone == "+5543988887777"
     novo = ContactPoint.objects.get(customer=a, value_normalized="+5543988887777")
     assert novo.is_primary is True
-    # O antigo fica no histórico, demovido — não sai apagando contato de ninguém.
-    antigo = ContactPoint.objects.get(customer=a, value_normalized="+5543999990011")
-    assert antigo.is_primary is False
+    # Corrigir é TROCAR (A4-1): o antigo sai, para não seguir abrindo a conta.
+    assert not ContactPoint.objects.filter(value_normalized="+5543999990011").exists()
 
 
 def test_a_correcao_recusa_quando_o_numero_novo_ja_e_de_terceiro(_pdv):

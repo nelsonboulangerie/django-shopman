@@ -10,17 +10,20 @@ import type {
   Formula,
   FormulaItem,
   FormulaItemProjection,
-  FormulaPart,
+  FormulaQuantity,
   FormulaUnit,
   IngredientRole,
   LensTone,
-  PartKind,
   RecipeCaptureDraftProjection,
+  RecipeCompareProjection,
   RecipeEntryCardProjection,
+  RecipeUsageProjection,
   RecipeKind,
+  ReferenceRangeProjection,
   RecipeStepInput,
   RecipeStepProjection,
   VersionStatus,
+  VersionUsageProjection,
 } from "~/types/recipeBook";
 
 // ── Vocabulário (rótulos em pt-BR; identificador em inglês) ─────────────────
@@ -58,15 +61,18 @@ export function kindLabel(kind: string): string {
   return KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? "Outra";
 }
 
-export const PART_KIND_OPTIONS: readonly { value: PartKind; label: string }[] = [
-  { value: "preferment", label: "Pré-fermento" },
-  { value: "autolyse", label: "Autólise" },
-  { value: "soaker", label: "Grãos hidratados" },
-  { value: "old_dough", label: "Massa velha" },
-] as const;
-
-export function partKindLabel(kind: string): string {
-  return PART_KIND_OPTIONS.find((entry) => entry.value === kind)?.label ?? kind;
+/** Orientação curta, sempre consultiva: faixa literária nunca vira bloqueio. */
+export function referenceGuidance(range: ReferenceRangeProjection | null | undefined): string {
+  if (!range) return "";
+  const band = range.low_display && range.high_display
+    ? `Referência técnica: ${range.low_display} a ${range.high_display}.`
+    : range.high_display
+      ? `Referência técnica: até ${range.high_display}.`
+      : "";
+  const review = range.max_display && range.max_display !== range.high_display
+    ? ` Acima de ${range.max_display}, revise a fórmula.`
+    : "";
+  return `${band}${review}`.trim();
 }
 
 export const ANCHOR_OPTIONS: readonly { value: AnchorKind; label: string }[] = [
@@ -147,61 +153,83 @@ export function emptyFormula(anchorKind: AnchorKind = "flour", anchorSku = ""): 
     anchor: anchorKind === "ingredient" ? { kind: "ingredient", sku: anchorSku } : { kind: anchorKind },
     basis_g: null,
     standardized: false,
-    items: [],
-    parts: [],
+    ingredients: [],
   };
 }
 
-export function emptyItem(over: Partial<FormulaItem> = {}): FormulaItem {
-  return { sku: "", name: "", role: "other", quantity: 0, unit: "g", note: "", ...over };
+let ingredientRefSequence = 0;
+
+export function newIngredientRef(): string {
+  ingredientRefSequence += 1;
+  if (import.meta.client && typeof globalThis.crypto?.randomUUID === "function") {
+    return `ingredient-${globalThis.crypto.randomUUID()}`;
+  }
+  return `ingredient-local-${ingredientRefSequence}`;
 }
 
-export function emptyPart(kind: PartKind = "preferment"): FormulaPart {
-  if (kind === "old_dough") return { kind, cap_pct: 20 };
-  return { kind, sku: "", entry_ref: "", flour_pct: null, quantity: null, unit: "g" };
+export function emptyItem(over: Partial<FormulaItem> = {}): FormulaItem {
+  return {
+    ref: newIngredientRef(),
+    sku: "",
+    name: "",
+    role: "other",
+    quantity: exactQuantity(0, "g"),
+    composition: "additional",
+    note: "",
+    ...over,
+  };
+}
+
+export type QuantityPreset = "exact" | "minimum" | "maximum" | "range";
+
+export function exactQuantity(target = 0, unit: FormulaUnit = "g"): FormulaQuantity {
+  return { kind: "fixed", minimum: target, target, maximum: target, unit };
+}
+
+export function quantityPreset(quantity: FormulaQuantity): QuantityPreset {
+  if (quantity.minimum === quantity.target && quantity.maximum === quantity.target) return "exact";
+  if (quantity.minimum === quantity.target && quantity.maximum == null) return "minimum";
+  if (quantity.minimum == null && quantity.maximum === quantity.target) return "maximum";
+  return "range";
+}
+
+export function withQuantityPreset(quantity: FormulaQuantity, preset: QuantityPreset): FormulaQuantity {
+  const target = quantity.target;
+  if (preset === "exact") return { ...quantity, minimum: target, maximum: target };
+  if (preset === "minimum") return { ...quantity, minimum: target, maximum: null };
+  if (preset === "maximum") return { ...quantity, minimum: null, maximum: target };
+  const delta = target > 0 ? target * 0.1 : 1;
+  return {
+    ...quantity,
+    minimum: quantity.minimum != null && quantity.minimum !== target ? quantity.minimum : Math.max(0, target - delta),
+    maximum: quantity.maximum != null && quantity.maximum !== target ? quantity.maximum : target + delta,
+  };
 }
 
 export function addItem(formula: Formula, item: FormulaItem = emptyItem()): Formula {
-  return { ...formula, items: [...formula.items, item] };
+  return { ...formula, ingredients: [...formula.ingredients, item] };
 }
 
 export function updateItem(formula: Formula, index: number, patch: Partial<FormulaItem>): Formula {
-  if (index < 0 || index >= formula.items.length) return formula;
+  if (index < 0 || index >= formula.ingredients.length) return formula;
   return {
     ...formula,
-    items: formula.items.map((item, i) => (i === index ? { ...item, ...patch } : item)),
+    ingredients: formula.ingredients.map((item, i) => (i === index ? { ...item, ...patch } : item)),
   };
 }
 
 export function removeItem(formula: Formula, index: number): Formula {
-  if (index < 0 || index >= formula.items.length) return formula;
-  return { ...formula, items: formula.items.filter((_, i) => i !== index) };
+  if (index < 0 || index >= formula.ingredients.length) return formula;
+  return { ...formula, ingredients: formula.ingredients.filter((_, i) => i !== index) };
 }
 
 export function moveItem(formula: Formula, from: number, to: number): Formula {
-  const last = formula.items.length - 1;
+  const last = formula.ingredients.length - 1;
   if (from < 0 || from > last || to < 0 || to > last || from === to) return formula;
-  const items = [...formula.items];
+  const items = [...formula.ingredients];
   const [moved] = items.splice(from, 1);
   items.splice(to, 0, moved as FormulaItem);
-  return { ...formula, items };
-}
-
-export function addPart(formula: Formula, part: FormulaPart = emptyPart()): Formula {
-  return { ...formula, parts: [...formula.parts, part] };
-}
-
-export function updatePart(formula: Formula, index: number, patch: Partial<FormulaPart>): Formula {
-  if (index < 0 || index >= formula.parts.length) return formula;
-  return {
-    ...formula,
-    parts: formula.parts.map((part, i) => (i === index ? { ...part, ...patch } : part)),
-  };
-}
-
-export function removePart(formula: Formula, index: number): Formula {
-  if (index < 0 || index >= formula.parts.length) return formula;
-  return { ...formula, parts: formula.parts.filter((_, i) => i !== index) };
+  return { ...formula, ingredients: items };
 }
 
 export function setAnchor(formula: Formula, kind: AnchorKind, sku = ""): Formula {
@@ -213,7 +241,7 @@ export function setAnchor(formula: Formula, kind: AnchorKind, sku = ""): Formula
 
 /** Há farinha na fórmula? Sugere a âncora `flour` (a lente vem do conteúdo, §1). */
 export function formulaHasFlour(formula: Formula): boolean {
-  return formula.items.some((item) => item.role === "flour");
+  return formula.ingredients.some((item) => item.role === "flour");
 }
 
 export function suggestedAnchor(formula: Formula): AnchorKind {
@@ -225,8 +253,8 @@ export function suggestedAnchor(formula: Formula): AnchorKind {
 /** Gramas aproximados de um item para a prévia local. Volume assume 1,0 sem
  *  densidade; contagem sem `grams_per_unit` fica fora (0) — como o servidor. */
 export function itemGrams(item: FormulaItem): number {
-  const quantity = Number(item.quantity) || 0;
-  switch (item.unit) {
+  const quantity = Number(item.quantity.target) || 0;
+  switch (item.quantity.unit) {
     case "kg":
       return quantity * 1000;
     case "L":
@@ -243,21 +271,26 @@ export function itemGrams(item: FormulaItem): number {
 export function anchorTotalOf(formula: Formula): number {
   const kind = formula.anchor.kind;
   if (kind === "flour") {
-    return formula.items.filter((item) => item.role === "flour").reduce((sum, item) => sum + itemGrams(item), 0);
+    return formula.ingredients.filter((item) => item.role === "flour").reduce((sum, item) => sum + itemGrams(item), 0);
   }
   if (kind === "ingredient") {
     const sku = formula.anchor.sku ?? "";
-    return formula.items.filter((item) => item.sku && item.sku === sku).reduce((sum, item) => sum + itemGrams(item), 0);
+    return formula.ingredients.filter((item) => item.sku && item.sku === sku).reduce((sum, item) => sum + itemGrams(item), 0);
   }
-  return formula.items.reduce((sum, item) => sum + itemGrams(item), 0);
+  return formula.ingredients.reduce((sum, item) => sum + itemGrams(item), 0);
 }
 
 export function totalMassOf(formula: Formula): number {
-  return formula.items.reduce((sum, item) => sum + itemGrams(item), 0);
+  return formula.ingredients.reduce((sum, item) => sum + itemGrams(item), 0);
 }
 
-/** Percentual de um item sobre a âncora, já formatado ("70,0"); "" sem âncora. */
+/** Percentual exibido no editor. Razão preserva o percentual informado; peso é
+ *  convertido sobre a âncora local. Retorna "" quando não há valor calculável. */
 export function pctOf(item: FormulaItem, anchorTotal: number): string {
+  if (item.quantity.kind === "ratio") {
+    const ratio = Number(item.quantity.target) || 0;
+    return ratio > 0 ? formatNumber(ratio, 1) : "";
+  }
   if (!anchorTotal || anchorTotal <= 0) return "";
   const grams = itemGrams(item);
   if (!grams) return "";
@@ -300,45 +333,48 @@ function asRole(value: unknown): IngredientRole {
   return typeof value === "string" && ROLES.has(value) ? (value as IngredientRole) : "other";
 }
 
+function asAnchorKind(value: unknown): AnchorKind {
+  return typeof value === "string" && ANCHORS.has(value) ? (value as AnchorKind) : "total";
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 /** Um item de captura (com o `sku` que o operador escolheu entre os candidatos)
  *  vira uma linha da fórmula. */
-export function itemFromCapture(item: CaptureItemProjection): FormulaItem {
+export function itemFromCapture(item: CaptureItemProjection, index = 0): FormulaItem {
   return {
+    ref: `ingredient-${index + 1}`,
     sku: item.sku ?? "",
     name: item.name,
     role: asRole(item.role),
-    quantity: asNumber(item.quantity),
-    unit: asUnit(item.unit),
+    quantity: exactQuantity(asNumber(item.quantity), asUnit(item.unit)),
+    composition: "additional",
     note: item.original_text && item.original_text !== item.name ? item.original_text : "",
   };
 }
 
 /** O rascunho lido (anotação/foto) vira a fórmula editável: os itens vêm da
- *  lista casada (com o `sku` escolhido), a âncora e as partes do `formula` que o
+ *  lista casada (com o `sku` escolhido) e a âncora que o
  *  servidor montou quando existirem, senão sugeridas pelo conteúdo. */
 export function formulaFromDraft(draft: RecipeCaptureDraftProjection): Formula {
-  const items = (draft.items ?? []).map(itemFromCapture);
+  const ingredients = (draft.items ?? []).map(itemFromCapture);
   const served = asRecord(draft.formula);
   const servedAnchor = asRecord(served?.anchor);
   const anchorKind =
     servedAnchor && typeof servedAnchor.kind === "string" && ANCHORS.has(servedAnchor.kind)
       ? (servedAnchor.kind as AnchorKind)
-      : items.some((item) => item.role === "flour")
+      : ingredients.some((item) => item.role === "flour")
         ? "flour"
         : "total";
   const anchorSku = typeof servedAnchor?.sku === "string" ? servedAnchor.sku : "";
-  const parts = Array.isArray(served?.parts) ? (served.parts as FormulaPart[]) : [];
   const basis = served?.basis_g;
   return {
     anchor: anchorKind === "ingredient" ? { kind: "ingredient", sku: anchorSku } : { kind: anchorKind },
     basis_g: typeof basis === "number" ? basis : null,
     standardized: served?.standardized === true,
-    items,
-    parts,
+    ingredients,
   };
 }
 
@@ -349,23 +385,38 @@ export function formulaFromServed(served: Record<string, unknown>): Formula {
   const anchorKind =
     anchor && typeof anchor.kind === "string" && ANCHORS.has(anchor.kind) ? (anchor.kind as AnchorKind) : "flour";
   const anchorSku = typeof anchor?.sku === "string" ? anchor.sku : "";
-  const items = Array.isArray(served.items)
-    ? (served.items as Record<string, unknown>[]).map((raw) => ({
+  const rawIngredients = Array.isArray(served.ingredients) ? served.ingredients : [];
+  const ingredients = (rawIngredients as Record<string, unknown>[]).map((raw, index) => {
+      const rawQuantity = asRecord(raw.quantity);
+      const rawBasis = asRecord(rawQuantity?.basis);
+      const target = rawQuantity ? asNumber(rawQuantity.target) : asNumber(raw.quantity);
+      const unit = asUnit(rawQuantity?.unit ?? raw.unit);
+      return {
         ...raw,
+        ref: typeof raw.ref === "string" && raw.ref ? raw.ref : `ingredient-${index + 1}`,
         sku: typeof raw.sku === "string" ? raw.sku : "",
         name: typeof raw.name === "string" ? raw.name : "",
         role: asRole(raw.role),
-        quantity: asNumber(raw.quantity),
-        unit: asUnit(raw.unit),
+        quantity: rawQuantity
+          ? {
+              kind: rawQuantity.kind === "ratio" ? "ratio" as const : "fixed" as const,
+              minimum: rawQuantity.minimum == null ? null : asNumber(rawQuantity.minimum),
+              target,
+              maximum: rawQuantity.maximum == null ? null : asNumber(rawQuantity.maximum),
+              ...(rawQuantity.kind === "ratio"
+                ? { basis: { kind: asAnchorKind(rawBasis?.kind), ...(typeof rawBasis?.sku === "string" ? { sku: rawBasis.sku } : {}) } }
+                : { unit }),
+            }
+          : exactQuantity(target, unit),
+        composition: raw.composition === "included" ? "included" as const : "additional" as const,
         note: typeof raw.note === "string" ? raw.note : "",
-      }))
-    : [];
+      };
+    });
   return {
     anchor: anchorKind === "ingredient" ? { kind: "ingredient", sku: anchorSku } : { kind: anchorKind },
     basis_g: typeof served.basis_g === "number" ? served.basis_g : null,
     standardized: served.standardized === true,
-    items,
-    parts: Array.isArray(served.parts) ? (served.parts as FormulaPart[]) : [],
+    ingredients,
   };
 }
 
@@ -456,6 +507,33 @@ export function errorField(data: unknown): string {
 
 // ── Inventário: filtros ─────────────────────────────────────────────────────
 
+// ── Modo de produção (ADR-040) ───────────────────────────────────────────────
+
+/** O recorte sem modo: valor próprio, porque o Select do Nuxt UI recusa item vazio. */
+export const PRODUCTION_MODE_ALL = "all";
+
+export const PRODUCTION_MODE_BATCH = "batch";
+export const PRODUCTION_MODE_MADE_TO_ORDER = "made_to_order";
+
+/** As escolhas do seletor quando o servidor ainda não as mandou (ficha nova). */
+export const PRODUCTION_MODE_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: PRODUCTION_MODE_BATCH, label: "Em lote" },
+  { value: PRODUCTION_MODE_MADE_TO_ORDER, label: "Na hora" },
+] as const;
+
+export const PRODUCTION_MODE_FILTER_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: PRODUCTION_MODE_ALL, label: "Todos os modos" },
+  ...PRODUCTION_MODE_OPTIONS,
+] as const;
+
+/** A linha de ajuda do seletor, a mesma na ficha e na operação da receita. */
+export const PRODUCTION_MODE_HELP = "Em lote: planejado e estocado. Na hora: feito quando vende, baixa os insumos na venda.";
+
+/** O valor do filtro que vai ao servidor (`?mode=`); vazio quando é "todos". */
+export function productionModeQuery(mode: string): string {
+  return mode && mode !== PRODUCTION_MODE_ALL ? mode : "";
+}
+
 export function filterEntries(
   entries: readonly RecipeEntryCardProjection[],
   term: string,
@@ -463,13 +541,18 @@ export function filterEntries(
   onlyWithoutSku: boolean,
   onlyWithDraft: boolean,
   onlyFavorites = false,
+  onlyUnreviewed = false,
+  mode = "",
 ): RecipeEntryCardProjection[] {
   const needle = term.trim().toLowerCase();
+  const wantedMode = productionModeQuery(mode);
   return entries.filter((entry) => {
     if (kind && entry.kind !== kind) return false;
+    if (wantedMode && entry.production_mode !== wantedMode) return false;
     if (onlyWithoutSku && entry.output_sku) return false;
     if (onlyWithDraft && entry.draft_count <= 0) return false;
     if (onlyFavorites && !entry.is_favorite) return false;
+    if (onlyUnreviewed && (!entry.review_status || entry.review_status === "confirmed")) return false;
     if (!needle) return true;
     return (
       entry.name.toLowerCase().includes(needle) ||
@@ -503,6 +586,8 @@ export function bookQuery(
     withoutSku?: boolean;
     withDraft?: boolean;
     favorites?: boolean;
+    unreviewed?: boolean;
+    mode?: string;
     sort?: string;
     page?: number;
     pageSize?: number;
@@ -512,10 +597,13 @@ export function bookQuery(
   const q = term.trim();
   if (q) query.q = q;
   if (kind) query.kind = kind;
+  const mode = productionModeQuery(options.mode ?? "");
+  if (mode) query.mode = mode;
   if (archived) query.archived = "1";
   if (options.withoutSku) query.without_sku = "1";
   if (options.withDraft) query.with_draft = "1";
   if (options.favorites) query.favorites = "1";
+  if (options.unreviewed) query.unreviewed = "1";
   if (options.sort && options.sort !== "updated") query.sort = options.sort;
   if ((options.page ?? 1) > 1) query.page = String(options.page);
   if (options.pageSize && options.pageSize !== 48) query.page_size = String(options.pageSize);
@@ -534,7 +622,7 @@ export function comparePath(aRef: string, aNumber: number, bRef = "", bNumber = 
   return `/recipes/compare?${params.toString()}`;
 }
 
-// ── Foto: tamanho-alvo (a parte do canvas fica no composable) ───────────────
+// ── Foto: tamanho-alvo (a parte do canvas fica no composable) ──────────────
 
 export const MAX_IMAGE_EDGE = 1600;
 
@@ -567,4 +655,131 @@ export function splitDataUrl(dataUrl: string): { media_type: string; data_base64
  *  todo o resto vira JPEG, que é o que a foto de uma ficha é. */
 export function outputMediaType(inputType: string): "image/png" | "image/jpeg" {
   return inputType === "image/png" ? "image/png" : "image/jpeg";
+}
+
+// ── Conferência (WP-RECEITAS-DA-CASA F1/F2) ─────────────────────────────────
+
+/** A versão em uso ainda pede o olho de alguém da casa? */
+export function needsReview(status: string): boolean {
+  return status === "pending" || status === "changed";
+}
+
+/** O ícone da procedência: o padeiro, o caderno ou o cadastro inicial. */
+export function provenanceIcon(kind: string): string {
+  if (kind === "house") return "i-lucide-chef-hat";
+  if (kind === "notebook") return "i-lucide-notebook-pen";
+  return "i-lucide-bot";
+}
+
+/** "Conferida por Maysa em 19/10/2026 14:02", ou vazio sem conferência. */
+export function reviewSignature(byName: string, atDisplay: string): string {
+  if (!byName) return "";
+  return atDisplay ? `Conferida por ${byName} em ${atDisplay}` : `Conferida por ${byName}`;
+}
+
+// ── Rendimento digitado ──────────────────────────────────────────────────────
+// O rendimento entra por `NuxtInputNumber` pt-BR (o mesmo do editor), que lê
+// "1.500" como mil e quinhentos. Para a porta ele viaja em formato de máquina,
+// ponto decimal e sem milhar: o campo de texto cru mandava "1.500" e o servidor
+// gravava 1,5 (beta 05/11/2026, PROD-03).
+
+/** O rendimento servido ("1500", "1.5") como número do campo, ou `null`. */
+export function yieldNumberFromServed(value: string | null | undefined): number | null {
+  const parsed = Number(String(value ?? "").trim());
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** O número do campo para o corpo da requisição; sem número, a unidade mínima "1". */
+export function yieldPayload(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? String(value) : "1";
+}
+
+// ── Tempo e temperatura da etapa do preparo ──────────────────────────────────
+// O campo do modo de preparo apagava em silêncio o tempo negativo e aceitava
+// 9999 °C (beta 05/11/2026, PROD-19). A leitura devolve o valor OU o aviso, e a
+// tela mostra o aviso no campo. A faixa é a mesma da porta
+// (`shopman/backstage/services/recipe_book.py`, STEP_TEMPERATURE_RANGE).
+
+/** Do congelador ao forno a lenha: fora disso é erro de digitação. */
+export const STEP_TEMPERATURE_RANGE = { min: -40, max: 450 } as const;
+
+function stepNumber(raw: string): number | null {
+  const text = raw.trim().replace(",", ".");
+  if (!text) return null;
+  return /^-?\d+(\.\d+)?$/.test(text) ? Number(text) : Number.NaN;
+}
+
+/** Minutos digitados → segundos da etapa, ou o aviso. Vazio limpa o tempo. */
+export function readStepMinutes(raw: string): { seconds: number | null; error: string } {
+  const minutes = stepNumber(raw);
+  if (minutes === null) return { seconds: null, error: "" };
+  if (!Number.isFinite(minutes)) return { seconds: null, error: "Use só números, em minutos." };
+  if (minutes <= 0) return { seconds: null, error: "O tempo precisa ser maior que zero." };
+  return { seconds: Math.round(minutes * 60), error: "" };
+}
+
+/** Graus digitados → temperatura da etapa, ou o aviso. Vazio limpa a temperatura. */
+export function readStepTemperature(raw: string): { celsius: number | null; error: string } {
+  const celsius = stepNumber(raw);
+  if (celsius === null) return { celsius: null, error: "" };
+  if (!Number.isFinite(celsius)) return { celsius: null, error: "Use só números, em °C." };
+  const { min, max } = STEP_TEMPERATURE_RANGE;
+  if (celsius < min || celsius > max) {
+    return { celsius: null, error: `Use uma temperatura entre ${min} e ${max} °C.` };
+  }
+  return { celsius: Math.round(celsius * 10) / 10, error: "" };
+}
+
+// ── Qual é qual: a comparação e o uso por versão ────────────────────────────
+
+export interface CompareSide {
+  key: "a" | "b";
+  title: string;
+  status: string;
+  statusLabel: string;
+  isCurrent: boolean;
+  when: string;
+}
+
+/** Os dois lados da comparação, cada um com o estado e de quando (P2-20). */
+export function compareSides(compare: RecipeCompareProjection): CompareSide[] {
+  return [
+    {
+      key: "a",
+      title: compare.a_title,
+      status: compare.a_status,
+      statusLabel: compare.a_status_label,
+      isCurrent: compare.a_is_current,
+      when: compare.a_when_display,
+    },
+    {
+      key: "b",
+      title: compare.b_title,
+      status: compare.b_status,
+      statusLabel: compare.b_status_label,
+      isCurrent: compare.b_is_current,
+      when: compare.b_when_display,
+    },
+  ];
+}
+
+/** O que a casa produziu com uma versão (lotes fechados), ou `null` sem lote. */
+export function versionUsage(
+  usage: RecipeUsageProjection | null | undefined,
+  number: number | null | undefined,
+): VersionUsageProjection | null {
+  if (!usage || number == null) return null;
+  return usage.versions.find((row) => row.version_number === number && row.batches > 0) ?? null;
+}
+
+/** A linha curta da linha do tempo: "12 lotes · aproveitamento 96%". */
+export function versionUsageLine(row: VersionUsageProjection | null): string {
+  if (!row) return "";
+  return row.yield_display ? `${row.batches_display} · aproveitamento ${row.yield_display}` : row.batches_display;
+}
+
+/** A Base · Insumos do Compras, onde insumo novo se cadastra; "" sem o Compras. */
+export function purchaseMaterialsHref(purchaseUrl: string): string {
+  const base = purchaseUrl.trim().replace(/\/+$/, "");
+  return base ? `${base}/base/materials` : "";
 }

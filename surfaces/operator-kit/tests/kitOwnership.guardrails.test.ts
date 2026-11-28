@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de PROPRIEDADE: o que o kit já possui não volta a nascer copiado no app.
 //
@@ -131,7 +132,7 @@ function nativeTemporalOffenders(dir: string): string[] {
 function sourceFiles(dir: string, found: string[] = []): string[] {
   if (!existsSync(dir)) return found;
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".nuxt" || entry === ".output") continue;
+    if (isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (full.endsWith(".ts") || full.endsWith(".vue")) found.push(full);

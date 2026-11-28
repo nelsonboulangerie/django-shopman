@@ -10,7 +10,7 @@
 Ordem do dono (04/10): "tudo igual à v4". O Marketing veste a camada visual da suíte do
 kit (UX-KIT-V1/V2, modelo: Gestor) e a prévia `docs/plans/suite-ux-v2/v4/marketing-decisoes.jpg`
 (fila de decisões por prazo e o selo). Função não regride; o envelope de segurança do kit
-(ADR-026), de que o Marketing é piloto, fica como está.
+(ADR-038), de que o Marketing é piloto, fica como está.
 
 ## O que entrou
 **Shell:** `data-suite="v3"`; `MarketingNav` monta o `OperatorSuiteRail` (OPERAÇÃO:

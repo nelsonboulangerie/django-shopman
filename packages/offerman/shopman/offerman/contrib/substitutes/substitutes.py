@@ -164,16 +164,13 @@ def score_substitutes(
     candidate_ids: set[int] = set()
     if product_keywords:
         candidate_ids |= set(
-            Product.objects.filter(
-                is_published=True, is_sellable=True, keywords__name__in=product_keywords,
-            )
+            Product.objects.available_for_sale().filter(keywords__name__in=product_keywords)
             .exclude(sku=sku)
             .values_list("pk", flat=True)[: limit * 6]
         )
     if primary_collection:
         candidate_ids |= set(
-            Product.objects.filter(
-                is_published=True, is_sellable=True,
+            Product.objects.available_for_sale().filter(
                 collection_items__collection=primary_collection,
             )
             .exclude(sku=sku)

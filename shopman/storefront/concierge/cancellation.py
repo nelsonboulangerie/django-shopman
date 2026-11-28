@@ -7,8 +7,9 @@ solicitado pelo cliente'."
 A regra é a do site, não uma nova:
 
 - **Quando**: exatamente quando o próprio cliente poderia cancelar pela conta
-  (``customer_orders.can_cancel``: pedido em ``new``/``accepted`` e pagamento
-  comprovadamente não capturado). Fora disso, a regra R4 manda para a equipe.
+  (``customer_orders.can_cancel``: preparo ainda não começado, pago ou não; o
+  que entrou volta pelo próprio cancelamento). Fora disso, a regra R4 manda para
+  a equipe.
 - **Como**: pelo mesmo serviço (``customer_orders.cancel``), com o ator
   ``concierge``. Estorno, liberação de estoque, nota e o aviso de cancelamento
   seguem o lifecycle de qualquer cancelamento.
@@ -238,12 +239,14 @@ def _execute(conversation, state: dict) -> Outcome:
     from shopman.shop.services import customer_orders
     from shopman.shop.services import payment as payment_service
 
+    from .effect_authority import lock_turn_authority
     from .service import assert_turn_authority
 
+    # Sem posse, nem a leitura do pedido segue; a conferência que vale é a do bloco abaixo.
     assert_turn_authority(conversation, for_mutation=True)
     order = self_cancellable(conversation, order_ref=state["order_ref"])
     if order is None:
-        # Mudou de etapa entre a pergunta e o "sim" (aceito e em preparo, pago):
+        # Mudou de etapa entre a pergunta e o "sim" (o preparo começou):
         # agora é com a equipe (R4).
         return Outcome("refused", order_ref=state["order_ref"])
 
@@ -256,6 +259,9 @@ def _execute(conversation, state: dict) -> Outcome:
     # O cancelamento e o registro dele são um gesto só: sem o registro, não cancela.
     # O lifecycle (estorno, estoque, nota, aviso) roda no commit deste bloco.
     with transaction.atomic():
+        # Reconferida com a conversa travada, na transação que cancela: se a equipe
+        # assumiu depois da conferência acima, o pedido segue como está (#2625).
+        lock_turn_authority(conversation)
         if not customer_orders.cancel(order, actor=ACTOR):
             return Outcome("refused", order_ref=order.ref)
         order.emit_event(

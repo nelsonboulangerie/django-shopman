@@ -1,0 +1,463 @@
+{
+  "observed_at": "2026-11-03T00:57:47.430063+00:00",
+  "app": "shopman-nelson",
+  "active_deployment": {
+    "id": "70137568-85dd-4460-82f2-1489f1d8bafb",
+    "phase": "ACTIVE",
+    "created_at": "2026-11-02T22:30:10Z",
+    "updated_at": "2026-11-02T22:34:16Z"
+  },
+  "recent_deployments": [
+    {
+      "id": "70137568-85dd-4460-82f2-1489f1d8bafb",
+      "phase": "ACTIVE",
+      "created_at": "2026-11-02T22:30:10Z"
+    },
+    {
+      "id": "1af76275-e7c7-46f3-95cb-479592c223dc",
+      "phase": "SUPERSEDED",
+      "created_at": "2026-11-02T22:07:01Z"
+    },
+    {
+      "id": "00916794-c616-49f3-a85a-99ee38c9d1c5",
+      "phase": "SUPERSEDED",
+      "created_at": "2026-11-02T21:59:37Z"
+    }
+  ],
+  "images": [
+    {
+      "name": "web-operator",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    },
+    {
+      "name": "web-storefront",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    },
+    {
+      "name": "storefront-nuxt",
+      "repository": "shopman",
+      "tag": "storefront",
+      "digest": null
+    },
+    {
+      "name": "operator-floor",
+      "repository": "shopman",
+      "tag": "operator-floor",
+      "digest": null
+    },
+    {
+      "name": "operator-office",
+      "repository": "shopman",
+      "tag": "operator-office",
+      "digest": null
+    },
+    {
+      "name": "release",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    },
+    {
+      "name": "directive-worker",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    },
+    {
+      "name": "maintenance-worker",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    },
+    {
+      "name": "ifood-poll-worker",
+      "repository": "shopman",
+      "tag": "web",
+      "digest": null
+    }
+  ],
+  "database": {
+    "name": "shopman-staging-postgres",
+    "engine": "pg",
+    "version": "16",
+    "status": "online",
+    "region": "nyc3",
+    "size": "db-s-1vcpu-1gb",
+    "num_nodes": 1
+  },
+  "backups": [
+    {
+      "created_at": "2026-10-27T00:13:18Z",
+      "size_gigabytes": 0.25122818
+    },
+    {
+      "created_at": "2026-10-28T00:13:20Z",
+      "size_gigabytes": 0.2511565
+    },
+    {
+      "created_at": "2026-10-29T00:13:16Z",
+      "size_gigabytes": 0.25218052
+    },
+    {
+      "created_at": "2026-10-30T00:13:19Z",
+      "size_gigabytes": 0.25236484
+    },
+    {
+      "created_at": "2026-10-31T00:13:15Z",
+      "size_gigabytes": 0.25233412
+    },
+    {
+      "created_at": "2026-11-01T00:13:19Z",
+      "size_gigabytes": 0.25256965
+    },
+    {
+      "created_at": "2026-11-02T00:13:18Z",
+      "size_gigabytes": 0.2522522
+    },
+    {
+      "created_at": "2026-11-03T00:13:23Z",
+      "size_gigabytes": 0.25280514
+    }
+  ],
+  "http": [
+    {
+      "url": "https://api.boulangerie.com.br/health/",
+      "status": 200,
+      "json": {
+        "status": "ok",
+        "checks": {
+          "process": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://api.boulangerie.com.br/ready/",
+      "status": 200,
+      "json": {
+        "status": "ok",
+        "checks": {
+          "database": "ok",
+          "cache": "ok",
+          "migrations": "ok",
+          "queue": "ok"
+        }
+      }
+    },
+    {
+      "url": "https://www.nelsonboulangerie.com.br/",
+      "status": 200,
+      "json": null
+    },
+    {
+      "url": "https://central.boulangerie.com.br/",
+      "status": 200,
+      "json": null
+    },
+    {
+      "url": "https://pdv.boulangerie.com.br/",
+      "status": 200,
+      "json": null
+    }
+  ],
+  "bootstrap_release_log": {
+    "logs_exit_code": 0,
+    "line_count": 358,
+    "markers": {
+      "bootstrap_admin": 0,
+      "bootstrap_shop": 0,
+      "setup_groups": 1,
+      "seed": 0,
+      "migration_safety": 0
+    },
+    "error_lines": 0,
+    "bootstrap_messages": []
+  },
+  "publication_manifest": {
+    "sha": "dcec2e7fab6c09c014560ad957ce05b657f9ff07",
+    "release_id": "20261102-2151-dcec2e7",
+    "git_sha": "dcec2e7fab6c09c014560ad957ce05b657f9ff07",
+    "source_run": 41536727986,
+    "build_result": "success",
+    "components": [
+      {
+        "name": "operator-floor",
+        "tag": "operator-floor",
+        "immutable_tag": "operator-floor-dcec2e7fab6c09c014560ad957ce05b657f9ff07",
+        "digest": "sha256:98ae2c0cd829312157132b69c0e08cebbaf8075cfd7ac45147839c1c5b7a3511",
+        "release_id": "20261102-2151-dcec2e7"
+      },
+      {
+        "name": "operator-office",
+        "tag": "operator-office",
+        "immutable_tag": "operator-office-dcec2e7fab6c09c014560ad957ce05b657f9ff07",
+        "digest": "sha256:06a86200ba551554dc9bf06185565da84abefcc15f2d6b61a7c9c02809fac27b",
+        "release_id": "20261102-2151-dcec2e7"
+      },
+      {
+        "name": "storefront-nuxt",
+        "tag": "storefront",
+        "immutable_tag": "storefront-dcec2e7fab6c09c014560ad957ce05b657f9ff07",
+        "digest": "sha256:58798f3c29041dd80b31af2aca15c889d7278fca0b8011537a697c739726378b",
+        "release_id": "20261102-2151-dcec2e7"
+      }
+    ],
+    "deploy_mode": "single_deployment",
+    "deployment": {
+      "id": "70137568-85dd-4460-82f2-1489f1d8bafb",
+      "phase": "ACTIVE"
+    }
+  },
+  "digests_note": "Os três digests publicados são ligados ao deployment ACTIVE pelo manifesto. A API DO retorna só tags para componentes; não inferir digest runtime do web.",
+  "source_main_sha": "0dc8b733032cf91b4bfff4c02f65fc62ce538236",
+  "bootstrap_status": "DESCONHECIDO: logs de release sem erro, mas sem marcador de bootstrap; não prova credencial nem bootstrap atual",
+  "physical_production_status": "PENDENTE: somente confirmação humana no balcão/produção",
+  "pitr_note": "Oito backups diários observados; não foi executado fork/restore/PITR nem reapontamento nesta auditoria. A capacidade PITR do serviço não prova ensaio.",
+  "readiness": {
+    "checks": [
+      {
+        "details": {
+          "components": [
+            "directive-worker",
+            "ifood-poll-worker",
+            "maintenance-worker",
+            "release",
+            "web-operator",
+            "web-storefront"
+          ]
+        },
+        "id": "target.spec",
+        "message": "Spec do app shopman-nelson lido (doctl apps spec get shopman-nelson); 6 componentes Django.",
+        "status": "passed",
+        "title": "Target spec read"
+      },
+      {
+        "details": {
+          "change": [
+            "SHOPMAN_ENVIRONMENT=production (hoje staging)",
+            "SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_efi (hoje shopman.shop.adapters.payment_mock)",
+            "apagar SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS (hoje true)",
+            "apagar SHOPMAN_EXPOSE_MOCK_CAPTURE (hoje true)"
+          ],
+          "components": [
+            "directive-worker",
+            "ifood-poll-worker",
+            "maintenance-worker",
+            "release",
+            "web-operator",
+            "web-storefront"
+          ]
+        },
+        "id": "production.profile",
+        "message": "O app vivo ainda roda com interruptores de ensaio.",
+        "status": "failed",
+        "title": "Production flip profile (target)"
+      },
+      {
+        "details": {
+          "change": [
+            "EFI_SANDBOX=false (hoje true)",
+            "STRIPE_PUBLISHABLE_KEY pk_live_… (hoje pk_test_)",
+            "FOCUS_NFE_ENVIRONMENT=producao (hoje ausente)",
+            "SHOPMAN_FISCAL_EMISSION_RESOLVER: falta"
+          ],
+          "components": [
+            "directive-worker",
+            "ifood-poll-worker",
+            "maintenance-worker",
+            "release",
+            "web-operator",
+            "web-storefront"
+          ],
+          "unknown": [
+            "EFI_CLIENT_ID: colar o valor de produção",
+            "EFI_CLIENT_SECRET: colar o valor de produção",
+            "EFI_CERTIFICATE_PEM_BASE64: colar o valor de produção",
+            "EFI_WEBHOOK_TOKEN: colar o valor de produção",
+            "STRIPE_SECRET_KEY: colar o valor de produção",
+            "STRIPE_WEBHOOK_SECRET: colar o valor de produção",
+            "FOCUS_NFE_TOKEN: colar o valor de produção"
+          ]
+        },
+        "id": "target.money_and_fiscal",
+        "message": "Cobrança ou nota ainda em ambiente de ensaio no app vivo.",
+        "status": "failed",
+        "title": "Real money and real invoices"
+      },
+      {
+        "details": {
+          "change": [
+            "SHOPMAN_ADMIN_REQUIRE_2FA=true (hoje ausente)",
+            "SHOPMAN_GO_LIVE=true (hoje ausente)"
+          ],
+          "components": [
+            "directive-worker",
+            "ifood-poll-worker",
+            "maintenance-worker",
+            "release",
+            "web-operator",
+            "web-storefront"
+          ]
+        },
+        "id": "target.cutover_switches",
+        "message": "Faltam as chaves que só se ligam no corte.",
+        "status": "failed",
+        "title": "Cutover switches"
+      },
+      {
+        "id": "target.in_place",
+        "message": "As chaves que os checks de produção exigem seguem no valor.",
+        "status": "passed",
+        "title": "Production keys already in place"
+      },
+      {
+        "details": {
+          "jobs": [
+            "release"
+          ]
+        },
+        "id": "target.release_job",
+        "message": "O job de release roda migration_safety antes do migrate.",
+        "status": "passed",
+        "title": "Release job guarded by migration_safety"
+      },
+      {
+        "id": "target.health",
+        "message": "https://api.boulangerie.com.br/health/ respondeu 200.",
+        "status": "passed",
+        "title": "Target /health/"
+      },
+      {
+        "details": {
+          "checks": {
+            "cache": "ok",
+            "database": "ok",
+            "migrations": "ok",
+            "queue": "ok"
+          }
+        },
+        "id": "target.ready",
+        "message": "https://api.boulangerie.com.br/ready/ respondeu 200.",
+        "status": "passed",
+        "title": "Target /ready/"
+      }
+    ],
+    "counts": {
+      "blocked_external": 0,
+      "failed": 3,
+      "passed": 5,
+      "skipped": 0,
+      "warning": 0
+    },
+    "profile": "production",
+    "read_only": true,
+    "status": "failed",
+    "strict_external": true,
+    "target": true
+  },
+  "watchman": {
+    "run": 41511486984,
+    "started_at": "2026-11-02T19:37:57.098836+00:00",
+    "status": "warn",
+    "checks": [
+      {
+        "id": "production_contract",
+        "status": "pass",
+        "summary": "infrastructure contract passed"
+      },
+      {
+        "id": "deployment_drift",
+        "status": "pass",
+        "summary": "infrastructure contract passed"
+      },
+      {
+        "id": "external_monitoring",
+        "status": "pass",
+        "summary": "infrastructure contract passed"
+      },
+      {
+        "id": "expiry_lifecycle",
+        "status": "warn",
+        "summary": "2 of 5 renewable resources require action"
+      }
+    ],
+    "renewable_warnings": [
+      {
+        "action": "Rotacionar DIGITALOCEAN_APP_DEPLOY_TOKEN com sobreposição e provar um deploy completo.",
+        "days_remaining": 58,
+        "deadline_on": "2026-12-30",
+        "deadline_type": "expires",
+        "id": "digitalocean_ci_app_deploy_token",
+        "impact": "O CI publica imagens, mas não consegue promover a nova imagem no App Platform.",
+        "kind": "credential",
+        "label": "Token da DigitalOcean usado pelo CI para atualizar o app",
+        "milestone": "d-58",
+        "owner": "ti@boulangerie.com.br",
+        "runbook": "docs/runbooks/watchman-renewable-resources.md",
+        "status": "warn",
+        "verification": "Executar deploy-images até o deploy saudável antes de revogar o token anterior."
+      },
+      {
+        "action": "Identificar consumidores ativos, criar substituto de menor privilégio e migrá-los com sobreposição.",
+        "days_remaining": 59,
+        "deadline_on": "2026-12-31",
+        "deadline_type": "expires",
+        "id": "digitalocean_app_admin_token",
+        "impact": "Operações administrativas do app e do banco que dependem dessa credencial deixam de funcionar.",
+        "kind": "credential",
+        "label": "Token administrativo do app na DigitalOcean",
+        "milestone": "d-59",
+        "owner": "ti@boulangerie.com.br",
+        "runbook": "docs/runbooks/watchman-renewable-resources.md",
+        "status": "warn",
+        "verification": "Provar cada consumidor inventariado antes de revogar o token anterior."
+      }
+    ]
+  },
+  "github": {
+    "deploy_images_latest": 41542566743,
+    "deploy_images_latest_result": "success; nothing_published",
+    "last_published_manifest_run": 41536727986,
+    "smoke_latest": 41542715496,
+    "smoke_result": "success",
+    "security_latest": 41542567718,
+    "security_result": "success",
+    "merge_queue_observed_empty": true,
+    "branch_protection": {
+      "enforce_admins": true,
+      "force_push_allowed": false,
+      "required_status_checks": [
+        "Testes (test-backstage)",
+        "Browser QA (Nuxt store + Django operator)",
+        "Quality + deploy contract",
+        "Docker deploy image",
+        "PostgreSQL + Redis runtime stress gate",
+        "operator-kit",
+        "storefront-nuxt",
+        "pos-nuxt",
+        "kds-nuxt",
+        "orders-nuxt",
+        "production-nuxt",
+        "hub-nuxt",
+        "marketing-nuxt",
+        "purchase-nuxt",
+        "bi-nuxt",
+        "Testes (test-cores)",
+        "Testes (test-counter-agent)",
+        "Testes (test-shop)",
+        "Testes (test-storefront)",
+        "Storefront E2E (Playwright)",
+        "Admin/Unfold gate",
+        "Admin CSP (production settings)",
+        "Gate da meia-correção",
+        "Coverage Gate",
+        "Security Gate",
+        "Production Contract",
+        "Operator Groups Contract"
+      ]
+    }
+  }
+}

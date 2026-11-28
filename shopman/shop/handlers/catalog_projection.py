@@ -26,7 +26,7 @@ from weakref import WeakValueDictionary
 
 from django.db import connection, transaction
 from django.utils import timezone
-from shopman.offerman.protocols.projection import ProjectedItem
+from shopman.offerman.protocols.projection import IncrementalCatalogProjectionBackend, ProjectedItem
 from shopman.orderman.exceptions import DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -85,15 +85,35 @@ class CatalogProjectHandler:
             raise failure
 
     def _handle_locked(self, message, backend, sku, listing_ref):
+        from shopman.shop.adapters.catalog_projection_google import GoogleMerchantRateLimitError
         from shopman.shop.adapters.catalog_projection_ifood import IFoodRateLimitError
+        from shopman.shop.adapters.catalog_projection_meta import MetaRateLimitError
 
         # Retract-aware: read the SKU's CURRENT state and either upsert it (when
         # published + sellable) or retract it (paused, unpublished, or dropped
         # from the listing). Reading state at handle time makes the directive
         # idempotent to the final state, so rapid pause→resume converges.
-        from shopman.shop.services import social_publish_rules
+        from shopman.shop.services import display_catalog, social_publish_rules
 
         item = _get_projected_item(sku, listing_ref)
+        trigger = message.payload.get("trigger", "manual_resync")
+        if display_catalog.is_platform_channel(listing_ref):
+            # Canal de plataforma (Google, Meta): pausado, oculto e esgotado SEGUEM
+            # na plataforma, cada um com o seu estado (``display_catalog``). Só sai
+            # o item que deixou a composição do canal. Sem as regras de publicação:
+            # barrar o envio de um item esgotado deixaria a plataforma anunciando
+            # "em estoque" o que acabou.
+            retracting = item is None
+            try:
+                result = backend.retract([sku], channel=listing_ref) if retracting else backend.project(
+                    [item], channel=listing_ref
+                )
+            except (GoogleMerchantRateLimitError, MetaRateLimitError) as exc:
+                self._defer_rate_limited(message, item, sku, listing_ref, exc.retry_after)
+                return
+            self._finish(result, item, sku, listing_ref, retracting=retracting)
+            return
+
         retracting = not (item is not None and item.is_published and item.is_sellable)
 
         # Publish rules gate an UPSERT (not a retract): don't push an item the
@@ -106,29 +126,53 @@ class CatalogProjectHandler:
                 _record_outcome(item, sku, listing_ref, status=status, error=reason)
                 return
 
+        incremental = isinstance(backend, IncrementalCatalogProjectionBackend)
         try:
-            if not retracting:
+            if (
+                item is not None
+                and trigger in {"availability_changed", "stock_changed"}
+                and incremental
+            ):
+                result = backend.set_availability(item, channel=listing_ref)
+                retracting = not (item.is_published and item.is_sellable)
+            elif (
+                not retracting
+                and trigger in {"price_changed", "operator_price_intention"}
+                and incremental
+            ):
+                result = backend.update_price(item, channel=listing_ref)
+            elif not retracting:
                 result = backend.project([item], channel=listing_ref)
             else:
                 result = backend.retract([sku], channel=listing_ref)
         except IFoodRateLimitError as exc:
-            # Rate limit: defer with Retry-After from API response.
-            _record_outcome(item, sku, listing_ref, status="pending", error="rate limited")
-            message.status = "queued"
-            message.available_at = timezone.now() + timedelta(seconds=exc.retry_after)
-            message.save(update_fields=["status", "available_at", "updated_at"])
-            logger.warning(
-                "catalog_projection: rate limited for %s/%s, retry in %ds",
-                listing_ref, sku, exc.retry_after,
-            )
+            self._defer_rate_limited(message, item, sku, listing_ref, exc.retry_after)
             return
+        self._finish(result, item, sku, listing_ref, retracting=retracting)
 
+    def _defer_rate_limited(self, message, item, sku, listing_ref, retry_after: int) -> None:
+        """Rate limit: devolve a diretiva à fila com o Retry-After da plataforma."""
+        _record_outcome(item, sku, listing_ref, status="pending", error="rate limited")
+        message.status = "queued"
+        message.available_at = timezone.now() + timedelta(seconds=retry_after)
+        message.save(update_fields=["status", "available_at", "updated_at"])
+        logger.warning(
+            "catalog_projection: rate limited for %s/%s, retry in %ds",
+            listing_ref, sku, retry_after,
+        )
+
+    def _finish(self, result, item, sku, listing_ref, *, retracting: bool) -> None:
         if result.success:
             _record_outcome(item, sku, listing_ref, status="retracted" if retracting else "synced")
             return
 
-        _record_outcome(item, sku, listing_ref, status="error", error="; ".join(result.errors))
-        raise DirectiveTransientError("; ".join(result.errors))
+        error = "; ".join(result.errors)
+        # Um item já projetado pode carregar uma pendência secundária, como a
+        # foto. O estado mostra o trabalho restante sem esconder que os demais
+        # dados chegaram ao canal.
+        status = "pending" if result.projected else "error"
+        _record_outcome(item, sku, listing_ref, status=status, error=error)
+        raise DirectiveTransientError(error)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -190,7 +234,12 @@ def _record_outcome(snapshot: ProjectedItem | None, sku: str, listing_ref: str, 
 
 def _channel_or_feed_active(listing_ref: str) -> bool:
     from shopman.shop.models import Channel
+    from shopman.shop.services import display_catalog
 
+    # Canal de plataforma desligado continua sendo enviado: os itens vão como fora
+    # de estoque (``display_catalog``), e é isso que a plataforma precisa saber.
+    if display_catalog.is_platform_channel(listing_ref):
+        return True
     if Channel.objects.filter(ref=listing_ref, is_active=True).exists():
         return True
     # Canal de exibição também é alvo de projeção (o catálogo Meta é um deles), e
@@ -204,11 +253,42 @@ def _channel_or_feed_active(listing_ref: str) -> bool:
 
 def _get_projected_item(sku: str, listing_ref: str) -> ProjectedItem | None:
     from shopman.offerman.service import CatalogService
+
+    from shopman.shop.services import display_catalog
+
+    if display_catalog.is_platform_channel(listing_ref):
+        return display_projected_item(listing_ref, sku)
     items = CatalogService.get_projection_items(listing_ref)
     for item in items:
         if item.sku == sku:
             return item
     return None
+
+
+def display_projected_item(listing_ref: str, sku: str) -> ProjectedItem | None:
+    """O item do canal de plataforma, com a decisão de ``display_catalog`` inteira.
+
+    O backend da plataforma lê ``metadata["display"]`` e só traduz; as flags
+    espelham a decisão (oculto → não publicado, sem compra → não vendável) para a
+    matriz e o estado de sync lerem igual aos outros canais.
+    """
+    from shopman.shop.services import display_catalog
+
+    item = display_catalog.display_item(listing_ref, sku)
+    if item is None:
+        return None
+    return ProjectedItem(
+        sku=item.sku,
+        name=item.title,
+        description=item.description,
+        unit="",
+        price_q=item.price_q,
+        is_published=not item.hidden,
+        is_sellable=item.available,
+        category=item.custom_label_0,
+        image_url=item.image_link,
+        metadata={"display": item},
+    )
 
 
 def _projection_listing_refs() -> list[str]:
@@ -248,14 +328,20 @@ def on_price_changed(
     new_price_q: int,
     **kwargs,
 ) -> None:
-    if listing_ref not in _projection_listing_refs():
-        return
-    _enqueue_project(
-        sku,
-        listing_ref,
-        trigger="price_changed",
-        extra={"old_price_q": old_price_q, "new_price_q": new_price_q},
-    )
+    from shopman.shop.services import display_catalog
+
+    refs = set(_projection_listing_refs())
+    if listing_ref in refs:
+        _enqueue_project(
+            sku,
+            listing_ref,
+            trigger="price_changed",
+            extra={"old_price_q": old_price_q, "new_price_q": new_price_q},
+        )
+    # O preço dos canais de plataforma vem do canal apontado por ``prices_from``.
+    for display_ref in display_catalog.channels_priced_from(listing_ref):
+        if display_ref in refs:
+            _enqueue_project(sku, display_ref, trigger="price_changed", extra={})
 
 
 def on_availability_changed(sender, instance, listing_ref: str, sku: str, **kwargs) -> None:
@@ -265,9 +351,66 @@ def on_availability_changed(sender, instance, listing_ref: str, sku: str, **kwar
     _enqueue_project(sku, listing_ref, trigger="availability_changed", extra={})
 
 
+def on_collection_membership_changed(sender, instance, **kwargs) -> None:
+    """A coleção primária decide a categoria do item no canal (iFood).
+
+    Trocar a coleção de um produto que já está num canal empurrado tem que
+    reenviar o item com a categoria nova: o iFood é reflexo do Catálogo. Só os
+    canais em que o produto JÁ está no listing; incluir no canal continua sendo
+    gesto explícito (ficha do produto, "Incluir no canal").
+    """
+    from shopman.offerman.models import ListingItem
+
+    product_id = getattr(instance, "product_id", None)
+    refs = _projection_listing_refs()
+    if not product_id or not refs:
+        return
+    listed = (
+        ListingItem.objects.filter(product_id=product_id, listing__ref__in=refs)
+        .values_list("listing__ref", "product__sku")
+        .distinct()
+    )
+    for listing_ref, sku in listed:
+        _enqueue_project(sku, listing_ref, trigger="collection_changed", extra={})
+
+
+def enqueue_collection_items(listing_ref: str, collection_ref: str) -> int:
+    """Reenvia os itens cuja coleção primária é ``collection_ref`` (mapa de categoria mudou)."""
+    from shopman.offerman.models import ListingItem
+
+    if listing_ref not in _projection_listing_refs():
+        return 0
+    skus = list(
+        ListingItem.objects.filter(
+            listing__ref=listing_ref,
+            product__collection_items__collection__ref=collection_ref,
+            product__collection_items__is_primary=True,
+        )
+        .values_list("product__sku", flat=True)
+        .distinct()
+    )
+    for sku in skus:
+        _enqueue_project(sku, listing_ref, trigger="category_changed", extra={})
+    return len(skus)
+
+
 def enqueue_project(sku: str, listing_ref: str, *, trigger: str = "manual_resync") -> Directive | None:
     """Public re-projection enqueue — used by the backstage "sincronizar agora" action."""
     return _enqueue_project(sku, listing_ref, trigger=trigger, extra={})
+
+
+def enqueue_display_skus(listing_ref: str, skus, *, trigger: str = "display_changed") -> int:
+    """Pausa, ocultação, coleções do canal de plataforma mudaram → reenvia esses SKUs.
+
+    Sem backend configurado para o canal, não há para onde enviar: volta calado.
+    """
+    if listing_ref not in _projection_listing_refs():
+        return 0
+    count = 0
+    for sku in sorted(set(skus)):
+        _enqueue_project(sku, listing_ref, trigger=trigger, extra={})
+        count += 1
+    return count
 
 
 @transaction.atomic
@@ -296,7 +439,7 @@ def _enqueue_project(sku: str, listing_ref: str, trigger: str, extra: dict) -> D
 
     created = create_deduped(
         CATALOG_PROJECT_SKU,
-        payload={"sku": sku, "listing_ref": listing_ref},
+        payload={"sku": sku, "listing_ref": listing_ref, "trigger": trigger},
         dedupe_key=f"{dedupe_key}:{uuid4().hex}",
     )
     if created is None:

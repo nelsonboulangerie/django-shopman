@@ -54,8 +54,8 @@ def test_backfill_only_accepts_unambiguous_batch_grade():
         quality_grade_ref="minimal",
     )
 
-    migration = import_module("shopman.shop.migrations.0039_backfill_batch_quality_grade_ref")
-    migration.forwards(apps, None)
+    migration = import_module("shopman.shop.migrations.0023_squashed_0044_merge_marketing_excellence")
+    migration.qg39_forwards(apps, None)
 
     assert Batch.objects.get(ref="UNIQUE-GRADE").quality_grade_ref == "standard"
     assert Batch.objects.get(ref="AMBIGUOUS-GRADE").quality_grade_ref == ""

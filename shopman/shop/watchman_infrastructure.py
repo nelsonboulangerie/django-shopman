@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -62,19 +63,32 @@ class DeploymentDriftCheck:
     def run(self, context: CheckContext) -> CheckResult:
         live_spec = os.environ.get("WATCHMAN_LIVE_DO_SPEC", "").strip()
         if not live_spec:
+            collection_error = os.environ.get("WATCHMAN_DO_EVIDENCE_ERROR", "").strip()
             return CheckResult(
                 id=self.id,
                 status=Status.UNKNOWN,
-                summary="live DigitalOcean spec was not supplied",
-                evidence={"required_env": "WATCHMAN_LIVE_DO_SPEC"},
+                summary=(
+                    f"live DigitalOcean spec was not supplied: {collection_error}"
+                    if collection_error
+                    else "live DigitalOcean spec was not supplied"
+                ),
+                evidence={
+                    "required_env": "WATCHMAN_LIVE_DO_SPEC",
+                    **({"collection_error": collection_error} if collection_error else {}),
+                },
                 remediation="Download the live spec read-only and rerun with WATCHMAN_LIVE_DO_SPEC.",
             )
-        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.subdomains.yaml")
+        versioned = os.environ.get("WATCHMAN_VERSIONED_DO_SPEC", ".do/app.alpha-subdomains.yaml")
         return _run(
             self.id,
             [sys.executable, "scripts/check_do_spec_drift.py", "--spec", versioned, "--live-spec", live_spec],
             40.0,
         )
+
+
+#: O detector de prontidão composto que o Sentry Uptime consulta.
+READINESS_PATH = "/api/watchman-readiness"
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 
 
 class ExternalMonitoringContractCheck:
@@ -88,17 +102,27 @@ class ExternalMonitoringContractCheck:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
             endpoints = payload["uptime"]
+            uptime_policy = payload["uptime_policy"]
             rate = payload["error_rate"]
-            recipient = payload["notification"]["recipient"]
             notification = payload["notification"]
+            delivery = notification["delivery_assurance"]
+            email_action = notification["email_action"]
+            recipient = delivery["intended_address"]
+            trigger_types = notification["trigger_types"]
+            detector_names = [item["name"] for item in endpoints] + [rate["name"]]
             valid = (
-                payload["schema_version"] == 1
+                payload["schema_version"] == 3
                 and bool(payload["organization"])
                 and bool(payload["project"])
                 and payload["environment"] == "production"
                 and isinstance(endpoints, list)
-                and len(endpoints) == 2
-                and len({item["url"] for item in endpoints}) == 2
+                and len(endpoints) == 1
+                and uptime_policy["maximum_active_monitors"] == 1
+                and not isinstance(uptime_policy["maximum_active_monitors"], bool)
+                # O host é o desta instalação e mora no contrato versionado
+                # (ops/watchman/sentry.json); aqui se confere só a forma.
+                and endpoints[0]["url"].startswith("https://")
+                and endpoints[0]["url"].endswith(READINESS_PATH)
                 and all(
                     item["url"].startswith("https://")
                     and item["interval_seconds"] == 60
@@ -110,10 +134,17 @@ class ExternalMonitoringContractCheck:
                 and rate["aggregate"] == "count()"
                 and rate["time_window_seconds"] == 300
                 and rate["open_above"] > rate["resolve_at_or_below"] >= 0
-                and notification["name"] == "Watchman: operações ti@"
-                and recipient == "ti@boulangerie.com.br"
+                and notification["name"].startswith("Watchman: ")
+                and isinstance(recipient, str)
+                and EMAIL_RE.fullmatch(recipient) is not None
                 and notification["frequency_minutes"] == 30
-                and notification["send_resolved"] is True
+                and email_action["target_type"] == "user"
+                and "target_identifier" not in email_action
+                and delivery["method"] == "dedicated_sentry_member"
+                and delivery["evidence_review_days"] > 0
+                and len(detector_names) == len(set(detector_names))
+                and "issue_resolved_trigger" in trigger_types
+                and any(item != "issue_resolved_trigger" for item in trigger_types)
             )
         except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             return CheckResult(
@@ -128,8 +159,15 @@ class ExternalMonitoringContractCheck:
                 id=self.id,
                 status=Status.FAIL,
                 summary="external monitoring contract is incomplete",
-                evidence={"uptime_monitors": len(endpoints), "recipient": recipient},
-                remediation="Declare both services, cadence, rate alert, repetition, recovery and ti@ recipient.",
+                evidence={
+                    "uptime_monitors": len(endpoints),
+                    "recipient": recipient,
+                    "target_resolution": "sentry_members_api",
+                },
+                remediation=(
+                    "Declare the single composite readiness monitor, free-plan limit, cadence, rate alert, "
+                    "opening/recovery triggers and the dedicated Sentry member route to ti@."
+                ),
             )
         if not os.environ.get("SENTRY_AUTH_TOKEN", "").strip():
             return CheckResult(

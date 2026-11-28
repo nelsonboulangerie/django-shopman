@@ -94,25 +94,22 @@ def test_fixed_coupon_discounts_the_order_once_not_per_unit():
 def test_fixed_coupon_keeps_the_line_coherent_when_the_split_is_not_exact():
     """6 un × R$15 e um cupom de R$5: 500/6 = 83,33… centavos por unidade.
 
-    O desconto NÃO é representável — o preço unitário é inteiro em centavos, então
-    o desconto da linha só pode ser múltiplo de 6. A versão anterior fingia que era:
-    tirava 83 do unitário e 500 do total, e a sacola imprimia "6 × R$ 14,17" com
-    total "R$ 85,00" (quem multiplica acha R$ 85,02).
-
-    Agora o rateio entrega o mínimo ACIMA do prometido (84 × 6 = R$ 5,04, porque
-    quem prometeu "R$ 5 de desconto" paga o centavo a mais) e a tela mostra ESSE
-    valor: o registrado em ``pricing`` é o desconto de verdade, nunca o nominal.
+    O desconto NÃO é representável numa linha só: o preço unitário é inteiro em
+    centavos, então o desconto da linha só pode ser múltiplo de 6. A primeira versão
+    fingia que era (tirava 83 do unitário e 500 do total, e a sacola imprimia
+    "6 × R$ 14,17" com total "R$ 85,00"); a segunda entregava o mínimo acima do
+    prometido (R$ 5,04). Agora a linha se parte (#3240): 2 a R$ 14,16 e 4 a
+    R$ 14,17, e o desconto fecha exato, com cada linha coerente.
     """
     _seed(promo_type=Promotion.FIXED, value=500, min_order_q=3000, code="PRIMEIRA")
     session = _cart_with_coupon(sku="PAO", qty=6, unit_price_q=1500, code="PRIMEIRA")
 
     _assert_lines_are_coherent(session)
-    line = session.items[0]
-    assert line["unit_price_q"] == 1500 - 84
-    assert _order_total_q(session) == 9000 - 504
+    assert [(i["qty"], i["unit_price_q"]) for i in session.items] == [(2, 1416), (4, 1417)]
+    assert _order_total_q(session) == 9000 - 500
     # Transparência == cobrança: o que a tela promete é o que o total caiu.
-    assert session.pricing["coupon"]["discount_q"] == 504
-    assert session.pricing["discount"]["total_discount_q"] == 504
+    assert session.pricing["coupon"]["discount_q"] == 500
+    assert session.pricing["discount"]["total_discount_q"] == 500
 
 
 def test_fixed_coupon_capped_at_order_subtotal():
@@ -206,3 +203,28 @@ def test_only_one_coupon_code_is_ever_active():
     assert _order_total_q(session) == 3000 - 600
     assert session.pricing["coupon"]["code"] == "VINTE"
     assert session.pricing["coupon"]["discount_q"] == 600
+
+
+def test_fixed_coupon_beats_a_bigger_fixed_promotion_that_reaches_no_line():
+    """Beta SMS-04: promoção automática de R$ 10 só para CRO, carrinho sem CRO.
+
+    Antes, o fixo de maior valor NOMINAL vencia, não tinha linha elegível, aplicava
+    zero, e o cupom de R$ 5 (que valia para o carrinho) nunca era tentado: a tela
+    dizia "Cupom aplicado" e o total não mudava.
+    """
+    _seed(promo_type=Promotion.FIXED, value=500, min_order_q=3000, code="PRIMEIRACOMPRA")
+    now = timezone.now()
+    Promotion.objects.create(
+        ref="auto-croissant-fixo",
+        name="Croissant R$ 10",
+        type=Promotion.FIXED,
+        value=1000,
+        skus=["CRO"],
+        valid_from=now - timedelta(days=1),
+        valid_until=now + timedelta(days=1),
+    )
+    session = _cart_with_coupon(sku="PAO", qty=4, unit_price_q=1500, code="PRIMEIRACOMPRA")
+
+    assert _order_total_q(session) == 6000 - 500
+    assert session.pricing["coupon"]["discount_q"] == 500
+    _assert_lines_are_coherent(session)

@@ -22,6 +22,8 @@ export interface POSProductProjection {
   kitchen_station?: string;
   /** A estação tem o envio automático ligado: a linha nova vai sozinha. */
   kitchen_auto_fire?: boolean;
+  /** A estação é de preparo (feito na hora). No balcão, só este vai à cozinha ao finalizar. */
+  kitchen_prep?: boolean;
   /** O preço que o motor cobra AGORA (com a Hora da Xepa aberta, já descontado). */
   price_q: number;
   price_display: string;
@@ -43,6 +45,14 @@ export interface POSProductProjection {
   sold_out?: boolean;
   /** Motivo do bloqueio quando não é o genérico "Esgotado" (ex.: "Sem caixa"). */
   sold_out_reason?: string;
+  /** Unidades que a casa ainda promete hoje (só com pronto na prateleira); `null` = não diz. */
+  units_left?: number | null;
+  /** O item está ACABANDO (DEV-2026-077): o saldo chegou à porcentagem do SKU.
+   *  Só então o tile mostra o saldo à vista; fora disso, no hover e no foco. */
+  running_low?: boolean;
+  /** Encomenda para outro dia sem lote planejado do item na data (WP-E3): o item
+   *  entra, como pedido à Produção, e esta é a frase que a tela diz. Vazio fora disso. */
+  unplanned_note?: string;
   /** Vendido por peso: `price_q` é o preço DO QUILO, e tocar o tile pede o valor
    *  da etiqueta (ou o peso) em vez de somar uma unidade. */
   sold_by_weight?: boolean;
@@ -135,7 +145,8 @@ export interface POSFulfillmentOptionProjection {
  * tela deriva de `fiscal_expected` (`queued` / `not_expected`).
  */
 /** O vocabulário de `fiscal_service.FISCAL_STATES`. `awaiting_pickup`/`awaiting_delivery`:
- *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026). */
+ *  encomenda paga antes — a nota sai na saída da mercadoria (decisão de 26/09/2026).
+ *  `not_issued`: venda cancelada sem nenhuma tentativa de emissão, a nota não sai (#3130). */
 export type PosFiscalState =
   | "not_expected"
   | "queued"
@@ -143,7 +154,8 @@ export type PosFiscalState =
   | "awaiting_pickup"
   | "awaiting_delivery"
   | "authorized"
-  | "failed";
+  | "failed"
+  | "not_issued";
 
 export interface POSPaymentCollectionProjection {
   ref: PosPaymentCollection;
@@ -289,10 +301,12 @@ export interface POSPendingCashRefundProjection {
   cancelled_at: string;
   /**
    * "cancelled" / "returned" (venda cancelada ou devolvida inteira: devolve tudo) ·
+   * "not_picked_up" (pedido pronto que o cliente não veio buscar: devolve só o que
+   * não ficou com a loja) ·
    * "partial_return" (devolução de parte da venda) · "reduced" (encomenda que ficou
    * mais barata): esses dois devolvem a diferença.
    */
-  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
+  reason?: "cancelled" | "not_picked_up" | "returned" | "partial_return" | "reduced";
   reason_label?: string;
 }
 
@@ -301,15 +315,32 @@ export interface POSPendingCashRefundProjection {
  * devolvida (toda ou em parte) ou encomenda que ficou mais barata. Estornar na
  * maquininha e registrar; só o "Estornei" grava o estorno.
  */
+/**
+ * Um item de venda sem conexão "a conferir": o catálogo não explica o preço
+ * cobrado. A venda entrou; o turno só fecha com o gerente.
+ */
+export interface POSOfflineReviewSaleProjection {
+  order_ref: string;
+  sku: string;
+  name: string;
+  qty_display: string;
+  /** "R$ 12,00"; "" quando o catálogo não tinha o item. */
+  catalog_price_display: string;
+  charged_price_display: string;
+  operator: string;
+  /** "14:32". */
+  captured_at_display?: string;
+}
+
 export interface POSPendingCardMachineRefundProjection {
   order_ref: string;
   amount_q: number;
   amount_display: string;
   customer_name: string;
   method_label: string;
-  /** "cancelled" · "returned" · "partial_return" · "reduced". */
-  reason?: "cancelled" | "returned" | "partial_return" | "reduced";
-  /** "Venda cancelada" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
+  /** "cancelled" · "not_picked_up" · "returned" · "partial_return" · "reduced". */
+  reason?: "cancelled" | "not_picked_up" | "returned" | "partial_return" | "reduced";
+  /** "Venda cancelada" · "Pedido não retirado" · "Venda devolvida" · "Devolução de parte da venda" · "Encomenda ficou mais barata". */
   reason_label?: string;
   /** Como achar a transação na maquininha: "Aprovado em 13/10 às 14:32 · NSU 123456". */
   lookup_display?: string;
@@ -335,6 +366,8 @@ export interface POSCashRuntimeProjection {
   terminal_label: string;
   operator_username: string;
   opened_at: string;
+  /** Quem ABRIU a gaveta; `operator_username` é quem opera agora (PDV-19). */
+  opened_by_username?: string;
   status?: "open" | "closed" | string;
   /**
    * Pode ver a APURAÇÃO (esperado, contado, diferença, faturamento)?
@@ -348,6 +381,8 @@ export interface POSCashRuntimeProjection {
   /** Devoluções em dinheiro de vendas canceladas, à espera de uma gaveta aberta. */
   pending_cash_refunds?: POSPendingCashRefundProjection[];
   pending_card_machine_refunds?: POSPendingCardMachineRefundProjection[];
+  /** Vendas sem conexão deste turno a conferir: o fechamento só sai com o gerente. */
+  offline_review_sales?: POSOfflineReviewSaleProjection[];
   /** Contas na casa com saldo em aberto: quem está com a gaveta aberta recebe o acerto. */
   account_balances?: POSAccountBalanceProjection[];
   /**
@@ -594,6 +629,8 @@ export interface POSProjection {
    * decide; a tela não renderiza porta que devolve 404. É consulta — a via do
    * cliente sai na bobina, e essa não depende deste gate. */
   danfe_screen_allowed: boolean;
+  /** O operador fecha o dia (Gerente)? Sem isso, o "Fim do dia" não aparece na barra. */
+  can_close_day?: boolean;
   /** Hoje pelo relógio da LOJA — o padrão da data de entrega. */
   delivery_today: string;
   /** As janelas de hoje, para o formulário abrir já respondendo. A review
@@ -617,6 +654,10 @@ export interface POSProjection {
   /** Venda por peso: a loja deixa digitar o PESO além do valor da etiqueta
    *  (balança no balcão). Desligado = só valor, e a opção nem aparece. */
   weighed_weight_entry?: boolean;
+  /** A loja deixa o balcão vender SEM CONEXÃO (`Shop.pos_offline_sale_enabled`)?
+   *  Desligada por padrão até existir NFC-e em contingência: sem rede, o PDV não
+   *  cobra nem guarda venda, avisa e espera a conexão voltar. */
+  offline_sale_enabled?: boolean;
   /** A janela de desconto por horário (Hora da Xepa); null sem regra para o PDV. */
   price_window?: POSPriceWindowProjection | null;
 }
@@ -632,15 +673,13 @@ export interface POSPriceWindowProjection {
   next_change_at: string;
 }
 
+/** Só CONTAGENS: o dinheiro do dia não viaja para o balcão (D4, contagem cega). */
 export interface POSShiftSummaryProjection {
   count: number;
-  total_display: string;
   pickup_count: number;
   delivery_count: number;
   last_ref: string;
-  last_total_display: string;
   cod_pending_count: number;
-  cod_pending_display: string;
 }
 
 export interface POSTabProjection {
@@ -660,6 +699,8 @@ export interface POSTabProjection {
   fired?: boolean;
   /** Hora em que a comanda abriu ("21:48"). */
   opened_at_display?: string;
+  /** Quem abriu a comanda (primeiro nome); não muda quando outra estação a abre. */
+  opened_by_display?: string;
   /** A mesa do Salão vinculada (opcional). */
   seating_spot_ref?: string;
   /** A cozinha terminou tudo o que foi disparado: o balcão chama o cliente. */
@@ -674,6 +715,8 @@ export interface POSResponse {
   // O operador ativo recebeu um PIN temporário (reset do gerente) e precisa
   // trocá-lo antes de operar — a lock screen força a troca quando true.
   pin_must_change: boolean;
+  /** Este dispositivo pode calcular e cobrar (a régua das mutações de dinheiro). */
+  station?: { ready: boolean; reason: "" | "none" | "ambiguous" | "inactive" };
 }
 
 export interface POSLineAuthorship {
@@ -739,6 +782,10 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
+  /** A linha mudou o desconto e o servidor ainda não disse o que ela cobra: a
+   *  tela mostra "calculando" no total da linha, sem fazer a conta do motor. Só
+   *  da tela; nunca viaja nem entra na chave da revisão. */
+  price_pending?: boolean;
 }
 
 /** Um ticket da cozinha, como o PDV o mostra (``projections/pos._kitchen_tickets_by_line``). */
@@ -791,6 +838,8 @@ export interface POSSeatingSpotOption {
 }
 
 export interface POSTabPayload {
+  /** Esta abertura pôs a comanda em uso (ela estava livre). Só na resposta do abrir. */
+  created?: boolean;
   revision?: string;
   sales_mode?: "counter" | "order";
   session_key: string;
@@ -823,6 +872,8 @@ export interface POSTabPayload {
   delivery_time_slot: string;
   delivery_fee_override_q: number | null;
   order_notes: string;
+  /** Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse. */
+  counter_service?: string;
   payment_method: string;
   payment_collection: PosPaymentCollection;
   payment_tenders: POSIntentCartState["paymentTenders"];
@@ -913,6 +964,8 @@ export interface POSIntentCartState {
    * Nunca 0 por omissão: ausente significa "resolva", não "cobre zero". */
   deliveryFeeOverrideQ: number | null;
   orderNotes: string;
+  /** No balcão: comer aqui ou levar (#3193). Só viaja no modo balcão. */
+  counterService: "here" | "to_go";
   paymentMethod: string;
   paymentCollection: PosPaymentCollection;
   paymentTenders: POSPaymentTenderDraft[];
@@ -934,7 +987,6 @@ export interface POSIntentCartState {
   saveReceiptTaxIdConfirmed: boolean;
   receiptIdentityChoices?: POSReceiptIdentityChoice[];
   manualDiscount: Record<string, unknown> | null;
-  managerApproval: Record<string, unknown> | null;
   clientRequestId: string;
 }
 
@@ -958,14 +1010,53 @@ export interface POSScheduleResponse {
   is_today: boolean;
   /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
   readiness_unavailable: boolean;
+  /** Outro dia: os SKUs da grade sem saldo NAQUELA data (vazio para hoje). Plano
+   *  esgotado fica aqui; data sem lote planejado do item, não (`unplanned_skus`). */
+  sold_out_skus?: string[];
+  /** Outro dia: os SKUs da grade que a casa produz em lote e que ainda não têm lote
+   *  planejado NAQUELA data. Entram como pedido à Produção (WP-E3, D2). */
+  unplanned_skus?: string[];
+  /** Outro dia: o lastro de cada SKU do carrinho na data (vazio para hoje). O SKU
+   *  sem lote planejado na data vem com `planned_qty: 0` (vira pedido à Produção). */
+  plan_by_sku?: Record<string, POSPlanBacking>;
+}
+
+/** O lastro de um SKU na data da encomenda (WP-E2): o lote planejado PARA a data
+ *  e o que dele está sem encomenda. A sobra de hoje não entra (dono, 18/11/2026). */
+export interface POSPlanBacking {
+  /** O lote planejado para a data, sem descontar reservas. */
+  planned_qty: number;
+  /** O que desse lote ainda não está preso a outra encomenda (≤ planejado). */
+  unclaimed_qty: number;
+}
+
+/** Uma linha da encomenda acima do plano, como o gerente a vê e assina. */
+export interface POSOverPlanLine {
+  sku: string;
+  name: string;
+  /** AAAA-MM-DD, a data da encomenda. */
+  date: string;
+  requested_qty: number;
+  planned_qty: number;
+  unclaimed_qty: number;
 }
 
 /** A renúncia de frete que a loja aplicou (P2-21). `promotion`: a promoção
  *  `promotion_name`; `threshold`: compras a partir de `threshold_q`.
  *  `base_fee_q` é a taxa sem a renúncia. */
+/** Resposta de `/pos/delivery-fee/`: a taxa na tela de venda, os campos da review (#2402). */
+export interface POSDeliveryFeeQuote {
+  delivery_fee_q: number;
+  delivery_fee_source: string;
+  delivery_distance_km: number | null;
+  delivery_fee_waiver: POSDeliveryFeeWaiverProjection | null;
+}
+
 export interface POSDeliveryFeeWaiverProjection {
-  reason: "promotion" | "threshold";
+  reason: "promotion" | "threshold" | "group";
   promotion_name: string;
+  /** O grupo do cliente que dá o frete grátis (reason "group"). */
+  group_name?: string;
   threshold_q: number;
   base_fee_q: number;
   threshold_display?: string;
@@ -1006,10 +1097,15 @@ export interface POSSaleReviewProjection {
   /** Conta na casa acima do limite (motivo `house_account_over_limit`): saldo
    *  em aberto antes da venda, limite, o que a venda põe na conta e quanto passa. */
   house_account_limit?: { balance_q: number; limit_q: number; charge_q: number; over_q: number } | null;
+  /** Encomenda acima do plano da data (motivo `preorder_over_plan`, D-041): por
+   *  linha, o pedido, o lote planejado e o que dele está sem encomenda. O Validar trava e o gerente
+   *  vê os dois números antes de liberar. */
+  preorder_over_plan?: POSOverPlanLine[];
   receipt_channels: string[];
   /** Vai sair nota com CPF? (o consumidor pediu o documento nesta venda) */
   fiscal_tax_id_requested: boolean;
-  warnings: Array<{ code: string; field: string; message: string }>;
+  /** `sku` nas ressalvas de item (estoque, cardápio, lote): a tela marca o item. */
+  warnings: Array<{ code: string; field: string; message: string; sku?: string }>;
   /** De onde a taxa saiu: "" (endereço em branco) · "zone" · "distance" ·
    * "default" · "manual" (exceção do operador) · "blocked" (fora da área). */
   delivery_fee_source: string;
@@ -1025,10 +1121,13 @@ export interface POSSaleReviewProjection {
   delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** A primeira janela oferecível deste dia para este carrinho, ou "". */
   delivery_earliest_slot?: string;
-  /** VENDA SEM COMANDA: o que cada linha cobra pelo motor (`line_id` → cobrado,
-   *  etiqueta, desconto automático que venceu). Com comanda vem vazio: quem diz é
-   *  o eco do salvar. Mesmo formato, aplicado por `applyLinePrices`. */
-  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount">>;
+  /** O que cada linha cobra pelo motor (`line_id` → cobrado, etiqueta, desconto
+   *  automático que venceu, desconto manual descartado). Sem comanda vêm todas;
+   *  com comanda, as que o motor reviu com desconto manual (o resto, quem diz é o
+   *  eco do salvar). Mesmo formato, aplicado por `applyLinePrices`. */
+  line_prices?: Record<string, Pick<POSCartItem, "charged_price_q" | "list_price_q" | "pricing_discount"> & {
+    manual_discount_discarded?: boolean;
+  }>;
   /** Só na revisão montada pela TELA sem conexão (`offlineSaleReview`): a hora
    *  da leitura de preços usada. O servidor nunca manda este campo. */
   offline?: { prices_at: string };

@@ -1,9 +1,9 @@
-"""Unfold admin dashboard callback — landing de configuração e auditoria.
+"""Unfold admin dashboard callback — landing de governança e auditoria.
 
-O Admin é CRUD mínimo + configurações: a operação ao vivo mora nos apps Nuxt
-(Gestor/PDV/KDS/Produção). O dashboard reúne atalhos de configuração, trilhas
-de auditoria, saúde da copy omotenashi e os dados de atenção (alertas de
-estoque, alertas do operador).
+O Admin concentra configuração, gestão excepcional e auditoria: a operação
+diária mora nos apps Nuxt (Gestor/PDV/KDS/Produção). O dashboard reúne atalhos
+de configuração, trilhas de auditoria, saúde da copy omotenashi e os dados de
+atenção (alertas de estoque, alertas do operador).
 
 Data is built by ``shopman.backstage.projections.dashboard.build_dashboard()``.
 This module only handles admin-specific table formatting (``format_html``).
@@ -16,6 +16,7 @@ import logging
 from django.urls import reverse
 from django.utils.html import format_html
 from shopman.utils import table_badge
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.admin.gates import can_open_changelist, can_open_view
 from shopman.backstage.projections.dashboard import build_dashboard
@@ -37,6 +38,8 @@ def _omotenashi_health() -> dict:
             OmotenashiCopy.history.order_by("-history_date")
             .values("key", "history_type", "history_date", "history_user__username")[:5]
         )
+        for change in recent_changes:
+            change["history_date_display"] = format_local(change["history_date"], "%d/%m {clock}")
     except Exception:
         logger.debug("omotenashi_health_query_failed", exc_info=True)
         active_overrides = 0
@@ -71,8 +74,9 @@ def _config_links(request) -> list[dict]:
     """Os começos de caminho mais frequentes — não um índice do Admin.
 
     O menu já lista tudo; repetir a lista inteira aqui não ajudaria ninguém. Estes
-    são os pontos de partida do dia a dia: o que a loja é, o que ela vende, quanto
-    cobra e o que diz — dos quais cada pessoa vê o que de fato alcança.
+    são os pontos de partida mais frequentes da retaguarda: o que a loja é, o
+    que ela vende, quanto cobra e o que diz — dos quais cada pessoa vê o que de
+    fato alcança.
     """
     from shopman.offerman.models import Product
 
@@ -119,7 +123,7 @@ def _audit_links(request) -> list[dict]:
 
 def dashboard_callback(request, context):
     """Populate admin dashboard with config shortcuts, audit trails and alerts."""
-    proj = build_dashboard()
+    proj = build_dashboard(request.user)
 
     context.update({
         # Config + auditoria
@@ -194,6 +198,23 @@ def _build_ratings_table(rows):
     }
 
 
+def _short_message(message: str, width: int = 100) -> str:
+    """Corta na fronteira de palavra, com reticências, e sem o marcador de dedupe.
+
+    O ``[:100]`` cortava no meio da palavra ("O item pode faltar na separ") e o
+    leitor não sabia se a frase tinha acabado (beta test 05/11/2026, ADM-12).
+    """
+    from shopman.backstage.projections.alerts import readable_message
+
+    text = " ".join(readable_message(message).split())
+    if len(text) <= width:
+        return text
+    cut = text[: width - 1]
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,.;:") + "…"
+
+
 def _build_operator_alerts_table(alerts):
     """Operator alerts table for dashboard."""
     rows = []
@@ -203,7 +224,7 @@ def _build_operator_alerts_table(alerts):
                 SEVERITY_LABEL.get(alert.severity, alert.severity),
                 SEVERITY_BADGE_TYPE.get(alert.severity, "base"),
             ),
-            alert.message[:100],
+            _short_message(alert.message),
             alert.order_ref or "—",
             alert.created_at_display,
         ])

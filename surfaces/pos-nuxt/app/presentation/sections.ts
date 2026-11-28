@@ -1,6 +1,6 @@
 // Presentation — as seções do PDV no shell da suíte (`OperatorSuiteShell`, fase 2).
 // A barra lateral (mesa), a gaveta (☰) e a barra inferior (celular e tablet em pé)
-// mostram as MESMAS seções: Comandas, Encomendas, Caixa e Tela do cliente; Ajustes
+// mostram as MESMAS seções: Comandas, Encomendas, Caixa, Tela do cliente e Rotinas; Ajustes
 // depois de um traço; no pé, Terminal (a saúde da estação, com o sinal quando algo
 // pede atenção). Avisos, Atalhos, Bloquear e o operador são o pé da suíte (kit).
 // A barra inferior leva Comandas, Encomendas, Caixa e Fim do dia, e o "Mais" abre a
@@ -26,6 +26,15 @@ export interface PosSectionsInput {
   preorders: { allowed: boolean; badge?: string };
   /** A saúde da estação; sem leitura ainda, sem sinal. */
   terminal?: PosTerminalStatus;
+  /**
+   * O operador fecha o dia? Sem a permissão, o "Fim do dia" não entra na barra: ele
+   * levava a Caixa a "Fechamento é do gerente" (beta 05/11, op:PDV-13). Ausente =
+   * não fecha.
+   */
+  canCloseDay?: boolean;
+  /** Abertura, rotina e fechamento da loja (`backstage.perform_operation_task`).
+   *  Moram no PDV, perto do caixa e do fim do dia (dono, 13/11/2026). Ausente = não. */
+  canOperateChecklists?: boolean;
 }
 
 /** Comandas em uso: o número que o selo das Comandas conta. */
@@ -78,14 +87,26 @@ export function posSections(input: PosSectionsInput): OperatorSection[] {
     // Fim do dia (a contagem da vitrine e o fechamento, `pos-tablet4.html`): na barra de
     // baixo do tablet em pé e do celular; na barra lateral ele mora dentro do Caixa. A
     // tela é um corredor sem navegação (fora do shell), com "Sair" de volta ao Caixa.
-    {
-      key: "closing",
-      label: "Fim do dia",
-      icon: "lucide:clipboard-check",
-      to: "/session/closing",
-      where: "bar",
-      quick: true,
-    },
+    ...(input.canCloseDay
+      ? [{
+          key: "closing",
+          label: "Fim do dia",
+          icon: "lucide:clipboard-check",
+          to: "/session/closing",
+          where: "bar" as const,
+          quick: true,
+        }]
+      : []),
+    // Rotinas (abertura, rotina e fechamento da loja): no rail e no "Mais" do
+    // celular; a barra de baixo segue com as quatro do balcão.
+    ...(input.canOperateChecklists
+      ? [{
+          key: "checklists",
+          label: "Rotinas",
+          icon: "lucide:list-checks",
+          to: "/checklists",
+        }]
+      : []),
     // Ajustes no grupo de cima, depois de um traço, abaixo do Caixa (v4
     // `salao-mesas4.html`); na barra de baixo, no "Mais" (a gaveta).
     {
@@ -119,6 +140,22 @@ function terminalSignal(status?: PosTerminalStatus): Pick<OperatorSection, "atte
 }
 
 /**
+ * O trocador (modelo de navegação, 31/10/2026): as mesmas seções, cada uma com a forma
+ * dela. Chão é o balcão (Comandas, Encomendas, Caixa e Fim do dia): no celular e no
+ * tablet em pé são as da barra de baixo, ao alcance do polegar (dono, 03/11/2026: "seção
+ * vai para baixo"; aba no topo é só subdivisão), e o selo abre o resto. Escritório é o que se ajusta fora do
+ * atendimento (Ajustes, Terminal). A Tela do cliente é a parede: abre no outro monitor.
+ * A forma decide só o desenho; nenhuma tela diz o nome dela ao operador.
+ */
+const POS_FLOOR = new Set(["board", "preorders", "cash", "closing"]);
+export function posSwitcherSections(sections: readonly OperatorSection[]): OperatorSection[] {
+  return sections.map((section) => ({
+    ...section,
+    form: POS_FLOOR.has(section.key) ? "floor" : section.key === "display" ? "wall" : "office",
+  }));
+}
+
+/**
  * A seção acesa para a rota. Pela rota, e não pelo `to` de cada seção: Comandas não
  * tem `to` (é gesto da tela da venda), e o Terminal mora dentro dos Ajustes.
  */
@@ -126,6 +163,7 @@ export function posCurrentSection(path: string): string {
   if (path.startsWith("/session")) return "cash";
   if (path.startsWith("/preorders")) return "preorders";
   if (path.startsWith("/settings")) return "settings";
+  if (path.startsWith("/checklists")) return "checklists";
   return "board";
 }
 

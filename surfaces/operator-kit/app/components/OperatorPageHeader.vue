@@ -22,7 +22,7 @@
 // (`presentation/pageHeader.ts`, README "Barra do topo no celular" e "Toolbar no
 // celular"): ☰, o título (quebra, nunca corta) e no máximo 2 ícones fixos (Avisos e a
 // Busca, ou a ação da tela de `priority` menor); todo o resto das `actions` vai para UM
-// ⋯ "Mais ações". O `#status` (e o posto do dispositivo) desce para uma segunda linha da
+// ⋮ "Mais ações". O `#status` (e o posto do dispositivo) desce para uma segunda linha da
 // barra, nunca se espreme ao lado do título. No shell, o selo do app sai da barra (a
 // gaveta já o tem). A toolbar é uma linha só: `#filters-primary` e `#filters-end` (até
 // 2 controles somados; o `end` é a leitura, como o frescor, que na mesa fica no fim da
@@ -33,7 +33,9 @@
 // cabeçalho. A tela que filtra a própria lista passa a sua no `#search` (com `v-model`,
 // o nível "Nesta tela"); as outras ganham a padrão. No celular a lupa a abre em tela
 // cheia.
-import { computed, onMounted, ref, useSlots } from "vue";
+import { useNow } from "@vueuse/core";
+import { computed, onMounted, ref, useSlots, useTemplateRef } from "vue";
+import { usePageHeaderFit } from "../composables/usePageHeaderFit";
 import { useScreen } from "../composables/useScreen";
 
 import { SUITE_MARKER_SELECTOR } from "../composables/useSuiteMarker";
@@ -51,6 +53,9 @@ import {
 } from "../presentation/screenState";
 import type { OperatorSession } from "../types/operator";
 import { alertActions } from "../utils/alertActions";
+import { useAnswerWindowRequest, useOperatorInboxAlerts } from "../composables/useSuiteChrome";
+import { answerScreenAlerts, inboxScreenAlerts } from "../presentation/suiteChrome";
+import { formatClock } from "../presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -83,15 +88,15 @@ const props = withDefaults(
     searchPlaceholder?: string;
     /**
      * As ações da tela, declaradas como dados (regra da barra do topo no celular). Do
-     * `sm` para cima, um ⋯ com todas (ao lado do `#actions`, que segue como está).
+     * `sm` para cima, um ⋮ com todas (ao lado do `#actions`, que segue como está).
      * Abaixo do `sm`, as de `priority` disputam a vaga de ícone com a Busca; as outras
-     * vão para o ⋯ "Mais ações", na ordem declarada. A tela que declara `actions` tem o
+     * vão para o ⋮ "Mais ações", na ordem declarada. A tela que declara `actions` tem o
      * `#actions` escondido no celular: o que importa no polegar está aqui.
      */
     actions?: OperatorHeaderAction[];
     /**
-     * As ações só do celular (abaixo de `sm`): a vaga de ícone e o ⋯ "Mais ações", como
-     * `actions`, mas do `sm` para cima não há ⋯ delas (lá o `#actions` e a toolbar já as
+     * As ações só do celular (abaixo de `sm`): a vaga de ícone e o ⋮ "Mais ações", como
+     * `actions`, mas do `sm` para cima não há ⋮ delas (lá o `#actions` e a toolbar já as
      * mostram). É o que o Gestor passava como `isNarrow ? [...] : undefined`: declarado
      * sempre, o servidor já desenha a barra do celular no primeiro desenho.
      */
@@ -103,15 +108,15 @@ const props = withDefaults(
      * celular até o `md` (`#phone-actions`, o painel próprio da fila do Gestor).
      */
     actionsFrom?: "sm" | "md";
-    /** O nome do ⋯ (o que ele guarda). */
+    /** O nome do ⋮ (o que ele guarda). */
     actionsLabel?: string;
     /** Recortes ativos: o número no "Filtros" e os chips removíveis abaixo da linha. */
     activeFilters?: OperatorActiveFilter[];
     /** "Limpar" do painel de filtros. Padrão: remove cada recorte ativo. */
     clearFilters?: () => void;
     /**
-     * Os avisos da tela (o que a tela precisa que a pessoa saiba agora), abaixo da
-     * toolbar. O primeiro aparece inteiro; os outros ficam em "e mais N". Erro de rede é
+     * Os avisos da tela (o que a tela precisa que a pessoa saiba agora), depois de
+     * todas as barras do topo, inclusive o `#below`. O primeiro aparece inteiro; os outros ficam em "e mais N". Erro de rede é
      * do `OfflineBanner`; aviso com prazo, do `OperatorUrgentAlert`; erro de carregar o
      * conteúdo, do `OperatorScreenState`.
      */
@@ -128,6 +133,15 @@ const props = withDefaults(
      * `#filters-primary` e `#filters-end` seguem na linha do celular.
      */
     deskOnlyFilters?: boolean;
+    /**
+     * Com o trocador, a leitura da tela no selo (o ponto do `OperatorCompactSeal`, como
+     * na linha do chão). Quem passa declara que o `#status` É a leitura: abaixo de `lg`,
+     * onde o selo aparece, o `#status` sai, em vez de descer sozinho para uma segunda
+     * linha (o "● 12:05" solto da Base do Compras, 04/11/2026). Na mesa ele segue.
+     */
+    sealTone?: "live" | "calm" | "late" | "off";
+    /** A hora da última leitura, para o nome acessível do selo. Só com `sealTone`. */
+    sealTime?: string;
   }>(),
   {
     eyebrow: "",
@@ -145,6 +159,8 @@ const props = withDefaults(
     phoneFilters: undefined,
     deskOnlyFilters: false,
     alerts: () => [],
+    sealTone: undefined,
+    sealTime: "",
   },
 );
 
@@ -204,7 +220,21 @@ const eyebrowText = computed(() => {
   return context ? `${context} · este dispositivo` : "";
 });
 
+// O selo do posto ("Posto PDV principal · este dispositivo") é longo e não é o assunto
+// da tela. No tablet (1024 com a barra lateral) ele quebrava em duas linhas por cima da
+// busca e cortava o título em "Enco…" (beta 05/11, PDV2-17): abaixo de xl ele vira só o
+// ícone, com o texto inteiro no nome acessível e no `title`. O `eyebrow` declarado pela
+// tela ("Rascunho · Versão 3") é assunto da tela e fica escrito.
+const eyebrowIsStation = computed(() => !props.eyebrow && Boolean(eyebrowText.value));
+
 const { request: openSearch } = useSuiteSearchRequest();
+
+// A barra que cabe (dono, 07/11/2026): mede a si mesma e cede em degraus (a busca vira
+// lupa; depois as ações descem de linha). Nunca sobrepõe. Ver `usePageHeaderFit`.
+// O `DashboardNavbar` tem raiz em fragmento (o molde do ☰ vem antes): o `$el` dele não
+// é a barra. A barra se acha dentro do landmark, pelo atributo.
+const landmark = useTemplateRef<HTMLElement>("landmark");
+usePageHeaderFit(landmark);
 
 // Barra do topo no celular. Avisos ocupa uma vaga onde a barra lateral não está na
 // tela (abaixo de `sm` ela nunca está).
@@ -222,7 +252,7 @@ function menuItem(action: OperatorHeaderAction & { search?: true }) {
   // `priority` e `search` são do kit: o `OperatorMoreMenu` os tira do item.
   return action.search ? { ...action, onSelect: () => openSearch() } : action;
 }
-// Dois ⋯, um por variante, escolhidos pelo CSS: o do celular com o que não ganhou vaga,
+// Dois ⋮, um por variante, escolhidos pelo CSS: o do celular com o que não ganhou vaga,
 // o da mesa com as `actions` declaradas.
 const phoneMenuItems = computed(() => phoneLayout.value.overflow.map(menuItem));
 const deskMenuItems = computed(() => declaredActions.value.map(menuItem));
@@ -235,7 +265,13 @@ const actionsClass = computed(() => {
 });
 
 // No shell, o selo do app sai da barra do celular: a gaveta (☰) o mostra no topo.
-const sealClass = computed(() => (suiteRail ? "max-sm:hidden" : ""));
+// Com o trocador (modelo de navegação), não há ☰: o selo é a porta, em toda largura.
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
+const sealClass = computed(() => (suiteRail && !switcherEnabled.value ? "max-sm:hidden" : ""));
+// A leitura mora no selo do trocador abaixo de `lg` (`sealTone`). Os slots entram no
+// template (`useSlots()` não é reativo): com `#lead` não há selo, e o `#subtitle` e o
+// rótulo seguem precisando da linha.
+const statusInSeal = computed(() => switcherEnabled.value && Boolean(props.sealTone) && !eyebrowText.value);
 
 // Toolbar no celular.
 const filtersMode = computed(
@@ -264,12 +300,60 @@ function deskToolbar() {
 }
 const filtersOpen = ref(false);
 const activeCount = computed(() => props.activeFilters.length);
-// Avisos da tela: um inteiro, o resto em "e mais N".
+// Avisos da tela: um inteiro, o resto em "e mais N". Fechar é só uma dispensa desta
+// montagem da página: não altera o estado do domínio nem persiste no navegador. Se a
+// causa continuar, o mesmo aviso volta no próximo carregamento.
 const alertsOpen = ref(false);
-const shownAlerts = computed(() =>
-  alertsOpen.value ? props.alerts : props.alerts.slice(0, SCREEN_ALERTS_VISIBLE),
+const dismissedAlertKeys = ref<string[]>([]);
+// A pergunta que espera resposta escrita (a Concierge levou à equipe, dono, 19/11/2026)
+// é aviso de tela em toda tela do app, antes dos da própria tela: vem da fonte da caixa
+// de Avisos, e "Responder" abre a janela com o campo (`OperatorUrgentAlert`).
+const inboxSource = useOperatorInboxAlerts();
+const answerWindow = useAnswerWindowRequest();
+const alertNow = useNow({ interval: 15_000 });
+function alertClock(iso: string): string {
+  const at = new Date(iso);
+  return Number.isNaN(at.getTime()) ? "" : formatClock(at);
+}
+const answerAlerts = computed<OperatorScreenAlert[]>(() =>
+  answerScreenAlerts(inboxSource.value?.items ?? [], alertNow.value.getTime(), alertClock).map((alert) => ({
+    id: alert.id,
+    title: alert.title,
+    color: alert.color,
+    icon: "i-lucide-message-circle",
+    action: { label: "Responder", onSelect: () => { answerWindow.value = alert.key; } },
+  })),
 );
-const hiddenAlerts = computed(() => Math.max(0, props.alerts.length - SCREEN_ALERTS_VISIBLE));
+// O alerta da operação que pede o topo (a Concierge sem modelo): cor da gravidade, sem
+// gesto; o X dispensa nesta montagem e ele volta enquanto a causa durar.
+const operationAlerts = computed<OperatorScreenAlert[]>(() =>
+  inboxScreenAlerts(inboxSource.value?.items ?? []).map((alert) => ({
+    id: alert.id,
+    title: alert.title,
+    description: alert.description,
+    color: alert.color,
+    // O aviso traz o botão que resolve a causa (dono, 20/11/2026: aviso sem ação é defeito).
+    ...(alert.action ? { action: alert.action } : {}),
+    ...(alert.secondaryAction ? { secondaryAction: alert.secondaryAction } : {}),
+  })),
+);
+const screenAlerts = computed(() => [...operationAlerts.value, ...answerAlerts.value, ...props.alerts]);
+function alertKey(alert: OperatorScreenAlert): string {
+  return alert.id ?? alert.title;
+}
+const visibleAlerts = computed(() =>
+  screenAlerts.value.filter((alert) => !dismissedAlertKeys.value.includes(alertKey(alert))),
+);
+const shownAlerts = computed(() =>
+  alertsOpen.value ? visibleAlerts.value : visibleAlerts.value.slice(0, SCREEN_ALERTS_VISIBLE),
+);
+const hiddenAlerts = computed(() => Math.max(0, visibleAlerts.value.length - SCREEN_ALERTS_VISIBLE));
+function dismissAlert(alert: OperatorScreenAlert) {
+  const key = alertKey(alert);
+  if (!dismissedAlertKeys.value.includes(key)) {
+    dismissedAlertKeys.value = [...dismissedAlertKeys.value, key];
+  }
+}
 function headerAlertActions(alert: OperatorScreenAlert) {
   if (!alert.action) return [];
   // A saída do aviso é a principal dele: `solid` na cor do aviso (`alertActions`).
@@ -279,6 +363,7 @@ function headerAlertActions(alert: OperatorScreenAlert) {
       to: alert.action.to,
       onClick: (event: Event) => alert.action?.onSelect?.(event),
     },
+    alert.secondaryAction && { label: alert.secondaryAction.label, to: alert.secondaryAction.to },
   ];
 }
 function clearAll() {
@@ -293,15 +378,27 @@ function clearAll() {
        ao lado, fora de qualquer landmark (axe `region`, onda da Central, 09/10/2026).
        `contents`: o invólucro não entra no layout, os filhos seguem na coluna do pai
        como antes. -->
-  <header class="contents" data-operator-page-header-landmark>
+  <header ref="landmark" class="contents" data-operator-page-header-landmark>
     <NuxtDashboardNavbar
       as="div"
-      :toggle="Boolean(suiteRail)"
+      :toggle="Boolean(suiteRail) && !switcherEnabled"
       class="print:hidden"
       data-operator-page-header
+      data-page-header-fit="full"
     >
       <template #leading>
-        <OperatorAppSeal v-if="hubUrl && !$slots.lead" :class="sealClass" />
+        <!-- Com o trocador, onde não há barra lateral (o tablet em pé; no celular a linha do
+             chão já é o cabeçalho), o selo é o mesmo da linha do chão: o app, o lugar e o
+             ⌄ que diz que ele abre o trocador. Um selo só para a suíte (dono, 03/11/2026). -->
+        <OperatorCompactSeal
+          v-if="switcherEnabled && !$slots.lead"
+          :place="title"
+          :tone="sealTone"
+          :time="sealTime"
+          class="flex-none! max-sm:flex-initial! lg:hidden"
+          data-page-header-switcher-seal
+        />
+        <OperatorAppSeal v-else-if="hubUrl && !$slots.lead" :class="sealClass" />
         <NuxtButton
           v-if="suiteRail"
           class="hidden lg:inline-flex"
@@ -330,17 +427,32 @@ function clearAll() {
       </template>
 
       <template #title>
-        <span :class="phoneTitle ? 'max-sm:hidden' : ''">{{ title }}</span>
-        <span v-if="phoneTitle" class="sm:hidden" data-page-header-phone-title>{{
+        <!-- Com o trocador, abaixo do lg o lugar está no selo: o título sai da vista, mas
+             fica no <h1> para o leitor de tela (um <h1> vazio não diz onde se está). -->
+        <span
+          :class="[phoneTitle ? 'max-sm:hidden' : '', switcherEnabled && !$slots.lead ? 'max-lg:sr-only' : '']"
+          :data-clipping-allowed="switcherEnabled && !$slots.lead ? '' : undefined"
+        >{{ title }}</span>
+        <span v-if="phoneTitle && !(switcherEnabled && !$slots.lead)" class="sm:hidden" data-page-header-phone-title>{{
           phoneTitle
         }}</span>
         <NuxtBadge
           v-if="eyebrowText"
           color="neutral"
-          class="max-sm:hidden"
+          :class="eyebrowIsStation ? 'whitespace-nowrap max-xl:hidden' : 'max-sm:hidden'"
           data-page-header-eyebrow
           >{{ eyebrowText }}</NuxtBadge
         >
+        <NuxtBadge
+          v-if="eyebrowIsStation"
+          color="neutral"
+          icon="i-lucide-map-pin"
+          class="hidden shrink-0 sm:inline-flex xl:hidden"
+          role="img"
+          :aria-label="eyebrowText"
+          :title="eyebrowText"
+          data-page-header-eyebrow-icon
+        />
       </template>
 
       <!-- No celular, o estado e o posto descem para uma segunda linha da barra (o
@@ -349,6 +461,7 @@ function clearAll() {
       <template v-if="eyebrowText || $slots.subtitle || $slots.status" #trailing>
         <div
           class="flex min-w-0 items-center gap-1.5 max-sm:basis-full max-sm:flex-wrap"
+          :class="{ 'max-lg:hidden': statusInSeal && !$slots.lead && !$slots.subtitle }"
           data-page-header-status
         >
           <NuxtBadge
@@ -419,8 +532,18 @@ function clearAll() {
           data-page-header-icon-action
           @click="action.onSelect?.($event)"
         />
-        <!-- O ⋯ "Mais ações": no celular, o que não ganhou vaga; do `sm` para cima, as
-             ações declaradas (ao lado do `#actions`). -->
+        <!-- Os avisos antes do ⋮: o ⋮ fica no canto, o último da linha (dono, 03/11/2026). -->
+        <ClientOnly v-if="inbox">
+          <div
+            v-if="!railShown"
+            class="flex shrink-0 items-center"
+            data-page-header-inbox
+          >
+            <OperatorInbox placement="header" />
+          </div>
+        </ClientOnly>
+        <!-- O ⋮ "Mais ações", vertical e no canto: no celular, o que não ganhou vaga; do
+             `sm` para cima, as ações declaradas (ao lado do `#actions`). -->
         <OperatorMoreMenu
           v-if="phoneVariant && phoneLayout.overflow.length"
           :items="phoneMenuItems"
@@ -435,15 +558,9 @@ function clearAll() {
           class="max-sm:hidden"
           data-page-header-more
         />
-        <ClientOnly v-if="inbox">
-          <div
-            v-if="!railShown"
-            class="flex shrink-0 items-center"
-            data-page-header-inbox
-          >
-            <OperatorInbox placement="header" />
-          </div>
-        </ClientOnly>
+        <!-- O ⋮ próprio da tela (um menu com estado, como o da fila do Gestor) mora aqui,
+             no canto, depois do sino. No `#actions` ele ficava antes do sino. -->
+        <slot name="more" />
       </template>
     </NuxtDashboardNavbar>
 
@@ -615,29 +732,34 @@ function clearAll() {
     </NuxtDashboardToolbar>
 
     <!-- Navegação secundária da tela (as abas de Ajustes do PDV, o prazo do anúncio no
-         Marketing, a seção do Compras no celular). Vue descarta slot não declarado sem
-         aviso: sem esta linha, as abas de Ajustes do PDV somem. -->
+         Marketing, a seção do Compras no celular, as colunas do Gestor em abas). Vue
+         descarta slot não declarado sem aviso: sem esta linha, as abas de Ajustes do PDV
+         somem. É a última barra do topo: barra da tela mora aqui, nunca depois do
+         cabeçalho, onde ficaria embaixo do aviso (README, "Aviso da tela"). -->
     <slot name="below" />
 
-    <!-- O aviso da tela (fase 2, K6): abaixo da toolbar, um inteiro e o resto em "e mais
-         N". Lugar declarado: a tela não monta faixa de aviso própria. -->
+    <!-- O aviso da tela (fase 2, K6): depois de TODAS as barras do topo, o primeiro item
+         do conteúdo em todo tamanho (dono, 20/11/2026, DEV-2026-063); um inteiro e o resto em "e mais
+         N". Em faixa descolada e invertida (`OperatorBand`, D, dono 13/11/2026). A orientação vertical canônica mantém a ação sob o texto e o fechar no
+         canto superior direito. Lugar declarado: a tela não monta faixa própria. -->
     <div
-      v-if="alerts.length"
+      v-if="visibleAlerts.length"
       class="flex flex-col gap-2 px-4 py-2 sm:px-6"
       data-page-header-alerts
     >
-      <NuxtAlert
+      <OperatorBand
         v-for="alert in shownAlerts"
         :key="alert.id ?? alert.title"
-        :color="alert.color"
-        variant="subtle"
+        :tone="alert.color"
         :icon="alert.icon ?? screenAlertIcon(alert.color)"
         :title="alert.title"
         :description="alert.description"
         :actions="alertActions(alert.color, headerAlertActions(alert))"
-        orientation="horizontal"
+        :close="{ color: 'neutral', variant: 'ghost', size: 'md' }"
+        :ui="{ close: 'size-8 after:-inset-1.5' }"
         :role="alert.color === 'error' ? 'alert' : 'status'"
         data-page-header-alert
+        @update:open="(open: boolean) => { if (!open) dismissAlert(alert); }"
       />
       <NuxtButton
         v-if="hiddenAlerts && !alertsOpen"
@@ -663,3 +785,29 @@ function clearAll() {
     </div>
   </header>
 </template>
+
+<style>
+/* A barra que cabe (`usePageHeaderFit`). Os degraus só valem onde a barra é a da mesa:
+   a busca inteira mora no centro do `lg` para cima (abaixo, o Nuxt UI já esconde o
+   centro e a lupa aparece); a segunda linha vale do `sm` para cima (abaixo, a coluna da
+   esquerda já quebra, `app.config`). Fora de camada, para vencer as utilidades. */
+@media (min-width: 64rem) {
+  [data-operator-page-header][data-page-header-fit="compact"] > [data-slot="center"],
+  [data-operator-page-header][data-page-header-fit="wrap"] > [data-slot="center"] {
+    display: none;
+  }
+  [data-operator-page-header][data-page-header-fit="compact"] [data-page-header-search-toggle],
+  [data-operator-page-header][data-page-header-fit="wrap"] [data-page-header-search-toggle] {
+    display: inline-flex;
+  }
+}
+@media (min-width: 40rem) {
+  [data-operator-page-header][data-page-header-fit="wrap"] {
+    flex-wrap: wrap;
+    row-gap: 0.25rem;
+  }
+  [data-operator-page-header][data-page-header-fit="wrap"] > [data-slot="right"] {
+    margin-inline-start: auto;
+  }
+}
+</style>

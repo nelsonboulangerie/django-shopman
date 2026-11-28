@@ -11,16 +11,25 @@ export interface RecipeEntryCardProjection {
   output_sku: string;
   output_name: string;
   has_ficha: boolean;
+  ficha_status: string;
+  ficha_status_label: string;
+  ficha_status_detail: string;
+  production_mode: string;
+  production_mode_label: string;
   current_version_number: number | null;
   version_count: number;
   draft_count: number;
   anchor_kind: string;
   hydration_display: string;
   updated_at_display: string;
-  is_archived: boolean;
+  is_active: boolean;
   is_favorite: boolean;
   rating_display: string;
   rating_count: number;
+  provenance_kind: string;
+  provenance_label: string;
+  review_status: string;
+  review_label: string;
 }
 
 /** A recipe kind option (filter chip). */
@@ -46,10 +55,12 @@ export interface RecipeBookAccessProjection {
   can_view: boolean;
   can_edit: boolean;
   capture_available: boolean;
+  purchase_url: string;
 }
 
 /** One ingredient line of a formula, with its share of the anchor. */
 export interface FormulaItemProjection {
+  ref: string;
   sku: string;
   name: string;
   role: string;
@@ -60,19 +71,11 @@ export interface FormulaItemProjection {
   pct_display: string;
   is_anchor: boolean;
   matched: boolean;
-}
-
-/** A part of the base formula (preferment, autolyse, soaker, old dough). */
-export interface FormulaPartProjection {
-  sku: string;
-  entry_ref: string;
-  name: string;
-  kind: string;
-  kind_label: string;
-  flour_pct_display: string;
-  quantity_display: string;
-  cap_pct_display: string;
-  has_formula: boolean;
+  recipe_version_ref: string;
+  composition: string;
+  composition_label: string;
+  quantity_rule_display: string;
+  note: string;
 }
 
 /** A bakery metric with its reference range and tone. */
@@ -94,7 +97,7 @@ export interface FormulaWarningProjection {
   tone: string;
 }
 
-/** The lens over a formula: anchor, items with percentages, metrics, parts, final mix, BOM. */
+/** The lens over a formula: anchor, unified ingredients, metrics, final mix and BOM. */
 export interface FormulaLensProjection {
   is_bakery: boolean;
   anchor_kind: string;
@@ -103,12 +106,11 @@ export interface FormulaLensProjection {
   standardized: boolean;
   anchor_total_display: string;
   total_mass_display: string;
-  items: FormulaItemProjection[];
+  ingredients: FormulaItemProjection[];
   final_mix: FormulaItemProjection[];
   final_mix_differs: boolean;
   bom: FormulaItemProjection[];
   bom_differs: boolean;
-  parts: FormulaPartProjection[];
   metrics: FormulaMetricProjection[];
   warnings: FormulaWarningProjection[];
 }
@@ -145,6 +147,13 @@ export interface RecipeVersionProjection {
   lens: FormulaLensProjection;
   formula: Record<string, unknown>;
   origin: Record<string, unknown>;
+  provenance_kind: string;
+  provenance_label: string;
+  provenance_detail: string;
+  review_status: string;
+  review_label: string;
+  review_by_name: string;
+  review_at_display: string;
 }
 
 /** A warning that travels with the usage numbers (what they do NOT measure). */
@@ -234,6 +243,12 @@ export interface LifecycleOptionProjection {
   label: string;
 }
 
+/** Uma escolha do modo de produção ("Em lote", "Na hora"). */
+export interface ProductionModeOptionProjection {
+  value: string;
+  label: string;
+}
+
 /** Configuração operacional da ficha que a versão publicada materializa. */
 export interface ExecutionSheetProjection {
   exists: boolean;
@@ -247,6 +262,8 @@ export interface ExecutionSheetProjection {
   shelf_life_reviewed_by: string;
   production_lifecycle: string;
   lifecycle_options: LifecycleOptionProjection[];
+  production_mode: string;
+  production_mode_options: ProductionModeOptionProjection[];
 }
 
 /** Uma linha da ficha de execução: o insumo e o que ele consome do estoque. */
@@ -282,6 +299,8 @@ export interface RecipeSheetCardProjection {
   batch_size: string;
   item_count: number;
   is_active: boolean;
+  production_mode: string;
+  production_mode_label: string;
   has_entry: boolean;
   updated_at_display: string;
 }
@@ -325,7 +344,8 @@ export interface RecipeEntryDetailProjection {
   output_sku: string;
   output_name: string;
   notes: string;
-  is_archived: boolean;
+  is_active: boolean;
+  ingredient_defaults: Record<string, unknown> | null;
   current_version_number: number | null;
   ficha_ref: string;
   execution_in_sync: boolean;
@@ -363,6 +383,14 @@ export interface RecipeCompareMetricProjection {
 export interface RecipeCompareProjection {
   a_title: string;
   b_title: string;
+  a_status: string;
+  a_status_label: string;
+  a_is_current: boolean;
+  a_when_display: string;
+  b_status: string;
+  b_status_label: string;
+  b_is_current: boolean;
+  b_when_display: string;
   rows: RecipeCompareRowProjection[];
   metrics: RecipeCompareMetricProjection[];
 }
@@ -390,8 +418,10 @@ export interface IngredientOptionProjection {
   name: string;
   unit: string;
   role: string;
-  is_part: boolean;
-  entry_ref: string;
+  has_recipe: boolean;
+  recipe_version_ref: string;
+  default_quantity: Record<string, unknown> | null;
+  default_composition: string;
 }
 
 /** One ingredient read from a note or a photo, with its matched material. */
@@ -417,4 +447,30 @@ export interface RecipeCaptureDraftProjection {
   steps: string[];
   notes: string;
   formula: Record<string, unknown>;
+}
+
+/** One recipe waiting for the baker's check, in the order of what sells most. */
+export interface RecipeReviewItemProjection {
+  ref: string;
+  name: string;
+  kind_label: string;
+  output_sku: string;
+  output_name: string;
+  version_number: number;
+  provenance_kind: string;
+  provenance_label: string;
+  provenance_detail: string;
+  review_status: string;
+  review_label: string;
+  dough_sku: string;
+  dough_name: string;
+  sold_display: string;
+}
+
+/** The baker's check queue: current versions nobody from the house confirmed yet. */
+export interface RecipeReviewQueueProjection {
+  items: RecipeReviewItemProjection[];
+  total: number;
+  confirmed_total: number;
+  recipe_total: number;
 }

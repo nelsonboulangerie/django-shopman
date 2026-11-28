@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import re
 import unicodedata
 from dataclasses import dataclass
 
-from shopman.shop.projections.channel_policy import resolve_channel_policy
+from shopman.shop.models.faq import OPERATIONAL_QUESTIONS, normalized_question
+from shopman.shop.projections.channel_state import channel_capabilities
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
+
+#: Quantas perguntas a home mostra; as outras ficam em /faq ("Ver todas as perguntas").
+#: As mais úteis são as primeiras na ordem que ``build_public_faq`` já tem: as respostas
+#: operacionais (entrega, horário, endereço, pagamento, encomenda, alérgenos, contato),
+#: depois as curadas pela ``position`` do ``FAQEntry`` (OC-31).
+HOME_FAQ_LIMIT = 6
 
 
 @dataclass(frozen=True)
@@ -18,15 +26,90 @@ class FAQItemProjection:
 
 _OPERATIONAL_SEARCH_TERMS = {
     "delivery": ("entrega", "entregam", "delivery", "frete", "taxa", "receber em casa"),
-    "hours": ("horário", "horarios", "abre", "aberto", "fecha", "funcionamento"),
-    "location": ("endereço", "localização", "onde fica", "como chegar"),
+    # "Que horas vocês fecham?", "até que horas", "abrem domingo?": a pergunta do horário
+    # (produção, 21/11/2026: sem "horas", ela perdia para "A que horas cada pão fica pronto").
+    "hours": ("horário", "horarios", "horas", "abre", "abrem", "aberto", "abertos", "fecha", "fecham",
+              "funcionamento", "domingo", "sábado", "sabado"),
+    "location": ("endereço", "localização", "onde fica", "onde ficam", "como chegar"),
     "contact": ("contato", "telefone", "e-mail", "email", "falar", "atendimento"),
+    "payment": ("pagamento", "pagar", "pix", "cartão", "cartao", "crédito", "credito"),
+    "preorder": ("encomenda", "encomendar", "agendar", "reservar", "data"),
+    "allergens": ("alérgeno", "alergenos", "alergia", "glúten", "gluten", "lactose", "restrição"),
 }
+
+#: Como o cliente chama cada forma de pagamento do canal (``ChannelConfig.payment``).
+_PAYMENT_LABELS = {
+    "pix": "Pix",
+    "card": "cartão",
+    "credit": "cartão de crédito",
+    "debit": "cartão de débito",
+    "cash": "dinheiro (na retirada ou na entrega)",
+}
+
+
+def _join_pt(parts: list[str]) -> str:
+    if len(parts) <= 1:
+        return "".join(parts)
+    return ", ".join(parts[:-1]) + " ou " + parts[-1]
+
+
+def _payment_faq(channel_ref: str) -> FAQItemProjection | None:
+    from shopman.shop.config import ChannelConfig
+
+    method = ChannelConfig.for_channel(channel_ref).payment.method
+    methods = [method] if isinstance(method, str) else list(method or [])
+    labels: list[str] = []
+    for item in methods:
+        label = _PAYMENT_LABELS.get(str(item))
+        if label and label not in labels:
+            labels.append(label)
+    if not labels:
+        return None
+    return FAQItemProjection(
+        ref="payment",
+        question=OPERATIONAL_QUESTIONS["payment"],
+        answer=f"Você paga com {_join_pt(labels)}.",
+    )
+
+
+def preorder_window(channel_ref: str) -> str | None:
+    """A janela de encomenda do canal em palavras ("30 dias"), ou ``None``.
+
+    Fonte única do número que a loja promete ao cliente (FAQ, home): o mesmo
+    ``Shop.defaults["max_preorder_days"]`` que limita o calendário do checkout e
+    que o servidor confere no commit. ``None`` quando o canal não aceita
+    encomenda ou a janela é zero, e aí a promessa não aparece.
+    """
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.projections.checkout_context import preorder_config
+
+    if not ChannelConfig.for_channel(channel_ref).stock.preorder:
+        return None
+    days = preorder_config()[0]
+    if days <= 0:
+        return None
+    return "1 dia" if days == 1 else f"{days} dias"
+
+
+def _preorder_faq(channel_ref: str) -> FAQItemProjection | None:
+    window = preorder_window(channel_ref)
+    if window is None:
+        return None
+    return FAQItemProjection(
+        ref="preorder",
+        question=OPERATIONAL_QUESTIONS["preorder"],
+        answer=f"Sim. Ao finalizar o pedido, você escolhe o dia, com até {window} de antecedência.",
+    )
 
 
 def _fold(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", str(value or "").casefold())
     return "".join(char for char in normalized if not unicodedata.combining(char))
+
+
+def word_stem(word: str) -> str:
+    """A palavra sem o plural: "doces" e "doce" são a mesma busca."""
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
 
 
 def _operational_faq(
@@ -36,7 +119,7 @@ def _operational_faq(
     status: dict | None = None,
     opening_hours: tuple | list | None = None,
 ) -> list[FAQItemProjection]:
-    policy = resolve_channel_policy(channel_ref)
+    policy = channel_capabilities(channel_ref)
     status = status if status is not None else _shop_status()
     hours = opening_hours if opening_hours is not None else _format_opening_hours()
     items: list[FAQItemProjection] = []
@@ -51,7 +134,7 @@ def _operational_faq(
     items.append(
         FAQItemProjection(
             ref="delivery",
-            question="Vocês fazem entrega?",
+            question=OPERATIONAL_QUESTIONS["delivery"],
             answer=delivery_answer,
         )
     )
@@ -66,7 +149,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="hours",
-                question="Quais são os horários de funcionamento?",
+                question=OPERATIONAL_QUESTIONS["hours"],
                 answer=answer,
             )
         )
@@ -76,8 +159,23 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="location",
-                question="Onde vocês ficam?",
+                question=OPERATIONAL_QUESTIONS["location"],
                 answer=f"Ficamos em {address}.",
+            )
+        )
+
+    # O subtítulo da página promete pagamento, encomendas e alérgenos; as respostas
+    # saem da configuração da loja, nunca de texto inventado (beta 05/11, LOJA-07).
+    for extra in (_payment_faq(channel_ref), _preorder_faq(channel_ref)):
+        if extra is not None:
+            items.append(extra)
+    notice = food_safety_notice(shop)
+    if notice:
+        items.append(
+            FAQItemProjection(
+                ref="allergens",
+                question=OPERATIONAL_QUESTIONS["allergens"],
+                answer=f"{notice} Os ingredientes de cada produto estão na página dele.",
             )
         )
 
@@ -92,7 +190,7 @@ def _operational_faq(
         items.append(
             FAQItemProjection(
                 ref="contact",
-                question="Como falar com vocês?",
+                question=OPERATIONAL_QUESTIONS["contact"],
                 answer="Você pode falar conosco por " + " ou ".join(contacts) + ".",
             )
         )
@@ -119,7 +217,13 @@ def build_public_faq(
     status: dict | None = None,
     opening_hours: tuple | list | None = None,
 ) -> tuple[FAQItemProjection, ...]:
-    """Project dynamic operational answers plus published curated answers."""
+    """As respostas operacionais (da configuração) e depois as curadas publicadas.
+
+    Uma pergunta só aparece uma vez, comparada sem acento, caixa, pontuação e espaço
+    (``normalized_question``). A operacional vence: a curada que a repete fica de fora,
+    porque duas respostas para a mesma pergunta, de fontes diferentes, podiam se
+    contradizer (OC-31). Entre curadas repetidas, fica a primeira pela posição.
+    """
     from shopman.shop.models import FAQEntry, Shop
 
     shop = shop or Shop.load()
@@ -140,7 +244,15 @@ def build_public_faq(
         )
         for entry in FAQEntry.objects.filter(is_published=True).order_by("position", "id")
     )
-    return tuple(item for item in items if item.question and item.answer)
+    seen: set[str] = set()
+    unique: list[FAQItemProjection] = []
+    for item in items:
+        key = normalized_question(item.question)
+        if not key or not item.answer or key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return tuple(unique)
 
 
 def search_public_faq(
@@ -149,19 +261,22 @@ def search_public_faq(
     channel_ref: str,
     shop=None,
     limit: int = 4,
+    items=None,
 ) -> tuple[FAQItemProjection, ...]:
-    """Return public answers ranked by normalized token overlap."""
+    """Return public answers ranked by normalized token overlap.
+
+    ``items``: outro conjunto de perguntas para a mesma busca (o placar das FAQs testa os
+    rascunhos sem publicá-los, WP-18). Sem ele, as públicas, como sempre.
+    """
     from shopman.shop.models import FAQEntry
 
-    items = build_public_faq(channel_ref=channel_ref, shop=shop)
-    curated_search_terms = {
-        f"curated-{ref}": terms
-        for ref, terms in FAQEntry.objects.filter(is_published=True).values_list("ref", "search_terms")
-    }
+    curated = FAQEntry.objects.all() if items is not None else FAQEntry.objects.filter(is_published=True)
+    items = tuple(items) if items is not None else build_public_faq(channel_ref=channel_ref, shop=shop)
+    curated_search_terms = {f"curated-{ref}": terms for ref, terms in curated.values_list("ref", "search_terms")}
     needle = _fold(query).strip()
     if not needle:
         return items[:limit]
-    terms = {term for term in needle.split() if len(term) >= 3}
+    terms = {word_stem(term) for term in re.findall(r"[a-z0-9]+", needle) if len(term) >= 3}
     ranked: list[tuple[int, int, FAQItemProjection]] = []
     for index, item in enumerate(items):
         extra_terms = _OPERATIONAL_SEARCH_TERMS.get(item.ref, ())
@@ -169,12 +284,23 @@ def search_public_faq(
             extra_terms = tuple(
                 term.strip() for term in curated_search_terms.get(item.ref, "").split(",") if term.strip()
             )
-        haystack = _fold(f"{item.question} {item.answer} {' '.join(extra_terms)}")
-        score = (10 if needle in haystack else 0) + sum(1 for term in terms if term in haystack)
-        if score:
-            ranked.append((-score, index, item))
+        # O assunto da pergunta frequente é a PERGUNTA e os termos de busca; a resposta só
+        # desempata. Casar pelo corpo da resposta servia a vizinha (produção, 21/11/2026):
+        # "até qui horas" levava a encomenda ("24 horas de antecedência"), "criar conta" o
+        # levain ("criar o seu fermento"), "me avise" as fotos ("nos avise antes").
+        title = _fold(f"{item.question} {' '.join(extra_terms)}")
+        title_words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", title)}
+        # Palavra inteira, nunca pedaço: "padaria" dentro de "Somos uma padaria" levava a
+        # resposta do glúten a quem perguntou de pets (conversa real, 20/11/2026).
+        body_words = {word_stem(word) for word in re.findall(r"[a-z0-9]+", _fold(item.answer))}
+        title_hits = sum(1 for term in terms if term in title_words)
+        if not title_hits and needle not in title:
+            continue
+        body_hits = sum(1 for term in terms if term in body_words and term not in title_words)
+        score = (10 if needle in title else 0) + 3 * title_hits + body_hits
+        ranked.append((-score, index, item))
     ranked.sort()
     return tuple(item for _, _, item in ranked[:limit])
 
 
-__all__ = ["FAQItemProjection", "build_public_faq", "food_safety_notice", "search_public_faq"]
+__all__ = ["HOME_FAQ_LIMIT", "FAQItemProjection", "build_public_faq", "food_safety_notice", "search_public_faq"]

@@ -1,0 +1,140 @@
+"""Qual serviço leva a corrida, e o que ele sabe fazer (DEV-2026-030, frente M1).
+
+Plano: ``docs/plans/DELIVERY-MULTI-SERVICE-PLAN.md`` §2. Este é o único lugar que responde
+"qual módulo fala com o serviço desta corrida". Todo código de entrega pede o módulo aqui,
+nunca a ``get_adapter("courier")`` direto.
+
+O contrato de um módulo de serviço de entrega (hoje ``adapters/courier_machine``, a TaOn; na
+M2, o entregador da casa) é o que a TaOn já expõe, mais duas peças:
+
+- ``CAPABILITIES``: um ``DeliveryCapabilities`` (``shopman.shop.protocols``);
+- ``ride_state(status)``: o estado próprio do serviço traduzido para ``RideState``;
+- ``state_since(block, state)``: quando a corrida chegou a um ``RideState`` (pelo ``status_at``).
+
+Comportamento na M1, de propósito igual ao de antes: a corrida da TaOn resolve o mesmo
+módulo de sempre (``get_adapter("courier")``: ``Shop.integrations`` e depois ``settings``),
+e nenhuma leitura de banco entra no caminho quente. O serviço padrão só é lido quando uma
+corrida nova é aberta, para gravar ``courier.service``.
+"""
+
+from __future__ import annotations
+
+from shopman.shop.adapters import get_adapter
+from shopman.shop.models.delivery_service import DeliveryService
+from shopman.shop.protocols import DeliveryCapabilities, RideState
+
+#: ``ref`` → ``kind``. O tipo de um serviço não muda depois de criado (o Admin trava
+#: ``ref`` e ``kind``), então a resposta pode morar no processo.
+_KIND_BY_REF: dict[str, str] = {}
+
+
+def _kind(ref: str) -> str | None:
+    if ref not in _KIND_BY_REF:
+        kind = DeliveryService.objects.filter(ref=ref).values_list("kind", flat=True).first()
+        if kind is None:
+            return None
+        _KIND_BY_REF[ref] = kind
+    return _KIND_BY_REF[ref]
+
+
+def courier_backend(block: dict | None = None):
+    """O módulo que fala com o serviço da corrida, ou None quando não há serviço ligado.
+
+    Sem bloco (ou corrida aberta antes da M1, sem ``service``) vale a central de entregas
+    configurada, como sempre. A corrida dos entregadores da casa resolve
+    ``adapters.courier_own_fleet`` (M2).
+    """
+    ref = str((block or {}).get("service") or "")
+    if ref:
+        kind = _kind(ref)
+        if kind == DeliveryService.KIND_OWN_FLEET:
+            from shopman.shop.adapters import courier_own_fleet
+
+            return courier_own_fleet
+        if kind is not None and kind not in DeliveryService.KINDS_WITH_BACKEND:
+            return None
+    return get_adapter("courier")
+
+
+def service_for_new_ride() -> DeliveryService | None:
+    """O serviço que leva a corrida que está sendo aberta agora: o padrão do Admin."""
+    return DeliveryService.default()
+
+
+def new_ride_service_ref() -> str:
+    """O ``ref`` do serviço padrão, gravado em ``courier.service`` quando a corrida abre ("" sem serviço)."""
+    service = service_for_new_ride()
+    return service.ref if service else ""
+
+
+def capabilities(block: dict | None = None) -> DeliveryCapabilities | None:
+    """O que o serviço da corrida sabe fazer, ou None sem serviço ligado."""
+    return getattr(courier_backend(block), "CAPABILITIES", None)
+
+
+def ride_state(block: dict | None) -> RideState | None:
+    """O estado da corrida no vocabulário da casa, a partir do estado cru do serviço."""
+    if not block:
+        return None
+    return _translator(block)(block.get("status"))
+
+
+def _vocabulary(block: dict):
+    """O módulo que conhece as letras do bloco: o serviço da corrida ou, sem serviço ligado
+    (corrida antiga, loja sem central), o vocabulário da TaOn, que é também o das letras
+    internas da casa (``courier_own_fleet``). Ler a letra crua dava esse mesmo resultado."""
+    from shopman.shop.adapters import courier_machine
+
+    backend = courier_backend(block)
+    return backend if getattr(backend, "ride_state", None) else courier_machine
+
+
+def _translator(block: dict):
+    """Quem traduz a letra do bloco em :class:`RideState` (ver :func:`_vocabulary`)."""
+    from shopman.shop.adapters import courier_machine
+
+    return getattr(courier_backend(block), "ride_state", None) or courier_machine.ride_state
+
+
+def state_detail(block: dict | None) -> str:
+    """A nuance que o serviço dá a um estado, quando dá ("Aguardando aceite"), ou "".
+
+    O estado da casa diz o que a tela precisa; a letra de alguns serviços diz um pouco
+    mais, e só quem fala aquela língua sabe dizer o quê (M1b-b2, #3117).
+    """
+    if not block:
+        return ""
+    detail = getattr(_vocabulary(block), "status_detail", None)
+    return detail(block.get("status")) if detail else ""
+
+
+#: A palavra das frases quando não há serviço cadastrado: "a central", "da central".
+SERVICE_FALLBACK_NAME = "central"
+
+
+def service_name(block: dict | None = None) -> str:
+    """O nome do serviço da corrida como o cadastro diz ("TaOn"), para a frase do operador.
+
+    Sem serviço gravado na corrida vale o padrão do Admin; sem nenhum, "central". As
+    frases tratam o serviço no feminino ("a TaOn", "a central"), como a empresa.
+    """
+    ref = str((block or {}).get("service") or "")
+    service = DeliveryService.objects.filter(ref=ref).first() if ref else service_for_new_ride()
+    return (service.name.strip() if service else "") or SERVICE_FALLBACK_NAME
+
+
+def state_since(block: dict | None, state: RideState) -> str | None:
+    """Quando a corrida chegou a ``state`` (o ISO mais cedo de ``status_at``), ou None.
+
+    ``status_at`` guarda a hora de cada letra crua do serviço; quem lê pergunta pelo
+    estado da casa (M1b-b, #2552), e duas letras do mesmo estado ("A" e "S" da TaOn)
+    valem pela primeira.
+    """
+    if not block:
+        return None
+    translate = _translator(block)
+    stamps = block.get("status_at") if isinstance(block.get("status_at"), dict) else {}
+    if not stamps:
+        return None
+    hits = sorted(str(at) for letter, at in stamps.items() if at and translate(letter) == state)
+    return hits[0] if hits else None

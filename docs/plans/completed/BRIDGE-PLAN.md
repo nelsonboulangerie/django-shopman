@@ -533,7 +533,8 @@ Tarefas:
 4. Planned holds → production:
    - Quando availability_policy="planned_ok" e stock=0
    - StockHoldHandler cria hold planejado (target_date)
-   - Quando produção se materializa → holds_materialized → auto-commit
+   - Registro histórico superado: hoje, produção materializada → `holds_materialized`
+     → notificação; confirmação humana posterior cria o pedido com `CommitSeal`
    - Verificar este fluxo end-to-end
 
 5. Testes:

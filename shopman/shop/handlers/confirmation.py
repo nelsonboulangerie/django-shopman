@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError, InvalidTransition
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import CONFIRMATION_TIMEOUT, ORDER_STALE_NEW_ALERT
 
@@ -154,8 +155,9 @@ class StaleNewOrderAlertHandler:
     Topic: order.stale_new_alert
 
     Disparado por :func:`_handle_confirmation` em modo `manual` (iFood etc.).
-    Cria um OperatorAlert("stale_new_order") apenas se o pedido ainda estiver
-    em NEW — caso já tenha sido resolvido, noop.
+    Cria um OperatorAlert("stale_new_order") e o aviso pessoal crítico (Web Push,
+    ``order_acceptance_alerts``) apenas se o pedido ainda estiver em NEW. Caso já
+    tenha sido resolvido, noop.
     """
 
     topic = ORDER_STALE_NEW_ALERT
@@ -189,7 +191,7 @@ class StaleNewOrderAlertHandler:
         if deadline:
             # Prazo de aceite (``auto_cancel``): vencido, o pedido é cancelado e o
             # que o cliente pagou volta para ele. O Gestor lê o relógio e a consequência.
-            clock = timezone.localtime(deadline).strftime("%H:%M")
+            clock = format_clock(deadline)
             message = (
                 f"O pedido {order.ref} espera aceite. Se ninguém aceitar até {clock}, ele é "
                 "cancelado sozinho e o que o cliente pagou é devolvido."
@@ -202,12 +204,20 @@ class StaleNewOrderAlertHandler:
         try:
             from shopman.shop.adapters import alert as alert_adapter
 
+            # Com prazo de aceite, o título da janela ("Responda em…") conta até a
+            # MESMA hora do corpo: o ``respond_by`` é o prazo do pedido, não a régua
+            # da casa (``alert_specs``), que contava 5 min da criação do aviso.
             alert_adapter.create(
                 "stale_new_order",
                 "warning",
                 message,
                 order_ref=order.ref,
+                respond_by=deadline,
             )
+            # A tela sozinha não basta: o aviso vai ao bolso de quem atende (#2324).
+            from shopman.shop.services import order_acceptance_alerts
+
+            order_acceptance_alerts.notify_stale_order(order, deadline=deadline)
         except Exception as exc:
             raise DirectiveTransientError(str(exc)) from exc
 
@@ -222,14 +232,10 @@ def _payment_deadline(order) -> datetime | None:
     if method not in {"pix", "card"}:
         return None
 
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        config = ChannelConfig.for_channel(order.channel_ref)
-        timeout_minutes = getattr(config.payment, "timeout_minutes", 0)
-    except Exception:
-        logger.warning("confirmation.payment_deadline_lookup_failed order=%s", order.ref, exc_info=True)
-        return None
+    config = ChannelConfig.for_channel(order.channel_ref)
+    timeout_minutes = getattr(config.payment, "timeout_minutes", 0)
 
     if timeout_minutes <= 0:
         return None

@@ -15,6 +15,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.test import TestCase
+from shopman.orderman.tests.commit_support import seal_for
 
 
 def _make_shop():
@@ -70,7 +71,7 @@ def _open_session(channel_ref: str, session_key: str, sku: str, qty: int):
                 "unit_price_q": 1000,
             }
         ],
-        data={},
+        data={"payment": {"method": "cash"}},
     )
 
 
@@ -81,6 +82,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 
@@ -103,7 +106,7 @@ class CommitStockGateTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("GATE-SS-001", self.channel.ref, "GATE-KEY-001")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(ctx.exception.context.get("sku"), self.SKU)
         # A transação inteira desfez: nenhum pedido órfão, sessão continua aberta.
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
@@ -136,7 +139,7 @@ class CommitStockGateTests(TestCase):
                 _commit(f"GATE-SEQ-{i:03d}", self.channel.ref, f"GATE-SEQ-KEY-{i:03d}")
                 results.append(True)
             except ValidationError as exc:
-                self.assertEqual(exc.code, "insufficient_stock")
+                self.assertEqual(exc.code, "insufficient_supply")
                 results.append(False)
 
         self.assertEqual(results, [True, True, True, False, False])
@@ -235,7 +238,7 @@ class CommitStockGateTests(TestCase):
         with self.assertRaises(ValidationError) as caught:
             _commit("GATE-CH-PAUSED", self.channel.ref, "GATE-CH-PAUSED-KEY")
 
-        self.assertEqual(caught.exception.code, "insufficient_stock")
+        self.assertEqual(caught.exception.code, "insufficient_supply")
         self.assertEqual(caught.exception.context["error_code"], "SKU_PAUSED")
         self.assertFalse(Order.objects.filter(session_key="GATE-CH-PAUSED").exists())
         self.assertEqual(Session.objects.get(session_key="GATE-CH-PAUSED").state, "open")
@@ -283,7 +286,8 @@ class CommitStockGateTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         hold_ids = (order.data or {}).get("hold_ids", [])
         self.assertEqual(len(hold_ids), 1)
-        self.assertTrue(hold_ids[0].get("untracked"))
+        self.assertIs(hold_ids[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", hold_ids[0])
 
 
 class CommitStockGateExternalChannelTests(TestCase):

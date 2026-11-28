@@ -77,12 +77,49 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     // IncomingMessage não entrega body de forma confiável sob vitest.)
   })
 
+  describe('link do entregador da casa (/rota, DEV-2026-030)', () => {
+    it('repassa X-Courier-Device e não leva cookie nem semeia CSRF no POST', async () => {
+      const { event, res } = makeEvent({
+        method: 'POST',
+        path: '/api/v1/courier/rides/tok/events/',
+        headers: {
+          cookie: 'sessionid=s1; _ga=x',
+          'x-courier-device': 'k'.repeat(43),
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'depart' })
+      })
+
+      await proxyDjangoPath(event, '/api/v1/courier/rides/tok/events/')
+
+      expect(calls).toHaveLength(1) // sem a ida da semente de CSRF
+      const { url, options } = calls[0]!
+      expect(url).toBe(`${DJANGO}/api/v1/courier/rides/tok/events/`)
+      expect(options.headers['x-courier-device']).toBe('k'.repeat(43))
+      expect(options.headers.cookie).toBeUndefined()
+      expect(options.headers['x-csrftoken']).toBeUndefined()
+      expect(res.getHeader('set-cookie')).toBeUndefined()
+    })
+
+    it('X-Courier-Device só atravessa para o link do entregador', async () => {
+      const { event } = makeEvent({ path: '/api/v1/cart/', headers: { 'x-courier-device': 'k'.repeat(43) } })
+
+      await proxyDjangoPath(event, '/api/v1/cart/')
+
+      expect(calls[0]!.options.headers['x-courier-device']).toBeUndefined()
+    })
+  })
+
   describe('gêmea pública (cache de borda)', () => {
     it.each([
       ['/api/v1/storefront/home', `${DJANGO}/api/v1/storefront/public/home/`],
       ['/api/v1/storefront/shell/', `${DJANGO}/api/v1/storefront/public/shell/`],
       ['/api/v1/storefront/catalog', `${DJANGO}/api/v1/storefront/public/catalog/`],
-      ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`]
+      ['/api/v1/storefront/catalog/paes/', `${DJANGO}/api/v1/storefront/public/catalog/paes/`],
+      ['/api/v1/storefront/products/PAO-FRANCES/', `${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/`],
+      // O rail de sugestões da PDP é o único request que a página faz depois do
+      // SSR: vai para a gêmea de 60 s, e sem o cookie do visitante.
+      ['/api/v1/storefront/products/PAO-FRANCES/recommendations/', `${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/recommendations/`]
     ])('GET sem sessão de %s vai para a gêmea, sem cookie nenhum', async (path, expected) => {
       const { event } = makeEvent({ path, headers: { cookie: 'csrftoken=tok; _ga=x' } })
 
@@ -92,15 +129,15 @@ describe('proxyDjangoPath — transporte do BFF', () => {
       expect(calls[0]!.options.headers.cookie).toBeUndefined()
     })
 
-    it('quem tem sessão fica na rota privada, com o cookie dele', async () => {
+    it.each(['/api/v1/storefront/home/', '/api/v1/storefront/products/PAO-FRANCES/'])('quem tem sessão fica em %s, com o cookie dele', async (path) => {
       const { event } = makeEvent({
-        path: '/api/v1/storefront/home/',
+        path,
         headers: { cookie: 'csrftoken=tok; sessionid=s1' }
       })
 
-      await proxyDjangoPath(event, '/api/v1/storefront/home/')
+      await proxyDjangoPath(event, path)
 
-      expect(calls[0]!.url).toBe(`${DJANGO}/api/v1/storefront/home/`)
+      expect(calls[0]!.url).toBe(`${DJANGO}${path}`)
       expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
     })
 
@@ -109,7 +146,8 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         '/api/v1/storefront/home/?channel=whatsapp',
         '/api/v1/storefront/menu/',
         '/api/v1/storefront/cart/',
-        '/api/v1/storefront/products/PAO/'
+        '/api/v1/storefront/products/PAO/?channel=whatsapp',
+        '/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp'
       ]) {
         const { event } = makeEvent({ path })
         await proxyDjangoPath(event, path.split('?')[0]!)
@@ -119,14 +157,75 @@ describe('proxyDjangoPath — transporte do BFF', () => {
         `${DJANGO}/api/v1/storefront/home/?channel=whatsapp`,
         `${DJANGO}/api/v1/storefront/menu/`,
         `${DJANGO}/api/v1/storefront/cart/`,
-        `${DJANGO}/api/v1/storefront/products/PAO/`
+        `${DJANGO}/api/v1/storefront/products/PAO/?channel=whatsapp`,
+        `${DJANGO}/api/v1/storefront/products/PAO/recommendations/?channel=whatsapp`
       ])
+    })
+
+    it('o rail de sugestões com sessão fica na rota privada, com o cookie', async () => {
+      const path = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const { event } = makeEvent({ path, headers: { cookie: 'sessionid=s1' } })
+
+      await proxyDjangoPath(event, path)
+
+      expect(calls[0]!.url).toBe(`${DJANGO}${path}`)
+      expect(calls[0]!.options.headers.cookie).toContain('sessionid=s1')
+    })
+
+    it('para a gêmea do rail não vai NENHUM cookie, nem o csrftoken', async () => {
+      // A gêmea recusa credencial no Django; se o BFF mandasse o csrftoken o
+      // request viraria 400 e o rail ficaria vazio para todo visitante novo.
+      const path = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const { event } = makeEvent({
+        path,
+        headers: { cookie: 'csrftoken=tok-123; _ga=x; _fbp=y', authorization: 'Bearer x' }
+      })
+
+      await proxyDjangoPath(event, path)
+
+      const { url, options } = calls[0]!
+      expect(url).toBe(`${DJANGO}/api/v1/storefront/public/products/PAO-FRANCES/recommendations/`)
+      expect(options.headers.cookie).toBeUndefined()
+      // O csrftoken viaja em cabeçalho próprio quando o cookie é lido: nenhum dos dois.
+      expect(options.headers['x-csrftoken']).toBeUndefined()
+      expect(options.headers['x-csrf-token']).toBeUndefined()
+      expect(options.headers.authorization).toBeUndefined()
+      expect(JSON.stringify(options.headers)).not.toContain('tok-123')
+    })
+
+    it('a leitura pública da PDP não substitui a sacola recebida pelo shell', async () => {
+      const product = { sku: 'PAO-FRANCES', qty_in_cart: 0, is_favorite: false }
+      vi.stubGlobal('$fetch', Object.assign(vi.fn(), {
+        raw: vi.fn().mockResolvedValue(upstream(200, { product }))
+      }))
+      const { event, res } = makeEvent({ path: '/api/v1/storefront/products/PAO-FRANCES/' })
+
+      const body = await proxyDjangoPath(event, '/api/v1/storefront/products/PAO-FRANCES/')
+
+      expect(body).toEqual({ product })
+      expect(body).not.toHaveProperty('cart')
+      expect(res.getHeader('cache-control')).toBe('private, no-store')
     })
 
     it('mutação nunca vai para a gêmea', () => {
       expect(publicTwinPath('POST', '/api/v1/storefront/home/', undefined, false)).toBeNull()
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', undefined, false)).toBe('/api/v1/storefront/public/home/')
       expect(publicTwinPath('GET', '/api/v1/storefront/home/', 'xsessionid=1', false)).toBe('/api/v1/storefront/public/home/')
+    })
+
+    it('o cookie de sessão é o que decide a gêmea do rail, e só ele', () => {
+      const rail = '/api/v1/storefront/products/PAO-FRANCES/recommendations/'
+      const twin = '/api/v1/storefront/public/products/PAO-FRANCES/recommendations/'
+
+      expect(publicTwinPath('GET', rail, 'csrftoken=tok; _ga=x', false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, undefined, false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, 'sessionid=s1', false)).toBeNull()
+      expect(publicTwinPath('GET', rail, 'xsessionid=1', false)).toBe(twin)
+      expect(publicTwinPath('GET', rail, undefined, true)).toBeNull()
+      expect(publicTwinPath('HEAD', rail, undefined, false)).toBe(twin)
+      expect(publicTwinPath('POST', rail, undefined, false)).toBeNull()
+      // A PDP pública separa o produto da sacola que vem no shell.
+      expect(publicTwinPath('GET', '/api/v1/storefront/products/PAO-FRANCES/', undefined, false)).toBe('/api/v1/storefront/public/products/PAO-FRANCES/')
     })
   })
 
@@ -147,18 +246,18 @@ describe('proxyDjangoPath — transporte do BFF', () => {
   })
 
   it('preserva o status upstream (409) e devolve o corpo cru (sem envelope de erro)', async () => {
-    ;($fetch.raw as any).mockResolvedValueOnce(upstream(409, { error_code: 'insufficient_stock' }))
+    ;($fetch.raw as any).mockResolvedValueOnce(upstream(409, { error_code: 'insufficient_supply' }))
     const { event, res } = makeEvent({
       method: 'PUT',
       path: '/api/v1/cart/skus/X/',
-      headers: { cookie: 'csrftoken=t', 'content-type': 'application/json' },
+      headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
       body: '{"qty":9}'
     })
 
     const data = await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
     expect(res.statusCode).toBe(409)
-    expect(data).toEqual({ error_code: 'insufficient_stock' })
+    expect(data).toEqual({ error_code: 'insufficient_supply' })
   })
 
   it('não repassa HTML de debug do Django quando uma API JSON falha', async () => {
@@ -204,7 +303,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(String(res.getHeader('server-timing'))).toMatch(/bff;dur=\d+\.\d{2}/)
   })
 
-  it('faz o handshake de CSRF quando falta token em método unsafe', async () => {
+  it('semeia token e sessão quando falta o token em método unsafe', async () => {
     // 1ª chamada raw = seed do cart (GET) devolvendo csrftoken; 2ª = a mutação real.
     ;($fetch.raw as any)
       .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
@@ -228,7 +327,7 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     expect(mutationHeaders['x-csrftoken']).toBe('seeded')
   })
 
-  it('carimba a duração da semente de CSRF em separado do total do BFF', async () => {
+  it('carimba a duração da semente em separado do total do BFF', async () => {
     ;($fetch.raw as any)
       .mockResolvedValueOnce(upstream(200, {}, { 'set-cookie': 'csrftoken=seeded; Path=/' }))
       .mockResolvedValueOnce(upstream(200, { ok: true }))
@@ -241,24 +340,24 @@ describe('proxyDjangoPath — transporte do BFF', () => {
 
     await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
-    expect(String(res.getHeader('server-timing'))).toMatch(/csrf;dur=\d+\.\d{2}, bff;dur=\d+\.\d{2}/)
+    expect(String(res.getHeader('server-timing'))).toMatch(/seed;dur=\d+\.\d{2}, bff;dur=\d+\.\d{2}/)
   })
 
-  it('sem semente, nada de csrf;dur: só o primeiro pedido unsafe paga a semente', async () => {
+  it('sem semente, nada de seed;dur: só o primeiro pedido unsafe paga a semente', async () => {
     const { event, res } = makeEvent({
       method: 'PUT',
       path: '/api/v1/cart/skus/X/',
-      headers: { cookie: 'csrftoken=t', 'content-type': 'application/json' },
+      headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
       body: '{"qty":1}'
     })
 
     await proxyDjangoPath(event, '/api/v1/cart/skus/X')
 
     expect((($fetch.raw as any).mock.calls as unknown[]).length).toBe(1)
-    expect(String(res.getHeader('server-timing'))).not.toContain('csrf;dur')
+    expect(String(res.getHeader('server-timing'))).not.toContain('seed;dur')
   })
 
-  it('semente de CSRF que cai na rede não derruba a mutação: ela segue sem token', async () => {
+  it('semente que cai na rede não derruba a mutação: ela segue sem token', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     ;($fetch.raw as any)
       .mockRejectedValueOnce(new TypeError('fetch failed'))
@@ -281,6 +380,100 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     warn.mockRestore()
   })
 
+  describe('a semente garante a sessão antes da primeira escrita (P2-06)', () => {
+    it('pede a sessão ao Django e a escrita já sai com o sessionid da semente', async () => {
+      ;($fetch.raw as any)
+        .mockResolvedValueOnce(upstream(200, {}, {
+          'set-cookie': 'csrftoken=seeded; Path=/, sessionid=semente; Domain=.boulangerie.com.br; HttpOnly; Path=/'
+        }))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event, res } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { 'content-type': 'application/json' }, // cliente nova: nenhum cookie
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const [seed, write] = ($fetch.raw as any).mock.calls
+      expect(seed[0]).toBe(`${DJANGO}/api/v1/storefront/cart/`)
+      expect(seed[1].headers['x-shopman-session-seed']).toBe('1')
+      expect(write[1].headers.cookie).toContain('sessionid=semente')
+      expect(write[1].headers['x-csrftoken']).toBe('seeded')
+      // O navegador recebe o sessionid na resposta da escrita, host-only, mesmo
+      // que ela falhe depois: a nova tentativa cai na mesma sessão.
+      const raw = res.getHeader('set-cookie')
+      const setCookies = Array.isArray(raw) ? raw : [String(raw)]
+      expect(setCookies.some(c => c.startsWith('sessionid=semente'))).toBe(true)
+      expect(setCookies.every(c => !/;\s*domain=/i.test(c))).toBe(true)
+    })
+
+    it('com token e sem sessão, ainda semeia a sessão e não perde o token', async () => {
+      ;($fetch.raw as any)
+        .mockResolvedValueOnce(upstream(200, {}, {
+          'set-cookie': 'csrftoken=tok-123; Path=/, sessionid=semente; HttpOnly; Path=/'
+        }))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'csrftoken=tok-123', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const [seed, write] = ($fetch.raw as any).mock.calls
+      expect(seed[0]).toBe(`${DJANGO}/api/v1/storefront/cart/`)
+      expect(seed[1].headers.cookie).toBe('csrftoken=tok-123')
+      expect(write[1].headers.cookie).toContain('sessionid=semente')
+      expect(write[1].headers['x-csrftoken']).toBe('tok-123')
+    })
+
+    it('semente que cai mantém o token que o navegador já tinha', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      ;($fetch.raw as any)
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(upstream(200, { ok: true }))
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'csrftoken=tok-123', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      const write = ($fetch.raw as any).mock.calls[1]
+      expect(write[1].headers['x-csrftoken']).toBe('tok-123')
+      warn.mockRestore()
+    })
+
+    it('quem já tem sessão e token não paga a semente', async () => {
+      const { event } = makeEvent({
+        method: 'PUT',
+        path: '/api/v1/cart/skus/MELONPAN/',
+        headers: { cookie: 'sessionid=s1; csrftoken=t', 'content-type': 'application/json' },
+        body: '{"qty":1}'
+      })
+
+      await proxyDjangoPath(event, '/api/v1/cart/skus/MELONPAN')
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.url).toBe(`${DJANGO}/api/v1/cart/skus/MELONPAN/`)
+    })
+
+    it('leitura não semeia: GET sem sessão não cria sessão nenhuma', async () => {
+      const { event } = makeEvent({ path: '/api/v1/storefront/cart/' })
+
+      await proxyDjangoPath(event, '/api/v1/storefront/cart')
+
+      expect(calls).toHaveLength(1)
+      expect(calls[0]!.options.headers['x-shopman-session-seed']).toBeUndefined()
+    })
+  })
+
   it('apresenta o segredo do BFF ao Django junto do XFF recebido, quando configurado', async () => {
     vi.stubGlobal('useRuntimeConfig', () => ({ djangoBaseUrl: DJANGO, djangoProxySecret: 's3cr3t' }))
     const { event } = makeEvent({
@@ -294,6 +487,21 @@ describe('proxyDjangoPath — transporte do BFF', () => {
     const { options } = calls[0]!
     expect(options.headers['x-forwarded-for']).toBe('203.0.113.9, 10.244.0.1')
     expect(options.headers['x-shopman-proxy-secret']).toBe('s3cr3t')
+  })
+
+  it('repassa o navegador do cliente (user-agent e accept-language) ao Django', async () => {
+    const ua = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/130.0 Mobile Safari/537.36'
+    const { event } = makeEvent({
+      method: 'GET',
+      path: '/api/v1/auth/access-link/status/',
+      headers: { 'user-agent': ua, 'accept-language': 'pt-BR,pt;q=0.9' }
+    })
+
+    await proxyDjangoPath(event, '/api/v1/auth/access-link/status')
+
+    const { options } = calls[0]!
+    expect(options.headers['user-agent']).toBe(ua)
+    expect(options.headers['accept-language']).toBe('pt-BR,pt;q=0.9')
   })
 
   it('não repassa segredo que o navegador escreveu, nem inventa um sem config', async () => {

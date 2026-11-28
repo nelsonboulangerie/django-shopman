@@ -134,10 +134,14 @@ class DiscountThresholdHasOneOwnerTests(PosGuardsBase):
         self.assertEqual(review.manager_approval_threshold_q, 5000)
         # R$ 30,00 está abaixo do teto de R$ 50,00 que a loja configurou.
         self.assertFalse(review.requires_manager_approval)
-        pos_service.validate_manager_approval(
-            self._payload(manual_discount={"type": "fixed", "value": "30,00"}),
-            operator_username=self.operator.username,
+        # O gate lê o desconto que o MOTOR aplicou, carimbado como no fechamento.
+        payload = self._payload(manual_discount={"type": "fixed", "value": "30,00"})
+        channel, config = pos_service._channel_and_config("pdv")
+        pos_service._stamp_engine_manual_discounts(
+            payload, channel=channel, config=config, operator_username=self.operator.username,
         )
+        self.assertEqual(pos_service._payload_discount_q(payload), review.discount_q)
+        pos_service.validate_manager_approval(payload, operator_username=self.operator.username)
 
     @override_settings(SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q=500)
     def test_env_is_the_fallback_when_the_shop_says_nothing(self) -> None:
@@ -200,6 +204,26 @@ class CashRemovalNeedsAManagerTests(PosGuardsBase):
         self.assertEqual(movement.operator, self.operator)
         self.assertEqual(movement.approved_by, self.manager)
         self.assertEqual(movement.amount_q, -5000)
+
+    def test_sangria_maior_que_a_gaveta_e_recusada_sem_dizer_o_esperado(self) -> None:
+        # Beta 05/11 (PDV-01): "5000" virou R$ 5.000,00 numa gaveta de R$ 474,20,
+        # passou pelo PIN e o livro ficou negativo. A gaveta tem R$ 100,00 aqui.
+        with self.assertRaises(POSError) as ctx:
+            register_cash_movement(
+                operator=self.operator, movement_type="sangria",
+                amount_raw="5000", reason="depósito",
+                manager_approval={"username": self.manager.username, "pin": "4321"},
+            )
+
+        self.assertNotIn("100", str(ctx.exception))
+        self.assertFalse(Entry.objects.filter(kind=Entry.Kind.CASH_OUT).exists())
+
+        movement = register_cash_movement(
+            operator=self.operator, movement_type="sangria",
+            amount_raw="100,00", reason="depósito",
+            manager_approval={"username": self.manager.username, "pin": "4321"},
+        )
+        self.assertEqual(movement.amount_q, -10000)
 
     def test_sangria_with_a_wrong_pin_is_refused(self) -> None:
         with self.assertRaises(PosIntentError) as ctx:
@@ -358,3 +382,22 @@ class PrinterHealthFollowsTheDeviceAgentTests(PosGuardsBase):
         self._set({"printer": {"enabled": True}, "device_agent": self._AGENT})
 
         self.assertEqual(self._printer().status, "ready")
+
+
+class FimDoDiaSoParaQuemFechaTest(PosGuardsBase):
+    """Beta 05/11 (op:PDV-13): o "Fim do dia" da barra levava a Caixa a um beco.
+
+    A projection diz se quem está logado fecha o dia; a barra só oferece a quem fecha.
+    """
+
+    def test_a_caixa_nao_fecha_o_dia(self) -> None:
+        self.assertFalse(build_pos(operator=self.operator).can_close_day)
+
+    def test_quem_tem_perform_closing_fecha(self) -> None:
+        from shopman.backstage.models import DayClosing
+
+        ct = ContentType.objects.get_for_model(DayClosing)
+        self.manager.user_permissions.add(Permission.objects.get(content_type=ct, codename="perform_closing"))
+        manager = get_user_model().objects.get(pk=self.manager.pk)
+
+        self.assertTrue(build_pos(operator=manager).can_close_day)

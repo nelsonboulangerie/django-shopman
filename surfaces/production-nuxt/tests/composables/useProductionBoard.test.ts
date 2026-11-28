@@ -36,6 +36,12 @@ function boardPayload(overrides: Record<string, unknown> = {}) {
           proof: "start-proof",
           expected_rev: 3,
         },
+        {
+          ref: "void:42",
+          enabled: true,
+          proof: "void-proof",
+          expected_rev: 3,
+        },
       ],
       base_recipes: [],
       matrix_rows: [{ output_sku: "PAO-001", recipe_name: "Pão", planned_qty: "0" }],
@@ -144,6 +150,36 @@ describe("useProductionBoard — plan/start writes", () => {
     );
   });
 
+  it("void POSTs to the per-WO void endpoint with the action of THIS board (#2957)", async () => {
+    env.fetchData.value = boardPayload();
+    const { voidOrder } = useProductionBoard();
+    const res = await voidOrder("PAO-001", 42, 3, "queimou");
+    expect(res.ok).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/42/void/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          reason: "queimou",
+          expected_rev: 3,
+          source_revision: "board:1",
+          action_ref: "void:42",
+          action_proof: "void-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("void of a lot the board does not offer says so, and sends nothing", async () => {
+    env.fetchData.value = boardPayload();
+    const { voidOrder } = useProductionBoard();
+    const res = await voidOrder("PAO-001", 99, 1, "queimou");
+    expect(res.ok).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalledWith("/api/v1/backstage/production/99/void/", expect.anything());
+    expect(env.sonner.error).toHaveBeenCalled();
+  });
+
   it("uses the quantity-bound suggested action and preserves an override proof", async () => {
     env.fetchData.value = boardPayload();
     const { plan } = useProductionBoard();
@@ -215,6 +251,27 @@ describe("useProductionBoard — plan/start writes", () => {
     expect(res.ok).toBe(false);
     expect(res.shortage?.code).toBe("material_shortage");
     expect(env.sonner.error).not.toHaveBeenCalled();
+  });
+
+  // WP-F14 (P1-13): depois da recusa, "Salvar com justificativa" repete a MESMA
+  // tentativa (mesma chave); "Revisar quantidade" com outro número é outra tentativa.
+  // Com a chave velha, o servidor recusava o número revisado como conflito.
+  it("após a recusa, o mesmo número repete a chave e outro número ganha chave nova", async () => {
+    env.fetchData.value = boardPayload();
+    env.fetchMock.mockRejectedValueOnce({ data: { error: { code: "order_shortage", possibilities: [] } } });
+    const { plan } = useProductionBoard();
+    const base = { recipe_id: 5, target_date: "2026-07-06", position_ref: "forno", expected_rev: null };
+
+    await plan("PAO-001", { ...base, quantity: "8" });
+    await plan("PAO-001", { ...base, quantity: "8", force: true, reason: "ok", override_proof: "p" });
+    await plan("PAO-001", { ...base, quantity: "12" });
+
+    const keys = env.fetchMock.mock.calls
+      .filter(([url]) => url === "/api/v1/backstage/production/plan/")
+      .map(([, init]) => (init as { body: { idempotency_key: string } }).body.idempotency_key);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[0]);
   });
 
   it("toasts a friendly message on a generic failure", async () => {

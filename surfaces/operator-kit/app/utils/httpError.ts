@@ -60,6 +60,21 @@ export function isUnauthenticatedError(error: unknown): boolean {
 }
 
 /**
+ * Falta de permissão: 403 que NÃO é sessão caída nem estação travada. Login não
+ * resolve, PIN de quem está não resolve, tentar de novo também não. A tela diz que
+ * aquilo não é da conta dela e para de pedir (beta 05/11, CEN-05 e GES-17: o Gestor
+ * mostrava "Sem conexão" e "Tentar de novo" para quem não abre o Catálogo, e o
+ * servidor recebia o mesmo 403 a cada minuto).
+ */
+export function isForbiddenError(error: unknown): boolean {
+  // O dialeto (`shop/api_errors.py`) só põe `error.code` numa recusa que NOMEIA a
+  // saída: `not_authenticated` (login), `station_locked` (PIN),
+  // `manager_approval_required` (gerente). O `PermissionDenied` genérico sai sem
+  // código, e é ele que quer dizer "não é da sua conta".
+  return httpError(error).status === 403 && !httpErrorCode(error);
+}
+
+/**
  * Mensagem amigável de um erro do backstage, com tipagem (substitui `catch (e: any)` +
  * `e?.data?.detail || e?.message`). Prioriza a mensagem do servidor — `data.detail`
  * (DRF) e depois `data.error.message` (erros de domínio) — e cai no `fallback`
@@ -94,4 +109,12 @@ export function httpErrorCode(error: unknown): string {
  */
 export function isStationLockedError(error: unknown): boolean {
   return httpError(error).status === 403 && httpErrorCode(error) === "station_locked";
+}
+
+/** Consulta recusada por PIN não é falha de conexão; preserve a saída do servidor. */
+export function httpErrorRetryMessage(error: unknown): string {
+  const message = httpErrorMessage(error, "");
+  if (isStationLockedError(error))
+    return message || "Identifique-se com PIN ou crachá para continuar.";
+  return `${message} Confira a conexão e tente de novo.`.trim();
 }

@@ -312,7 +312,8 @@ function submit() {
         id="tpl-name"
         v-model="name"
         type="text"
-        placeholder="Saiu do forno"
+        :maxlength="100"
+        placeholder="Ficou pronto agora"
         class="w-full"
       />
     </NuxtFormField>
@@ -324,7 +325,7 @@ function submit() {
           v-model="body"
           :rows="4"
           autoresize
-          placeholder="O pão acabou de sair do forno!"
+          placeholder="O pão acabou de ficar pronto!"
           class="w-full"
         />
       </NuxtFormField>
@@ -399,8 +400,8 @@ function submit() {
           Composição por destino
         </h3>
         <p class="mt-1 text-xs text-muted-foreground">
-          O texto acima é comum. Abra exceções somente quando a plataforma
-          realmente precisar; formatos e opções vêm da capacidade executável.
+          O texto acima vale para todas as plataformas. Abra exceção só quando
+          uma plataforma precisar de outro texto.
         </p>
       </div>
       <NuxtAlert

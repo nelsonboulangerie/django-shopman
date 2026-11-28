@@ -120,6 +120,37 @@ describe("usePosSale — mutações de carrinho", () => {
   });
 });
 
+describe("usePosSale — o esgotado da grade não entra pelo atalho (P2-10)", () => {
+  function soldOutProjection() {
+    const projection = freeCartProjection();
+    projection.products = projection.products.map((product) =>
+      product.sku === "PAO" ? { ...product, sold_out: true, sold_out_reason: "" } : product,
+    );
+    return projection;
+  }
+
+  it("addProduct com o produto esgotado hoje não lança e diz por quê", () => {
+    const h = makeSale({ projection: soldOutProjection() });
+    // O "repetir último pedido" e o favorito chegam com o produto do catálogo.
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.addProduct(pao);
+    expect(h.sale.cart.items).toHaveLength(0);
+    expect(toast.info).toHaveBeenCalledWith("Pão: Esgotado.", { id: "pos-blocked-PAO" });
+    h.handles.dispose();
+  });
+
+  it("vale a grade que o operador vê, não o produto que chegou: o atalho com selo velho também não lança", () => {
+    const h = makeSale({ projection: soldOutProjection() });
+    const paoVelho = { ...h.handles.posValue.value!.products[0]!, sold_out: false };
+    const cafe = h.handles.posValue.value!.products[1]!;
+    h.sale.addProduct(paoVelho);
+    h.sale.addProduct(cafe);
+    expect(h.sale.cart.items.map((item) => item.sku)).toEqual(["CAFE"]);
+    h.handles.dispose();
+  });
+});
+
 describe("usePosSale — gate de comanda para usar o carrinho", () => {
   it("com comanda obrigatória, addProduct pede associação em vez de lançar", () => {
     const h = makeSale(); // projeção default → requires_open_tab_for_cart
@@ -284,7 +315,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
 });
 
 describe("usePosSale — intent (currentIntentState via saveTab)", () => {
-  it("monta o intent com entrega, desconto manual e aprovação do gerente", async () => {
+  it("monta o intent com entrega e desconto manual, sem a assinatura do gerente", async () => {
     const actionCall = vi.fn().mockResolvedValue({});
     const h = makeSale({ projection: freeCartProjection(), actionCall });
     const pao = h.handles.posValue.value!.products[0]!;
@@ -300,8 +331,6 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
       discountType: "fixed",
       discountValue: "2,50",
       discountReason: "cliente fiel",
-      managerUsername: "gerente",
-      managerPin: "9999",
       customerName: "Ana",
       customerPhone: "(43) 99999-0000",
     });
@@ -315,7 +344,8 @@ describe("usePosSale — intent (currentIntentState via saveTab)", () => {
     expect(body.delivery_fee_q).toBeUndefined();
     expect(body.delivery_fee_override_q).toBe(500);
     expect(body.manual_discount).toEqual({ type: "fixed", value: 2.5, reason: "cliente fiel" });
-    expect(body.manager_approval).toEqual({ username: "gerente", pin: "9999" });
+    // O autosave nunca leva o PIN (P1-4, WP-E1): só o POST do fechamento leva.
+    expect(body).not.toHaveProperty("manager_approval");
     expect(body.customer_name).toBe("Ana");
     expect(body.customer_phone).toBe("43999990000"); // só dígitos
     expect(typeof body.client_request_id).toBe("string");
@@ -396,6 +426,7 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
       order_ref: "PED-7",
       reason: "cliente desistiu",
       manager_approval: { username: "gerente", pin: "4321" },
+      client_request_id: expect.stringMatching(/^pos:/),
     });
     // O banner fixo morreu: a confirmação é um toast padrão de sucesso.
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith("Venda cancelada", expect.anything());
@@ -427,6 +458,34 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     expect(h.sale.cancelSaleError.value).toBe("Revise o gerente e o PIN.");
     expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
     expect(h.sale.result.value?.orderRef).toBe("PED-8"); // venda continua de pé
+    h.handles.dispose();
+  });
+
+  it("cancelRecentSale repetido depois de falha reusa o client_request_id da tentativa", async () => {
+    // A resposta perdida no 4G e o toque de novo: a MESMA tentativa (mesmo
+    // pedido, mesmo motivo) leva a MESMA chave, e o servidor devolve a resposta
+    // da primeira vez em vez de cancelar de novo. Motivo diferente é outra tentativa.
+    const calls: Array<Record<string, unknown>> = [];
+    const flakyCall = vi.fn().mockImplementation(async (path: string, opts?: { body?: Record<string, unknown> }) => {
+      if (String(path).includes("/recent/cancel/")) {
+        calls.push(opts!.body!);
+        if (calls.length < 3) throw { status: 0, data: null };
+      }
+      return {};
+    });
+    const h = makeSale({ projection: freeCartProjection(), actionCall: flakyCall });
+    h.sale.result.value = { orderRef: "PED-10", nextUrl: "", payment: null, receipt: {} as never, fiscalExpected: false, changeQ: 0 };
+    h.sale.cancelSaleDialogOpen.value = true;
+    h.sale.cancelSaleReason.value = "erro de lançamento";
+
+    await h.sale.cancelRecentSale("gerente", "4321");
+    await h.sale.cancelRecentSale("gerente", "4321");
+    h.sale.cancelSaleReason.value = "cliente desistiu";
+    await h.sale.cancelRecentSale("gerente", "4321");
+
+    expect(calls).toHaveLength(3);
+    expect(calls[1]!.client_request_id).toBe(calls[0]!.client_request_id);
+    expect(calls[2]!.client_request_id).not.toBe(calls[0]!.client_request_id);
     h.handles.dispose();
   });
 
@@ -465,6 +524,34 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     const call = actionCall.mock.calls.find((c) => String(c[0]).includes("/clear/"))!;
     expect(call[1]).toMatchObject({ method: "DELETE" });
     expect(h.sale.cart.tabSessionKey).toBe("");
+    h.handles.dispose();
+  });
+});
+
+describe("usePosSale — autorização do gerente presa ao que ele viu (#2558)", () => {
+  it("o diálogo manda o desconto e a comanda; o carimbo fica na memória da aba, fora do carrinho", async () => {
+    const actionCall = vi.fn().mockResolvedValue({ approved_by: "joyce", token: "carimbo-6" });
+    const h = makeSale({ projection: freeCartProjection(), actionCall });
+    h.sale.cart.tabRef = "M1";
+    h.sale.review.value = {
+      approval_reasons: ["discount_over_threshold"],
+      line_discount_q: 100,
+      order_discount_q: 500,
+      house_account_limit: null,
+    } as never;
+
+    const ok = await h.sale.checkManagerApproval({ username: "joyce", pin: "4321" });
+
+    expect(ok).toBe(true);
+    const [path, opts] = actionCall.mock.calls.find((c) => String(c[0]).includes("manager-approval/check"))!;
+    expect(String(path)).toContain("manager-approval/check");
+    expect((opts as { body: Record<string, unknown> }).body.scope).toEqual({
+      tab_ref: "M1", discount_q: 600, account_over_q: 0, over_plan: [],
+    });
+    // O carimbo vale para o retrato desta tela (WP-E1) e não entra no carrinho.
+    expect(h.sale.managerApproved.value).toBe(true);
+    expect(JSON.stringify(h.sale.cart)).not.toContain("4321");
+    expect(JSON.stringify(h.sale.cart)).not.toContain("carimbo-6");
     h.handles.dispose();
   });
 });

@@ -683,7 +683,7 @@ que fecha o botão por construção) tem de acontecer ANTES da virada, junto da 
 
 ## D-017 · Escopo do go-live: fora só Marketing e B.I.
 
-- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-10-01 · **revisar_em:** 2026-10-15
+- **Estado:** `SUPERSEDIDA` por D-035 (só no ponto do Concierge; o resto do escopo foi repetido lá) · **Dono:** Pablo (produto) · **Data:** 2026-10-01
 
 **Decisão do dono.** A proposta de corte (#1336, D28), que deixava fora entrega própria, WhatsApp
 conversacional, catálogos externos e media persistente, foi **recusada**. Ficam fora do go-live só
@@ -981,3 +981,235 @@ continua sumindo no próximo deploy, e a linha "Arquivos de usuário (R2)" da ma
 `BLOQUEADO`.
 
 **Prova.** `doctl apps spec get` em 10/10: nenhuma variável `R2_*`.
+
+---
+
+## D-034 · Arquivar é o estado indefinido dos cadastros
+
+- **Estado:** `EM_EXECUCAO` · **Dono:** Pablo (produto) · **Data:** 2026-10-19 · **revisar_em:** ao concluir a ordem ARQUIVAR
+
+**Decisão do dono.** `is_active=False` se chama **Arquivar** em todo o sistema; o gesto é
+Arquivar/Desarquivar e o estado é Arquivado. O registro arquivado sai das listagens padrão e só
+aparece quando o filtro explícito de arquivados é pedido. Para produto, arquivar não altera
+`is_published` nem `is_sellable`, mas impede venda e exposição enquanto durar o arquivamento;
+desarquivar devolve os dois estados exatamente como estavam. `offerman.Product` recebe
+`is_active`, e `craftsman.RecipeBook.is_archived` será alinhado para `is_active`.
+
+**Prova.** Execução iniciada no PR #1945, Frente A da ordem arquivada em
+`docs/coordination/ORDERS/2026-10-19-arquivar.md`.
+
+---
+
+## D-035 · Escopo do go-live: o Concierge pode ficar para depois
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão do dono.** Perguntado se o Concierge entra no go-live (D-017) ou vem depois (premissa
+da auditoria do reset arquitetural), respondeu: *"Pode ser depois."* O Concierge deixa de ser
+linha que segura a tag `go-live-v1`. O resto do escopo da D-017 segue igual: ficam fora
+**Marketing**, **B.I.** e agora o **Concierge**; entram iFood, entrega por parceiro
+(TaOn/Machine) e fiscal.
+
+**O que isto não muda.** O código do Concierge fica no `main` como está, e o modo `assist`
+liberado para um contato (D-018) não é desligado por esta decisão. O ManyChat continua no
+go-live como canal de OTP e de avisos, que usam o mesmo resolvedor
+(`packages/guestman/shopman/guestman/contrib/manychat/resolver.py`).
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seção 16 (decisões do dono).
+
+---
+
+## D-036 · Trocar kernel por sistema externo: propriedade desejável, sem prazo
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-10 · **revisar_em:** quando existir um segundo provider real contratado para estoque, pedido, caixa ou pagamento
+
+**Decisão do dono.** Substituir um kernel de `packages/*` por ERP, planilha ou outro sistema é
+propriedade que o desenho quer preservar, **sem prazo**. Não é objetivo datado.
+
+**Consequência.** Não nasce Protocol na frente de estoque, pedido, caixa ou pagamento enquanto
+não houver segunda implementação real (ADR-001). O que se faz agora é o pré-requisito de
+qualquer troca futura: toda escrita em model de kernel passa pelos services do kernel
+(fachada fechada, garantida por lint) e as garantias viram suíte de contrato em Postgres.
+Ports de borda (pagamento, fiscal, entregador, notificação, catálogo) e os pontos em que o
+kernel chama para fora seguem como estão.
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 7 e 17.
+
+---
+
+## D-037 · `FiscalDocument` nasce antes da primeira NFC-e real
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · execução: engenharia · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão do dono.** *"Antes, claro."* O documento fiscal ganha tabela própria no `fiscalman`
+como registro de autoridade antes da tag `go-live-v1`. Hoje ele são chaves `nfce_*` em
+`Order.data` (`shopman/shop/handlers/fiscal.py`), e o `fiscalman` não tem model.
+
+**Por quê.** Antes da tag não há backfill: os pedidos do ambiente vivo são sintéticos e são
+apagados na virada (D-029). Depois da tag seria backfill de nota fiscal real, em produção e
+sem ensaio (ADR-043).
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 5 e 12 (item 11).
+
+---
+
+## D-038 · Reparos estruturais que seguram a tag: só três, pelo menor tempo
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto), que delegou o corte à coordenação da auditoria · **Data:** 2026-11-10 · **revisar_em:** 2026-11-24
+
+**Decisão.** O dono quer o go-live *"no menor tempo possível"* e delegou a escolha do que
+bloqueia. Entram na [matriz canônica](../plans/GO-LIVE-READINESS-PLAN.md) como linhas que
+seguram a tag só os três reparos que não se recuperam depois dela:
+
+1. **Pacote de dias** (até 5 dias): recibo de compra com idempotência permanente, catracas de
+   nascimento, reserva com validade no lugar do lock de sessão do ManyChat, fidelidade e
+   fechamento lendo o total vigente, timeout na captura Stripe, remoção dos três ports mortos.
+2. **`FiscalDocument`** (D-037).
+3. **Carimbo dos fatos, só as colunas:** ator tipado, dispositivo, correlação e causa em
+   `OrderEvent`, `Move`, `PaymentTransaction`, `WorkOrderEvent` e `Directive`, anuláveis e
+   sem trocar leitores.
+
+**Não seguram a tag** e entram se der tempo: os 12 pontos que gravam `Order.data` sem trava,
+o índice das decisões que vivem em comentário e a suíte dos 8 cenários de dinheiro e estoque.
+Risco aceito: esses 12 pontos entram em produção como estão; a perda provável é de evidência
+no JSON, não de dinheiro, e isso é leitura de código, não foi reproduzido.
+
+**Fora antes da tag:** mudança de `app_label` ou de permissão, movimento de símbolo que teste
+intercepta por caminho, `lock_timeout` global, corte do histórico de migrations.
+
+**Fonte.** `docs/reports/2026-11-10-auditoria-reset-arquitetural.md`, seções 12 a 14 e 16.
+
+---
+
+## D-039 · ID3A: DeepSeek por padrão, tetos de gasto e freio antes da tag
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-12 · **revisar_em:** 2026-12-12
+
+**Decisão do dono**, respondendo às cinco perguntas do [ID3A-PLAN](../plans/ID3A-PLAN.md) (#2311):
+
+1. *"A princípio, Deepseek. Mas deve ser flexível, via configuração pelo Admin!"* A DeepSeek é o
+   provedor padrão de dado público e do texto redigido do Suporte. A troca por tarefa é
+   configuração (Admin → Conexões de IA e rotas), nunca código. Mensagem de cliente não vai à
+   DeepSeek sem nova decisão.
+2. Tetos aprovados: US$ 3/dia por loja, US$ 0,50/dia na triagem do Suporte, US$ 1/dia no resumo,
+   teto de código de US$ 20/dia.
+3. A chave nova entra pelo Admin (Conexões de IA); não há chave utilizável hoje.
+4. Gabarito (decidido pela recomendação, delegado): a triagem do gerente é o rótulo; até 150
+   chamados redigidos ficam no banco da loja por 12 meses para reteste.
+5. O medidor e freio da porta de IA (E1) entra **antes** da tag `go-live-v1`, sem segurá-la.
+
+**Fonte.** Conversa de 12/11/2026; PR #2311.
+
+---
+
+## D-040 · Concierge: leitura por Jev e DeepSeek, pedido na conversa e o que fica de fora
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16
+
+**Decisão do dono**, respondendo às perguntas do
+[CONCIERGE-PLANO-DE-ACAO](../plans/CONCIERGE-PLANO-DE-ACAO.md) (#2486, DEV-2026-027):
+
+1. Sem chave da Anthropic para a Concierge: *"Pretendo associar JEV a algum outro modelo mais
+   barato, como DeepSeek v4 Pro."* A leitura das mensagens passa a ser Jev mais DeepSeek.
+2. A mensagem do cliente, **já redigida** (sem documento, telefone, e-mail, endereço, cartão nem
+   detalhe de saúde), pode ir à DeepSeek e ao Jev, com as duas declaradas em `/privacidade`, e
+   uma rodada de placar de até US$ 2 está autorizada: *"OK"*. **Isto muda o item 1 da D-039**,
+   que dizia "mensagem de cliente não vai à DeepSeek sem nova decisão": esta é a nova decisão. O
+   cofre de pseudônimos (E10 do ID3A) deixa de ser pré-requisito da Concierge.
+3. A IA não reescreve a resposta da casa: *"Não deve reescrever (a não ser que essa necessidade
+   seja 'provada')."*
+4. No lugar do "vale para todo mundo": *"Melhor seria dar opção de 'Converter/promover a tópico
+   das perguntas frequentes (FAQ)', com sugestão por IA para generalizar."* O rascunho só vale
+   depois de publicado no Admin.
+5. Prazos do "não sei, vou verificar": 10 e 30 minutos, *"configurável via admin"*.
+6. Pedido na conversa: *"idealmente, quero que a Concierge consiga montar o pedido do cliente NA
+   CONVERSA, interagindo com dados reais, via projections ou o que seja."* Entra no plano como
+   pacotes próprios, depois que as respostas estiverem com clientes.
+7. Abertura: um grupo de até 20 contatos escolhidos por ele, por uma semana, depois todos.
+
+8. Responder o cliente depois de 24 horas: *"Quero a mensagem"*. A casa submete à Meta uma
+   mensagem aprovada para avisar que a equipe respondeu; o texto passa pelo dono antes de ir.
+
+**O que isto NÃO decide.** A troca do "sim" por uma confirmação com código no resumo do pedido,
+que o pacote da autoridade de compra vai propor: se mudar o que o cliente digita, volta ao dono
+com a frase. E o texto da mensagem aprovada, que ele aprova antes da submissão.
+
+**Fonte.** Conversa de 16/11/2026; PR #2486.
+
+**Adendo de 21/11/2026 · contexto no Jev.** Perguntado se o Jev pode ler a mensagem com o
+contexto da conversa, o dono respondeu: *"desde que seguro perante LGPD, sim."* As condições,
+fixadas pela coordenação no mesmo dia, e cumpridas em `triage.house_line`:
+
+- vai **só a última fala da casa** (nada do histórico além dela), pelo mesmo redator da fala do
+  cliente (`redact_observation_text`: nome, telefone, e-mail, documento, endereço, código de
+  pedido longo), e ainda sem o código curto do pedido ("pedido W29") e sem valores em reais;
+- vai ao Jev (TypeSafe), no estado do pedido, para entender a mensagem; a DeepSeek continua
+  recebendo o que já recebia;
+- a frase de `/privacidade` diz isso (`privacy_inventory.AI_USES`, propósito `decision`).
+
+O ref do produto em foco, que as condições permitiam, não foi mandado: o ganho medido não pediu.
+
+**Adendo de 24/11/2026 · uma leitura por turno; uma segunda chamada só para verificar conflito.** O
+desenho da leitura com contexto ([ADR-051](../decisions/adr-051-leitura-com-contexto.md)), aprovado
+pelo dono em 24/11 depois do ensaio no ar, põe um verificador com o contexto da conversa nos turnos em
+que a leitura não responde à pergunta no ar nem muda de assunto, ou em que o Jev e a IA discordam. A
+coordenação confirmou no mesmo dia: *"max_model_calls=2 na Nice (leitor 1 + verificador só em
+conflito). É o desenho que o dono aprovou, e ele disse que o custo está confortável."* A regra da P04
+passa a ser: **uma leitura pela IA por turno; uma segunda chamada só para verificar conflito**
+(`profile.MODEL_CALLS_PER_TURN` = 1 e `ADJUDICATIONS_PER_TURN` = 1). O gasto segue pelo freio da casa.
+
+## D-041 · PDV: encomenda acima do plano, sem plano, a pagar na retirada e o que a Caixa vê
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-16 · **revisar_em:** 2026-12-16
+
+**Decisão do dono**, respondendo às perguntas do
+[EXCELENCIA-PDV-PLANO](../plans/EXCELENCIA-PDV-PLANO.md) (#2557, DEV-2026-028):
+
+1. Encomenda acima da fornada planejada da data: *"2"*. Bloqueia acima do plano e só o gerente
+   libera.
+2. Encomenda para data ainda sem plano de produção, liberar no PDV como pedido à Produção:
+   *"Sim"*.
+3. Encomenda de outro dia "a pagar na retirada", sem sinal: *"2. KISS"*. A opção some; vale a
+   regra de 28/08, "encomenda cobra antes".
+4. A Caixa vê o faturamento do dia e as somas de encomendas: *"Não, por óbvio! Porque a
+   pergunta, se temos contagem de fechamento do Caixa às cegas?!!?"* Decorre da D-004 e não
+   precisava de pergunta.
+5. "Nova venda" cai direto na grade da próxima comanda livre: *"Sim"*.
+
+Na mesma conversa, sobre o diálogo "Receber e entregar" da aba Encomendas: *"precisamos dessa
+janela para dizer forma de pagamento/troco etc??? Já não temos mecanismo pra isso??? Porque
+duplicaríamos???"* O recebimento do saldo passa a usar a tela de Pagamento do PDV (WP-E5).
+
+**O que isto NÃO decide.** O teto a partir do qual o gerente libera a encomenda acima do plano
+(hoje: qualquer excedente), e como a Produção responde ao pedido de data sem plano (fronteira
+F2, #2559).
+
+**Fonte.** Conversa de 16/11/2026; PR #2557.
+
+## D-042 · Produção: lote que rende menos, data sem lote, falta de insumo, etapas e o "Separado"
+
+- **Estado:** `DECIDIDA` · **Dono:** Pablo (produto) · **Data:** 2026-11-23 · **revisar_em:** 2026-12-23
+
+**Decisão do dono**, respondendo às perguntas do
+[EXCELENCIA-PRODUCAO-PLANO](../plans/EXCELENCIA-PRODUCAO-PLANO.md) (#3367, DEV-2026-079). Para
+as quatro primeiras ele disse *"No mais, aceito as sugestões"*, e todas ficaram como o plano
+recomendava:
+
+1. O lote que rendeu menos que o encomendado **fecha com o número verdadeiro**, o pão entra no
+   estoque e as encomendas que ficaram sem pão vão para "Promessa em risco" no Gestor (WP-F06).
+2. Encomenda para data sem lote (o que a D-041 deixou em aberto): **a Produção só planeja**. O
+   pedido aparece no Planejamento da data com "Planejar N", e quem fala com o cliente é o
+   Gestor (WP-F13).
+3. O lote com falta de insumo **fecha com a autorização da Gerente ou do Dono**, escolhidos da
+   lista e assinando com o próprio PIN (WP-F11).
+4. As etapas da receita no lote aberto (#2385) **não serão feitas**. Vale a decisão de 16/09:
+   etapa não é fluxo obrigatório, e o timer é ferramenta livre.
+5. O "Separado" da Preparação **é gravado no servidor e vale para a bancada inteira** (WP-F09):
+   *"Sim, óbvio! No servidor, sempre! Não precisava nem ter perguntado!"*
+
+**A regra que o item 5 deixa.** Estado de trabalho que mais de uma pessoa ou dispositivo divide
+(marca de conferência, progresso, "já feito") mora no servidor. Guardar esse estado no
+`localStorage` do dispositivo é defeito, e não se pergunta ao dono. O `localStorage` fica só
+para preferência de quem está diante da tela (filtro, aba lembrada, seção recolhida).
+
+**Fonte.** Conversa de 23/11/2026; PR #3367.

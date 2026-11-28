@@ -107,6 +107,82 @@ export function isUnavailableProduct(
   return Boolean(productBlockedLabel(product));
 }
 
+/** "30/11" de "2026-11-30"; "" quando a data não se lê. */
+function dayMonthOf(dateIso: string): string {
+  const [, month = "", day = ""] = (dateIso || "").split("-");
+  return day && month ? `${day}/${month}` : "";
+}
+
+/**
+ * A frase do item sem lote planejado na data da encomenda (WP-E3, D2): o que a
+ * linha e o toque dizem. A Produção planeja LOTES (vocabulário da suíte, §4), e
+ * a encomenda dela vira pedido: "Ainda sem lote planejado para 30/11: vira pedido
+ * à Produção".
+ */
+export function unplannedOrderNote(dateIso: string): string {
+  const day = dayMonthOf(dateIso);
+  return day ? `Ainda sem lote planejado para ${day}: vira pedido à Produção` : "Ainda sem lote planejado: vira pedido à Produção";
+}
+
+/** A pílula curta do tile: a consequência, que é o que o operador precisa saber ao tocar. */
+export const UNPLANNED_TILE_LABEL = "Vira pedido à Produção";
+
+/**
+ * O saldo em número no tile (#2610, WP-E8): "Restam 3", "Resta 1". Vazio quando a
+ * projeção não dá o número (sem rastreio, só fornada futura, vendido por peso) ou
+ * quando o tile já está bloqueado: aí o selo de bloqueio é quem fala.
+ */
+export function unitsLeftLabel(product: Pick<POSProductProjection, "units_left" | "sold_out">): string {
+  const left = product.units_left;
+  if (product.sold_out || left == null || !Number.isFinite(left) || left <= 0) return "";
+  return left === 1 ? "Resta 1" : `Restam ${left}`;
+}
+
+/**
+ * A grade da ENCOMENDA PARA OUTRO DIA: o esgotado é o daquele dia, não o de hoje.
+ *
+ * Beta test de 05/11/2026 (PDV2-04). O selo do catálogo é o saldo de AGORA: o
+ * pão que acabou hoje não entrava numa encomenda para amanhã, e o que a grade
+ * deixava entrar o salvamento recusava por falta de saldo na data. O
+ * agendamento traz, para a data escolhida, o que não tem saldo
+ * (`sold_out_skus`), pela régua da reserva; aqui só se aplica.
+ *
+ * Duas réguas, duas respostas (WP-E3, P1-1). Plano esgotado (a data tem lote
+ * planejado e ele acabou) segue bloqueado: "Sem saldo para 30/11". Sem lote
+ * planejado na data (`unplanned_skus`), o item ENTRA, como pedido à Produção, e
+ * leva a frase que a tela diz (`unplanned_note`). Antes, as duas viravam "Sem
+ * saldo", e com a data a dez dias trinta e cinco pães da casa ficavam de fora.
+ *
+ * Bloqueio com motivo próprio do catálogo (ex.: "Sem caixa") continua valendo:
+ * ele não é saldo do dia. Sem a resposta da data escolhida, a grade fica como
+ * está (o salvamento confere de qualquer jeito).
+ */
+export function productsForOrderDate(
+  products: POSProductProjection[],
+  schedule: { date: string; is_today: boolean; sold_out_skus?: string[]; unplanned_skus?: string[] } | null | undefined,
+  deliveryDate: string,
+): POSProductProjection[] {
+  if (!schedule || !deliveryDate || schedule.is_today || schedule.date !== deliveryDate) return products;
+  // O "Restam 3" é o saldo de HOJE: na encomenda para outro dia ele não diz nada
+  // sobre a data, e sai do tile (#2610), junto com o "acabando" (DEV-2026-077).
+  products = products.map((product) => (
+    product.units_left == null && !product.running_low ? product : { ...product, units_left: null, running_low: false }
+  ));
+  if (!Array.isArray(schedule.sold_out_skus)) return products;
+  const soldOut = new Set(schedule.sold_out_skus);
+  const unplanned = new Set(schedule.unplanned_skus ?? []);
+  const reason = `Sem saldo para ${dayMonthOf(deliveryDate)}`;
+  const note = unplannedOrderNote(deliveryDate);
+  return products.map((product) => {
+    if (product.sold_out && product.sold_out_reason) return product;
+    const sold = soldOut.has(product.sku);
+    const unplannedNote = !sold && unplanned.has(product.sku) ? note : "";
+    if (!sold && !product.sold_out && !unplannedNote) return product;
+    const next = { ...product, sold_out: sold, sold_out_reason: sold ? reason : "" };
+    return unplannedNote ? { ...next, unplanned_note: unplannedNote } : next;
+  });
+}
+
 /** Tira os indisponíveis quando `hide` está ligado, e diz quantos saíram. */
 export function hideUnavailableProducts(
   products: POSProductProjection[],
@@ -120,6 +196,20 @@ export function hideUnavailableProducts(
 /** "1 indisponível oculto" / "3 indisponíveis ocultos". */
 export function hiddenUnavailableLabel(count: number): string {
   return count === 1 ? "1 indisponível oculto" : `${count} indisponíveis ocultos`;
+}
+
+// ── Exibir no estreito ─────────────────────────────────────────────────
+// Dono, 07/11/2026: no celular, a densidade, a vista (Grade ou Lista) e o olho não
+// são gestos primários e roubavam a linha da busca e a das coleções. Abaixo desta
+// largura da ÁREA de produtos (não da tela: a comanda ao lado também estreita), os
+// três viram um botão "Exibir" com menu (`OperatorViewMenu` do kit). 32rem cobre
+// todo celular em pé (até ~430 px) e deixa o tablet com os segmentados à vista.
+export const VIEW_MENU_MAX_WIDTH = 512;
+
+/** A área de produtos é estreita a ponto de juntar os controles de visualização? */
+export function collapseViewControls(width: number): boolean {
+  // Sem medida (servidor, antes de montar) fica o desenho da mesa.
+  return width > 0 && width < VIEW_MENU_MAX_WIDTH;
 }
 
 /** Só "1" liga; qualquer outra coisa (vazio, storage bloqueado) é o padrão: mostrar. */
@@ -186,8 +276,12 @@ export function productFallbackIcon(product: POSProductProjection): string {
 export interface POSChoiceGroup {
   name: string;
   options: POSProductProjection[];
-  /** "R$ 14,00" quando todas custam o mesmo; "a partir de R$ 14,00" quando não. */
-  priceLabel: string;
+  /** O menor preço ("R$ 14,00"); "" quando nenhuma opção tem preço. */
+  price: string;
+  /** As opções custam diferente: a tela antepõe "a partir de". Separado do valor para
+   *  o valor nunca ser cortado: quando não cabe, o prefixo fica numa linha e o valor
+   *  inteiro na de baixo (dono, 14/11). */
+  priceFrom: boolean;
   /** Inerte só quando NENHUMA opção pode entrar no pedido. */
   allBlocked: boolean;
   /** A foto do tile: a da primeira opção vendável que tem foto. */
@@ -222,11 +316,12 @@ export function choiceGroupsByName(products: POSProductProjection[]): Map<string
 export function choiceGroup(name: string, options: POSProductProjection[]): POSChoiceGroup {
   const sellable = options.filter((option) => !productBlockedLabel(option));
   const priced = options.filter((option) => option.price_q > 0);
-  let priceLabel = "";
+  let price = "";
+  let priceFrom = false;
   if (priced.length) {
     const cheapest = priced.reduce((min, option) => (option.price_q < min.price_q ? option : min));
-    const samePrice = priced.every((option) => option.price_q === cheapest.price_q);
-    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`;
+    price = cheapest.price_display;
+    priceFrom = !priced.every((option) => option.price_q === cheapest.price_q);
   }
   const cover =
     sellable.find((option) => option.image_url?.trim()) ||
@@ -234,7 +329,7 @@ export function choiceGroup(name: string, options: POSProductProjection[]): POSC
     sellable[0] ||
     options[0]!;
   const label = options.map((option) => (option.choice_group_label || "").trim()).find(Boolean) || "";
-  return { name, options, priceLabel, allBlocked: sellable.length === 0, cover, label };
+  return { name, options, price, priceFrom, allBlocked: sellable.length === 0, cover, label };
 }
 
 /**
@@ -331,4 +426,16 @@ export function priceWindowRefreshDelayMs(nextChangeAt: string | null | undefine
   const at = Date.parse(nextChangeAt);
   if (!Number.isFinite(at)) return null;
   return Math.min(MAX_TIMER_MS, Math.max(0, at - nowMs) + PRICE_WINDOW_REFRESH_GRACE_MS);
+}
+
+/**
+ * O convite da busca de produtos, pelo espaço que ela tem. Em 1024 px a frase
+ * longa saía cortada ("Buscar produto, có"; beta test de 05/11/2026, PDV-16):
+ * abaixo de 560 px de campo vale a curta, a mesma do toque. Largura 0 é "ainda
+ * não medido", e fica a longa.
+ */
+export const SEARCH_PLACEHOLDER_SHORT_BELOW_PX = 560;
+export function productSearchPlaceholder(input: { coarse: boolean; customerSearch: boolean; width: number }): string {
+  if (input.coarse || (input.width > 0 && input.width < SEARCH_PLACEHOLDER_SHORT_BELOW_PX)) return "Buscar produto ou comanda";
+  return input.customerSearch ? "Buscar produto, código, comanda ou cliente" : "Buscar produto, código ou comanda";
 }

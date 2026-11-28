@@ -118,6 +118,46 @@ class TestEmailSender:
             result = sender.send_code("user@example.com", "123456", "email")
         assert result is False
 
+    @pytest.mark.django_db
+    def test_exception_does_not_log_email_or_code(self, caplog):
+        target = "private@example.com"
+        code = "918273"
+        sender = EmailSender()
+        with patch("django.template.loader.render_to_string", return_value="body"):
+            with patch("django.core.mail.EmailMultiAlternatives") as mock_email:
+                mock_email.return_value.send.side_effect = RuntimeError(
+                    f"provider rejected {target} with code {code}"
+                )
+                with _capture_senders(caplog, logging.ERROR):
+                    result = sender.send_code(target, code, "email")
+
+        assert result is False
+        assert caplog.text
+        assert target not in caplog.text
+        assert code not in caplog.text
+
+
+class TestWhatsAppCloudAPISenderPrivacy:
+    def test_exception_does_not_log_phone_or_code(self, caplog):
+        target = "+5543999990196"
+        code = "817263"
+        with override_settings(
+            DOORMAN={
+                "WHATSAPP_ACCESS_TOKEN": "token",
+                "WHATSAPP_PHONE_ID": "phone-id",
+                "WHATSAPP_CODE_TEMPLATE": "otp",
+            }
+        ):
+            sender = WhatsAppCloudAPISender()
+            with patch("httpx.post", side_effect=RuntimeError(f"{target}:{code}")):
+                with _capture_senders(caplog, logging.ERROR):
+                    result = sender.send_code(target, code, "whatsapp")
+
+        assert result is False
+        assert caplog.text
+        assert target not in caplog.text
+        assert code not in caplog.text
+
 
 class TestWhatsAppCloudAPISender:
     """Tests for WhatsAppCloudAPISender.

@@ -4,7 +4,12 @@
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // Material/order shortage is surfaced as a structured error so the page can open
 // the shortage modal (a finish can be retried with force=1).
-import type { ProductionKDSCardProjection, ProductionKDSResponse, ProductionShortageError } from "~/types/production";
+import type {
+  ProductionActionProjection,
+  ProductionKDSCardProjection,
+  ProductionKDSResponse,
+  ProductionShortageError,
+} from "~/types/production";
 import { voidProductionWorkOrder } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/mutationKey";
@@ -13,11 +18,75 @@ import {
   type ProductionMutationBlock,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+import { useProductionLive } from "~/composables/useProductionLive";
 
-export interface ActResult {
+export interface ActResult<T = unknown> {
   ok: boolean;
+  data?: T;
   shortage?: ProductionShortageError;
   blocked?: ProductionMutationBlock;
+  /** Recusa de validação por campo (error.issues), quando o chamador mostra no campo. */
+  fieldErrors?: Record<string, string>;
+}
+
+/** `error.issues[]` do 400 de validação → `{campo: mensagem}` (a primeira de cada). */
+export function validationIssues(error: unknown): Record<string, string> | null {
+  const envelope = httpError(error).data as
+    | { error?: { code?: string; issues?: Array<{ field?: string; message?: string }> } }
+    | null;
+  if (envelope?.error?.code !== "validation_error") return null;
+  const out: Record<string, string> = {};
+  for (const issue of envelope.error.issues ?? []) {
+    const field = issue.field || "non_field_errors";
+    if (issue.message && !(field in out)) out[field] = issue.message;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+export interface RegisterOldDoughInput {
+  quantity: string;
+  unit: "g" | "kg";
+  expiryDate: string;
+  positionRef?: string;
+  note?: string;
+}
+
+export interface RegisterOldDoughResponse {
+  ok: boolean;
+  sku: string;
+  name: string;
+  batch_ref: string;
+  quantity_g: string;
+  expiry_date: string;
+  recipe_version_ref: string;
+  replayed: boolean;
+}
+
+export interface AuthorizeFormulaDeviationInput {
+  ingredientRef: string;
+  actualQuantity: string;
+  batchRef?: string;
+  reason: string;
+}
+
+export interface AuthorizeFormulaDeviationResponse {
+  ok: boolean;
+  ingredient_ref: string;
+  ingredient_sku: string;
+  ingredient_name: string;
+  expected: {
+    minimum: string | null;
+    target: string;
+    maximum: string | null;
+  };
+  actual: string;
+  reason: string;
+  impact: {
+    bom: Array<{ sku: string; quantity: string; unit: string }>;
+    batch_ref: string;
+  };
+  work_order_rev: number;
+  replayed: boolean;
 }
 
 export function useProductionKds() {
@@ -34,39 +103,55 @@ export function useProductionKds() {
   const cards = computed<ProductionKDSCardProjection[]>(() => kds.value?.cards ?? []);
   const totalCount = computed(() => data.value?.kds?.total_count ?? 0);
   const lateCount = computed(() => data.value?.kds?.late_count ?? 0);
+  const actionFor = (ref: string): ProductionActionProjection | undefined =>
+    kds.value?.actions.find((action) => action.ref === ref);
 
-  // Cadência sobe sob pressão: algo atrasado no chão → 10s; rotina → 30s.
-  useAdaptivePoll(refresh, () => (lateCount.value > 0 ? 10_000 : 30_000));
+  // SSE primeiro (ADR-016, WP-F15): o lote que muda em outro tablet chega pelo canal
+  // da Produção. Sem canal, a cadência sobe sob pressão: algo atrasado no chão → 10s;
+  // rotina → 30s.
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () =>
+    lateCount.value > 0 ? 10_000 : 30_000,
+  );
 
   // per-WO in-flight guard (disables that card's buttons); POST then reconcile.
   const busy = ref<Set<number>>(new Set());
   const attempts = new Map<string, string>();
   const isBusy = (pk: number) => busy.value.has(pk);
 
-  async function post(
+  async function post<T = unknown>(
     pk: number,
     action: string,
     request: (
       idempotencyKey: string,
       metadata: ProductionMutationMetadata,
-    ) => Promise<unknown>,
-  ): Promise<ActResult> {
+      projectedAction: ProductionActionProjection,
+    ) => Promise<T>,
+    options: { inlineFieldErrors?: boolean } = {},
+  ): Promise<ActResult<T>> {
     if (busy.value.has(pk)) return { ok: false };
     const actionRef = `${action}:${pk}`;
     const authorization = mutationGuard.authorizeMutation(actionRef);
     if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
+    const projectedAction = actionFor(actionRef);
+    if (!projectedAction) return { ok: false };
     busy.value = new Set(busy.value).add(pk);
     const attemptRef = actionRef;
     const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, attempt);
     try {
-      await request(attempt, authorization.metadata);
+      const response = await request(
+        attempt,
+        authorization.metadata,
+        projectedAction,
+      );
       await refresh();
       attempts.delete(attemptRef);
-      return { ok: true };
+      return { ok: true, data: response };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
+      const fieldErrors = options.inlineFieldErrors ? validationIssues(err) : null;
+      if (fieldErrors) return { ok: false, fieldErrors };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
@@ -77,7 +162,7 @@ export function useProductionKds() {
     }
   }
 
-  // O finish não vive mais aqui: fechar o lote é o Fechamento (quiosque de
+  // O finish não vive mais aqui: fechar o lote é a Finalização (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
     post(pk, "void", (idempotencyKey, metadata) =>
@@ -91,5 +176,67 @@ export function useProductionKds() {
       }),
     );
 
-  return { cards, totalCount, lateCount, pending, error, refresh, isBusy, voidOrder };
+  const registerOldDough = (
+    pk: number,
+    rev: number,
+    input: RegisterOldDoughInput,
+  ) =>
+    post<RegisterOldDoughResponse>(
+      pk,
+      "register_old_dough",
+      (idempotencyKey, metadata, action) =>
+        $fetch<RegisterOldDoughResponse>(action.href, {
+          method: action.method,
+          body: {
+            quantity: input.quantity,
+            unit: input.unit,
+            expiry_date: input.expiryDate,
+            position_ref: input.positionRef || undefined,
+            note: input.note?.trim() || undefined,
+            expected_rev: action.expected_rev ?? rev,
+            ...metadata,
+            idempotency_key: idempotencyKey,
+          },
+        }),
+      { inlineFieldErrors: true },
+    );
+
+  const authorizeFormulaDeviation = (
+    pk: number,
+    rev: number,
+    input: AuthorizeFormulaDeviationInput,
+  ) =>
+    post<AuthorizeFormulaDeviationResponse>(
+      pk,
+      "authorize_formula_deviation",
+      (idempotencyKey, metadata, action) =>
+        $fetch<AuthorizeFormulaDeviationResponse>(action.href, {
+          method: action.method,
+          body: {
+            ingredient_ref: input.ingredientRef,
+            actual_quantity: input.actualQuantity,
+            batch_ref: input.batchRef?.trim() || undefined,
+            reason: input.reason.trim(),
+            expected_rev: action.expected_rev ?? rev,
+            ...metadata,
+            idempotency_key: idempotencyKey,
+          },
+        }),
+    );
+
+  return {
+    cards,
+    totalCount,
+    lateCount,
+    pending,
+    error,
+    refresh,
+    realtime,
+    fallbackPollMs,
+    actionFor,
+    isBusy,
+    voidOrder,
+    registerOldDough,
+    authorizeFormulaDeviation,
+  };
 }

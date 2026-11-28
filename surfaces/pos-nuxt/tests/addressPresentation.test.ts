@@ -132,7 +132,7 @@ describe("presentation/address — o próximo campo vazio", () => {
 describe("presentation/address — endereço completo e a linha do pedido", () => {
   it("o primeiro campo com erro é o primeiro NA TELA", () => {
     expect(firstInvalidField({ postal_code: "x", street_number: "y" })).toBe("number");
-    expect(firstInvalidField({ state_code: "UF." })).toBe("state");
+    expect(firstInvalidField({ state_code: "Escolha a UF (o estado)." })).toBe("state");
     expect(firstInvalidField({})).toBeNull();
   });
 

@@ -7,6 +7,7 @@ import {
   defaultSeats,
   freeSpot,
   nextSpotName,
+  repeatedSpotName,
   savePayload,
   snap,
   spotSize,
@@ -32,6 +33,9 @@ const FIXTURE_DEFAULTS: Record<SeatingFixtureKind, { width: number; height: numb
  * mover, girar, trocar a forma e os lugares, criar e tirar mesas mexem nele, com
  * Desfazer e Refazer. Descartar volta ao que o servidor leu. Leitura client-side
  * (`server: false`): a permissão é do operador identificado na estação.
+ *
+ * Só o Gerente e o Dono gravam o salão (decisão do dono, 05/11/2026): a leitura diz
+ * `can_edit`, e sem ele todo gesto de edição é nulo. A Caixa confere a planta.
  */
 export function usePosSeating() {
   const apiPath = useApiPath();
@@ -55,6 +59,7 @@ export function usePosSeating() {
   const future = ref<Snapshot[]>([]);
   const saving = ref(false);
   let newCounter = 0;
+  const canEdit = computed(() => data.value?.can_edit === true);
 
   function load(response: SeatingResponse | null | undefined) {
     if (!response) return;
@@ -78,6 +83,8 @@ export function usePosSeating() {
     return fixturesChanged.value ? [...list, { key: "fixtures", text: "vitrine e entrada na planta" }] : list;
   });
   const summary = computed(() => changesSummary(changes.value));
+  /** A sigla repetida na planta ("" = nenhuma): o Salvar não sai com ela. */
+  const repeatedName = computed(() => repeatedSpotName(spots.value));
   const dirty = computed(() => changes.value.length > 0);
 
   function snapshot(): Snapshot {
@@ -116,6 +123,7 @@ export function usePosSeating() {
   }
 
   function update(key: string, patch: Partial<DraftSpot>, options: { checkpoint?: boolean } = {}) {
+    if (!canEdit.value) return;
     const index = spots.value.findIndex((spot) => spot.key === key);
     if (index < 0) return;
     if (options.checkpoint !== false) checkpoint();
@@ -125,6 +133,7 @@ export function usePosSeating() {
   }
 
   function add(shape: SpotShape, at?: { x: number; y: number }, area?: string) {
+    if (!canEdit.value) return null;
     checkpoint();
     const name = nextSpotName(shape, spots.value);
     const seats = defaultSeats(shape);
@@ -168,6 +177,7 @@ export function usePosSeating() {
   }
 
   function remove(key: string) {
+    if (!canEdit.value) return;
     const spot = spots.value.find((item) => item.key === key);
     if (!spot) return;
     checkpoint();
@@ -181,7 +191,7 @@ export function usePosSeating() {
 
   function addArea(name: string): boolean {
     const clean = name.trim();
-    if (!clean) return false;
+    if (!clean || !canEdit.value) return false;
     if (spots.value.some((spot) => spot.area === clean) || areas.value.includes(clean)) return false;
     checkpoint();
     areas.value = [...areas.value, clean];
@@ -190,19 +200,23 @@ export function usePosSeating() {
 
   /** Põe a vitrine e caixa ou a entrada na planta (uma de cada; a segunda move a primeira). */
   function addFixture(kind: SeatingFixtureKind, label: string, at: { x: number; y: number }) {
+    if (!canEdit.value) return;
     checkpoint();
     const size = FIXTURE_DEFAULTS[kind];
     const fixture: SeatingFixtureProjection = { kind, label, plan_x: snap(Math.max(0, at.x - size.width / 2)), plan_y: snap(Math.max(0, at.y - size.height / 2)), ...size };
     fixtures.value = [...fixtures.value.filter((item) => item.kind !== kind), fixture];
   }
   function moveFixture(kind: SeatingFixtureKind, x: number, y: number) {
+    if (!canEdit.value) return;
     fixtures.value = fixtures.value.map((item) => (item.kind === kind ? { ...item, plan_x: Math.max(0, x), plan_y: Math.max(0, y) } : item));
   }
   function rotateFixture(kind: SeatingFixtureKind) {
+    if (!canEdit.value) return;
     checkpoint();
     fixtures.value = fixtures.value.map((item) => (item.kind === kind ? { ...item, width: item.height, height: item.width } : item));
   }
   function removeFixture(kind: SeatingFixtureKind) {
+    if (!canEdit.value) return;
     checkpoint();
     fixtures.value = fixtures.value.filter((item) => item.kind !== kind);
   }
@@ -212,7 +226,11 @@ export function usePosSeating() {
   }
 
   async function save(): Promise<boolean> {
-    if (!data.value || !dirty.value || saving.value) return false;
+    if (!data.value || !dirty.value || saving.value || !canEdit.value) return false;
+    if (repeatedName.value) {
+      toast.error(`Já existe uma mesa ${repeatedName.value}.`, { description: "Dê outra sigla a uma das duas antes de salvar." });
+      return false;
+    }
     saving.value = true;
     try {
       const response = await action.call<SeatingResponse>("/api/v1/backstage/pos/seating/", {
@@ -243,7 +261,7 @@ export function usePosSeating() {
   return {
     data, pending, error, refresh,
     original, spots, removed, areas, selectedKey, selected, selectedOriginal, fixtures,
-    changes, summary, dirty, saving,
+    changes, summary, dirty, saving, canEdit, repeatedName,
     canUndo: computed(() => past.value.length > 0),
     canRedo: computed(() => future.value.length > 0),
     checkpoint, update, add, duplicate, rotate, remove, addArea, undo, redo, discard, save,

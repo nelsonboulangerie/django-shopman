@@ -15,17 +15,22 @@ IMPORTANTE — Não-determinismo deliberado:
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
+from pathlib import Path
 from unittest import mock
 
 from django.conf import settings
 
+from config.brand_palette_nelson import NELSON_BRAND_PALETTE
+
 # Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
-STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+STOREFRONT_REF = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
+NELSON_INSTANCE_DESCRIPTOR = Path(__file__).resolve().parents[2] / "instances/nelson.json"
 
 # Unidades que os canais remotos (loja online, WhatsApp, iFood) deixam de fora
 # da vitrine e da reserva, por SKU. Espelhada em ``shop.0064``.
@@ -34,10 +39,10 @@ from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 from shopman.guestman.models import (
     ContactPoint,
@@ -70,6 +75,13 @@ from shopman.payman.models import PaymentIntent, PaymentTransaction
 from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, StockAlert
 
+from config.instance_descriptors import (
+    InstanceDriftConflict,
+    ShopSingletonViolation,
+    apply_to_database,
+    load_descriptor,
+    the_shop,
+)
 from config.management.commands.apply_fiscal_ncm import CROQUE_FISCAL_NOTE, house_cest_for
 from config.management.commands.apply_grocery_catalog import apply_grocery
 from config.management.commands.apply_product_brands import apply_brands
@@ -82,12 +94,10 @@ from shopman.backstage.models import (
     DayClosing,
     DayContext,
     KDSInstance,
-    OperationArea,
     OperationChecklistRun,
     OperationChecklistTemplate,
     OperationChecklistTemplateTask,
     OperationEvidence,
-    OperationMoment,
     OperationTaskRun,
     OperationTaskTemplate,
     OperatorAlert,
@@ -115,37 +125,14 @@ from shopman.shop.models import (
     Shop,
 )
 from shopman.shop.notification_copy import CUSTOMER_COPY
-from shopman.shop.rules.suggestion import (
-    DEFAULT_COMPLEMENT_PARAMS,
-    DEFAULT_SUBSTITUTE_PARAMS,
-)
 from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
+from shopman.shop.services.unit_weight_from_recipe import fill_unit_weight_from_recipe
 
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-", "manteiga-")
-
-# Motivos de recusa e cancelamento do Gestor, na ordem e nos grupos que o dono
-# aprovou em 01/10/2026 (D4). O cliente lê cada um como «Motivo: <texto>.»: por
-# isso nenhum termina em ponto (``validate_cancellation_presets`` recusa).
-# Mesma lista em shop/migrations/0085_motivos_de_recusa_aprovados.py, que leva o
-# banco já semeado até ela; ``test_cancellation_presets`` confere que as duas
-# não divergem.
-CANCELLATION_PRESETS = [
-    {"label": "Item indisponível no momento", "group": "Produto"},
-    {"label": "Sem um dos ingredientes hoje", "group": "Produto"},
-    {"label": "Pagamento não aprovado", "group": "Pagamento"},
-    {"label": "Pagamento não confirmado no prazo", "group": "Pagamento"},
-    {"label": "Endereço fora da nossa área de entrega", "group": "Endereço e contato"},
-    {"label": "Não conseguimos falar com você", "group": "Endereço e contato"},
-    {"label": "Alta demanda neste horário", "group": "Capacidade"},
-    {"label": "Sem entregador disponível neste horário", "group": "Capacidade"},
-    {"label": "Fora do horário de atendimento", "group": "Horário"},
-    {"label": "Você pediu o cancelamento", "group": "Cliente"},
-    {"label": "Pedido em duplicidade", "group": "Duplicidade"},
-]
 
 # Validades OPERACIONAIS provisórias para o cenário pré-go-live, decididas pelo
 # dono em 10/09/2026. Elas tornam as etiquetas testáveis sem fingir validação
@@ -208,7 +195,7 @@ QUALITY_GRADES = (
 QUALITY_DEFECTS = (
     ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
     ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
-    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("underbaked", "Assou pouco", "Pálido, mas próprio para consumo", False, 30),
     ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
     ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
     ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
@@ -237,6 +224,31 @@ PRODUCTION_PLAN = [
     ("bichon", Decimal("25"), (8, 0), (11, 0)),
     ("madeleine", Decimal("68"), (9, 0), (13, 0))
 ]
+
+
+# Quem abre e fecha o lote na bancada é gente da Cozinha, no formato que a tela
+# grava (``production:<username>``). Com ``"seed"`` a Qualidade escrevia "fechado
+# por seed" ao operador (beta 05/11, PROD-20).
+SEED_BENCH_ACTOR = "production:" + next(
+    username for username, _first, _last, groups, *_ in setup_operators.CAST if "Cozinha" in groups
+)
+
+
+def _not_after_now(start_at, finish_at, *, ceiling):
+    """O par (início, fim) de um lote de hoje, sem nenhum dos dois depois de ``ceiling``.
+
+    Lote fechado cujo fim cai no futuro recua INTEIRO, mantendo a duração: o
+    folhado das 8h às 11h, com o seed rodando às 5h50, vira 2h48 às 5h48, e não
+    um lote de zero minutos. Lote só aberto (sem fim) abre no máximo em
+    ``ceiling``. Antes do teto, nada muda.
+    """
+    if finish_at is not None and finish_at > ceiling:
+        shift = finish_at - ceiling
+        finish_at = ceiling
+        start_at = start_at - shift if start_at is not None else None
+    if start_at is not None and start_at > ceiling:
+        start_at = ceiling
+    return start_at, finish_at
 
 # A proveniência das quatro fichas que vieram da aba Fx da planilha de custos
 # (dono, 02/10/2026), copiada da versão publicada no alpha (`<ref>@2`): rótulo,
@@ -463,6 +475,9 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "manteiga-wasabi":                    1000,
     "recheio-cebolas-assadas":            1000,
     "molho-caramelo":                     2000,
+    # A cobertura do melonpan (21/11/2026, #2925): um lote da ficha por dia,
+    # como os outros pré-preparos sem número do dono.
+    "massa-cobertura-melonpan":           780,
 
     # Peças (saída em unidade): a capacidade fala em peças por dia.
     "baguete":                            75,
@@ -479,6 +494,19 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "madeleine":                          72,
     "baguete-lanche":                     36,
     "batard":                             30,
+    # Nascidas em 21/11/2026 da aba TRAD (#2925), sem lote antigo nem número do
+    # dono: a mesma capacidade provisória das peças restauradas, dita como tal.
+    "fendu":                              36,
+    "tabatiere":                          36,
+    "pao-hamburguer":                     36,
+    # As outras que nasceram da palavra do dono em 21/11/2026 (#2925), com a
+    # mesma capacidade provisória das peças restauradas.
+    "baguete-gergelim":                   36,
+    "campagne-passas-castanhas":          36,
+    "brioche-burger-bun":                 36,
+    "pao-hot-dog":                        36,
+    "cornet":                             36,
+    "melonpan":                           36,
     "baguete-gergelim-pequena":           36,
     "italiano-rustico":                   24,
     "baguette-campagne":                  36,
@@ -514,6 +542,7 @@ PROVISIONAL_CAPACITY_PER_DAY = {
     "croque-madame":                      3,
     "croque-complet":                     3,
     "jambon-beurre":                      3,
+    "melon-iced-sando":                   3,
     "pain-perdu":                         3,
     "espresso":                           3,
     "espresso-macchiato":                 3,
@@ -645,7 +674,7 @@ def material_opening_targets() -> dict[str, Decimal]:
 #   HO/MIHO: só a massa — a salsicha entra como insumo próprio na ficha.
 #   KBB: o dono ainda não pesou; estimado pela família do BBB.
 PESO_MASSA_CRUA_G = {
-    "FORMA": 400, "BGL": 260, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
+    "FORMA": 400, "BGL": 170, "ITA": 480, "CPBG": 300, "BAT": 320, "CPR": 340,
     "PIT": 30, "BGGP": 170,
     # Focaccia: 400 g de massa crua na grande e 110 g na pequena, TODAS (dono,
     # 24/09/2026); a cobertura e a finalização somam por cima. A de cebola roxa
@@ -678,7 +707,9 @@ STOCK_VITRINE = {
     "CI": 24,
     "FENDU": 20,
     "TABAT": 24,
-    "MIB": 18,
+    # A Baguete Lanche toma o lugar da Mini Baguete (dono, 21/11/2026) e herda
+    # a calibração dela, como os outros herdaram a dos antecessores.
+    "BGL": 18,
     "TRABB": 20,
     # Finos
     "CRO": 42,
@@ -1082,6 +1113,23 @@ class Command(BaseCommand):
                 "idêntica nos dois. Ver docs/reference/qa-seed-scenarios.md."
             ),
         )
+        parser.add_argument(
+            "--closing-in-minutes",
+            type=int,
+            default=None,
+            metavar="N",
+            help=(
+                "Só pilha de teste (jornada J5, #2686): hoje a loja abre à 0h e fecha "
+                "daqui a N minutos; o resto da semana segue o horário normal, então a "
+                "próxima abertura é a de amanhã. Recusado em produção."
+            ),
+        )
+        parser.add_argument(
+            "--descriptor",
+            type=Path,
+            default=NELSON_INSTANCE_DESCRIPTOR,
+            help="Descritor versionado da Instância Nelson a materializar.",
+        )
 
     def handle(self, *args, **options):
         from django.core.management.base import CommandError
@@ -1114,6 +1162,15 @@ class Command(BaseCommand):
         # dinâmicos (pedidos, produção, comandas, caixa) divergem no branch abaixo.
         self.profile = options["profile"]
 
+        # A casa que fecha daqui a pouco (jornada J5): opção de linha de comando da
+        # pilha de teste, nunca variável de ambiente (ADR-042) nem caminho de produção.
+        self.closing_in_minutes = options.get("closing_in_minutes")
+        if self.closing_in_minutes is not None:
+            if is_production():
+                raise CommandError("--closing-in-minutes é só de pilha de teste, nunca de produção.")
+            if self.closing_in_minutes < 1:
+                raise CommandError("--closing-in-minutes precisa ser 1 ou mais.")
+
         # Determinismo do perfil qa: semente fixa do RNG ANTES de qualquer seeder,
         # para que a matriz de produção (jitter em _seed_recipes) e qualquer sorteio
         # da base saiam idênticos a cada `seed --flush --profile qa`. Os cenários
@@ -1128,6 +1185,7 @@ class Command(BaseCommand):
         if options["flush"]:
             self._flush()
 
+        self._materialize_instance(options["descriptor"])
         self.stdout.write(self.style.MIGRATE_HEADING("\n🥐 Populando Nelson Boulangerie...\n"))
 
         # PRIMEIRO de tudo: o registro de atributos precisa existir antes do
@@ -1152,6 +1210,13 @@ class Command(BaseCommand):
         # Marca da casa nos feitos aqui, do fabricante na revenda: a mesma
         # tabela que o `apply_product_brands` aplica num banco que já roda.
         apply_brands(apply=True)
+        # As palavras-chave aprovadas pelo dono para a Concierge (24/11/2026), as mesmas
+        # que o `concierge_keywords --write` gravou no ar: "madalena" acha a Madeleine.
+        # Só nos publicados, como no ar; depois da Mercearia, porque a proposta também fala
+        # da água e do camembert.
+        from io import StringIO
+
+        call_command("concierge_keywords", "--write", stdout=StringIO())
         self._relink_bi_aliases()
         positions = self._seed_positions()
         self._seed_stock(products, positions)
@@ -1160,10 +1225,10 @@ class Command(BaseCommand):
         self._assert_catalog_remote_purchase_data()
         customers = self._seed_customers()
         self._seed_addresses(customers)
-        channels = self._seed_channels()
-        self._seed_display_channels()
+        channels = self._instance_channels()
         self._assert_storefront_products_orderable()
         self._seed_kds()
+        self._seed_kitchen_note_tags()
         self._seed_timer_tags()
 
         # ── Fase dinâmica: diverge por perfil ──────────────────────────────
@@ -1173,6 +1238,16 @@ class Command(BaseCommand):
             self._seed_qa_dynamic(products, customers, channels, positions)
         else:
             self._seed_demo_dynamic(products, customers, channels, positions)
+
+        # Pedido que nasce fechado leva o carimbo do fechamento. Sem ele o Histórico
+        # do Gestor (que conta pelo fechamento) cai no `updated_at` e joga a venda
+        # de ontem para hoje (beta 05/11, ge:BI-03).
+        self._stamp_closed_orders()
+
+        # Pedido sem forma de pagamento não existe (decisão do dono, 06/11/2026,
+        # GES-03): o seed é a única porta que cria pedido sem passar pelo commit,
+        # então ele se confere antes de dizer "completo".
+        self._assert_every_order_has_payment()
 
         # DEPOIS da fase dinâmica, de propósito: é `_seed_cash_register` quem recria o
         # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
@@ -1188,6 +1263,94 @@ class Command(BaseCommand):
         call_command("propose_product_attributes", verbosity=0)
 
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
+
+    @staticmethod
+    def _live_order_payment(channel_ref: str, total_q: int) -> dict:
+        """A forma de pagamento de um pedido do seed que ainda está em andamento.
+
+        Ninguém pagou ainda, e nada é cobrança digital pendente (que travaria o
+        avanço do board esperando um Pix que nunca cai): é dinheiro na retirada.
+        No PDV é a marca de "receber na retirada" (``collection: on_delivery``);
+        na loja e no WhatsApp, o dinheiro de retirada que o checkout grava.
+        """
+        if channel_ref == "pdv":
+            return {"method": "cash", "collection": "on_delivery", "amount_q": total_q}
+        return {"method": "cash"}
+
+    def _assert_every_order_has_payment(self) -> None:
+        """Falha o seed se algum pedido nasceu sem forma de pagamento.
+
+        A régua é a mesma do commit (``policies.order_payment``): forma
+        conhecida, ``mixed`` só com linhas, e "em conta" só para cliente com a
+        conta na casa. O iFood entra pela régua dele (``external``).
+        """
+        from django.core.management.base import CommandError
+
+        from shopman.shop.policies.order_payment import payment_refusal
+
+        reasons = {
+            "payment_method_missing": "sem forma de pagamento",
+            "house_account_not_allowed": "em conta para cliente sem conta na casa",
+        }
+        offenders = []
+        for ref, data in Order.objects.values_list("ref", "data").iterator():
+            refused = payment_refusal(data)
+            if refused is not None:
+                offenders.append(f"{ref} ({reasons[refused[0]]})")
+        if offenders:
+            raise CommandError(
+                "O seed criou pedido sem forma de pagamento válida: " + ", ".join(offenders[:20])
+                + (f" e mais {len(offenders) - 20}" if len(offenders) > 20 else "")
+            )
+
+    def _materialize_instance(self, path: Path) -> None:
+        try:
+            descriptor = load_descriptor(path)
+            instance_ref = descriptor["instance"]["ref"]
+            if instance_ref != "nelson":
+                raise ValueError(
+                    "o seed de demonstração Nelson exige instance.ref='nelson'; "
+                    "use `instance_descriptor apply` para outra Instância"
+                )
+            # O seed preserva o que o banco tem diferente da última versão
+            # aplicada (``keep``): num banco recém-limpo não há divergência, e num
+            # banco em uso quem decide sobrescrever é `instance_descriptor apply`.
+            result = apply_to_database(descriptor, actor="seed", on_drift="keep")
+        except (ShopSingletonViolation, InstanceDriftConflict) as exc:
+            raise CommandError(str(exc)) from exc
+        except (OSError, ValueError, KeyError) as exc:
+            raise CommandError(f"descritor de Instância inválido: {exc}") from exc
+        self.instance_descriptor = descriptor
+        summary = ", ".join(f"{key} {value}" for key, value in result["summary"].items())
+        self.stdout.write(
+            "  ✅ Instância materializada pelo descritor "
+            f"{path} ({summary or 'sem mudanças'})"
+        )
+        kept = [change["path"] for change in result["changes"] if change["action"] == "kept"]
+        if kept:
+            self.stdout.write(self.style.WARNING(
+                f"  ⚠️ {len(kept)} valor(es) mudados no banco foram preservados: {', '.join(kept[:10])}"
+            ))
+
+    def _the_shop(self) -> Shop:
+        try:
+            return the_shop()
+        except ShopSingletonViolation as exc:
+            raise CommandError(str(exc)) from exc
+
+    def _instance_channels(self) -> dict[str, Channel]:
+        expected = {"pdv", STOREFRONT_REF, "ifood", "whatsapp"}
+        channels = {
+            channel.ref: channel
+            for channel in Channel.objects.filter(ref__in=expected)
+        }
+        missing = sorted(expected - channels.keys())
+        if missing:
+            raise CommandError(
+                "descritor Nelson não materializou os canais transacionais: "
+                f"{', '.join(missing)}"
+            )
+        return channels
 
     def _seed_demo_dynamic(self, products, customers, channels, positions):
         """Perfil demo: histórico realista/aleatório de 35 dias + board vivo.
@@ -1215,11 +1378,10 @@ class Command(BaseCommand):
         self._seed_customer_insights()
         self._seed_campaigns()
         self._seed_notification_templates()
-        self._seed_rule_configs()
         self._seed_omotenashi_copy()
         self._seed_day_closing()
         self._seed_cash_register()
-        self._seed_operation_checklists()
+        self._seed_operation_checklist_runs()
 
         # B.I.: sem movimento de prateleira o painel de abastecimento nasce vazio.
         self._seed_bi_history(products, positions)
@@ -1238,11 +1400,10 @@ class Command(BaseCommand):
         self._seed_promotions()
         self._seed_campaigns()
         self._seed_notification_templates()
-        self._seed_rule_configs()
         self._seed_omotenashi_copy()
         self._seed_qa_marketing_audience(customers)
         self._seed_loyalty(customers)
-        self._seed_operation_checklists()
+        self._seed_operation_checklist_runs()
 
         # Cenários nomeados determinísticos (Fase 2 do SEED-DATA-QUALITY-PLAN).
         self._seed_qa_orders(products, customers, channels)
@@ -1475,158 +1636,184 @@ class Command(BaseCommand):
                 "  🤖 Piloto automático de staging: loja aberta 24/7, sem feriados."
             )
 
-        _, created = Shop.objects.update_or_create(
-            pk=1,
-            defaults={
-                "name": "Nelson Boulangerie",
-                "legal_name": "N.H.K. Panificadora Ltda.",
-                # CNPJ emitente da NFC-e: o adapter fiscal (Focus NFe) lê de Shop.document
-                # como default (sem precisar de FOCUS_NFE_CNPJ_EMITENTE no ambiente).
-                "document": "02119381000158",
-                "brand_name": "Nelson Boulangerie",
-                "short_name": "Nelson",
-                "tagline": "Padaria Artesanal",
-                "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
-                # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
-                # fonte só. Antes vivia como literal no código do backstage, invisível
-                # para quem opera, e a campanha não tinha voz nenhuma.
-                "brand_voice": (
-                    "Você escreve para a Nelson Boulangerie, uma padaria artesanal "
-                    "brasileira que segue as normas da panificação francesa. Escreva em "
-                    "português do Brasil, na primeira pessoa do plural (\"nós\", "
-                    "\"conosco\"), nunca \"a gente\". Tom acolhedor e concreto, sem "
-                    "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
-                    "com o texto pedido, sem aspas, sem rótulo e sem comentário."
-                ),
-                # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
-                # ressalva. A casa é uma padaria: trabalha com farinha de trigo
-                # todos os dias, não tem linha segregada e não pretende ter
-                # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
-                # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
-                # linha, não deduzir do silêncio.
-                #
-                # O resto é contaminação cruzada de cozinha compartilhada, no
-                # formato que a RDC 727/2022 pede ("pode conter"). Ver
-                # `shop/legal_parameters.py`.
-                "food_safety_notice": (
-                    "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
-                    "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
-                    "como assegurar a ausência dele em nenhum item. "
-                    "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
-                    "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
-                ),
-                "heading_font": "Instrument Sans",
-                "body_font": "Instrument Sans",
-                "border_radius": "soft",
-                "primary_color": "#7C3A40",
-                "secondary_color": "#2C1810",
-                "accent_color": "#8B4513",
-                "neutral_color": "#FCF7EE",
-                "neutral_dark_color": "#1A0F0A",
-                "formatted_address": "Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270",
-                "route": "Av. Madre Leônia Milito",
-                "street_number": "446",
-                "neighborhood": "Bela Suíça",
-                "city": "Londrina",
-                "state_code": "PR",
-                "postal_code": "86050-270",
-                "country": "Brasil",
-                "country_code": "BR",
-                # As coordenadas da ficha no Google Maps (o link "como chegar" da
-                # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
-                # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
-                "latitude": -23.3348384,
-                "longitude": -51.1673157,
-                "phone": "554333231997",
-                "email": "nelson@boulangerie.com.br",
-                "default_ddd": "43",
-                # Só o que é VERDADE. As três linhas de `example` que moravam
-                # aqui não eram inertes: `build_shop_projection` as entrega ao
-                # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
-                # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
-                # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
-                # o perfil oficial da Nelson. Link errado é pior que link
-                # nenhum: com a lista vazia o rodapé não desenha a seção
-                # (`v-if="socialLinks.length"`) e o `sameAs` some.
-                # Os perfis reais (os que a landing antiga declarava) e os textos
-                # de busca vêm da MESMA fonte que leva a presença de busca a um
-                # banco já semeado, sem reseed: `apply_search_presence`.
-                "social_links": [
-                    "https://wa.me/554333231997",
-                    *BRAND_PROFILES
+        # Jornada J5 (#2686): a casa abriu à 0h e fecha daqui a N minutos; amanhã
+        # segue o horário de sempre. A pilha de teste passa a opção; nada lê isto ao ar.
+        if getattr(self, "closing_in_minutes", None) is not None:
+            from datetime import timedelta as _td
+
+            from django.utils import timezone as _tz
+
+            now = _tz.localtime()
+            closes = (now + _td(minutes=self.closing_in_minutes)).replace(second=0, microsecond=0)
+            if closes <= now:
+                closes += _td(minutes=1)
+            if closes.date() != now.date():
+                raise CommandError(
+                    "--closing-in-minutes cairia depois da meia-noite: rode mais cedo ou com N menor."
+                )
+            today = now.strftime("%A").lower()
+            close_hhmm = closes.strftime("%H:%M")  # hora-ok: contrato "HH:MM" do opening_hours, não tela
+            opening_hours = {**opening_hours, today: {"open": "00:00", "close": close_hhmm}}
+            closed_dates = [d for d in closed_dates if d["date"] != now.date().isoformat()]
+            from shopman.utils.formatting import format_clock
+
+            self.stdout.write(f"  🕘 Pilha de teste: a loja fecha hoje às {format_clock(closes)} (--closing-in-minutes).")
+
+        # A loja é a que o descritor materializou (``_materialize_instance``),
+        # nunca uma pk fixa: depois de um ``--flush`` a sequência não volta a 1, e
+        # um ``update_or_create(pk=1)`` criava uma segunda loja (laudo A6-1).
+        shop = self._the_shop()
+        shop_fields = {
+            "legal_name": "N.H.K. Panificadora Ltda.",
+            # CNPJ emitente da NFC-e: o adapter fiscal (Focus NFe) lê de Shop.document
+            # como default (sem precisar de FOCUS_NFE_CNPJ_EMITENTE no ambiente).
+            "document": "02119381000158",
+            "brand_name": "Nelson Boulangerie",
+            "short_name": "Nelson",
+            # O host da loja: vai no fim do SMS de código (``@host #código``, WebOTP),
+            # e o celular só preenche sozinho se for o host da página aberta.
+            "storefront_host": "www.nelsonboulangerie.com.br",
+            "tagline": "Padaria Artesanal",
+            "description": "Segue rigorosamente as normas da panificação artesanal francesa.",
+            # A voz que a IA usa ao escrever para a Nelson — catálogo E anúncio, uma
+            # fonte só. Antes vivia como literal no código do backstage, invisível
+            # para quem opera, e a campanha não tinha voz nenhuma.
+            "brand_voice": (
+                "Você escreve para a Nelson Boulangerie, uma padaria artesanal "
+                "brasileira que segue as normas da panificação francesa. Escreva em "
+                "português do Brasil, na primeira pessoa do plural (\"nós\", "
+                "\"conosco\"), nunca \"a gente\". Tom acolhedor e concreto, sem "
+                "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
+                "com o texto pedido, sem aspas, sem rótulo e sem comentário."
+            ),
+            # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
+            # ressalva. A casa é uma padaria: trabalha com farinha de trigo
+            # todos os dias, não tem linha segregada e não pretende ter
+            # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
+            # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
+            # linha, não deduzir do silêncio.
+            #
+            # O resto é contaminação cruzada de cozinha compartilhada, no
+            # formato que a RDC 727/2022 pede ("pode conter"). Ver
+            # `shop/legal_parameters.py`.
+            "food_safety_notice": (
+                "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
+                "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
+                "como assegurar a ausência dele em nenhum item. "
+                "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
+                "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
+            ),
+            "heading_font": "Instrument Sans",
+            "body_font": "Instrument Sans",
+            "border_radius": "soft",
+            # A paleta da marca é dado da loja (``Shop.brand_palette``).
+            "brand_palette": NELSON_BRAND_PALETTE,
+            "primary_color": "#7C3A40",
+            "secondary_color": "#2C1810",
+            "accent_color": "#8B4513",
+            "neutral_color": "#FCF7EE",
+            "neutral_dark_color": "#1A0F0A",
+            "formatted_address": "Av. Madre Leônia Milito, 446 - Bela Suíça, Londrina - PR, 86050-270",
+            "route": "Av. Madre Leônia Milito",
+            "street_number": "446",
+            "neighborhood": "Bela Suíça",
+            "city": "Londrina",
+            "state_code": "PR",
+            "postal_code": "86050-270",
+            "country": "Brasil",
+            "country_code": "BR",
+            # As coordenadas da ficha no Google Maps (o link "como chegar" da
+            # landing antiga). As de antes caíam 3,4 km ao norte, numa distribuidora
+            # do Centro: mapa, coleta do motoboy e frete por distância partiam de lá.
+            "latitude": -23.3348384,
+            "longitude": -51.1673157,
+            "phone": "554333231997",
+            "email": "nelson@boulangerie.com.br",
+            "default_ddd": "43",
+            # Só o que é VERDADE. As três linhas de `example` que moravam
+            # aqui não eram inertes: `build_shop_projection` as entrega ao
+            # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
+            # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
+            # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
+            # o perfil oficial da Nelson. Link errado é pior que link
+            # nenhum: com a lista vazia o rodapé não desenha a seção
+            # (`v-if="socialLinks.length"`) e o `sameAs` some.
+            # Os perfis reais (os que a landing antiga declarava) e os textos
+            # de busca vêm da MESMA fonte que leva a presença de busca a um
+            # banco já semeado, sem reseed: `apply_search_presence`.
+            "social_links": [
+                "https://wa.me/554333231997",
+                *BRAND_PROFILES
+            ],
+            **SEARCH_FIELDS,
+            "opening_hours": opening_hours,
+            # Venda sem conexão desligada (dono, 03/11/2026): ligar depende da
+            # NFC-e em contingência (tpEmis 9), que ainda não existe.
+            "pos_offline_sale_enabled": False,
+            "defaults": {
+                "menu": {
+                    "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
+                },
+                # Não retirado (DEV-2026-089, dono, 24/11/2026): a loja retém 40% do valor
+                # dos itens feitos para a encomenda; provisório até medir o custo real.
+                "no_show": {"retention": {"percent": 40, "decided_at": "2026-11-24", "provisional": True}},
+                "notifications": {"backend": "console"},
+                "rules": {
+                    # Políticas de pedido/entrega em centavos. 0 = desligada.
+                    "minimum_order_q": 0,        # sem mínimo geral (ticket baixo)
+                    "delivery_minimum_q": 2500,  # R$ 25,00 mínimo só p/ entrega
+                    "free_delivery_above_q": 0,  # frete grátis desligado
+                    # Taxa de entrega quando a distância não pôde ser calculada (endereço
+                    # sem geocode / loja sem coordenada): fallback em vez de bloquear.
+                    "default_delivery_fee_q": 800,  # R$ 8,00 (faixa do meio)
+                },
+                "pos": {
+                    # Nelson oferece NFC-e no balcão. O toggle 'Nota fiscal' aparece no
+                    # PDV quando isto está on E o adapter fiscal está configurado.
+                    "fiscal_toggle": True,
+                },
+                "pickup_slots": [
+                    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
+                    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
+                    {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"}
                 ],
-                **SEARCH_FIELDS,
-                # A lista aprovada pelo dono (01/10/2026). A mesma lista leva um
-                # banco já semeado ao estado novo sem reseed:
-                # shop/migrations/0085_motivos_de_recusa_aprovados.py.
-                "cancellation_presets": CANCELLATION_PRESETS,
-                "kitchen_note_tags": [
-                    "Bem assado",
-                    "Pouco assado",
-                    "Sem cebola",
-                    "Embalar para presente",
-                    "Cortar ao meio"],
-                "opening_hours": opening_hours,
-                "defaults": {
-                    "menu": {
-                        "dynamic_collections": ["featured", "fresh_from_oven", "new_arrivals"],
-                    },
-                    "notifications": {"backend": "console"},
-                    "rules": {
-                        # Políticas de pedido/entrega em centavos. 0 = desligada.
-                        "minimum_order_q": 0,        # sem mínimo geral (ticket baixo)
-                        "delivery_minimum_q": 2500,  # R$ 25,00 mínimo só p/ entrega
-                        "free_delivery_above_q": 0,  # frete grátis desligado
-                        # Taxa de entrega quando a distância não pôde ser calculada (endereço
-                        # sem geocode / loja sem coordenada): fallback em vez de bloquear.
-                        "default_delivery_fee_q": 800,  # R$ 8,00 (faixa do meio)
-                    },
-                    "pos": {
-                        # Nelson oferece NFC-e no balcão. O toggle 'Nota fiscal' aparece no
-                        # PDV quando isto está on E o adapter fiscal está configurado.
-                        "fiscal_toggle": True,
-                    },
-                    "pickup_slots": [
-                        {"ref": "slot-09", "label": "A partir das 09h", "starts_at": "09:00"},
-                        {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-                        {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"}
-                    ],
-                    "pickup_slot_config": {
-                        "rounding_minutes": 30,
-                        "history_days": 30,
-                        "fallback_slot": "slot-09",
-                    },
-                    "max_preorder_days": 30,
-                    "closed_dates": closed_dates,
-                    "production": {
-                        "suggestion": {
-                            "seasons": {
-                                "hot":  [10, 11, 12, 1, 2, 3],
-                                "mild": [4, 5, 9],
-                                "cold": [6, 7, 8],
-                            },
-                            "high_demand_multiplier": "1.2",
-                            "safety_stock_percent": "0.20",
+                "pickup_slot_config": {
+                    "rounding_minutes": 30,
+                    "history_days": 30,
+                },
+                "max_preorder_days": 30,
+                "closed_dates": closed_dates,
+                "production": {
+                    "suggestion": {
+                        "seasons": {
+                            "hot":  [10, 11, 12, 1, 2, 3],
+                            "mild": [4, 5, 9],
+                            "cold": [6, 7, 8],
                         },
-                    },
-                    "stock_alerts": {
-                        "cooldown_minutes": 60,  # mín. entre re-avisos do mesmo alerta
-                    },
-                    "loyalty": {
-                        "points_per_real": 1,    # 1 ponto por R$ 1,00
-                        "stamps_target": 10,     # cartela de 10 carimbos
-                        "tiers": [
-                            {"name": "bronze", "threshold": 0},
-                            {"name": "silver", "threshold": 500},
-                            {"name": "gold", "threshold": 2000},
-                            {"name": "platinum", "threshold": 5000}
-                        ],
+                        "high_demand_multiplier": "1.2",
+                        "safety_stock_percent": "0.20",
                     },
                 },
+                "stock_alerts": {
+                    "cooldown_minutes": 60,  # mín. entre re-avisos do mesmo alerta
+                },
+                "loyalty": {
+                    "points_per_real": 1,    # 1 ponto por R$ 1,00
+                    "stamps_target": 10,     # cartela de 10 carimbos
+                    "tiers": [
+                        {"name": "bronze", "threshold": 0},
+                        {"name": "silver", "threshold": 500},
+                        {"name": "gold", "threshold": 2000},
+                        {"name": "platinum", "threshold": 5000}
+                    ],
+                },
             },
-        )
-        self.stdout.write("  ✅ Shop criado" if created else "  ✅ Shop atualizado")
-        apply_search_presence(Shop.objects.get(pk=1), overwrite=True)
+        }
+        for field_name, value in shop_fields.items():
+            setattr(shop, field_name, value)
+        shop.save()
+        self.stdout.write("  ✅ Shop atualizado")
+        apply_search_presence(shop, overwrite=True)
         self.stdout.write("  ✅ Perguntas frequentes iniciais")
 
     # ────────────────────────────────────────────────────────────────
@@ -1637,7 +1824,7 @@ class Command(BaseCommand):
         """Motor de precificação: taxa por faixa de distância (loja→endereço)."""
         from shopman.shop.models import DeliveryDistanceBand
 
-        shop = Shop.objects.get(pk=1)
+        shop = self._the_shop()
         bands = [
             {"max_distance_km": "3.00", "fee_q": 500, "sort_order": 10},    # até 3 km → R$ 5,00
             {"max_distance_km": "6.00", "fee_q": 800, "sort_order": 20},    # até 6 km → R$ 8,00
@@ -1661,7 +1848,7 @@ class Command(BaseCommand):
         """Exceções à distância: override (taxa fixa) e exclude (não entregar)."""
         from shopman.shop.models import DeliveryZone
 
-        shop = Shop.objects.get(pk=1)
+        shop = self._the_shop()
         # A taxa primária vem das faixas de distância; estas zonas são exceções.
         zones = [
             {
@@ -1743,7 +1930,7 @@ class Command(BaseCommand):
         também serve para consertar acesso no staging **sem** rodar este seed —
         que recriaria o catálogo e milhares de pedidos falsos.
         """
-        call_command("setup_operators", "--yes", verbosity=0)
+        call_command("setup_operators", "--yes", "--groups-ready", verbosity=0)
         nomes = ", ".join(u for u, *_ in setup_operators.CAST)
         self.stdout.write(f"  ✅ Operadores em grupos, PIN {setup_operators.DEV_PIN}: {nomes}")
 
@@ -1790,6 +1977,14 @@ class Command(BaseCommand):
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
+
+        # A nota fiscal dos pedidos de exemplo (D-037, #3428) vai junto com eles.
+        # O FiscalDocument não tem FK para o pedido (um Core não importa outro),
+        # então apagar os pedidos não a leva: sem esta linha, a segunda passada
+        # achava a nota órfã do pedido apagado.
+        from shopman.fiscalman.models import FiscalDocument
+
+        FiscalDocument.objects.all().delete()
 
         # Marketing é um ledger protegido e precisa sair antes de cliente, catálogo e
         # usuário. Não basta apagar ``Announcement`` no fim: snapshots ainda ligados a
@@ -1983,12 +2178,9 @@ class Command(BaseCommand):
         # já foram removidas acima; o seed o recria inteiro logo no início.
         QualityDefect.objects.all().delete()
         QualityGrade.objects.all().delete()
-        # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
-        # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
-        # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
-        # que aconteceu com `d1_discount`, cuja classe morreu no C6 (PR #152) e cuja
-        # linha ficou no staging gritando "Could not import" a cada boot. A M2M
-        # `channels` já foi levada junto com os Channels apagados acima.
+        # Regras são configuração de Instância: o ``--flush`` apaga e o descritor
+        # versionado materializa novamente o conjunto exato. A M2M ``channels`` já
+        # foi removida junto com os canais acima.
         RuleConfig.objects.all().delete()
         Shop.objects.all().delete()
 
@@ -2010,6 +2202,27 @@ class Command(BaseCommand):
     # Catálogo (Offerman)
     # ────────────────────────────────────────────────────────────────
 
+    #: Os atalhos da nota da cozinha e as categorias a que cada um se aplica (sem
+    #: categoria, vale para todo pedido). Sugestão do seed: a loja ajusta no Admin.
+    KITCHEN_NOTE_TAGS = (
+        ("Bem assado", ("rusticos", "macios", "folhados")),
+        ("Pouco assado", ("rusticos", "macios", "folhados")),
+        ("Sem cebola", ("salgados",)),
+        ("Embalar para presente", ()),
+        ("Cortar ao meio", ("rusticos", "macios", "salgados")),
+    )
+
+    def _seed_kitchen_note_tags(self):
+        from shopman.offerman.models import Collection
+
+        from shopman.shop.models import KitchenNoteTag
+
+        for position, (label, collection_refs) in enumerate(self.KITCHEN_NOTE_TAGS):
+            tag, _ = KitchenNoteTag.objects.update_or_create(label=label, defaults={"position": position})
+            tag.collections.set(Collection.objects.filter(ref__in=collection_refs))
+            tag.products.clear()
+        self.stdout.write(f"  ✅ {len(self.KITCHEN_NOTE_TAGS)} atalhos da nota da cozinha, com o \"vale para\"")
+
     def _seed_catalog(self):
         self.stdout.write("  📦 Catálogo...")
 
@@ -2017,7 +2230,7 @@ class Command(BaseCommand):
         # As fotos moram no próprio storefront (surfaces/storefront-nuxt/public/
         # img/products/): 41 webp otimizados (1200px quadrado, q80, sem EXIF),
         # servidos pela própria loja — deploy atômico com o app, nenhum serviço
-        # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
+        # externo no caminho da foto. Ver docs/plans/completed/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
         # Ponteiro de domínio NÃO mora no código, e a foto não mora no host de um
         # site: quebrou em 01/09 (menu.* virou a loja) e em 17/09 (a loja virou
@@ -2068,7 +2281,7 @@ class Command(BaseCommand):
             ("TRADI", "Baguette de Tradition", "Pão de tradição francesa e fermentação 100% natural (levain)", 1600, "un", 0, True,
              f"{IMG}/bf.webp", 250, "Congele inteira ou em pedaços. Reaqueça direto do freezer a 200°C por 8min"),
             ("CPG", "Pain de Campagne", "Fermentação natural (levain), trigo 50% integral e centeio orgânico. Fatiado na hora", 2200, "un", 0, True,
-             f"{IMG}/cgr.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
+             f"{IMG}/cgo.webp", 300, "Guarde em saco de pano. Dura até 4 dias em temperatura ambiente"),
             ("CPX", "Campagne Passas & Castanhas", "Levain, trigo 50% integral e centeio orgânico, passas, castanhas de caju e do Pará", 3300, "un", 0, True,
              f"{IMG}/cpx.webp", 500, "Guarde em saco de pano. Dura até 5 dias em temperatura ambiente"),
             ("CI", "Ciabatta", "Pão aerado, clássico italiano com azeite extra virgem e fermentação 100% natural (levain)", 1800, "un", 0, True,
@@ -2080,7 +2293,9 @@ class Command(BaseCommand):
              f"{IMG}/fe.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
             ("TABAT", "Tabatière", "Pãozinho de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/tb.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
-            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+            # Saiu de venda (dono, 21/11/2026: "Mini baguette não vai ter... vai ser
+            # a baguete lanche no lugar"). O produto fica, guarda a história.
+            ("MIB", "Mini Baguete", "Mini baguete com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, False,
              f"{IMG}/bap.webp", 120, "Congele no mesmo dia. Reaqueça a 200°C por 5min"),
             ("TRABB", "Pão de Hambúrguer", "Pão de tradição francesa e fermentação 100% natural (levain)", 600, "un", 0, True,
              f"{IMG}/ph.webp", 100, "Melhor consumido no dia. Congele por até 30 dias"),
@@ -2093,8 +2308,12 @@ class Command(BaseCommand):
              f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KUP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+            # O peso fica vazio: os 100 g de antes não batiam com a ficha do dono
+            # (21/11/2026: 30 g de massa butter + 22 g de cobertura = 52 g crus).
+            # O anunciado (assado) sai da ficha pela perda de forno padrão da casa,
+            # que é estimativa e a tela diz que é. Peso assado a conferir (#2998).
             ("MELON", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
-             f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
+             f"{IMG}/me.webp", None, "Melhor consumido no dia"),
             ("COE", "Coelhinho de Chocolate", "Pão doce de massa amanteigada, em formato de coelhinho", 1000, "un", 0, True,
              f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
@@ -2117,13 +2336,13 @@ class Command(BaseCommand):
              unsplash("photo-1531664412848-9610afed156c"), 320, "Servir quente, imediatamente"),
             ("QJQT", "Queijo-Quente", "Queijo quente da casa, no shokupan", 2600, "un", 0, True,
              unsplash("photo-1528736235302-52922df5c122"), 250, "Servir quente, imediatamente"),
-            ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto — o clássico parisiense", 1800, "un", 0, True,
+            ("JB", "Jambon-Beurre", "Baguette, manteiga e presunto: o clássico parisiense", 1800, "un", 0, True,
              unsplash("photo-1753798130695-3c060be80e83"), 250, "Melhor consumido na hora"),
             # ── Padaria · Doces ──
             ("PERDU", "Pain Perdu", "Fatia de brioche banhada no creme e dourada, com caramelo salgado, chantilly e flor de sal", 1800, "un", 0, True,
              unsplash("photo-1484723091739-30a097e8f929"), 180, "Servir quente, imediatamente"),
-            ("MELSA", "Melon Iced Sando", "Sanduíche gelado de frutas com chantilly, no shokupan", 2200, "un", 0, True,
-             unsplash("photo-1746632732485-4cb341e4a4aa"), 200, "Conservar refrigerado. Consumir no dia"),
+            ("MELSA", "Melon Iced Sando", "Melonpan com uma bola de sorvete de creme", 2200, "un", 0, True,
+             unsplash("photo-1746632732485-4cb341e4a4aa"), None, "Conservar refrigerado. Consumir no dia"),
             ("MDLN", "Madeleine", "Bolinho clássico francês, simples e delicioso", 600, "un", 1, True,
              f"{IMG}/md.webp", 25, "Conserve em recipiente fechado por até 3 dias"),
             # Purin e Tea Jelly são produtos novos em desenvolvimento; validade
@@ -2234,8 +2453,12 @@ class Command(BaseCommand):
              unsplash("photo-1587606381527-172f6d902ada"), 90, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BRBBP", "Mini Brioche Burger Bun com gergelim", "Bun de brioche menor, com gergelim", 500, "un", 1, True,
              f"{IMG}/bbb.webp", 28, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
-            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
-             f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
+            # Vendida no lugar da Mini Baguete (dono, 21/11/2026: "Sim, passa"),
+            # ao mesmo preço. O peso fica vazio: o anunciado (assado) sai da ficha
+            # de 170 g crus pela perda de forno padrão da casa, que é estimativa e
+            # a tela diz que é (`unit_weight_from_recipe`). Peso assado a conferir.
+            ("BGL", "Baguete Lanche", "Baguete no tamanho de lanche, com fermentação 100% natural (levain) e toque de azeite", 900, "un", 0, True,
+             f"{IMG}/bap.webp", None, "Melhor consumido no dia. Congele por até 30 dias"),
             ("ITA", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
              f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPBG", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
@@ -2308,6 +2531,7 @@ class Command(BaseCommand):
             "FENDU": ["pao", "frances", "levain", "individual", "artesanal"],
             "TABAT": ["pao", "frances", "levain", "individual", "artesanal"],
             "MIB": ["pao", "frances", "levain", "mini", "individual"],
+            "BGL": ["pao", "baguete", "levain", "lanche", "individual"],
             "TRABB": ["pao", "hamburger", "levain", "individual"],
             "BRBB": ["brioche", "hamburger", "manteiga", "ovos"],
             "HOL": ["pao", "hotdog", "manteiga", "salgado"],
@@ -2350,6 +2574,14 @@ class Command(BaseCommand):
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "MIB": {
+                "allergens": ["glúten"],
+                "dietary_info": ["100% vegetal"],
+                "serves": "1 pessoa",
+                "approx_dimensions": "aprox. 26 x 5 x 4 cm",
+            },
+            # A peça da foto que a MIB mostrava é esta (bap.webp, massa ciabatta):
+            # herda a porção e a medida dela.
+            "BGL": {
                 "allergens": ["glúten"],
                 "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
@@ -2596,7 +2828,7 @@ class Command(BaseCommand):
                 "approx_dimensions": "2 fatias",
             },
             "MELSA": {
-                "allergens": ["glúten", "leite"],
+                "allergens": ["glúten", "leite", "ovos"],
                 "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
@@ -2739,7 +2971,7 @@ class Command(BaseCommand):
             "CHA-NAMASTE-KANFA-P50", "CHA-CHALOSOFIA-KANFA-P50", "CHA-VITAL-KANFA-P50",
             "SPMC", "CAFL", "CHOQ", "MOCHA", "MA", "CRP", "BRCH", "CN", "BICH", "BRRSN", "FOA",
             "DELI", "HOD",
-            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP", "BGL",
+            "COC", "CHLH", "BRNT", "URS", "PORQ", "KUBB", "BRBBP",
             "ITA", "CPBG", "BAT", "CPR", "VIEN", "PIT", "PIT4", "BGGP", "FOB", "FOC",
             "FOAP", "FOBP", "FOCP", "CRPQ", "FFGO", "FFGOP", "HODP", "JO",
         }
@@ -2835,7 +3067,9 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA", "AGUA-MINERAL-PRATA-310",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            # Montado na hora como o Jambon-Beurre (dono, 21/11/2026, #2925).
+            "MELSA"]
 
         # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
         #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
@@ -2854,7 +3088,8 @@ class Command(BaseCommand):
             "FRAP", "VIEN", "CHHIB", "CTFV",
             "SDLA",
             "CQMO", "CQMA", "CQCOM",
-            "QJQT", "JB",             "PERDU"         ]
+            "QJQT", "JB",             "PERDU",
+            "MELSA"]
 
         for sku in sells_without_stock_skus:
             product = products.get(sku)
@@ -2895,8 +3130,8 @@ class Command(BaseCommand):
         # Frappé e adicionais com preço no Croque Monsieur. Dado, não código
         # (``metadata["option_groups"]``, aba Escolhas do Admin; formato em
         # ``shopman/shop/product_options.py``). Cada opção declara o insumo que
-        # gasta (``consumes``, na unidade-base do insumo); é registro gravado
-        # na linha, sem baixa de estoque na venda. Frutas vermelhas fica sem
+        # gasta (``consumes``, na unidade-base do insumo), congelado na linha;
+        # a venda baixa esse insumo (ADR-040). Frutas vermelhas fica sem
         # insumo declarado: o cadastro de compra não tem polpa/fruta hoje.
         option_groups = {
             "FRAP": [
@@ -3172,12 +3407,9 @@ class Command(BaseCommand):
                 ),
                 "nutrition_facts": nutrition(180, 1, 420.0, 48.0, 22.0, 11.0, 20.0, 11.0, 1.5, 320.0),
             },
-            "MELSA": {
-                "ingredients_text": (
-                    "Shokupan da casa, chantilly e frutas frescas. CONTÉM: glúten e leite."
-                ),
-                "nutrition_facts": nutrition(200, 1, 310.0, 38.0, 24.0, 6.0, 15.0, 9.0, 1.5, 180.0),
-            },
+            # MELSA saiu daqui em 21/11/2026 (dono: "corrija já"): a tabela manual
+            # era a do sanduíche antigo de shokupan. Agora sai da ficha (1 melonpan
+            # e 60 g de sorvete de creme), pela derivação.
             "TPND": {
                 "ingredients_text": (
                     "Azeitonas pretas, alcaparras, azeite extra virgem e ervas."
@@ -4089,6 +4321,24 @@ class Command(BaseCommand):
                 ],
             },
             {
+                # A cobertura do melonpan, massa própria "tipo biscoito" (dono,
+                # 21/11/2026: "considere uma basica, a conferir depois"). Básica e
+                # provisória: farinha, açúcar, manteiga e ovos, os insumos que a
+                # casa já compra. Sem etapas: o dono escreve na tela da receita.
+                "ref": "massa-cobertura-melonpan",
+                "name": "Massa de Cobertura do Melonpan",
+                "output_sku": "MASSA-COBERTURA-MELONPAN",
+                "batch_size": Decimal("780"),
+                "steps": [],
+                "items": [
+                    ("FARINHA-ANACONDA-PREMIUM", Decimal("400")),
+                    ("ACUCAR-CRISTAL", Decimal("160")),
+                    ("MANTEIGA-PRESIDENT-SEM-SAL", Decimal("120")),
+                    ("OVOS", Decimal("100")),
+                ],
+                "notes": dict.fromkeys(("FARINHA-ANACONDA-PREMIUM", "ACUCAR-CRISTAL", "MANTEIGA-PRESIDENT-SEM-SAL", "OVOS"), "Receita básica provisória, a conferir com o dono"),
+            },
+            {
                 # Pita tem massa própria (dono, 26/08). Composição proposta.
                 "ref": "massa-pita",
                 "name": "Massa Pita",
@@ -4307,7 +4557,13 @@ class Command(BaseCommand):
                 "name": "Baguete Lanche",
                 "output_sku": "BGL",
                 "batch_size": Decimal("1"),
-                "items": [("MASSA-CIABATTA", Decimal("260"))],  # 260 g/un
+                # 170 g crus (dono, 21/11/2026: "vai ser a baguete lanche no lugar
+                # [da Mini Baguete], 170g massa ciabatta"; "massa crua 170g").
+                # Eram 260 g.
+                "items": [("MASSA-CIABATTA", Decimal("170"))],  # 170 g/un
+                "notes": {
+                    "MASSA-CIABATTA": "170 g de massa crua (dono). Peso assado a conferir: o anunciado sai da perda de forno padrão da casa",
+                },
             },
             {
                 "ref": "batard",
@@ -4315,6 +4571,115 @@ class Command(BaseCommand):
                 "output_sku": "BAT",
                 "batch_size": Decimal("1"),
                 "items": [("MASSA-TRADICAO", Decimal("320"))],  # 320 g/un
+            },
+            # Os três pãezinhos de tradição que vendiam sem ficha (#2925). O peso
+            # é o da massa crua por peça na aba TRAD da RECEITAS 2.4, a mesma
+            # coluna que dá os 320 g do Bâtard e os 480 g do Italiano Rústico
+            # (dono, 21/11/2026: "use os pesos da RECEITAS 2.4"). Massa de
+            # tradição pela aba e, no Pão de Hambúrguer, pela resposta 4 do dono
+            # (02/10). Sem recheio nem cobertura na aba.
+            {
+                "ref": "fendu",
+                "name": "Fendu",
+                "output_sku": "FENDU",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            {
+                "ref": "tabatiere",
+                "name": "Tabatière",
+                "output_sku": "TABAT",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            {
+                "ref": "pao-hamburguer",
+                "name": "Pão de Hambúrguer",
+                "output_sku": "TRABB",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("130"))],  # 130 g/un
+            },
+            # Os itens da casa que vendiam sem ficha (#2925), pela palavra do dono
+            # de 21/11/2026. O que ele mandou conferir sai com a nota «a conferir»
+            # NA LINHA da ficha (`notes` → `RecipeItem.meta["note"]`, que a tela da
+            # receita mostra), não só aqui no comentário.
+            {
+                # "280g massa ciabatta, considere 20g gergelim".
+                "ref": "baguete-gergelim",
+                "name": "Baguete Gergelim",
+                "output_sku": "BGG",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CIABATTA", Decimal("280")),  # 280 g/un
+                    ("GERGELIM", Decimal("20")),         # 20 g/un
+                ],
+                "notes": {"GERGELIM": "20 g provisórios, a conferir com o dono"},
+            },
+            {
+                # "massa 450g, recheio 150g de uvas passas, castanha de caju e
+                # castanha-do-brasil. considere proporções iguais".
+                "ref": "campagne-passas-castanhas",
+                "name": "Campagne Passas & Castanhas",
+                "output_sku": "CPX",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-CAMPAGNE", Decimal("450")),     # 450 g/un
+                    ("PASSAS", Decimal("50")),              # 50 g/un
+                    ("CASTANHA-CAJU", Decimal("50")),       # 50 g/un
+                    ("CASTANHA-DO-PARA", Decimal("50")),    # 50 g/un
+                ],
+                "notes": {
+                    "PASSAS": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-CAJU": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                    "CASTANHA-DO-PARA": "Recheio de 150 g em partes iguais, a conferir com o dono",
+                },
+            },
+            {
+                # "sim! 60g massa de brioche".
+                "ref": "brioche-burger-bun",
+                "name": "Brioche Burger Bun",
+                "output_sku": "BRBB",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BRIOCHE", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "60g massa de butter".
+                "ref": "pao-hot-dog",
+                "name": "Pão para Hot Dog",
+                "output_sku": "HOL",
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BUTTER", Decimal("60"))],  # 60 g/un
+            },
+            {
+                # "30g massa de butter. recheio de creme de baunilha OU creme de
+                # chocolate (considere 40g a confirmar)". O recheio é UM dos dois:
+                # o baunilha é o padrão; o chocolate é a alternativa que o Core já
+                # modela (`is_optional`, "ingrediente alternativo"), fora da baixa.
+                "ref": "cornet",
+                "name": "Cornet",
+                "output_sku": "CO",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),      # 30 g/un
+                    ("CREME-BAUNILHA", Decimal("40")),    # 40 g/un
+                    ("CREME-CHOCOLATE", Decimal("40")),   # 40 g/un, alternativo
+                ],
+                "optional": {"CREME-CHOCOLATE"},
+                "notes": {
+                    "CREME-BAUNILHA": "Recheio do dia: baunilha ou chocolate. 40 g provisórios, a conferir com o dono",
+                    "CREME-CHOCOLATE": "Alternativa ao creme de baunilha. 40 g provisórios, a conferir com o dono",
+                },
+            },
+            {
+                # "30g massa de butter, 22g massa de 'cobertura do melon'".
+                "ref": "melonpan",
+                "name": "Melonpan",
+                "output_sku": "MELON",
+                "batch_size": Decimal("1"),
+                "items": [
+                    ("MASSA-BUTTER", Decimal("30")),                # 30 g/un
+                    ("MASSA-COBERTURA-MELONPAN", Decimal("22")),    # 22 g/un
+                ],
             },
             {
                 # Ciabatta, não tradição (dono, 22/09): as baguetes de gergelim
@@ -4612,8 +4977,9 @@ class Command(BaseCommand):
                     ("CREME-CHOCOLATE", Decimal("12")),   # 12 g/un
                 ],
             },
-            # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
-            # Dão custo, insumo e rótulo; não são fornada. A convenção dos
+            # ══ Seção 2b — fichas de MONTAGEM (modo "Na hora") ══════════════
+            # Vigentes como qualquer ficha; o modo de produção diz que são
+            # montadas na venda, nunca planejadas. A convenção dos
             # croques é do dono (P7): monsieur vai salada, madame vai ovo,
             # complet vai salada e ovo. O resto do croque é o da ficha da casa
             # (Croque / Tartine, Maysa 10/10/2022): pão CAMPAGNE fatiado fino,
@@ -4621,11 +4987,12 @@ class Command(BaseCommand):
             # parmesão ralado fino. ⚠️ A fatia é ~60 g (dono, 24/09) — A CONFIRMAR
             # na balança.
             #
-            # ⚠️ O consumo automático na VENDA destes itens NÃO EXISTE ainda: a
-            # ficha nasce pronta para ele, e o insumo entra pela compra e nunca
-            # sai. Dono do assunto: docs/plans/WP-BAIXA-DE-INSUMO-NA-VENDA.md.
-            # (Este comentário dizia "Fase 2 do Buyman", que é outra coisa — no
-            # plano do Buyman, Fase 2 é o Pedido de Compra.)
+            # A VENDA destes itens baixa o insumo da ficha (ADR-040, dono
+            # 20/10/2026): o modo "Na hora" (`production_mode`) é o que a baixa,
+            # o KDS e o planejamento leem. `is_active` é só vigente × arquivada.
+            # Um nível só: o bechamel sai como bechamel. Cancelado antes de
+            # preparar devolve; depois de preparado é perda.
+            # `shop/services/made_to_order.py`.
             {
                 # Ficha da casa: pão, prato, cebolas assadas, requeijão e o
                 # queijo de acabamento — o parmesão «Precioso», da região, no
@@ -4634,7 +5001,7 @@ class Command(BaseCommand):
                 "name": "Queijo-Quente",
                 "output_sku": "QJQT",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("FORMA", Decimal("110")),
                     ("REQUEIJAO-CORTE", Decimal("40")),
@@ -4649,7 +5016,7 @@ class Command(BaseCommand):
                 "name": "Croque Monsieur",
                 "output_sku": "CQMO",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4664,7 +5031,7 @@ class Command(BaseCommand):
                 "name": "Croque Madame",
                 "output_sku": "CQMA",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4679,7 +5046,7 @@ class Command(BaseCommand):
                 "name": "Croque Complet",
                 "output_sku": "CQCOM",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CPG", Decimal("60")),      # a confirmar
                     ("MOLHO-BECHAMEL", Decimal("70")),
@@ -4698,13 +5065,37 @@ class Command(BaseCommand):
                 "name": "Jambon-Beurre",
                 "output_sku": "JB",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
+                # O pão entra por PEÇA (`units`): a montagem gasta uma baguete, e a
+                # baixa e a expansão da ficha contam uma, não 230 gramas dela.
+                "units": {"BGL": "un"},
+                "assembly": True,
                 "items": [
-                    ("BGL", Decimal("230")),     # a baguete lanche assada
+                    ("BGL", Decimal("1")),       # uma baguete lanche inteira
                     ("PRESUNTO-CASA", Decimal("85")),
                     ("MANTEIGA-WASABI", Decimal("30")),
                     ("PEPINO-CORNICHO-CONSERVA", Decimal("12")),
                 ],
+            },
+            {
+                # "melonpan + bola de sorvete de creme (peso a conferir)" (dono,
+                # 21/11/2026). Montado na hora, como o Jambon-Beurre. O pão é o
+                # melonpan da casa, não o shokupan que o cadastro dizia.
+                "ref": "melon-iced-sando",
+                "name": "Melon Iced Sando",
+                "output_sku": "MELSA",
+                "batch_size": Decimal("1"),
+                "production_mode": ProductionMode.MADE_TO_ORDER,
+                "units": {"MELON": "un"},
+                "assembly": True,
+                "items": [
+                    ("MELON", Decimal("1")),            # um melonpan
+                    ("SORVETE-CREME", Decimal("60")),   # uma bola
+                ],
+                "notes": {
+                    "MELON": "Um melonpan; o peso por peça é o do cadastro do produto, a conferir",
+                    "SORVETE-CREME": "Uma bola de sorvete de creme; 60 g provisórios, a conferir com o dono",
+                },
             },
             {
                 # "1 BN rende, em tese, 8. Nosso pain perdu é pequeno mesmo"
@@ -4717,7 +5108,7 @@ class Command(BaseCommand):
                 "name": "Pain Perdu",
                 "output_sku": "PERDU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("BRNT", Decimal("26")),
                     ("CREME-LEITE-OVOS", Decimal("65")),
@@ -4727,13 +5118,13 @@ class Command(BaseCommand):
                     ("FLOR-DE-SAL", Decimal("1")),
                 ],
             },
-            # ══ Seção 2b — fichas de BEBIDA (is_active=False) ════════════════
+            # ══ Seção 2b — fichas de BEBIDA (modo "Na hora") ═════════════════
             {
                 "ref": "espresso",
                 "name": "Espresso",
                 "output_sku": "SP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [("CAFE-ORFEU-CLASSICO", Decimal("18"))],
             },
             {
@@ -4741,7 +5132,7 @@ class Command(BaseCommand):
                 "name": "Espresso Macchiato",
                 "output_sku": "SPMC",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("21"))
@@ -4752,7 +5143,7 @@ class Command(BaseCommand):
                 "name": "Cappuccino",
                 "output_sku": "CAP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155"))
@@ -4763,7 +5154,7 @@ class Command(BaseCommand):
                 "name": "Mochaccino",
                 "output_sku": "CAPMO",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("155")),
@@ -4775,7 +5166,7 @@ class Command(BaseCommand):
                 "name": "Mocha",
                 "output_sku": "MOCHA",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("185")),
@@ -4787,7 +5178,7 @@ class Command(BaseCommand):
                 "name": "Caffè Latte",
                 "output_sku": "CAFL",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("227"))
@@ -4798,7 +5189,7 @@ class Command(BaseCommand):
                 "name": "Chocolate Quente",
                 "output_sku": "CHOQ",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("LEITE-INTEGRAL-A", Decimal("227")),
                     ("CHOCOLATE-GOTAS-MEIOAMARGO", Decimal("30"))
@@ -4809,7 +5200,7 @@ class Command(BaseCommand):
                 "name": "Chá Camille",
                 "output_sku": "CHCAM",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-CAMILLE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4820,7 +5211,7 @@ class Command(BaseCommand):
                 "name": "Chá Rouge",
                 "output_sku": "CHROU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-ROUGE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4831,7 +5222,7 @@ class Command(BaseCommand):
                 "name": "Chá Sophie",
                 "output_sku": "CHSOP",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-SOPHIE", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4842,7 +5233,7 @@ class Command(BaseCommand):
                 "name": "Chá Bleu",
                 "output_sku": "CHBLU",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-BLEU", Decimal("8")),
                     ("AGUA-FILTRADA", Decimal("400"))
@@ -4853,7 +5244,7 @@ class Command(BaseCommand):
                 "name": "Chá Hibisco",
                 "output_sku": "CHHIB",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-HIBISCO", Decimal("8")),
                     ("ACUCAR-CRISTAL", Decimal("15")),
@@ -4865,7 +5256,7 @@ class Command(BaseCommand):
                 "name": "Soft Chai Cítrico",
                 "output_sku": "SFTCH",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-CHAI", Decimal("8")),
                     ("LIMAO-SICILIANO", Decimal("20")),
@@ -4880,7 +5271,7 @@ class Command(BaseCommand):
                 "name": "Vienna",
                 "output_sku": "VIEN",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CAFE-TAMURA-CHOCOMELO", Decimal("18")),
                     ("LEITE-INTEGRAL-A", Decimal("52")),
@@ -4894,7 +5285,7 @@ class Command(BaseCommand):
                 "name": "Chá Tônica Frutas Vermelhas",
                 "output_sku": "CTFV",
                 "batch_size": Decimal("1"),
-                "is_active": False,
+                "production_mode": ProductionMode.MADE_TO_ORDER,
                 "items": [
                     ("CHA-FRUTAS-VERMELHAS", Decimal("8")),
                     # ⅓ da lata de 350 ml por bebida (dono, 23/09) ≈ 115 g.
@@ -4914,16 +5305,21 @@ class Command(BaseCommand):
         # litro (unidade-base do insumo) e a nutrição precisa de grama. Sem ela o
         # item ficaria de fora da soma — ADR-024 (a ponte é declarada, nunca
         # deduzida) e shopman/shop/services/nutrition_from_recipe.py.
+        #
+        # O `label` vira `Material.name`, e o nome não pode contradizer o SKU: a
+        # Produção busca por um e lê o outro. A NOVARA-T55 se chamava "T65", a
+        # ANACONDA-PREMIUM "T55" e o SAL-REFINADO "Sal marinho" (beta 05/11).
+        # Trava: test_seed_catalog_coerente.py.
         INGREDIENT_PROFILES = {
-            "FARINHA-NOVARA-T55":  {"label": "Farinha de trigo T65",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
-            "FARINHA-ANACONDA-PREMIUM":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-NOVARA-T55":  {"label": "Farinha de trigo T55",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
+            "FARINHA-ANACONDA-PREMIUM":  {"label": "Farinha de trigo premium",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-BAGATELLE-T45":  {"label": "Farinha de trigo T45",   "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 364, "carbohydrates_g": 76, "sugars_g": 0.3, "proteins_g": 10, "total_fat_g": 1.0, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 2.7, "sodium_mg": 2}},
             "FARINHA-INTEGRAL-ORGANICA":  {"label": "Farinha de trigo integral", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 340, "carbohydrates_g": 72, "sugars_g": 0.4, "proteins_g": 13, "total_fat_g": 2.5, "saturated_fat_g": 0.4, "trans_fat_g": 0, "fiber_g": 10.7, "sodium_mg": 2}},
             "FARINHA-CENTEIO-INTEGRAL-ORGANICA":      {"label": "Farinha de centeio",     "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 338, "carbohydrates_g": 76, "sugars_g": 1.0, "proteins_g": 10, "total_fat_g": 1.7, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 15.0, "sodium_mg": 2}},
             "AGUA-FILTRADA": {"label": "Água filtrada",         "allergens": [], "diet": "vegan", "density_g_per_ml": 1.0, "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 0}},
             "LEVAIN-LIQUIDO": {"label": "Fermento natural (levain)", "allergens": ["glúten"], "diet": "vegan", "nutrition": {"energy_kcal": 220, "carbohydrates_g": 45, "sugars_g": 0.5, "proteins_g": 7,  "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 1.8,  "sodium_mg": 5}},
             "FERMENTO-BIOLOGICO-FRESCO": {"label": "Fermento biológico",     "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 105, "carbohydrates_g": 12, "sugars_g": 0,   "proteins_g": 13, "total_fat_g": 1.5, "saturated_fat_g": 0.2, "trans_fat_g": 0, "fiber_g": 8.1,  "sodium_mg": 30}},
-            "SAL-REFINADO":          {"label": "Sal marinho",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
+            "SAL-REFINADO":          {"label": "Sal refinado",            "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 0,   "carbohydrates_g": 0,  "sugars_g": 0,   "proteins_g": 0,  "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 38758}},
             "ACUCAR-CRISTAL":       {"label": "Açúcar",                 "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 387, "carbohydrates_g": 100, "sugars_g": 100, "proteins_g": 0, "total_fat_g": 0,   "saturated_fat_g": 0,   "trans_fat_g": 0, "fiber_g": 0,    "sodium_mg": 1}},
             "MANTEIGA-PRESIDENT-SEM-SAL":  {"label": "Manteiga francesa",      "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 717, "carbohydrates_g": 0.1, "sugars_g": 0.1, "proteins_g": 0.9, "total_fat_g": 81, "saturated_fat_g": 51,  "trans_fat_g": 3.3, "fiber_g": 0,  "sodium_mg": 11}},
             "LEITE-INTEGRAL-A":        {"label": "Leite integral",         "allergens": ["leite"], "diet": "vegetarian", "density_g_per_ml": 1.03, "nutrition": {"energy_kcal": 61,  "carbohydrates_g": 4.8, "sugars_g": 4.8, "proteins_g": 3.2, "total_fat_g": 3.3, "saturated_fat_g": 1.9, "trans_fat_g": 0.1, "fiber_g": 0,  "sodium_mg": 40}},
@@ -4958,6 +5354,16 @@ class Command(BaseCommand):
             "SALSINHA-DESIDRATADA": {"label": "Salsinha desidratada", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 292, "carbohydrates_g": 51, "sugars_g": 7.3, "proteins_g": 27, "total_fat_g": 5.5, "saturated_fat_g": 1.4, "trans_fat_g": 0, "fiber_g": 30, "sodium_mg": 452}},
             "TOMILHO-FRESCO": {"label": "Tomilho fresco", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 101, "carbohydrates_g": 24, "sugars_g": 0, "proteins_g": 5.6, "total_fat_g": 1.7, "saturated_fat_g": 0.5, "trans_fat_g": 0, "fiber_g": 14, "sodium_mg": 9}},
             "PASSAS": {"label": "Uvas-passas", "allergens": [], "diet": "vegan", "nutrition": {"energy_kcal": 299, "carbohydrates_g": 79, "sugars_g": 59, "proteins_g": 3.1, "total_fat_g": 0.5, "saturated_fat_g": 0.1, "trans_fat_g": 0, "fiber_g": 3.7, "sodium_mg": 11}},
+            # O recheio do Campagne Passas & Castanhas e a bola do Melon Iced Sando
+            # (dono, 21/11/2026, #2925). Comprados; fornecedor ainda não declarado.
+            # Nutrição por 100 g do USDA FoodData Central (SR Legacy), sem gordura
+            # trans declarada (0): castanha de caju = "Nuts, cashew nuts, raw"
+            # (FDC 170162, NDB 12087); castanha-do-brasil = "Nuts, brazilnuts,
+            # dried, unblanched" (FDC 170569, NDB 12078); sorvete de creme = "Ice
+            # creams, vanilla" (FDC 167575, NDB 19095).
+            "CASTANHA-CAJU": {"label": "Castanha de caju", "allergens": ["castanha-de-caju"], "diet": "vegan", "nutrition": {"energy_kcal": 553, "carbohydrates_g": 30.19, "sugars_g": 5.91, "proteins_g": 18.22, "total_fat_g": 43.85, "saturated_fat_g": 7.783, "trans_fat_g": 0, "fiber_g": 3.3, "sodium_mg": 12}},
+            "CASTANHA-DO-PARA": {"label": "Castanha-do-brasil", "allergens": ["castanha-do-brasil"], "diet": "vegan", "nutrition": {"energy_kcal": 659, "carbohydrates_g": 11.74, "sugars_g": 2.33, "proteins_g": 14.32, "total_fat_g": 67.1, "saturated_fat_g": 16.134, "trans_fat_g": 0, "fiber_g": 7.5, "sodium_mg": 3}},
+            "SORVETE-CREME": {"label": "Sorvete de creme", "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 207, "carbohydrates_g": 23.6, "sugars_g": 21.22, "proteins_g": 3.5, "total_fat_g": 11.0, "saturated_fat_g": 6.79, "trans_fat_g": 0, "fiber_g": 0.7, "sodium_mg": 80}},
             # Ao LEITE: o nome diz, e o rótulo tem de dizer também (dono, 24/09). Este
             # perfil vinha como "vegan" e sem alérgeno, herdado do genérico
             # "gotas de chocolate" — o rótulo do Brioche Chocolat só não mentia
@@ -5016,7 +5422,7 @@ class Command(BaseCommand):
 
         # Buyman Material master — os insumos viram Material first-class (sku sem
         # prefixo; identidade própria, não Product). unit + shelf-life conforme a
-        # tabela aprovada em docs/plans/BUYMAN-PROCUREMENT-PLAN.md (todos frescos
+        # tabela aprovada em docs/plans/completed/BUYMAN-PROCUREMENT-PLAN.md (todos frescos
         # mesmo). sku → (unit, shelf_life_days|None); None = não perecível.
         #
         # ⚠️ O SKU é um namespace só, dividido com o catálogo vendável: nomes
@@ -5117,6 +5523,7 @@ class Command(BaseCommand):
             "MILHO-VERDE-CONSERVA": ("g", 365), "BACON": ("g", 15),
             "SALSINHA-DESIDRATADA": ("g", 365), "TOMILHO-FRESCO": ("g", 14),
             "PASSAS": ("g", 365), "CHOCOLATE-GOTAS-AOLEITE": ("g", 365),
+            "CASTANHA-CAJU": ("g", 180), "CASTANHA-DO-PARA": ("g", 180), "SORVETE-CREME": ("g", 90),
             "CHOCOLATE-BATON-MEIOAMARGO": ("g", 365), "BAUNILHA-EXTRATO-NATURAL": ("g", 365),
             "NATA-FRESCA": ("g", 10),
             "CAFE-ORFEU-CLASSICO": ("g", 90), "CAFE-TAMURA-CHOCOMELO": ("g", 90),
@@ -5347,10 +5754,10 @@ class Command(BaseCommand):
                     "output_sku": rd["output_sku"],
                     "batch_size": rd["batch_size"],
                     "steps": rd["steps"] if "steps" in rd else self._production_steps_for_recipe(rd["ref"]),
-                    # Ficha de MONTAGEM/BEBIDA nasce inativa: dá custo, insumo
-                    # e rótulo, mas não é fornada — `craft.suggest` considera
-                    # toda ficha ativa, e croque não entra em plano de forno.
-                    "is_active": rd.get("is_active", True),
+                    # Toda ficha do seed é a vigente do SKU. O que a monta na
+                    # venda é o modo de produção, não a ficha desligada.
+                    "is_active": True,
+                    "production_mode": rd.get("production_mode", ProductionMode.BATCH),
                     "meta": {
                         "capacity_per_day": PROVISIONAL_CAPACITY_PER_DAY[rd["ref"]],
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
@@ -5368,6 +5775,14 @@ class Command(BaseCommand):
                         # sanduíche: acima disso a Nota 2 do Cap. 16 o leva para
                         # 1602 (auditoria fiscal de 24/09).
                         **({"fiscal_note": CROQUE_FISCAL_NOTE} if rd["ref"].startswith("croque-") else {}),
+                        # A montagem (Jambon-Beurre, Melon Iced Sando) não vai ao
+                        # forno: perda 0 e sem folga de novo, porque a peça que ela
+                        # gasta já entra pelo peso anunciado, que já é piso.
+                        **({
+                            "bake_loss_pct": "0",
+                            "bake_loss_source": "estimated",
+                            "weight_slack_pct": "0",
+                        } if rd.get("assembly") else {}),
                     },
                 },
             )
@@ -5376,17 +5791,40 @@ class Command(BaseCommand):
             # rendimento). O terceiro número é o «Rend. %» da ficha da casa, em
             # fração: cebola 0,84, tomilho só folhas 0,60, suco de limão 0,40. A bruta,
             # que sai do estoque, é derivada — nunca escrita aqui.
+            #
+            # `notes` põe a nota NA LINHA (`meta["note"]`, que a tela da receita
+            # mostra): é onde o dono vê o que mandou conferir. `optional` marca o
+            # ingrediente alternativo, que a baixa e a fórmula não contam.
+            notes = rd.get("notes", {})
+            optional = rd.get("optional", set())
+            # `units` declara a linha em PEÇA quando o insumo é um produto da casa
+            # (a baguete do Jambon-Beurre, o melonpan do Melon Iced Sando).
+            units_by_sku = rd.get("units", {})
             for input_sku, qty, *usable in rd["items"]:
-                meta = INGREDIENT_PROFILES.get(input_sku, {})
+                meta = dict(INGREDIENT_PROFILES.get(input_sku, {}))
+                if notes.get(input_sku):
+                    meta["note"] = notes[input_sku]
+                if input_sku in units_by_sku:
+                    # A ponte da peça até grama é o peso que o próprio cadastro
+                    # anuncia (o da BGL sai da ficha dela, que vem antes na lista).
+                    # Sem ela a fórmula deixaria a linha fora da conta.
+                    piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                    if piece is not None and piece.unit_weight_g:
+                        meta["unit_weight_g"] = meta["grams_per_unit"] = piece.unit_weight_g
                 RecipeItem.objects.create(
                     recipe=recipe,
                     input_sku=input_sku,
                     quantity=qty,
                     usable_factor=usable[0] if usable else Decimal("1"),
-                    unit=_recipe_item_unit(input_sku),
+                    unit=units_by_sku.get(input_sku) or _recipe_item_unit(input_sku),
+                    is_optional=input_sku in optional,
                     meta=meta,
                 )
             if product:
+                # Peso vazio no cadastro: o anunciado sai da ficha já aqui, para a
+                # ficha que gasta esta peça (o Jambon-Beurre gasta uma BGL) achar o
+                # peso dela.
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
@@ -5408,8 +5846,26 @@ class Command(BaseCommand):
         for rd in recipes_data:
             product = Product.objects.filter(sku=rd["output_sku"]).first()
             if product:
+                # Peso vazio no cadastro (BGL, MELSA): o anunciado sai da ficha,
+                # antes da tabela, que usa o peso para a porção. Peso posto à mão
+                # nunca é sobrescrito (`weight_is_writable`).
+                fill_unit_weight_from_recipe(product)
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
+
+        # A linha em PEÇA (`units`) leva a ponte até grama no peso que o cadastro
+        # da peça anuncia AGORA, depois das derivações: o da BGL só existe depois
+        # que a ficha dela fecha. Antes do inventário, que lê a ponte. São duas
+        # chaves para o mesmo número: `unit_weight_g` é a da nutrição e do peso
+        # (`recipe_bom`); `grams_per_unit`, a da fórmula do inventário.
+        for rd in recipes_data:
+            for input_sku in rd.get("units", {}):
+                piece = Product.objects.filter(sku=input_sku).only("unit_weight_g").first()
+                if piece is None or not piece.unit_weight_g:
+                    continue
+                for item in RecipeItem.objects.filter(recipe__ref=rd["ref"], input_sku=input_sku):
+                    item.meta = {**(item.meta or {}), "unit_weight_g": piece.unit_weight_g, "grams_per_unit": piece.unit_weight_g}
+                    item.save(update_fields=["meta"])
 
         # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
         # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
@@ -5814,7 +6270,9 @@ class Command(BaseCommand):
                     "operator_ref": operator_ref,
                 },
                 "seed",
-                at(target_date, (3, 0)),
+                # Planeja-se na véspera, e nunca depois do agora: às 3h do próprio
+                # dia o plano nascia depois da massa (1h) e, para amanhã, no futuro.
+                min(at(target_date - timedelta(days=1), (16, 0)), timezone.now() - timedelta(minutes=5)),
             )
             if status in (WorkOrder.Status.STARTED, WorkOrder.Status.FINISHED):
                 effective_started = started_qty or planned_qty
@@ -5832,7 +6290,7 @@ class Command(BaseCommand):
                             else "seed operacional"
                         ),
                     },
-                    "seed",
+                    SEED_BENCH_ACTOR,
                     start_at or at(target_date, (5, 0)),
                 )
             if status == WorkOrder.Status.FINISHED and finished_qty is not None:
@@ -5864,7 +6322,7 @@ class Command(BaseCommand):
                             else {}
                         ),
                     },
-                    "seed",
+                    SEED_BENCH_ACTOR,
                     finish_at or at(target_date, (8, 0)),
                 )
             return work_order
@@ -5888,6 +6346,13 @@ class Command(BaseCommand):
         # horas fixas foi o que inverteu a ordem da padaria de madrugada — com o
         # seed rodado antes das ~5h25 a massa terminava DEPOIS de a primeira
         # fornada começar, e o dia ficava impossível (22/08).
+        #
+        # A tabela é de horas FIXAS, e o seed pode rodar antes delas: às 7h31 a
+        # Produção mostrava "Madeleine · aberto às 09:00" e "Folhado · fechado
+        # 11:00" (beta 05/11, PROD-20). Nenhum fato de hoje fica depois do agora:
+        # lote fechado no futuro recua inteiro (mantém a duração), lote aberto
+        # no futuro abre agora.
+        today_ceiling = timezone.now() - timedelta(minutes=2)
         today_schedule = []
         for index, (ref, qty, start_hm, finish_hm) in enumerate(production_plan):
             if index in (0, 1, 7, 9):
@@ -5913,6 +6378,8 @@ class Command(BaseCommand):
                 start_at = timezone.now() - timedelta(
                     minutes=self._max_started_minutes_for_recipe(ref) + 15
                 )
+            else:
+                start_at, finish_at = _not_after_now(start_at, finish_at, ceiling=today_ceiling)
             today_schedule.append((ref, qty, status, started, finished, start_at, finish_at))
 
         # A primeira fornada de acabado do dia é a âncora do pré-preparo abaixo.
@@ -6092,7 +6559,11 @@ class Command(BaseCommand):
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
-        if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
+        # Não inventar um modo de preparo para cremes, molhos e preparações.
+        # Etapas conhecidas vêm de rd["steps"]; sem elas a ficha pede cadastro.
+        if ref.startswith(("creme-", "molho-", "salada-", "vinagrete-")):
+            return []
+        if "croissant" in ref or ref == "pain-chocolat" or "folhado" in ref:
             return ["Massa", "Laminação", "Forno"]
         if "focaccia" in ref:
             return ["Mistura", "Fermentação", "Cobertura", "Forno"]
@@ -6109,7 +6580,9 @@ class Command(BaseCommand):
             return ["Pesagem", "Cocção", "Resfriamento"]
         if ref.startswith("manteiga-"):
             return ["Pesagem", "Mistura", "Resfriamento"]
-        return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        if ref in ("coelhinho", "ursinho", "porquinho"):
+            return ["Mistura", "Fermentação", "Modelagem", "Forno"]
+        return []
 
     def _max_started_minutes_for_recipe(self, ref: str) -> int:
         if "croissant" in ref or "chocolat" in ref or "folhado" in ref:
@@ -6133,8 +6606,11 @@ class Command(BaseCommand):
         # Todo produto publicado num canal onde o cliente compra de longe precisa
         # dos dados de compra remota (alergênicos, porções, fiscal). O WhatsApp
         # entra na lista porque o concierge vende sem o cliente ver a vitrine.
+        # O PDV fica de fora: no balcão o cliente lê a embalagem, e o item que
+        # vende só no balcão (publicado, remotos pausados) é a mercearia que
+        # ainda não teve a embalagem digitada (beta 05/11, GES-10/CMP-08).
         listed_skus = ListingItem.objects.filter(
-            listing__ref__in=("pdv", "ifood", STOREFRONT_REF, "whatsapp"),
+            listing__ref__in=("ifood", STOREFRONT_REF, "whatsapp"),
             listing__is_active=True,
             is_published=True,
         ).values_list("product__sku", flat=True).distinct()
@@ -6223,9 +6699,11 @@ class Command(BaseCommand):
         self.stdout.write("  👥 Clientes...")
 
         # Faixas de preço: qual tabela cada cliente enxerga (`PriceTier.listing_ref`).
+        # Varejo é o grupo PADRÃO: é nele que nasce o cadastro sem grupo escolhido
+        # (o formulário do Gestor marca só o padrão, nunca o primeiro da lista).
         varejo, _ = PriceTier.objects.update_or_create(
             ref="varejo",
-            defaults={"name": "Varejo"},
+            defaults={"name": "Varejo", "is_default": True},
         )
         atacado, _ = PriceTier.objects.update_or_create(
             ref="atacado",
@@ -6291,6 +6769,10 @@ class Command(BaseCommand):
             )
             if price_tier is not None:
                 c.price_tiers.set([price_tier])
+            # Clientes da casa que já falaram com a loja pelo WhatsApp: o número
+            # está provado pelo canal. Sem a prova, o número não abre a conta
+            # (D4, OC-08), e quem entra como estes clientes (o harness E2E, o
+            # teste no ambiente de testes) ficaria trancado fora do código.
             ContactPoint.objects.update_or_create(
                 customer=c,
                 type="whatsapp",
@@ -6298,23 +6780,14 @@ class Command(BaseCommand):
                 defaults={
                     "is_primary": True,
                     "value_display": phone,
+                    "is_verified": True,
+                    "verification_method": ContactPoint.VerificationMethod.CHANNEL_ASSERTED,
+                    "verified_at": timezone.now(),
                 },
             )
             customers[ref] = c
 
         self._seed_customer_tags(customers)
-
-        # Vínculos de login apontam para o uuid do Customer. Se a base perdeu os
-        # clientes e ganhou uuids novos (reset parcial), o login antigo fica
-        # órfão e o cliente perde o canal em tempo real sem nenhum aviso. Aqui o
-        # seed se auto-cura religando por telefone; o que não dá para religar
-        # fica para o comando dedicado decidir (--delete-unrepairable).
-        try:
-            from django.core.management import call_command
-
-            call_command("cleanup_orphan_customer_links", verbosity=0)
-        except Exception:
-            self.stdout.write("  ⚠️  não foi possível revisar vínculos de login")
 
         consented = self._seed_marketing_consent(customers)
 
@@ -6355,307 +6828,6 @@ class Command(BaseCommand):
     # Canais (Orderman)
     # ────────────────────────────────────────────────────────────────
 
-    def _seed_channels(self):
-        self.stdout.write("  📡 Canais...")
-
-        channels = {}
-        _pos_config = {
-            "confirmation": {"mode": "immediate"},
-            # `link_timeout_minutes`: quanto o LINK de pagamento do pedido remoto
-            # vale, contado da venda — e é só o teto, porque o link vence antes
-            # se o compromisso do pedido chegar antes (início da janela
-            # combinada, ou o fechamento da loja no dia). Duas horas: o pão é
-            # para hoje ou para amanhã, e a encomenda remota só é liberada
-            # contra o pagamento.
-            "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
-            # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
-            # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
-            # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica
-            # do marketplace (check_on_commit=False).
-            # allow_untracked=False: canal de CLIENTE — typo de SKU não pode
-            # virar pedido sem reserva (SKU fora do catálogo é recusado/alertado).
-            # sells_nonconforming=True: no balcão o lote com desconto de
-            # qualidade É vendido — a etiqueta explica (C2 do D1-RETIREMENT).
-            # safety_margin=0: o balcão NUNCA guarda unidade de ninguém — a
-            # margem existe para proteger ELE dos canais remotos. Explícito para
-            # que uma mudança de default na loja não chegue ao caixa em silêncio.
-            "stock": {
-                "check_on_commit": False,
-                "allow_untracked": False,
-                "sells_nonconforming": True,
-                "safety_margin": 0,
-            },
-            "handle_label": "Comanda",
-            "handle_placeholder": "Ex: 42",
-            # Por onde o aviso do pedido de balcão SAI da casa. Sem esta chave o
-            # canal herdava o `console` da loja — que sempre "dá certo" e
-            # curto-circuita a cadeia: nenhum aviso de PDV alcançava o cliente,
-            # inclusive o link de pagamento do pedido remoto. WhatsApp e e-mail
-            # entregam a URL clicável e de graça; o SMS custa e trunca, então é
-            # a última rede. Cliente só com e-mail cai no e-mail sozinho: o
-            # backend sem destinatário é pulado pelo mecanismo.
-            "notifications": {"backend": "manychat", "fallback_chain": ["email", "sms"]},
-            # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
-            # com a maquininha; o despacho pergunta e a custódia fica no pedido.
-            "fulfillment": {"equipment": ["card_machine"]},
-            # Venda de balcão presencial é um evento já ocorrido, não uma esteira:
-            # o pão saiu pela porta antes do commit. A transição extra
-            # ACCEPTED→COMPLETED autoriza o lifecycle a fechar na hora a venda
-            # sem trabalho de cozinha (system:counter_handoff). Encomenda
-            # agendada, entrega e lanche com receita seguem a esteira normal —
-            # o gate está no lifecycle, aqui é só a permissão da máquina de
-            # estados (assada no snapshot de cada pedido).
-            "lifecycle": {
-                "transitions": {
-                    "new": ["accepted", "cancelled"],
-                    "accepted": ["preparing", "ready", "completed", "cancelled"],
-                    "preparing": ["ready", "cancelled"],
-                    # `cancelled` aqui não é exceção: sem ele a régua não
-                    # fechava. Dava para cancelar ANTES (na fila, na cozinha) e
-                    # DEPOIS (venda fechada, o desfazer da janela), mas não no
-                    # meio — justamente quando o pão está pronto no balcão e o
-                    # cliente liga desistindo. Quem pode é outra pergunta, e
-                    # quem responde é `OrderCancelView` com
-                    # `shop.cancel_advanced_order`. `dispatched`/`delivered`
-                    # seguem fora: depois que o motoboy saiu o fato é DEVOLUÇÃO
-                    # (`returned`), e misturar os dois estraga a leitura do B.I.
-                    "ready": ["preparing", "dispatched", "completed", "cancelled"],
-                    "dispatched": ["delivered", "returned"],
-                    "delivered": ["completed", "returned"],
-                    "completed": ["returned", "cancelled"],
-                    "cancelled": [],
-                    "returned": [],
-                },
-            },
-        }
-        _remote_stock = {
-            "hold_ttl_minutes": 30,
-            # Margem de segurança (decisão do dono, 22/09: "Margem padrão fica em
-            # 2 unidades, configurável, claro"). Por SKU, dentro do escopo de
-            # posições do canal: o canal remoto não mostra nem reserva as últimas
-            # N unidades — elas ficam para o balcão, que é quem tem o cliente na
-            # frente. Vale na LEITURA (cardápio, checkout) e na reserva da
-            # sacola; NÃO vale no hold de commit (pedido já colocado pode
-            # consumi-la — ``services/stock.py``). Ajuste por canal no Admin
-            # (Canal → Estoque → ``safety_margin``). Bancos já existentes
-            # recebem o mesmo valor pela migração ``shop.0064``.
-            "safety_margin": REMOTE_SAFETY_MARGIN,
-            # Canais de CLIENTE não aceitam SKU fora do catálogo como pedido
-            # sem reserva — typo de SKU falha limpo no gate de commit.
-            "allow_untracked": False,
-            # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
-            # Não conforme não sai no remoto (default explícito aqui por
-            # legibilidade). O runtime não permite afrouxar esse limite por
-            # override: somente o PDV local pode vender grau com markdown.
-            "sells_nonconforming": False,
-        }
-        # Fila de fornada (fermata): o cliente pode reservar a produção futura
-        # conhecida por até dois dias. O relógio de 15 min só começa quando o
-        # Stockman materializa a unidade; até lá a intenção não expira nem cobra.
-        #
-        # Isto precisa ser explícito no seed. Herdar o default desligado fazia o
-        # catálogo demonstrar uma fornada planejada que nenhum cliente conseguia
-        # reservar — e obrigava qualquer QA da notificação a fabricar Hold à mão,
-        # pulando justamente os invariantes que o ensaio deveria provar.
-        _remote_waitlist = {
-            "enabled": True,
-            "horizon_days": 2,
-            "confirmation_minutes": 15,
-            "release_policy": "serve_next",
-            "charge_at": "confirmation",
-            "price_frozen": True,
-        }
-        _remote_notifications = {
-            "backend": "manychat",
-            "fallback_chain": ["sms", "email"],
-        }
-        _remote_config = {
-            # Pedido remoto só é aceito quando uma pessoa confere disponibilidade.
-            # Cobrança e copy não podem transformar silêncio operacional em garantia.
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
-            "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
-            "stock": _remote_stock,
-            "waitlist": _remote_waitlist,
-            # Canal remoto nunca herda ``console``: console aceita qualquer
-            # mensagem localmente e interrompe a cadeia antes de alcançar a
-            # pessoa. WhatsApp é o primário; SMS e e-mail são redes reais.
-            "notifications": _remote_notifications,
-        }
-        _marketplace_config = {
-            # O iFood cancela o pedido que ninguém confirma em 8 minutos (SLA da
-            # doc; medido a 8min10s em 19/09/2026, seis pedidos seguidos). O card
-            # conta esse prazo a partir do `createdAt` deles, e o alerta de pedido
-            # esquecido tem de tocar ANTES: com 20 ele tocava doze minutos depois
-            # de o pedido já ter sido recolhido, sobre algo que não dava mais para
-            # salvar. Cinco deixa três minutos para o operador agir.
-            "confirmation": {
-                "mode": "manual",
-                "stale_new_alert_minutes": 5,
-                "external_sla_minutes": 8,
-            },
-            "payment": {"method": "external", "timing": "external"},
-            # Marketplace: o pedido já foi comitado e PAGO no iFood. Não rejeitar
-            # localmente por estoque/listing — aceitar e deixar o operador tratar
-            # eventual falta (reserva o que der, best-effort). Rejeitar aqui
-            # cancelaria um pedido de marketplace já pago.
-            "stock": {**_remote_stock, "check_on_commit": False},
-        }
-        _whatsapp_config = {
-            "confirmation": {"mode": "manual", "stale_new_alert_minutes": 10},
-            # O link de Pix/cartão aparece no chat logo depois do pedido, como o
-            # link de pagamento do PDV. `at_commit` também faz a confirmação
-            # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
-            # o concierge não promete fornada a pedido que ainda não pagou.
-            "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-            "notifications": _remote_notifications,
-            "stock": _remote_stock,
-            "waitlist": _remote_waitlist,
-            # A vitrine do WhatsApp É a da loja online: mesmo cliente remoto, só
-            # que conversando. O ponteiro mantém as duas iguais sempre
-            # (`shop/services/listing_mirror.py`, P1-14); no Catálogo o WhatsApp
-            # não tem edição própria.
-            "pricing": {"listing_from": STOREFRONT_REF},
-        }
-        channels_data = [
-            # (ref, name, display_order, is_active, config_overrides)
-            # Canal = ORIGEM do pedido (por onde entra). Entrega/retirada é fulfillment
-            # (ortogonal, por pedido) — não um canal. Por isso não há "Delivery Próprio":
-            # um pedido para nossa entrega origina de PDV (telefone), WhatsApp ou Loja online.
-            # display_order = ordem canônica das colunas no Gestor: PDV · Loja online · iFood · WhatsApp.
-            # `short_name` (ChannelConfig) = rótulo da coluna estreita no Catálogo; só
-            # quando o nome completo não cabe — "PDV"/"iFood" já são curtos.
-            ("pdv", "PDV", 1, True, _pos_config),
-            # Loja online: cliente acompanha de longe, então o preparo NÃO começa
-            # sozinho ao pagar — o operador dá "Iniciar preparo" no gestor (a tela
-            # do cliente só diz "Em preparo" quando alguém de fato encosta). PDV e
-            # iFood ficam no default "auto" (operador presente / marketplace).
-            (STOREFRONT_REF, "Loja online", 2, True, {
-                **_remote_config,
-                # Loja online PAGA AO PEDIR, como no WhatsApp (decisão do dono,
-                # 14/10/2026, L1=1): o Pix/cartão nasce no pedido, sem "pagar na
-                # entrega" no site (L2=1). A loja tem 30 min de loja aberta para
-                # aceitar (aviso no Gestor aos 10); recusou ou venceu, o pedido é
-                # cancelado e o dinheiro volta sozinho. Nota do dono: "se os
-                # estornos ficarem constantes, reavaliar". Banco vivo: shop.0094.
-                "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
-                "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-                "short_name": "Site",
-                "order_ref_prefix": "NB",
-                "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
-            }),
-            ("ifood", "iFood", 3, True, {
-                **_marketplace_config,
-                "pricing": {"policy": "external"},
-                "editing": {"policy": "locked"},
-                # O telefone que chega no pedido do iFood é da CENTRAL dele: um
-                # 0800 mais um localizador que quem liga digita para cair no
-                # cliente. Serve para o operador ligar; não é contato do cliente
-                # e não é nosso para usar em aviso automático. Por pedido o
-                # sinal é o `phone_localizer`; esta linha é o que sustenta o
-                # pedido em que o iFood omitir o localizador.
-                "notifications": {"customer_phone": "relay"},
-                # Via do entregador ANÔNIMA: o iFood determina que documento
-                # destinado a parceiro de entrega não traga CPF nem endereço, e
-                # o entregador dele já tem tudo na tela do app. O canal próprio
-                # fica no default ("identified") — a transportadora contratada
-                # pela casa não tem app, e o endereço só existe no papel.
-                "fulfillment": {"courier_ticket": "anonymous"},
-            }),
-            # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
-            # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;
-            # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
-            # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
-            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config)
-        ]
-
-        for ref, name, display_order, is_active, config_data in channels_data:
-            ch, _ = Channel.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": name,
-                    "is_active": is_active,
-                    "display_order": display_order,
-                    "config": config_data,
-                },
-            )
-            channels[ref] = ch
-
-        self.stdout.write(f"  ✅ {len(channels)} canais")
-        return channels
-
-    def _seed_display_channels(self):
-        """Canais de EXIBIÇÃO: mostram o catálogo sem transacionar.
-
-        📺 Menuboards (TVs no salão) + 🛰 feeds (Google/Meta). Cada um compõe coleções
-        reais (viram as seções/segmentos). Acoplamento frouxo por ref de coleção — não
-        exige coleção-guarda-chuva. A pausa global do produto cascateia sobre eles, e o
-        operador pode pausar um item em UM canal (`display.paused_skus`).
-
-        Eram um model próprio (`Showcase`) até a ADR-018: superfície é canal, e o que
-        distinguia as duas coisas era só *poder vender*. Isso virou
-        `commerce_policy`, e o resto do que o Showcase guardava virou o aspecto
-        `display` do `ChannelConfig`.
-
-        **`prices_from` é o ponto todo.** Canal de exibição não vende, logo não tem
-        preço próprio — mas mostra preço, e mostrar o errado vincula o fornecedor. Então
-        ele aponta para quem transaciona:
-
-        · TV do balcão → **PDV**. Está fisicamente na loja; tem de concordar com o caixa.
-        · Google/Meta → **loja online**. É lá que quem clicou vai comprar.
-
-        Enquanto todos os canais cobram igual, isto não muda um centavo na tela. É de
-        propósito: a mudança é de FONTE, e existe para o dia em que o PDV tiver preço
-        próprio — aí a TV acompanha o caixa em vez de anunciar tabela.
-        """
-        self.stdout.write("  📺 Canais de exibição...")
-
-        pos_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
-        web_ref = STOREFRONT_REF
-
-        # `short_name` = rótulo da coluna estreita na matriz do Catálogo. O nome
-        # completo continua valendo no Admin, onde ele diz QUAL TV é ("TV do Café" vs
-        # "TV do Salão") — informação que "TV1"/"TV2" perdem.
-        #
-        # `format` vazio = menuboard: ele é uma ROTA nossa, não um dialeto de terceiro.
-        # Google e Meta têm dialeto (nome do campo, separador de label), e é isso que o
-        # formato nomeia.
-        channels_data = [
-            # (ref, name, short_name, format, prices_from, [collection_refs])
-            ("tv-1", "TV do Café", "TV1", "", pos_ref,
-             ["bebidas-quentes", "bebidas-geladas", "doces"]),
-            ("tv-2", "TV do Salão", "TV2", "", pos_ref,
-             ["rusticos", "macios", "folhados", "salgados"]),
-            ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
-             ["rusticos", "macios", "folhados", "salgados", "doces"]),
-            ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
-             ["rusticos", "macios", "folhados", "salgados", "doces"])
-        ]
-
-        for ref, name, short_name, fmt, prices_from, collections in channels_data:
-            Channel.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": name,
-                    "commerce_policy": Channel.CommercePolicy.DISPLAY,
-                    "is_active": True,
-                    "config": {
-                        "short_name": short_name,
-                        "display": {
-                            "format": fmt,
-                            "collections": collections,
-                            "prices_from": prices_from,
-                            "paused_skus": [],
-                        },
-                    },
-                },
-            )
-
-        self.stdout.write(f"  ✅ {len(channels_data)} canais de exibição")
-
-    # ────────────────────────────────────────────────────────────────
-    # Pedidos (Orderman)
-    # ────────────────────────────────────────────────────────────────
-
     def _seed_orders(self, products, customers, channels):
         self.stdout.write("  🛒 Pedidos...")
 
@@ -6673,6 +6845,14 @@ class Command(BaseCommand):
             season_multiplier = 1.2
         else:                                           # mild
             season_multiplier = 1.0
+
+        # O primeiro pedido de ONTEM (no fuso da loja) é da Ana Ferreira (CLI-005): a
+        # jornada J7 do Gestor a acha pelo nome e amplia o período até ele. O sorteio
+        # de cliente segue consumido igual; só esse pedido troca de dona. Sem isto,
+        # havia seed com pedido dela ontem e seed sem, conforme a hora em que rodava,
+        # e a J7 caía ao acaso (#3295).
+        yesterday_anchor = customers.get("CLI-005")
+        local_yesterday = timezone.localdate() - timedelta(days=1)
 
         for days_ago in range(35):  # 5 weeks of history
             day = now - timedelta(days=days_ago)
@@ -6721,6 +6901,8 @@ class Command(BaseCommand):
                     status = "completed"
 
                 order_time = day.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                if yesterday_anchor is not None and timezone.localtime(order_time).date() == local_yesterday:
+                    customer, yesterday_anchor = yesterday_anchor, None
 
                 # Random items
                 num_items = random.randint(1, 4)
@@ -6761,8 +6943,14 @@ class Command(BaseCommand):
                     # ele, 1.169 pedidos existiam e NENHUM era atribuível: todo
                     # `CustomerInsight` nascia vazio, RFM dizia "lost" para todo mundo e
                     # todo público comportamental do Marketing resolvia zero.
+                    # `customer`: o nome e o telefone que todo canal real grava no pedido
+                    # (a loja, o que a pessoa digita; o PDV, o do cadastro). Sem eles o
+                    # Histórico não achava a cliente pelo nome e a lista mostrava só o
+                    # telefone (#2878, J7).
                     data={
                         "customer_ref": customer.ref,
+                        "customer": {"name": customer.name, "phone": customer.phone or ""},
+                        "fulfillment_type": "pickup",
                         "availability_decision": {"approved": True, "source": "seed", "decisions": []},
                     },
                     # ⚠️ `snapshot["items"]` é o que o HISTÓRICO do cliente lê
@@ -6790,7 +6978,7 @@ class Command(BaseCommand):
                     )
 
                 # Create events
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=0,
@@ -6799,7 +6987,7 @@ class Command(BaseCommand):
                 )
 
                 if status in ("accepted", "preparing", "ready", "completed"):
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=1,
@@ -6808,7 +6996,7 @@ class Command(BaseCommand):
                     )
 
                 if status in ("preparing", "ready", "completed"):
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=2,
@@ -6817,7 +7005,7 @@ class Command(BaseCommand):
                     )
 
                 if status == "completed":
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=3,
@@ -6840,7 +7028,9 @@ class Command(BaseCommand):
             ("preparing", random.randint(5, 15)),
             ("accepted",  random.randint(2, 5)),
             ("accepted",  random.randint(2, 5)),
-            ("ready",      1)
+            # Pronto há 5 min: a trilha anda até 3 min depois da abertura, e com
+            # 1 min o "pronto" e o ticket da cozinha concluíam no futuro.
+            ("ready",      5)
         ]
 
         for live_status, minutes_ago in live_specs:
@@ -6880,9 +7070,16 @@ class Command(BaseCommand):
                 handle_ref=handle_ref,
                 created_at=order_time,
                 # `customer_ref`: o elo que o histórico do cliente usa. Ver o gêmeo acima.
+                # `payment`: pedido sem forma de pagamento não existe (dono, 06/11,
+                # GES-03). Em andamento, ninguém pagou ainda: recebe na retirada.
+                # `fulfillment_type`: sem ele, o cartão do PDV dizia "Retirada" e o
+                # painel, "entregar no endereço" (beta 07/11).
                 data={
                     "customer_ref": customer.ref,
+                    "customer": {"name": customer.name, "phone": customer.phone or ""},
+                    "fulfillment_type": "pickup",
                     "availability_decision": {"approved": True, "source": "seed", "decisions": []},
+                    "payment": self._live_order_payment(channel.ref, total_q),
                 },
                 # `snapshot["items"]`: o que o histórico do cliente lê. Ver o gêmeo acima.
                 snapshot={"items": items_data},
@@ -6901,7 +7098,7 @@ class Command(BaseCommand):
                 )
 
             # Events: realistic minute progression
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order,
                 type="status_change",
                 seq=0,
@@ -6910,7 +7107,7 @@ class Command(BaseCommand):
             )
 
             if live_status in ("accepted", "preparing", "ready"):
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=1,
@@ -6919,7 +7116,7 @@ class Command(BaseCommand):
                 )
 
             if live_status in ("preparing", "ready"):
-                OrderEvent.objects.create(
+                self._create_order_event(
                     order=order,
                     type="status_change",
                     seq=2,
@@ -6931,7 +7128,7 @@ class Command(BaseCommand):
                 tickets = dispatch(order)
 
                 if live_status == "ready":
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=3,
@@ -6982,14 +7179,14 @@ class Command(BaseCommand):
                 unit_price_q=produced_product.base_price_q,
                 line_total_q=produced_product.base_price_q * 3,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=sync_order,
                 type="status_change",
                 seq=0,
                 payload={"new_status": "new"},
                 created_at=order_time,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=sync_order,
                 type="status_change",
                 seq=1,
@@ -7033,14 +7230,14 @@ class Command(BaseCommand):
                 unit_price_q=prod_b.base_price_q,
                 line_total_q=prod_b.base_price_q,
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order_accepted,
                 type="status_change",
                 seq=0,
                 payload={"new_status": "new"},
                 created_at=now - timedelta(minutes=9),
             )
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order_accepted,
                 type="status_change",
                 seq=1,
@@ -7080,30 +7277,46 @@ class Command(BaseCommand):
 
         # Chave de acesso NFC-e (44 dígitos): cUF(41=PR)+AAMM+CNPJ+mod(65)+série+nNF+
         # tpEmis(2=homolog)+cNF+cDV. Formato realista; exemplo de homologação.
+        # O cNF sai do pedido: a chave é única no FiscalDocument, e um seed rodado
+        # de novo que escolha outro pedido não pode repetir a chave do anterior.
         now = timezone.now()
-        chave = f"41{now:%y%m}99999999000191650010000012342{'87654321'}0"
-        chave = "".join(ch for ch in chave if ch.isdigit())[:44].ljust(44, "0")
-        qr_consulta = (
-            "http://www.fazenda.pr.gov.br/nfce/qrcode?p="
-            f"{chave}|2|2|1|A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0"
-        )
+        cnf = int(hashlib.sha256(order.ref.encode()).hexdigest(), 16) % 10**8
+        chave = f"41{now:%y%m}99999999000191650010000012342{cnf:08d}0"
+        # O exemplo não é autorizado na SEFAZ. Não fabrique uma consulta com
+        # hash fictício: só uma emissão real do provedor fornece esse QR.
 
         data = order.data or {}
         data.setdefault("fiscal", {})["issue_document"] = True
         data.setdefault("customer", {}).setdefault("name", "Consumidor Final")
         data.setdefault("payment", {})["method"] = data.get("payment", {}).get("method") or "pix"
-        data.update({
-            "nfce_access_key": chave,
-            "nfce_number": 1234,
-            "nfce_series": "1",
-            "nfce_protocol": f"141{now:%y}0000012345",
-            "nfce_status": "autorizado",
-            "nfce_danfe_url": f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
-            "nfce_qrcode_url": qr_consulta,
-            "nfce_xml_url": f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
-        })
         order.data = data
         order.save(update_fields=["data", "updated_at"])
+
+        # A nota mora no FiscalDocument (D-037, #3428), gravada pelo mesmo serviço
+        # da emissão; as chaves ``nfce_*`` do pedido são o espelho dela, e só o
+        # ``fiscal_mirror`` as escreve.
+        from django.db import transaction
+        from shopman.fiscalman import services as fiscal_documents
+        from shopman.fiscalman.contracts import FiscalDocumentResult
+
+        from shopman.shop.services import fiscal_mirror
+
+        with transaction.atomic():
+            # Seed rodado de novo sobre o mesmo pedido: a nota que ele já tem fica.
+            document = fiscal_documents.document_for(order.ref) or fiscal_documents.record_authorized(
+                order.ref,
+                FiscalDocumentResult(
+                    success=True,
+                    access_key=chave,
+                    document_number=1234,
+                    document_series=1,
+                    protocol_number=f"141{now:%y}0000012345",
+                    danfe_url=f"https://homologacao.focusnfe.com.br/danfe/nfce/{chave}.pdf",
+                    xml_url=f"https://homologacao.focusnfe.com.br/notas/nfce/{chave}.xml",
+                    status="authorized",
+                ),
+            )
+            fiscal_mirror.write(order, document)
         self.stdout.write(f"  🧾 NFC-e exemplo (homologação) no pedido {order.ref} — /fiscal/danfe/{order.ref}/")
 
     def _seed_security_reliability_edges(self, products, customers, channels):
@@ -7256,7 +7469,7 @@ class Command(BaseCommand):
             line_total_q=total_q,
             meta={"seed": "nelson", "source": "security_reliability_edges"},
         )
-        OrderEvent.objects.create(
+        self._create_order_event(
             order=order,
             type="status_change",
             seq=0,
@@ -7297,27 +7510,33 @@ class Command(BaseCommand):
         expires_at=None,
         captured_at=None,
     ) -> None:
-        intent = PaymentIntent.objects.create(
-            ref=f"PI-EDGE-{uuid.uuid4().hex[:10].upper()}",
-            order_ref=order.ref,
-            method=method,
-            status=status,
-            amount_q=order.total_q,
-            gateway=gateway,
-            gateway_data=self._pix_gateway_data(gateway),
-            gateway_id=f"{gateway_id}-{order.ref}",
-            expires_at=expires_at,
-            captured_at=captured_at,
-        )
+        # A cobrança nasce junto com o pedido, não na hora do seed. Com o
+        # ``auto_now_add`` o Pix vencido nascia DEPOIS de vencer, e o Gestor
+        # escrevia "gerado às 05:51 · expirou às 05:48" (beta 05/11, GES-04).
+        with mock.patch("django.utils.timezone.now", return_value=order.created_at):
+            intent = PaymentIntent.objects.create(
+                ref=f"PI-EDGE-{uuid.uuid4().hex[:10].upper()}",
+                order_ref=order.ref,
+                method=method,
+                status=status,
+                amount_q=order.total_q,
+                gateway=gateway,
+                gateway_data=self._pix_gateway_data(gateway),
+                gateway_id=f"{gateway_id}-{order.ref}",
+                expires_at=expires_at,
+                captured_at=captured_at,
+            )
         payment = dict((order.data or {}).get("payment") or {})
         payment["intent_ref"] = intent.ref
         if status == PaymentIntent.Status.CAPTURED:
-            PaymentTransaction.objects.create(
-                intent=intent,
-                type=PaymentTransaction.Type.CAPTURE,
-                amount_q=order.total_q,
-                gateway_id=intent.gateway_id,
-            )
+            # A transação é imutável: a data entra no próprio insert.
+            with mock.patch("django.utils.timezone.now", return_value=captured_at or order.created_at):
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CAPTURE,
+                    amount_q=order.total_q,
+                    gateway_id=intent.gateway_id,
+                )
         order.data = {**(order.data or {}), "payment": payment}
         order.save(update_fields=["data", "updated_at"])
 
@@ -7396,7 +7615,7 @@ class Command(BaseCommand):
                         completed_at=order_time,
                     )
                     self._stamp_order(order, order_time)
-                    OrderEvent.objects.create(
+                    self._create_order_event(
                         order=order,
                         type="status_change",
                         seq=0,
@@ -7448,8 +7667,17 @@ class Command(BaseCommand):
             "line_total_q": product.base_price_q * qty,
         }
 
-    def _qa_status_events(self, order: Order, created_at: datetime) -> None:
-        """Reconstrói a trilha de eventos até o status atual (determinística)."""
+    def _qa_status_events(self, order: Order, created_at: datetime, until: datetime) -> None:
+        """Reconstrói a trilha de eventos até o status atual (determinística).
+
+        Duas coerências que a tela de detalhe lê (beta 05/11, CEN-10):
+
+        * pedido que não é de entrega não passa por "Saiu para entrega" nem por
+          "Entregue": a retirada vai de pronto direto a concluído;
+        * nenhum passo fica depois de ``until`` (a conclusão, ou o agora): a
+          trilha andava um minuto por passo a partir da abertura e podia terminar
+          no futuro, ou longe da hora em que o pedido foi carimbado.
+        """
         status = order.status
         if status == Order.Status.CANCELLED:
             path = [Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.CANCELLED]
@@ -7462,13 +7690,18 @@ class Command(BaseCommand):
         else:
             idx = self._QA_STATUS_PATH.index(status)
             path = self._QA_STATUS_PATH[: idx + 1]
+        if (order.data or {}).get("fulfillment_type") != "delivery":
+            path = [
+                step for step in path
+                if step not in (Order.Status.DISPATCHED, Order.Status.DELIVERED) or step == status
+            ]
         for seq, step in enumerate(path):
-            OrderEvent.objects.create(
+            self._create_order_event(
                 order=order,
                 type="status_change",
                 seq=seq,
                 payload={"new_status": step, "source": "seed:qa"},
-                created_at=created_at + timedelta(minutes=seq),
+                created_at=min(created_at + timedelta(minutes=seq), until),
             )
 
     def _make_qa_order(
@@ -7479,21 +7712,26 @@ class Command(BaseCommand):
         status: str,
         items: list[dict],
         data: dict,
-        minutes_ago: int,
+        minutes_ago: int = 0,
+        created_at: datetime | None = None,
+        completed_at: datetime | None = None,
         handle_ref: str = "",
         handle_type: str = "phone",
         external_ref: str | None = None,
     ) -> Order:
         now = timezone.now()
-        created_at = now - timedelta(minutes=minutes_ago)
+        # ``created_at`` explícito é a hora do fato (venda em conta das 7h20);
+        # sem ele, o pedido abriu ``minutes_ago`` atrás. Nunca no futuro.
+        created_at = min(created_at or now - timedelta(minutes=minutes_ago), now)
         total_q = sum(item["line_total_q"] for item in items)
         order_data = {
             "availability_decision": {"approved": True, "source": "seed:qa", "decisions": []},
             **data,
         }
-        completed_at = created_at + timedelta(minutes=15) if status in (
-            Order.Status.COMPLETED, Order.Status.DELIVERED,
-        ) else None
+        if status in (Order.Status.COMPLETED, Order.Status.DELIVERED):
+            completed_at = min(max(completed_at or created_at + timedelta(minutes=15), created_at), now)
+        else:
+            completed_at = None
         order = Order.objects.create(
             ref=ref,
             channel_ref=channel_ref,
@@ -7519,7 +7757,7 @@ class Command(BaseCommand):
                 line_total_q=item["line_total_q"],
                 meta={"seed": "nelson", "source": "qa"},
             )
-        self._qa_status_events(order, created_at)
+        self._qa_status_events(order, created_at, until=completed_at or now)
         return order
 
     def _seed_qa_orders(self, products, customers, channels):
@@ -7547,9 +7785,11 @@ class Command(BaseCommand):
         preorder_data = {
             "fulfillment_type": "delivery",
             "delivery_date": tomorrow,
-            "delivery_time_slot": "manha",
+            "delivery_time_slot": "slot-09",
             "is_preorder": True,
             "customer": {"name": "Cliente Encomenda QA"},
+            # Pedido sem forma de pagamento não existe (dono, 06/11, GES-03).
+            "payment": {"method": "cash", "collection": "on_delivery"},
         }
         self._make_qa_order(
             ref="QA-PREORDER-01",
@@ -7626,29 +7866,33 @@ class Command(BaseCommand):
             },
             minutes_ago=180,
         )
-        returned_intent = PaymentIntent.objects.create(
-            ref="PI-QA-RETURNED-01",
-            order_ref=returned.ref,
-            method=PaymentIntent.Method.PIX,
-            status=PaymentIntent.Status.REFUNDED,
-            amount_q=returned.total_q,
-            gateway=self._pix_gateway(),
-            gateway_data=self._pix_gateway_data(self._pix_gateway()),
-            gateway_id=f"seed-qa-refunded-{returned.ref}",
-            captured_at=returned.created_at + timedelta(minutes=5),
-        )
-        PaymentTransaction.objects.create(
-            intent=returned_intent,
-            type=PaymentTransaction.Type.CAPTURE,
-            amount_q=returned.total_q,
-            gateway_id=returned_intent.gateway_id,
-        )
-        PaymentTransaction.objects.create(
-            intent=returned_intent,
-            type=PaymentTransaction.Type.REFUND,
-            amount_q=returned.total_q,
-            gateway_id=f"{returned_intent.gateway_id}-refund",
-        )
+        # Cobrança, captura e estorno com o relógio do pedido, não o do seed.
+        with mock.patch("django.utils.timezone.now", return_value=returned.created_at):
+            returned_intent = PaymentIntent.objects.create(
+                ref="PI-QA-RETURNED-01",
+                order_ref=returned.ref,
+                method=PaymentIntent.Method.PIX,
+                status=PaymentIntent.Status.REFUNDED,
+                amount_q=returned.total_q,
+                gateway=self._pix_gateway(),
+                gateway_data=self._pix_gateway_data(self._pix_gateway()),
+                gateway_id=f"seed-qa-refunded-{returned.ref}",
+                captured_at=returned.created_at + timedelta(minutes=5),
+            )
+        with mock.patch("django.utils.timezone.now", return_value=returned_intent.captured_at):
+            PaymentTransaction.objects.create(
+                intent=returned_intent,
+                type=PaymentTransaction.Type.CAPTURE,
+                amount_q=returned.total_q,
+                gateway_id=returned_intent.gateway_id,
+            )
+        with mock.patch("django.utils.timezone.now", return_value=returned.created_at + timedelta(minutes=90)):
+            PaymentTransaction.objects.create(
+                intent=returned_intent,
+                type=PaymentTransaction.Type.REFUND,
+                amount_q=returned.total_q,
+                gateway_id=f"{returned_intent.gateway_id}-refund",
+            )
         returned.data = {
             **(returned.data or {}),
             "payment": {**(returned.data or {}).get("payment", {}), "intent_ref": returned_intent.ref},
@@ -7719,6 +7963,7 @@ class Command(BaseCommand):
                 "fulfillment_type": "pickup",
                 "customer": {"name": "Cliente Observação QA"},
                 "order_notes": "Bem assadinha, por favor. Cortar ao meio.",
+                "payment": {"method": "cash"},
             },
             minutes_ago=8,
         )
@@ -7736,6 +7981,7 @@ class Command(BaseCommand):
             data={
                 "fulfillment_type": "pickup",
                 "customer": {"name": "Cliente Itens Nomeados QA"},
+                "payment": {"method": "cash", "collection": "on_delivery"},
             },
             minutes_ago=6,
         )
@@ -7837,10 +8083,39 @@ class Command(BaseCommand):
 
         self.stdout.write("  ✅ Comanda qa 00002001 com item disparado à cozinha")
 
+    #: Quanto depois de feito o pedido do seed fecha (o mesmo do evento "completed").
+    SEED_CLOSE_AFTER = timedelta(minutes=15)
+
+    def _stamp_closed_orders(self) -> int:
+        """Carimba ``completed_at``/``cancelled_at`` do pedido fechado que nasceu sem."""
+        stamped = 0
+        for status, field in (
+            (Order.Status.COMPLETED, "completed_at"),
+            (Order.Status.CANCELLED, "cancelled_at"),
+        ):
+            stamped += Order.objects.filter(status=status, **{f"{field}__isnull": True}).update(
+                **{field: F("created_at") + self.SEED_CLOSE_AFTER}
+            )
+        return stamped
+
     def _stamp_order(self, order: Order, created_at: datetime):
         Order.objects.filter(pk=order.pk).update(created_at=created_at, updated_at=created_at)
         order.created_at = created_at
         order.updated_at = created_at
+
+    def _create_order_event(self, *, created_at: datetime | None = None, **fields) -> OrderEvent:
+        """Evento de pedido na hora do fato, e não na hora do seed.
+
+        ``OrderEvent.created_at`` é ``auto_now_add``: o ``created_at`` passado ao
+        ``create`` é descartado em silêncio. Todo evento do seed nascia na hora em
+        que o seed rodou, e a linha do tempo de um pedido das 7h20 dizia "Novo,
+        Aceito, ..., Concluído, todos às 05:51" (beta 05/11, CEN-10).
+        """
+        event = OrderEvent.objects.create(**fields)
+        if created_at is not None:
+            OrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
+            event.created_at = created_at
+        return event
 
     def _new_order_ref(self, channel_ref: str, business_date: date) -> str:
         for _attempt in range(20):
@@ -7937,7 +8212,7 @@ class Command(BaseCommand):
         vitrine = positions["vitrine"]
         alerts_data = [
             ("TRADI", 10),
-            ("MIB", 12),
+            ("BGL", 12),
             ("FENDU", 15),
             ("CRO", 15),
             ("PCHOC", 12),
@@ -8018,7 +8293,17 @@ class Command(BaseCommand):
                  "route": "Av. Higienópolis", "street_number": "350", "complement": "Sala 201",
                  "neighborhood": "Higienópolis", "city": "Londrina", "state": "Paraná",
                  "state_code": "PR", "postal_code": "86020-080",
-                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False}
+                 "latitude": Decimal("-23.3065000"), "longitude": Decimal("-51.1650000"), "is_default": False},
+                # O endereço que um pedido de entrega (iFood incluído) grava sozinho no
+                # cadastro, SEM etiqueta (`shop/services/customer.py`, #2775: "Outro" sem
+                # nome). Está aqui para as listas de endereços (PDV, loja, Gestor) terem o
+                # caso real: sem etiqueta, a tela mostra o endereço.
+                {"label": "other", "label_custom": "",
+                 "formatted_address": "Rua Sergipe, 890 - Centro, Londrina - PR, 86010-360",
+                 "route": "Rua Sergipe", "street_number": "890", "complement": "",
+                 "neighborhood": "Centro", "city": "Londrina", "state": "Paraná",
+                 "state_code": "PR", "postal_code": "86010-360",
+                 "latitude": Decimal("-23.3125000"), "longitude": Decimal("-51.1600000"), "is_default": False}
             ]),
             ("CLI-002", [
                 {"label": "work", "formatted_address": "Rua Marselha, 191 - Jardim Piza, Londrina - PR, 86041-140",
@@ -8231,6 +8516,7 @@ class Command(BaseCommand):
         self.stdout.write("  💳 Payments...")
 
         orders = Order.objects.filter(status__in=["completed", "delivered"])
+        now = timezone.now()
         count = 0
         linked = 0
 
@@ -8245,6 +8531,10 @@ class Command(BaseCommand):
             gateway = self._pix_gateway() if method == PaymentIntent.Method.PIX else "stripe"
             intent_ref = f"PI-{uuid.uuid4().hex[:12].upper()}"
 
+            # A cobrança é do dia do pedido: com o ``auto_now_add`` ela nascia na
+            # hora do seed, e o Admin mostrava "Criado em 5 nov" com "Capturado
+            # em 2 out" (beta 05/11, ENV-01). A captura nunca passa do agora.
+            captured_at = min(order.created_at + timedelta(minutes=5), now)
             intent = PaymentIntent(
                 ref=intent_ref,
                 order_ref=order.ref,
@@ -8254,16 +8544,18 @@ class Command(BaseCommand):
                 gateway=gateway,
                 gateway_data=self._pix_gateway_data(gateway),
                 gateway_id=f"gw-{uuid.uuid4().hex[:16]}",
-                captured_at=order.created_at + timedelta(minutes=5),
+                captured_at=captured_at,
             )
-            intent.save()
+            with mock.patch("django.utils.timezone.now", return_value=order.created_at):
+                intent.save()
 
-            PaymentTransaction.objects.create(
-                intent=intent,
-                type=PaymentTransaction.Type.CAPTURE,
-                amount_q=order.total_q,
-                gateway_id=intent.gateway_id,
-            )
+            with mock.patch("django.utils.timezone.now", return_value=captured_at):
+                PaymentTransaction.objects.create(
+                    intent=intent,
+                    type=PaymentTransaction.Type.CAPTURE,
+                    amount_q=order.total_q,
+                    gateway_id=intent.gateway_id,
+                )
             if self._attach_order_payment_link(order, intent):
                 linked += 1
             count += 1
@@ -8509,15 +8801,19 @@ class Command(BaseCommand):
 
         # Get collections for KDS routing
         col_salgados = Collection.objects.filter(ref="salgados").first()
+        col_doces = Collection.objects.filter(ref="doces").first()
         col_bebidas_quentes = Collection.objects.filter(ref="bebidas-quentes").first()
         col_bebidas_geladas = Collection.objects.filter(ref="bebidas-geladas").first()
 
         # Remove old KDS instances that no longer exist
         KDSInstance.objects.filter(ref__in=["paes", "folhados", "salgados"]).delete()
 
-        # KDS Lanches — Prep: montagem de lanches e salgados na hora
+        # KDS Lanches — Prep: montagem de lanches e salgados na hora. Uma
+        # estação só recebe item do tipo dela: daqui só passa o que é "Na hora"
+        # (croque, queijo-quente, o pain perdu dos doces); o salgado e o doce
+        # de lote, prontos, são separação.
         kds_lanches, _ = KDSInstance.objects.update_or_create(
-            ref="lanches",
+            ref="snacks",
             defaults={
                 "name": "Lanches",
                 "type": "prep",
@@ -8527,13 +8823,13 @@ class Command(BaseCommand):
             },
         )
         kds_lanches.collections.clear()
-        for col in [col_salgados]:
+        for col in [col_salgados, col_doces]:
             if col:
                 kds_lanches.collections.add(col)
 
         # KDS Cafés — Prep: bebidas quentes e frias
         kds_cafes, _ = KDSInstance.objects.update_or_create(
-            ref="cafes",
+            ref="coffee",
             defaults={
                 "name": "Cafés",
                 "type": "prep",
@@ -8547,11 +8843,11 @@ class Command(BaseCommand):
             if col:
                 kds_cafes.collections.add(col)
 
-        # KDS Encomendas — Picking: separação de pedidos de balcão e agendados
+        # KDS Separação — Picking: separação de pedidos de balcão e agendados.
         KDSInstance.objects.update_or_create(
-            ref="encomendas",
+            ref="picking",
             defaults={
-                "name": "Encomendas",
+                "name": "Separação",
                 "type": "picking",
                 "target_time_minutes": 5,
                 "sound_enabled": True,
@@ -8561,10 +8857,11 @@ class Command(BaseCommand):
 
         # KDS Saída — pedidos prontos para entregar no balcão ou despachar.
         # "Expedição" é o fechamento de lote da Produção (decisão do dono,
-        # 26/09/2026); a migração backstage.0076 renomeia a estação de quem já
-        # tinha a antiga.
+        # 26/09/2026). O ref de cada estação é o caminho da bancada no kds-nuxt
+        # (`/<ref>`), e URL de operador é em inglês: a migração backstage.0094
+        # renomeou os refs em português de quem já os tinha.
         KDSInstance.objects.update_or_create(
-            ref="saida",
+            ref="exit",
             defaults={
                 "name": "Saída",
                 "type": "expedition",
@@ -8576,7 +8873,7 @@ class Command(BaseCommand):
 
         KDSInstance.objects.filter(ref__in=["padaria"]).delete()
 
-        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Encomendas, Saída)")
+        self.stdout.write("  ✅ 4 estações KDS (Cafés, Lanches, Separação, Saída)")
 
     # ────────────────────────────────────────────────────────────────
     # Etiquetas de cliente
@@ -8752,78 +9049,6 @@ class Command(BaseCommand):
                 count += 1
 
         self.stdout.write(f"  ✅ {len(NOTIFICATION_TEMPLATES)} templates de notificação ({count} novos)")
-
-    def _seed_rule_configs(self):
-        self.stdout.write("  ⚙️  Rule configs...")
-
-        RULE_CONFIGS = [
-            {
-                "ref": "happy_hour",
-                "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
-                "label": "Hora da Xepa",
-                "params": {"discount_percent": 25, "start": "17:30", "end": "18:00"},
-                "priority": 65,
-            },
-            {
-                "ref": "business_hours",
-                "rule_path": "shopman.shop.rules.validation.BusinessHoursRule",
-                "label": "Horário de Funcionamento",
-                "params": {},
-                "priority": 10,
-            },
-            # Mínimo de entrega, mínimo geral e frete grátis são políticas da loja
-            # em Shop.defaults["rules"] (ver _seed_shop), fonte única consumida
-            # pelo aviso ao vivo e pelos validators de commit.
-            #
-            # Sugestão: os defaults do dono também entram aqui, e não só na
-            # migração 0030, porque `_flush` apaga TODA RuleConfig — sem estas
-            # duas linhas, um `seed --flush` deixaria a casa sem regra de
-            # adicional e sem ninguém perceber (o motor cairia só em
-            # co-ocorrência, que num banco recém-flushado é nada).
-            {
-                "ref": "suggestion.complement",
-                "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
-                "label": "Sugestão de adicional",
-                "params": DEFAULT_COMPLEMENT_PARAMS,
-                "priority": 100,
-            },
-            {
-                "ref": "suggestion.substitute",
-                "rule_path": "shopman.shop.rules.suggestion.SubstituteRule",
-                "label": "Sugestão de substituto",
-                "params": DEFAULT_SUBSTITUTE_PARAMS,
-                "priority": 101,
-            }
-        ]
-
-        count = 0
-        rules_by_ref = {}
-        for rc in RULE_CONFIGS:
-            obj, created = RuleConfig.objects.update_or_create(
-                ref=rc["ref"],
-                defaults={
-                    "rule_path": rc["rule_path"],
-                    "label": rc["label"],
-                    "params": rc["params"],
-                    "priority": rc["priority"],
-                    # Regra pode nascer desligada (a de substituto nasce): o
-                    # default continua ligado para todas as outras.
-                    "enabled": rc.get("enabled", True),
-                },
-            )
-            rules_by_ref[rc["ref"]] = obj
-            if created:
-                count += 1
-
-        # A Hora da Xepa é liquidação de fim de dia de quem está na loja: vale SÓ
-        # no balcão (decisão do dono, 14/10/2026). Nem site, nem WhatsApp, nem
-        # iFood. A regra exige canal listado (``HappyHourRule.channels_required``):
-        # sem o PDV aqui, ela não valeria em lugar nenhum.
-        happy_hour = rules_by_ref.get("happy_hour")
-        if happy_hour is not None:
-            happy_hour.channels.set(Channel.objects.filter(ref="pdv"))
-
-        self.stdout.write(f"  ✅ {len(RULE_CONFIGS)} rule configs ({count} novos)")
 
     def _seed_omotenashi_copy(self):
         """Brand overrides for generic interface copy.
@@ -9042,7 +9267,13 @@ class Command(BaseCommand):
         # Hoje: turno aberto com fundo de troco.
         today_shift = cash.open_shift_for_terminal(terminal)
         if today_shift is None:
-            today_open = timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45)))
+            # 08:45, ou agora se o seed roda antes disso: um turno aberto no futuro
+            # mostrava "Turno aberto em 05/11, 08:45" com o relógio da loja em
+            # 06:51 (beta 05/11, PDV2-24).
+            today_open = min(
+                timezone.make_aware(datetime.combine(timezone.localdate(), time(8, 45))),
+                timezone.now(),
+            )
             today_shift = cash.open_shift(operator=admin, terminal=terminal, float_q=20000, at=today_open)
 
         self.stdout.write("  ✅ 2 turnos de caixa (ontem fechado + hoje aberto)")
@@ -9059,12 +9290,15 @@ class Command(BaseCommand):
         from shopman.payman import PaymentService
 
         plan = {
-            # (cliente, sku, qtd, hora) — o Restaurante leva baguete e shokupan; o Café, croissant.
-            "yesterday": [("CLI-002", "TRADI", 10, 7), ("CLI-002", "FORMA", 4, 7)],
-            "today": [("CLI-002", "TRADI", 8, 7), ("CLI-004", "CRO", 12, 8)],
+            # (cliente, sku, qtd, hora): o Restaurante leva baguete e shokupan; o Café, croissant.
+            # Horas DENTRO do turno (abre 8h30/8h45): às 7h a venda entrava no livro
+            # antes de o caixa abrir.
+            "yesterday": [("CLI-002", "TRADI", 10, 9), ("CLI-002", "FORMA", 4, 10)],
+            "today": [("CLI-002", "TRADI", 8, 9), ("CLI-004", "CRO", 12, 10)],
         }[which]
         day = timezone.localtime(opened_at).date()
-        for customer_ref, sku, qty, hour in plan:
+        now = timezone.now()
+        for index, (customer_ref, sku, qty, hour) in enumerate(plan):
             # Convenção dos refs do seed: o 2º segmento é a data yymmdd.
             ref = f"CONTA-{day:%y%m%d}-{customer_ref.removeprefix('CLI-')}{sku}"
             if Order.objects.filter(ref=ref).exists():
@@ -9073,7 +9307,20 @@ class Command(BaseCommand):
             product = Product.objects.filter(sku=sku).first()
             if customer is None or product is None:
                 continue
-            at = timezone.make_aware(datetime.combine(day, time(hour, 20)))
+            # A hora da venda cabe entre a abertura do turno e o agora, na ordem do
+            # plano: com hora fixa, o seed das 5h50 gravava venda das 8h20 (CEN-10).
+            # O turno que acabou de abrir (seed antes das 8h45) põe as vendas no
+            # agora: o pedido, a cobrança e o lançamento do livro, todos juntos.
+            at = min(
+                max(
+                    min(
+                        timezone.make_aware(datetime.combine(day, time(hour, 20))),
+                        now - timedelta(minutes=5 * (len(plan) - index)),
+                    ),
+                    opened_at + timedelta(minutes=1 + index),
+                ),
+                now,
+            )
             order = self._make_qa_order(
                 ref=ref,
                 channel_ref="pdv",
@@ -9085,10 +9332,10 @@ class Command(BaseCommand):
                     "fulfillment_type": "pickup",
                     "payment": {"method": "account", "collection": "terminal", "amount_q": product.base_price_q * qty},
                 },
-                minutes_ago=0,
+                created_at=at,
+                completed_at=at,
                 handle_ref=customer.phone or "",
             )
-            Order.objects.filter(pk=order.pk).update(created_at=at, completed_at=at)
             intent = PaymentService.charge_to_account(
                 order.ref,
                 order.total_q,
@@ -9234,186 +9481,25 @@ class Command(BaseCommand):
     # Operation checklists (abertura, rotina, fechamento)
     # ────────────────────────────────────────────────────────────────
 
-    def _seed_operation_checklists(self):
-        self.stdout.write("  ✅ Checklists operacionais...")
+    def _seed_operation_checklist_runs(self):
+        self.stdout.write("  ✅ Execuções de checklists operacionais...")
 
         admin = User.objects.filter(is_superuser=True).first()
         if not admin:
-            self.stdout.write("  ⏭️  Sem superuser, pulando checklists operacionais")
+            self.stdout.write("  ⏭️  Sem superuser, pulando execuções de checklists")
             return
 
-        task_specs = [
-            {
-                "ref": "nelson-opening-cash-count",
-                "title": "Caixa aberto e conferido",
-                "description": "Registrar fundo de troco antes de iniciar atendimento.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.CASH,
-                "evidence_required": OperationEvidence.NUMBER,
-                "expected_role": "caixa",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-opening-showcase-ready",
-                "title": "Vitrine preparada",
-                "description": "Conferir exposição, etiquetas e itens críticos antes da abertura.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.ROOM,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "atendimento",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-opening-equipment-safe",
-                "title": "Equipamentos ligados e seguros",
-                "description": "Forno, geladeiras, iluminação e PDV em condição segura.",
-                "moment": OperationMoment.OPENING,
-                "area": OperationArea.PRODUCTION,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "produção",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-routine-tables-clean",
-                "title": "Mesas limpas",
-                "description": "Conferência periódica do salão.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-routine-bathroom-clean",
-                "title": "Banheiro limpo",
-                "description": "Checagem de limpeza, papel, sabonete e lixeira.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-routine-showcase-restock",
-                "title": "Reposição de vitrine",
-                "description": "Registrar rupturas, reposições e itens de atenção.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.ROOM,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "atendimento",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-routine-critical-stock",
-                "title": "Ruptura ou item crítico conferido",
-                "description": "Checar itens com alerta ou alta demanda no dia.",
-                "moment": OperationMoment.ROUTINE,
-                "area": OperationArea.STOCK,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "gestão",
-                "sort_order": 40,
-            },
-            {
-                "ref": "nelson-closing-cash-closed",
-                "title": "Caixa fechado",
-                "description": "Conferir valor informado, esperado e diferença.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.CASH,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "caixa",
-                "sort_order": 10,
-            },
-            {
-                "ref": "nelson-closing-unsold-blind",
-                "title": "Não vendidos informados às cegas",
-                "description": "Registrar quantidade apurada sem revelar saldo esperado.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.STOCK,
-                "evidence_required": OperationEvidence.NUMBER,
-                "expected_role": "fechamento",
-                "sort_order": 20,
-            },
-            {
-                "ref": "nelson-closing-showcase-clean",
-                "title": "Vitrine limpa",
-                "description": "Limpeza final e retirada de itens sem condição de venda.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.CLEANING,
-                "evidence_required": OperationEvidence.TEXT,
-                "expected_role": "salão",
-                "sort_order": 30,
-            },
-            {
-                "ref": "nelson-closing-equipment-safe",
-                "title": "Equipamentos desligados ou seguros",
-                "description": "Conferir equipamentos, refrigeração e segurança para a noite.",
-                "moment": OperationMoment.CLOSING,
-                "area": OperationArea.PRODUCTION,
-                "evidence_required": OperationEvidence.DOUBLE_CHECK,
-                "expected_role": "produção",
-                "sort_order": 40,
-            }
-        ]
-
-        tasks: dict[str, OperationTaskTemplate] = {}
-        for spec in task_specs:
-            ref = spec.pop("ref")
-            task, _ = OperationTaskTemplate.objects.update_or_create(
-                ref=ref,
-                defaults={**spec, "is_required": True, "is_active": True, "is_system": True, "config": {"seed": "nelson"}},
+        expected = {"nelson-opening", "nelson-routine", "nelson-closing"}
+        checklists = {
+            template.ref: template
+            for template in OperationChecklistTemplate.objects.filter(ref__in=expected)
+        }
+        missing = sorted(expected - checklists.keys())
+        if missing:
+            raise CommandError(
+                "descritor Nelson não materializou os templates operacionais: "
+                f"{', '.join(missing)}"
             )
-            tasks[ref] = task
-
-        checklist_specs = [
-            (
-                "nelson-opening",
-                "Abertura da casa",
-                OperationMoment.OPENING,
-                [
-                    "nelson-opening-cash-count",
-                    "nelson-opening-showcase-ready",
-                    "nelson-opening-equipment-safe"],
-            ),
-            (
-                "nelson-routine",
-                "Rotina do dia",
-                OperationMoment.ROUTINE,
-                [
-                    "nelson-routine-tables-clean",
-                    "nelson-routine-bathroom-clean",
-                    "nelson-routine-showcase-restock",
-                    "nelson-routine-critical-stock"],
-            ),
-            (
-                "nelson-closing",
-                "Fechamento da casa",
-                OperationMoment.CLOSING,
-                [
-                    "nelson-closing-cash-closed",
-                    "nelson-closing-unsold-blind",
-                    "nelson-closing-showcase-clean",
-                    "nelson-closing-equipment-safe"],
-            )
-        ]
-        checklists: dict[str, OperationChecklistTemplate] = {}
-        for index, (ref, title, moment, task_refs) in enumerate(checklist_specs, start=1):
-            checklist, _ = OperationChecklistTemplate.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "title": title,
-                    "description": "Checklist canônico Nelson para operação diária.",
-                    "moment": moment,
-                    "is_active": True,
-                    "sort_order": index * 10,
-                },
-            )
-            checklists[ref] = checklist
-            for sort_order, task_ref in enumerate(task_refs, start=1):
-                OperationChecklistTemplateTask.objects.update_or_create(
-                    checklist_template=checklist,
-                    task_template=tasks[task_ref],
-                    defaults={"sort_order": sort_order * 10, "is_required_override": None},
-                )
 
         today = timezone.localdate()
         yesterday = today - timedelta(days=1)
@@ -9463,7 +9549,7 @@ class Command(BaseCommand):
                 complete_task_run(task, user=admin, evidence_text="Conferido no fechamento.")
         complete_checklist_run(closing_run, user=admin)
 
-        self.stdout.write("  ✅ 3 templates e 3 execuções de checklist operacional")
+        self.stdout.write("  ✅ 3 execuções de checklist operacional")
 
     # ── B.I.: a série que dá o que ver ──────────────────────────────────────
     #
@@ -9692,7 +9778,7 @@ class Command(BaseCommand):
         """
         from shopman.backstage.models import ProductConsumptionTag
 
-        note_a = "pão de levar — revisão do dono 18/08/2026 (Pães Finos do Yooga)"
+        note_a = "pão de levar, revisão do dono 18/08/2026 (Pães Finos do Yooga)"
         note_h = "híbrido confirmado pelo dono 18/08/2026: a bebida no pedido é que define"
         historical = {
             "leva": (note_a, [
@@ -9721,7 +9807,7 @@ class Command(BaseCommand):
                 "IFOOD_7ee4ad50c82b11eea051db114",
                 "IFOOD_a8feac8b-0c72-43b6-a067-b9e451585762"
             ]),
-            "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui — confirmado pelo dono 18/08/2026", [
+            "consome-aqui": ("combo do Yooga sem SKU: lanche + refrigerante, come aqui. Confirmado pelo dono 18/08/2026", [
                 "nome:Combo Cola + Hotdog", "nome:Combo Citrus + Hotdog",
                 "nome:Combo Cola + Donut", "nome:Combo Citrus + Donut"
             ]),
@@ -9735,13 +9821,13 @@ class Command(BaseCommand):
         # O café do Yooga vira "bebida preparada" por curadoria, não por
         # reserva de categoria.
         round_two = (
-            ("bebida-preparada", "café/chá da casa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("bebida-preparada", "café/chá da casa, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "CAP", "SP", "SPMC", "CAFL", "CHOQ", "FRAP", "MOCHA", "CTFV", "CAPMO", "VIEN", "CHHIB", "SFTCH"
             ]),
-            ("consome-aqui", "prato servido à mesa — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("consome-aqui", "prato servido à mesa, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "CQMO", "QJQT", "CQMA", "CQCOM", "JB", "PERDU",   # croques, queijo quente, jambon, pain perdu
             ]),
-            ("leva", "pão rústico / mercearia — revisão do dono 19/08/2026 (SKUs do Yooga)", [
+            ("leva", "pão rústico / mercearia, revisão do dono 19/08/2026 (SKUs do Yooga)", [
                 "ITA", "TRADI", "CPBG", "CPG", "CPX", "BGG", "BGL", "FOB", "TRABB", "FOA", "BAT", "CPR",
                 "MBAX", "MBF", "MCF", "MCGO", "MCPX", "MBAP", "MCBT", "MFOA", "MBA", "MCGR",
                 "BGGP", "FOC", "MPH",
@@ -9751,7 +9837,7 @@ class Command(BaseCommand):
                 # pães com SKU do iFood (só entrega)
                 "IFOOD_76da4710c82b11ee8012e9ac1", "IFOOD_7554d170c82b11ee9bb70dcd9"
             ]),
-            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho) — revisão do dono 19/08/2026", [
+            ("hibrido", "serve aos dois usos (como no cardápio 2027; mini focaccia é lanchinho), revisão do dono 19/08/2026", [
                 "CI", "CIQ", "MCI", "TABAT", "MTB", "FENDU", "MFE", "MIB",
                 "FOBP", "FOAP", "FOCP", "MMICBT", "MMIF"
             ]),
@@ -10127,6 +10213,7 @@ class Command(BaseCommand):
         from shopman.backstage.models import OutageReason, ShelfOutage
 
         today = timezone.localdate()
+        now = timezone.now()
         for sku, (_, soldout_hour, weekend_only) in self.BI_SHELF_PROFILES.items():
             if sku not in products or soldout_hour is None:
                 continue
@@ -10141,7 +10228,9 @@ class Command(BaseCommand):
                     started_at=self._at(day, soldout_hour),
                     defaults={
                         "reason": OutageReason.SOLD_OUT,
-                        "ended_at": self._at(day + timedelta(days=1), 9),
+                        # Volta na abertura do dia seguinte; a falta de ontem,
+                        # com o seed rodando antes das 9h, acaba agora, não no futuro.
+                        "ended_at": min(self._at(day + timedelta(days=1), 9), now),
                     },
                 )
         # Um produto parado por decisão: é o que a métrica de tempo pausado lê.
@@ -10640,7 +10729,12 @@ class Command(BaseCommand):
                     batch_size=500,
                 )
             # created_at é auto_now_add: só depois do insert dá para datar.
-            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(created_at=sold_at)
+            # O pedido concluído leva a data da venda em todos os carimbos: só com o
+            # created_at, o histórico do Gestor mostrava BIV-260924 "de 05/11", o
+            # dia do seed (beta 05/11, GES-27).
+            Order.objects.filter(ref__startswith=f"BIV-{day:%y%m%d}-").update(
+                created_at=sold_at, completed_at=sold_at, updated_at=sold_at,
+            )
             created += len(orders)
         return created
 

@@ -17,11 +17,12 @@ pytestmark = pytest.mark.django_db
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=getattr(customer, "email", None) or None,
@@ -50,7 +51,7 @@ def test_consent_ip_ignores_spoofed_leftmost_xff(client: Client, monkeypatch):
         return object()
 
     monkeypatch.setattr(account_api.account_service, "toggle_notification_consent", fake_toggle)
-    monkeypatch.setattr(account_api, "present_notification_prefs", lambda _prefs: [])
+    monkeypatch.setattr(account_api, "present_notification_prefs", lambda _prefs, **_kwargs: [])
 
     response = client.post(
         "/api/v1/account/preferences/notifications/",

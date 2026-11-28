@@ -2,7 +2,7 @@
 
 Status: referencia operacional
 Owner: Platform/Produto
-Ultima verificacao: 2026-09-10 contra rotas e specs do HEAD
+Ultima verificacao: 2026-10-17 contra `surfaces/registry.json` e specs do HEAD
 
 Shopman core/orquestrador e o canon: Orderman, Payman, Stockman, Guestman,
 Doorman, ChannelConfig, Directives, services, projections, actions,
@@ -16,19 +16,26 @@ No alpha publico da DigitalOcean, o roteamento e por **subdominio** (host-based
 ingress), nao mais por prefixo de caminho. O modelo path-routed (`/nuxt`, `/thing`)
 e a superficie `storefront-nuxt` foram **aposentados** no cutover headless.
 
-| Host | Superficie | Papel |
-| --- | --- | --- |
-| apex (`/`) | `surfaces/storefront-nuxt` | Loja do cliente (Nuxt/UI Thing). |
-| `api.` | Django headless | `/api/v1/*` + webhooks; nenhuma pagina de cliente. |
-| `admin.` | Django Admin/Unfold | Operador/admin. |
-| `pos.` | `surfaces/pos-nuxt` | PDV. |
-| `cozinha.` | `surfaces/kds-nuxt` | KDS. |
-| `gestor.` | `surfaces/orders-nuxt` | Gestor de pedidos. |
-| `prod.` | `surfaces/production-nuxt` | Producao e fornadas. |
-| `compras.` | `surfaces/purchase-nuxt` | Compras e recebimento. |
-| `central.` | `surfaces/hub-nuxt` | Central (home do operador). |
-| `mkt.` | `surfaces/marketing-nuxt` | Cockpit de Marketing. |
-| `bi.` | `surfaces/bi-nuxt` | Leitura analitica. |
+| Host | Superficie | Papel | Deployment |
+| --- | --- | --- | --- |
+| apex (`/`) | `surfaces/storefront-nuxt` | Loja do cliente (`customer-storefront`). | DigitalOcean |
+| `api.` | Django headless | `/api/v1/*` + webhooks; nenhuma pagina de cliente. | DigitalOcean |
+| `admin.` | Django Admin/Unfold | Configuracao, auditoria e risco. | DigitalOcean |
+| `pos.` | `surfaces/pos-nuxt` | Venda de balcao (`counter-sales`). | DigitalOcean |
+| `cozinha.` | `surfaces/kds-nuxt` | Preparo e saida (`kitchen-fulfillment`). | DigitalOcean |
+| `gestor.` | `surfaces/orders-nuxt` | Operacao e cadastros diarios (`operations-management`). | DigitalOcean |
+| `prod.` | `surfaces/production-nuxt` | Producao e fornadas (`production-floor`). | DigitalOcean |
+| `compras.` | `surfaces/purchase-nuxt` | Compras e recebimento (`procurement`). | DigitalOcean |
+| `central.` | `surfaces/hub-nuxt` | Launcher do operador (`operator-launcher`). | DigitalOcean |
+| `mkt.` | `surfaces/marketing-nuxt` | Campanhas (`marketing-management`). | DigitalOcean |
+| `bi.` | `surfaces/bi-nuxt` | Leitura analitica (`business-intelligence`). | DigitalOcean |
+| nenhum | `surfaces/kitchensink-nuxt` | Preview do kit (`developer-preview`), nunca ferramenta operacional. | Preview |
+| `status.` | `surfaces/status-nuxt` | Status publico (`public-status`). | Externo |
+
+`kind` continua descrevendo a fronteira arquitetural (`customer`, `operator`,
+`internal`); `role` descreve o trabalho/persona; `deployment` descreve onde o app
+vive. Os tres campos sao obrigatorios e independentes. O registro e o gerador
+reprovam omissao ou combinacao incoerente antes que uma superficie entre no CI.
 
 Blueprints: `.do/app.alpha-subdomains.yaml` (alpha) e `.do/app.subdomains.yaml`
 (template de producao). Cada superficie Nuxt serve em `/` no seu host; o BFF proxia

@@ -55,6 +55,31 @@ export type CustomerGroupMutationResponse = {
   resource?: { kind: "customer-group"; ref: string };
 };
 
+/** Pôr ou tirar vários clientes de UM grupo. Pôr nunca tira dos outros grupos. */
+export type CustomerGroupMembersOperation = "add" | "remove";
+
+export interface CustomerGroupMembersPayload {
+  operation: CustomerGroupMembersOperation;
+  refs: string[];
+}
+
+export type CustomerGroupMembersSkipReason = "not_found_or_inactive" | "only_group";
+
+export type CustomerGroupMembersResponse = {
+  ok?: boolean;
+  outcome?: "applied" | "not_applied" | "unknown";
+  operation: CustomerGroupMembersOperation;
+  group: { ref: string; name: string };
+  /** Quem mudou de fato. */
+  applied: string[];
+  /** Quem já estava como o gesto pede (repetir não muda nada). */
+  unchanged: string[];
+  skipped: { ref: string; reason: CustomerGroupMembersSkipReason }[];
+  /** Quem saiu e, sem outro grupo, voltou para o grupo padrão. */
+  moved_to_default: string[];
+  default_group: { ref: string; name: string } | null;
+};
+
 export type {
   CustomerGroupAdvantageProjection,
   CustomerGroupFormOptionsProjection,

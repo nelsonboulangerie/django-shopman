@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from shopman.shop.services import customer_orders
 
+ACCESS_FULL = customer_orders.ACCESS_FULL
+ACCESS_CAPABILITY = customer_orders.ACCESS_CAPABILITY
+
 
 def get_order(ref: str):
     return customer_orders.get_order(ref)
@@ -15,6 +18,14 @@ def get_accessible_order(request, ref: str):
 
 def grant_order_access(request, order_ref: str) -> None:
     customer_orders.grant_order_access(request, order_ref)
+
+
+def get_accessible_order_with_mode(request, ref: str):
+    return customer_orders.get_accessible_order_with_mode(request, ref)
+
+
+def grant_order_capability(request, ref: str, cap: str) -> bool:
+    return customer_orders.grant_order_capability(request, ref, cap)
 
 
 def customer_can_access_order(customer_info, order) -> bool:
@@ -75,7 +86,7 @@ def find_order(ref: str):
 
 
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
-    """Return the last old-enough order ref and sealed snapshot items for reorder."""
+    """Return the last concluded order ref and its items for the reorder offer."""
     return customer_orders.last_reorder_context(customer_uuid=customer_uuid, min_days=min_days)
 
 
@@ -118,16 +129,18 @@ def payment_is_due(order) -> bool:
     return customer_orders.payment_is_due(order)
 
 
-def mark_just_placed(request, order_ref: str) -> None:
-    customer_orders.mark_just_placed(request, order_ref)
-
-
-def consume_just_placed(request, order_ref: str) -> bool:
-    return customer_orders.consume_just_placed(request, order_ref)
-
-
 def ensure_payment_intent(order) -> bool:
     return customer_orders.ensure_payment_intent(order)
+
+
+def check_payment(order) -> None:
+    """Comando do acompanhamento: conferir com o gateway e preparar a cobrança que falta."""
+    reconcile_payment_with_gateway_if_due(order)
+    ensure_payment_intent(order)
+
+
+def switch_declined_card_to_pix(order) -> bool:
+    return customer_orders.switch_declined_card_to_pix(order)
 
 
 def mock_confirm_payment(order) -> bool:

@@ -14,6 +14,7 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.production import build_production_forecast
 
@@ -71,7 +72,7 @@ def test_planned_row_gets_eta_from_historical_finish_time(recipe):
     row = forecast.rows[0]
     assert row.status == "scheduled"
     assert row.status_label == "Planejado"
-    assert row.eta_display == "08:00"
+    assert row.eta_display == "8h"
     assert row.eta_is_actual is False
     assert row.qty == "12"
     assert row.history_days == 5
@@ -91,7 +92,7 @@ def test_started_row_eta_is_start_plus_median_duration(recipe):
     row = build_production_forecast(target).rows[0]
     assert row.status == "in_progress"
     assert row.status_label == "Previsto"
-    assert row.eta_display == "09:30"
+    assert row.eta_display == "9h30"
 
 
 def test_started_row_without_history_falls_back_to_recipe_sla(recipe):
@@ -105,7 +106,7 @@ def test_started_row_without_history_falls_back_to_recipe_sla(recipe):
         started_at=_at(target, 6, 0),
     )
     row = build_production_forecast(target).rows[0]
-    assert row.eta_display == "08:00"  # 06:00 + max_started_minutes (120)
+    assert row.eta_display == "8h"  # 06:00 + max_started_minutes (120)
     assert row.history_days == 0
 
 
@@ -124,8 +125,10 @@ def test_finished_row_is_confirmed_with_real_time_and_qty(recipe):
     )
     row = build_production_forecast(target).rows[0]
     assert row.status == "arrived"
-    assert row.status_label == "Confirmado"
-    assert row.eta_display == timezone.localtime(finished_at).strftime("%H:%M")
+    # Beta 05/11: "Confirmado" no Letreiro contradizia "Para confirmar" na
+    # Qualidade. O lote finalizado é Fechado (suite-vocabulary).
+    assert row.status_label == "Fechado"
+    assert row.eta_display == format_clock(finished_at)
     assert row.eta_is_actual is True
     assert row.qty == "10"
 
@@ -161,7 +164,7 @@ def test_confirmed_ttl_only_applies_to_the_current_date(recipe):
     # Olhando um dia passado, o quadro é o registro do dia inteiro.
     row = build_production_forecast(yesterday).rows[0]
     assert row.status == "arrived"
-    assert row.eta_display == "07:45"
+    assert row.eta_display == "7h45"
 
 
 def test_planned_past_eta_today_is_delayed(recipe):
@@ -234,3 +237,28 @@ def test_rows_sort_by_eta_no_eta_last(recipe):
     )
     skus = [row.output_sku for row in build_production_forecast(target).rows]
     assert skus == ["PAO-TESTE", "TARDE", "NOVO"]
+
+
+def test_row_carries_the_output_unit_so_dough_reads_in_kilos(recipe):
+    """WP-F04 (P1-21): o Letreiro cravava "UN" em massa medida em quilo. A
+    unidade vem na projeção, declarada pela ficha, nunca deduzida na tela."""
+    target = timezone.localdate() + timedelta(days=1)
+    dough = Recipe.objects.create(
+        ref="massa-teste",
+        name="Massa Teste",
+        output_sku="MASSA-TESTE",
+        batch_size=Decimal("1000"),
+        is_active=True,
+        meta={"output_unit": "g"},
+    )
+    for item_recipe, quantity in ((recipe, "12"), (dough, "18500")):
+        WorkOrder.objects.create(
+            recipe=item_recipe,
+            output_sku=item_recipe.output_sku,
+            quantity=Decimal(quantity),
+            status=WorkOrder.Status.PLANNED,
+            target_date=target,
+        )
+    units = {row.output_sku: row.unit for row in build_production_forecast(target).rows}
+    assert units["MASSA-TESTE"] == "g"
+    assert units["PAO-TESTE"] in {"", "un"}

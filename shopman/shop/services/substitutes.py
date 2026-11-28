@@ -7,20 +7,29 @@ chosen SKU is unavailable — they replace, never recommend.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from django.conf import settings
+from django.utils import timezone
 from shopman.utils.monetary import format_money
 
 from shopman.shop.adapters import get_adapter
 
 HAS_STOCKMAN = True
-STOREFRONT_CHANNEL_REF: str = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+STOREFRONT_CHANNEL_REF: str = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 logger = logging.getLogger(__name__)
 
 
-def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, limit: int = 4) -> list[dict]:
+def find(
+    sku: str,
+    *,
+    qty: Decimal = Decimal("1"),
+    channel: str | None = None,
+    limit: int = 4,
+    target_date: date | None = None,
+) -> list[dict]:
     """
     Busca substitutos disponíveis para o canal.
     Ponto único de consumo para todos os contextos.
@@ -28,9 +37,20 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
     Returns:
         [{"sku", "name", "price_q", "price_display", "available_qty", "can_order", "target_qty"}, ...]
 
+    ``price_q`` é o preço do cardápio de hoje, promoção automática incluída.
+
     ``target_qty`` is ``min(requested_qty, sub.available_qty)`` — the amount
     the client should add when the shopper accepts this substitute in a
     1-click swap. Minimum of 1 so the button always does something useful.
+
+    ``target_date`` é a data da ENCOMENDA que o substituto vai atender. Com data
+    futura, a régua deixa de ser o que há hoje e passa a ser o lote DA DATA
+    menos o que dele já está prometido (``stock.plan_backing_on``, a mesma conta
+    do PDV): a sobra de hoje não lastreia encomenda (dono, 18/11/2026), então o
+    pão que há na loja agora não é alternativa para amanhã. Candidato sem lote
+    planejado na data, ou sem nada livre nele, sai; ``available_qty`` e
+    ``target_qty`` são os da data, e ``can_order`` diz se cabe o pedido inteiro.
+    Sem ``target_date`` (ou com a data de hoje), nada muda.
     """
     catalog = get_adapter("catalog")
     if not catalog:
@@ -52,9 +72,24 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
 
     channel_ref = channel or STOREFRONT_CHANNEL_REF
 
+    # Encomenda de data futura: quem responde é o lote da data, não o estoque de hoje.
+    for_future_date = target_date is not None and target_date > timezone.localdate()
+    date_backing: dict[str, dict[str, Decimal]] = {}
+    if for_future_date:
+        try:
+            from shopman.shop.services import stock
+
+            date_backing = stock.plan_backing_on([p.sku for p in candidates], target_date, channel_ref=channel_ref)
+        except Exception as e:
+            # Sem saber o que o lote da data tem livre, não se oferece nada.
+            logger.warning("substitutes_date_backing_failed date=%s: %s", target_date, e, exc_info=True)
+            return []
+        if not date_backing:
+            return []
+
     # Build availability map for all candidates in one batch query
     avail_map: dict[str, dict | None] = {}
-    if HAS_STOCKMAN:
+    if HAS_STOCKMAN and not for_future_date:
         try:
             from shopman.stockman.services.availability import availability_for_skus
 
@@ -83,23 +118,42 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         listing_ref = channel_obj.ref if channel_obj else None
         if listing_ref:
             skus = [p.sku for p in candidates]
-            price_map = catalog.bulk_listing_price_map(skus, listing_ref)
+            from shopman.offerman.service import CatalogService
+
+            resolved = CatalogService.unit_prices(
+                [(sku, Decimal(str(qty or 1))) for sku in skus],
+                listings=(listing_ref,),
+            )
+            price_map = {sku: price_q for sku, price_q in zip(skus, resolved, strict=True) if price_q is not None}
     except Exception as e:
         logger.warning("substitutes_price_map_failed: %s", e, exc_info=True)
+        return []
+
+    promo_price_of = _promotional_prices(candidates, price_map, channel_ref=channel_ref)
 
     result = []
     for product in candidates:
         if len(result) >= limit:
             break
 
-        raw_avail = avail_map.get(product.sku)
-        can_order, available_qty = _resolve_availability(raw_avail, product, qty)
+        if for_future_date:
+            unclaimed = date_backing.get(product.sku, {}).get("unclaimed_qty", Decimal("0"))
+            if not product.is_sellable or unclaimed <= 0:
+                continue
+            can_order, available_qty = unclaimed >= Decimal(str(qty or 1)), unclaimed
+        else:
+            raw_avail = avail_map.get(product.sku)
+            can_order, available_qty = _resolve_availability(raw_avail, product, qty)
 
-        # Skip if not orderable and stockman is active
-        if HAS_STOCKMAN and raw_avail is not None and not can_order:
-            continue
+            # Skip if not orderable and stockman is active
+            if HAS_STOCKMAN and raw_avail is not None and not can_order:
+                continue
 
-        price_q = price_map.get(product.sku) or product.base_price_q
+        list_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
+        # O preço que o cardápio cobra HOJE, promoção automática incluída. Era o de
+        # lista: o sheet oferecia "Fendu R$ 6,00" com o cardápio dizendo R$ 5,10
+        # (beta 05/11, LOJA-06).
+        price_q = promo_price_of.get(product.sku, list_q)
         price_display = f"R$ {format_money(price_q)}" if price_q else None
 
         target_qty = _target_qty(qty, available_qty)
@@ -116,6 +170,41 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         })
 
     return result
+
+
+def _promotional_prices(candidates: list, price_map: dict[str, int], *, channel_ref: str) -> dict[str, int]:
+    """Preço final por SKU pelo MESMO caminho do card do cardápio.
+
+    Promoções automáticas do canal carregadas uma vez, coleções do SKU e o preço
+    de lista do canal: ``catalog_context.contextual_price`` aplica a regra que o
+    cardápio aplica. Falha aqui não derruba o sheet: fica o preço de lista.
+    """
+    try:
+        from shopman.shop.projections import catalog_context
+
+        skus = [p.sku for p in candidates]
+        promotions = catalog_context.active_promotions(channel_ref)
+        if not promotions:
+            return {}
+        collections = catalog_context.collection_refs_by_sku(skus)
+        result: dict[str, int] = {}
+        for product in candidates:
+            list_q = price_map[product.sku] if product.sku in price_map else product.base_price_q
+            quote = catalog_context.contextual_price(
+                product.sku,
+                qty=1,
+                listing_ref=channel_ref,
+                context={
+                    "sku_collections": collections.get(product.sku, []),
+                    "active_promotions": promotions,
+                },
+                list_unit_price_q=list_q,
+            )
+            result[product.sku] = int(quote.final_unit_price_q)
+        return result
+    except Exception as e:
+        logger.warning("substitutes_promotional_price_failed: %s", e, exc_info=True)
+        return {}
 
 
 def _same_boundary(sku: str, candidates: list) -> list:
@@ -184,10 +273,10 @@ def _resolve_availability(raw_avail: dict | None, product, qty: Decimal) -> tupl
     if raw_avail is None:
         # No stockman data — assume available
         return True, Decimal("0")
-    is_paused = raw_avail.get("is_paused", False) or not product.is_sellable
-    availability_policy = raw_avail.get("availability_policy", "planned_ok")
-    total_promisable = raw_avail.get("total_promisable", Decimal("0"))
-    if availability_policy == "demand_ok" and not is_paused:
-        return True, qty
-    can_order = total_promisable >= qty and not is_paused
-    return can_order, total_promisable
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(product.sku, qty, raw_avail)
+    if decision.orderable_ceiling is None:
+        # Sem teto (sem ledger, ``demand_ok``): cabe o que se pediu.
+        return decision.approved, qty
+    return decision.approved, decision.orderable_ceiling

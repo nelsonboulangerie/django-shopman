@@ -18,7 +18,13 @@ const MATERIALS = [
 
 describe("recortes de Base · Insumos", () => {
   it("dão Situação na ordem do que pede compra e Categoria em ordem alfabética, com contagem", () => {
-    const [tone, category] = materialDimensions(MATERIALS);
+    const [archive, tone, category] = materialDimensions(MATERIALS);
+    expect(archive).toEqual({
+      id: "archive",
+      label: "Cadastro",
+      type: "single-select",
+      options: [{ value: "archived", label: "Arquivados" }],
+    });
     expect(tone!.options).toEqual([
       { value: "urgent", label: "Comprar", count: 1 },
       { value: "watch", label: "Revisar", count: 1 },
@@ -45,5 +51,12 @@ describe("recortes de Base · Insumos", () => {
       MATERIALS.filter((material) => matchesMaterialFilters(material, { ...attention, category: ["Farinhas"] })),
     ).toEqual([{ tone: "urgent", category: "Farinhas" }]);
     expect(MATERIALS.filter((material) => matchesMaterialFilters(material, {}))).toHaveLength(4);
+  });
+
+  it("mostra arquivados somente quando o filtro explícito está ligado", () => {
+    const archived = { tone: "ok" as const, category: "Farinhas", isActive: false };
+    expect(matchesMaterialFilters(archived, {})).toBe(false);
+    expect(matchesMaterialFilters(archived, { archive: ["archived"] })).toBe(true);
+    expect(matchesMaterialFilters({ ...archived, isActive: true }, { archive: ["archived"] })).toBe(false);
   });
 });

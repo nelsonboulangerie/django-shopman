@@ -60,7 +60,7 @@ def test_kds_is_today_and_future_order_is_not_on_the_board(kds_setup):
     _, _, _, _ = kds_setup
     picking = KDSInstance.objects.create(
         ref="picking-proj",
-        name="Encomendas",
+        name="Separação",
         type="picking",
         target_time_minutes=10,
     )
@@ -369,6 +369,10 @@ def test_customer_board_dedups_session_on_payment(kds_setup):
         handle_ref="00009999",
         data={"fired_lines": ["1"], "tab_ref": "00009999", "fulfillment_type": "pickup"},
     )
+    # As linhas disparadas estão na tela da cozinha, já em preparo (o ticket da comanda).
+    KDSTicket.objects.create(
+        session_key="sk-dup", kds_instance=kds_setup[0], status="in_progress", items=[{"sku": "SKU", "name": "Produto", "qty": 1}],
+    )
 
     status = build_kds_customer_status()
 
@@ -424,3 +428,48 @@ def test_old_admin_console_kds_routes_are_not_registered():
     ):
         with pytest.raises(NoReverseMatch):
             reverse(name, args=["prep"] if "display" in name or "tickets" in name else [1] if name != "admin_console_kds" else [])
+
+
+@pytest.mark.django_db
+def test_customer_board_waits_the_undo_window_before_showing_ready(kds_setup):
+    """F-3 do laudo do Gestor (#3167): o pronto automático tem janela de desfazer, e
+    o aviso ao cliente espera por ela. A TV também: só depois dela o número sobe."""
+    from datetime import timedelta
+
+    order = Order.objects.get(ref="KDS-PROJ-1")
+    order.status = "ready"
+    order.ready_at = timezone.now()
+    order.data = {
+        **(order.data or {}),
+        "fulfillment_type": "pickup",
+        "auto_ready": {"token": "tok-1", "undo_until": (timezone.now() + timedelta(seconds=30)).isoformat()},
+    }
+    order.save(update_fields=["status", "ready_at", "data", "updated_at"])
+
+    status = build_kds_customer_status()
+    held = [p for p in status.preparing if p.ref == "KDS-PROJ-1"]
+    assert held and held[0].status_label == "Em preparo"
+    assert all(p.ref != "KDS-PROJ-1" for p in status.ready)
+
+    # A janela venceu: agora é "Pronto para retirar".
+    order.data["auto_ready"]["undo_until"] = (timezone.now() - timedelta(seconds=1)).isoformat()
+    order.save(update_fields=["data", "updated_at"])
+    status = build_kds_customer_status()
+    shown = [p for p in status.ready if p.ref == "KDS-PROJ-1"]
+    assert shown and shown[0].status_label == "Pronto para retirar"
+
+
+@pytest.mark.django_db
+def test_the_ready_phase_tells_the_customer_board_to_reload(kds_setup, monkeypatch):
+    """Quando a janela fecha e a fase do pronto roda, a TV relê na hora (#3167)."""
+    from shopman.shop import lifecycle
+    from shopman.shop.handlers import _sse_emitters
+
+    calls = []
+    monkeypatch.setattr(_sse_emitters, "emit_pickup_board_changed", lambda: calls.append("pickup"))
+    order = Order.objects.get(ref="KDS-PROJ-1")
+
+    lifecycle._mark_phase_complete(order, "on_ready")
+    lifecycle._mark_phase_complete(order, "on_paid")
+
+    assert calls == ["pickup"]

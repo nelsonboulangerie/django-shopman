@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  appliedFilterChips,
   buildSectionsBySku,
   choiceGroupCard,
   choiceGroupsByName,
   collectionDisplayLabel,
+  collectionListIcon,
   collectionTargetForSearchOption,
   collectionSearchOptions,
   dynamicCollectionMenuTarget,
@@ -13,6 +13,7 @@ import {
   filterKey,
   itemMatchesAnyFilter,
   keywordDisplayLabel,
+  keywordSearchActionLabel,
   keywordSearchOptions,
   orderedSections,
   parseFilterKey,
@@ -40,11 +41,7 @@ function item (overrides: Partial<CatalogItemProjection> = {}): CatalogItemProje
     category: 'Rústicos',
     tags: [],
     search_terms: [],
-    base_price_q: 150,
-    price_display: 'R$ 1,50',
-    has_promotion: false,
-    original_price_display: null,
-    promotion_label: null,
+    quote: { qty: '1', listing_ref: 'web', list_unit_price_q: 150, list_line_total_q: 150, final_unit_price_q: 150, final_line_total_q: 150, adjustments: [] },
     unit_weight_label: null,
     availability: 'available',
     availability_label: 'Disponível',
@@ -153,6 +150,21 @@ describe('menu presentation — tileBadge', () => {
       .toEqual({ label: 'Esgotado', variant: 'destructive' })
   })
 
+  it('troca "Lista de espera" pela promessa de quando (WP-L02)', () => {
+    const tomorrow = item({
+      availability: 'planned_ok',
+      availability_label: 'Lista de espera',
+      promise: { kind: 'batch', date: '2026-11-18', ready_at: '15:00', day_label: 'amanhã, quarta', text: 'Disponível amanhã, quarta, a partir das 15h' }
+    })
+    expect(tileBadge(tomorrow)).toEqual({ label: 'Disponível amanhã', variant: 'outline' })
+    const later = item({
+      availability: 'planned_ok',
+      availability_label: 'Lista de espera',
+      promise: { kind: 'batch', date: '2026-11-17', ready_at: '15:30', day_label: 'hoje', text: 'Disponível a partir das 15h30' }
+    })
+    expect(tileBadge(later)).toEqual({ label: 'Disponível a partir das 15h30', variant: 'outline' })
+  })
+
   it('gives the paused item the same badge as any other unavailable one', () => {
     // Para o cliente não existe motivo: pausado pela casa e esgotado saem iguais
     // (AVAILABILITY-PLAN §2). O flag `is_paused` segue no contrato — ele decide o
@@ -208,6 +220,15 @@ describe('menu presentation — sections and filters', () => {
     expect(byTypo.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
   })
 
+  it('beta 05/11 (LOJA-12): dois erros de digitação ainda acham o produto', () => {
+    expect(searchTextMatches('crosant', 'Croissant')).toBe(true)
+    const byTwoTypos = filteredSections(sections, 'crosant', [], sectionsBySku)
+    expect(byTwoTypos.flatMap(s => s.items).map(i => i.sku)).toEqual(['CROIS-001'])
+    // Palavra curta continua exigente: "pao" não vira "pau".
+    expect(searchTextMatches('brigadeirx', 'Brigadeiro')).toBe(true)
+    expect(searchTextMatches('xyzwvut', 'Croissant')).toBe(false)
+  })
+
   it('applies multi-select filters as OR', () => {
     const keys = [filterKey('product', 'PAO-001'), filterKey('keyword', 'chocolate')]
     expect(itemMatchesAnyFilter(item(), sections[0], keys, sectionsBySku)).toBe(true)
@@ -218,14 +239,6 @@ describe('menu presentation — sections and filters', () => {
   it('round-trips filter keys including values with colons', () => {
     expect(parseFilterKey(filterKey('keyword', 'café: especial'))).toEqual({ kind: 'keyword', value: 'café: especial' })
     expect(parseFilterKey('nonsense')).toBeNull()
-  })
-
-  it('describes applied filters with human labels', () => {
-    const chips = appliedFilterChips([filterKey('keyword', 'chocolate'), filterKey('collection', 'doces'), 'nonsense'], sections)
-    expect(chips).toEqual([
-      { key: 'keyword:chocolate', label: 'chocolate' },
-      { key: 'collection:doces', label: 'Doces' }
-    ])
   })
 })
 
@@ -267,9 +280,6 @@ describe('menu presentation — search options', () => {
       icon: 'lucide:rows-3',
       section: paes
     })).toBe('/colecao/paes')
-    expect(appliedFilterChips([filterKey('collection', 'featured')], [])).toEqual([
-      { key: 'collection:featured', label: 'Destaques' }
-    ])
   })
 
   it('ranks products by name, then tags, then catalog context', () => {
@@ -286,7 +296,7 @@ describe('menu presentation — search options', () => {
   it('aggregates keyword options with item counts', () => {
     const options = keywordSearchOptions(allItems, 'chocolate', sectionBySku, sectionsBySku)
     expect(options).toHaveLength(1)
-    expect(options[0]!.label).toBe('chocolate')
+    expect(options[0]!.label).toBe('Buscar por “chocolate”')
     expect(options[0]!.meta).toBe('1 item')
   })
 
@@ -297,7 +307,7 @@ describe('menu presentation — search options', () => {
 
     const pao = item({ sku: 'PAO-DOCE', name: 'Pão doce', category: 'Pães', search_terms: ['pao', 'pao-doce', 'cafe'] })
     const options = keywordSearchOptions([pao], 'pao', sectionBySku, sectionsBySku)
-    expect(options.map(o => o.label)).toContain('Pão')
+    expect(options.map(o => o.label)).toContain('Buscar por “Pão”')
     expect(options.map(o => o.label)).not.toContain('pao')
     expect(options.map(o => o.label)).not.toContain('pao-doce')
   })
@@ -307,7 +317,7 @@ describe('menu presentation — search options', () => {
     const options = keywordSearchOptions([leaky], 'croissant', sectionBySku, sectionsBySku)
     expect(options.map(o => o.label)).toEqual([])
     const legit = keywordSearchOptions([leaky], 'cafe', sectionBySku, sectionsBySku)
-    expect(legit.map(o => o.label)).toEqual(['café da manhã'])
+    expect(legit.map(o => o.label)).toEqual(['Buscar por “café da manhã”'])
   })
 
   it('lists all collections vertically when the query is empty and marks the favorite', () => {
@@ -329,10 +339,10 @@ describe('menu presentation — search options', () => {
 
 describe('cartão de escolha (choice_group)', () => {
   const group = 'Chás da casa'
-  const camille = item({ sku: 'CHCAM', name: 'Chá Camille', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group, image_url: '/camille.jpg' })
-  const rouge = item({ sku: 'CHROU', name: 'Chá Rouge', base_price_q: 1400, price_display: 'R$ 14,00', choice_group: group })
-  const hibisco = item({ sku: 'CHHIB', name: 'Chá Hibisco', base_price_q: 1800, price_display: 'R$ 18,00', choice_group: group })
-  const espresso = item({ sku: 'SP', name: 'Espresso', base_price_q: 800, price_display: 'R$ 8,00' })
+  const camille = item({ sku: 'CHCAM', name: 'Chá Camille', quote: { ...item().quote, list_unit_price_q: 1400, list_line_total_q: 1400, final_unit_price_q: 1400, final_line_total_q: 1400 }, choice_group: group, image_url: '/camille.jpg' })
+  const rouge = item({ sku: 'CHROU', name: 'Chá Rouge', quote: camille.quote, choice_group: group })
+  const hibisco = item({ sku: 'CHHIB', name: 'Chá Hibisco', quote: { ...camille.quote, list_unit_price_q: 1800, list_line_total_q: 1800, final_unit_price_q: 1800, final_line_total_q: 1800 }, choice_group: group })
+  const espresso = item({ sku: 'SP', name: 'Espresso', quote: { ...camille.quote, list_unit_price_q: 800, list_line_total_q: 800, final_unit_price_q: 800, final_line_total_q: 800 } })
 
   it('junta os itens do mesmo grupo num cartão só, no lugar do primeiro', () => {
     const groups = choiceGroupsByName([espresso, camille, rouge, hibisco])
@@ -356,7 +366,7 @@ describe('cartão de escolha (choice_group)', () => {
     expect(choiceGroupCard(group, [camille, rouge]).priceLabel).toBe('R$ 14,00')
     expect(choiceGroupCard(group, [hibisco, camille]).priceLabel).toBe('a partir de R$ 14,00')
     // Quadro estrutural (sem preço ainda): nada de inventar número.
-    expect(choiceGroupCard(group, [item({ ...camille, price_display: '', base_price_q: 0 }), item({ ...rouge, price_display: '', base_price_q: 0 })]).priceLabel).toBe('')
+    expect(choiceGroupCard(group, [item({ ...camille, quote: { ...camille.quote, list_unit_price_q: 0, list_line_total_q: 0, final_unit_price_q: 0, final_line_total_q: 0 } }), item({ ...rouge, quote: { ...rouge.quote, list_unit_price_q: 0, list_line_total_q: 0, final_unit_price_q: 0, final_line_total_q: 0 } })]).priceLabel).toBe('')
   })
 
   it('só diz Indisponível quando nenhuma opção pode ser pedida', () => {
@@ -375,5 +385,44 @@ describe('cartão de escolha (choice_group)', () => {
   it('rótulo da escolha vem de choice_group_label; ausente, fica vazio', () => {
     expect(choiceGroupCard(group, [camille, rouge]).choiceLabel).toBe('')
     expect(choiceGroupCard(group, [item({ ...camille, choice_group_label: null }), item({ ...rouge, choice_group_label: ' Sabor ' })]).choiceLabel).toBe('Sabor')
+  })
+})
+
+// #3253: o filtro de palavra-chave não pode ter o mesmo nome de uma coleção, e a lista de
+// coleções usa o ícone do cadastro de cada uma.
+describe('menu presentation — busca sem colisão e com o ícone do cadastro', () => {
+  const croissant = item({ sku: 'CROIS', name: 'Croissant', category: 'Folhados', search_terms: ['folhado'] })
+  const sections = [
+    section({ ref: 'folhados', label: 'Folhados', icon: 'croissant', items: [croissant] }),
+    section({ ref: 'combos', label: 'Combos', icon: '', items: [croissant] })
+  ]
+  const bySku = buildSectionsBySku(sections)
+  const panelFor = (search: string) => searchPanelView({
+    sections,
+    items: [croissant],
+    search,
+    favoriteRef: '',
+    sectionBySku: primarySectionBySku(bySku),
+    sectionsBySku: bySku
+  })
+
+  it('o filtro de palavra-chave diz que é uma busca', () => {
+    expect(keywordSearchActionLabel('folhado')).toBe('Buscar por “folhado”')
+  })
+
+  it('a coleção usa o ícone do cadastro, e o padrão da lista quando não há', () => {
+    expect(collectionListIcon({ icon: 'croissant' })).toBe('lucide:croissant')
+    expect(collectionListIcon({ icon: '' })).toBe('lucide:rows-3')
+    expect(collectionListIcon({ icon: '  ' })).toBe('lucide:rows-3')
+  })
+
+  it('com a busca vazia, cada coleção da lista leva o próprio ícone', () => {
+    expect(panelFor('').collections.map(c => c.icon)).toEqual(['lucide:croissant', 'lucide:rows-3'])
+  })
+
+  it('com um termo, a palavra-chave e a coleção não têm o mesmo nome', () => {
+    const labels = panelFor('folha').chips.map(c => c.label)
+    expect(labels).toContain('Folhados')
+    expect(labels).toContain('Buscar por “folhado”')
   })
 })

@@ -21,8 +21,13 @@ A decisão arquitetural está fechada e aprovada em
 de tocar em código** — em especial a seção "Migração" da ADR, que tem os 9 passos na ordem, e
 os "Critérios de aceite".
 
-Antes disso, leia a doutrina que governa qualquer mudança aqui: `docs/constitution.md`
-(§2.1, §2.5, §2.6, §3.3, §8.3) e as ADRs 001 (fronteiras de package), 004 (string refs, nunca
+Antes disso, leia a doutrina histórica que governou o desenho:
+[Constituição v1 §2.1 (histórica)](../../_archive/constitution-v1.md#21-o-core-deve-ser-pequeno),
+[§2.5 (histórica)](../../_archive/constitution-v1.md#25-evento-é-diferente-de-estado),
+[§2.6 (histórica)](../../_archive/constitution-v1.md#26-o-default-não-pode-poluir-a-ontologia),
+[§3.3 (histórica)](../../_archive/constitution-v1.md#33-snapshot-data-e-metadata) e
+[§8.3 (histórica)](../../_archive/constitution-v1.md#83-toda-extensão-futura-deve-responder-três-perguntas);
+e as ADRs 001 (fronteiras de package), 004 (string refs, nunca
 FK cross-domain), 011 (não crie segundo source of truth), 012/014 (Projection × Presentation)
 e 015 (backward-compat pós-produção). E o `CLAUDE.md`.
 

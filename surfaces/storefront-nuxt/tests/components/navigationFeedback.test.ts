@@ -125,6 +125,25 @@ describe('NavigationFeedback', () => {
     wrapper.unmount()
   })
 
+  // DEV-2026-094: o link tocado fica marcado no mesmo instante, antes do limiar.
+  it('marca o link tocado na hora e desmarca quando a navegação termina', async () => {
+    const wrapper = await mountSuspended(NavigationFeedback)
+    const nuxtApp = useNuxtApp()
+    const link = navigationLink('/sacola')
+
+    link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+    expect(link.getAttribute('aria-busy')).toBe('true')
+    expect(link.hasAttribute('data-navigation-pending')).toBe(true)
+    await nextTick()
+    // A barra de rota entra no toque, sem limiar.
+    expect(wrapper.find('[data-navigation-route-bar]').exists()).toBe(true)
+
+    await nuxtApp.callHook('page:finish')
+    expect(link.hasAttribute('aria-busy')).toBe(false)
+    expect(link.hasAttribute('data-navigation-pending')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('ignora links externos e navegação para a própria URL', async () => {
     vi.useFakeTimers()
     const wrapper = await mountSuspended(NavigationFeedback)

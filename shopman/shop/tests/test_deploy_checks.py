@@ -50,27 +50,13 @@ def test_efi_certificate_can_be_materialized_from_base64_env(tmp_path, monkeypat
     assert path.stat().st_mode & 0o777 == 0o600
 
 
-@override_settings(
-    DEBUG=False,
-    SHOPMAN_EFI_WEBHOOK={"webhook_token": ""},
-    SHOPMAN_IFOOD={"webhook_token": ""},
-)
-def test_webhook_tokens_efi_blocks_ifood_warns():
-    # EFI (pagamento real) → Error bloqueante; iFood-legado (fail-closed) → Warning.
+@override_settings(DEBUG=False, SHOPMAN_EFI_WEBHOOK={"webhook_token": ""})
+def test_webhook_tokens_efi_blocks():
     messages = checks.check_webhook_tokens(None)
-    by_id = {m.id: type(m).__name__ for m in messages}
-    assert by_id.get("SHOPMAN_E004") == "Error"  # EFI bloqueia
-    assert by_id.get("SHOPMAN_W008") == "Warning"  # iFood só avisa
-    from django.core.checks import Error as CheckError
-
-    assert not any(m.id == "SHOPMAN_W008" and isinstance(m, CheckError) for m in messages)
+    assert [(m.id, type(m).__name__) for m in messages] == [("SHOPMAN_E004", "Error")]
 
 
-@override_settings(
-    DEBUG=False,
-    SHOPMAN_EFI_WEBHOOK={"webhook_token": "efi-tok"},
-    SHOPMAN_IFOOD={"webhook_token": "ifood-tok"},
-)
+@override_settings(DEBUG=False, SHOPMAN_EFI_WEBHOOK={"webhook_token": "efi-tok"})
 def test_webhook_tokens_all_set_no_messages():
     assert checks.check_webhook_tokens(None) == []
 
@@ -194,6 +180,42 @@ def test_operator_surface_accepts_shared_subdomain_cookie_zone():
 
 @override_settings(
     DEBUG=False,
+    SHOPMAN_POS_BASE_URL="",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_PURCHASE_BASE_URL="",
+    SHOPMAN_OPERATOR_API_HOST="",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_session_gate_includes_central_without_a_tile_url():
+    errors = checks.check_operator_cookie_domain(None)
+    assert [error.id for error in errors] == ["SHOPMAN_E014"]
+    assert "SHOPMAN_OPERATOR_API_HOST" in errors[0].msg
+
+
+@override_settings(
+    DEBUG=False,
+    SHOPMAN_POS_BASE_URL="",
+    SHOPMAN_KDS_BASE_URL="",
+    SHOPMAN_ORDERS_BASE_URL="",
+    SHOPMAN_PRODUCTION_BASE_URL="",
+    SHOPMAN_MARKETING_BASE_URL="",
+    SHOPMAN_BI_BASE_URL="",
+    SHOPMAN_PURCHASE_BASE_URL="https://compras.evil.example",
+    SHOPMAN_OPERATOR_API_HOST="api.boulangerie.com.br",
+    SHOPMAN_OPERATOR_COOKIE_DOMAIN=".boulangerie.com.br",
+)
+def test_operator_session_gate_includes_purchase_from_the_registry():
+    errors = checks.check_operator_cookie_domain(None)
+    assert [error.id for error in errors] == ["SHOPMAN_E014"]
+    assert "purchase=compras.evil.example" in errors[0].hint
+
+
+@override_settings(
+    DEBUG=False,
     SHOPMAN_POS_BASE_URL="https://pdv.evil.example",
     SHOPMAN_KDS_BASE_URL="",
     SHOPMAN_ORDERS_BASE_URL="",
@@ -207,26 +229,7 @@ def test_operator_surface_rejects_hosts_outside_cookie_domain():
     errors = checks.check_operator_cookie_domain(None)
 
     assert [error.id for error in errors] == ["SHOPMAN_E014"]
-    assert "SHOPMAN_POS_BASE_URL=pdv.evil.example" in errors[0].hint
-
-
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=True)
-def test_debug_otp_exposure_errors_outside_non_production():
-    messages = checks.check_debug_otp_exposure(None)
-
-    assert [message.id for message in messages] == ["SHOPMAN_E010"]
-
-
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="staging", SHOPMAN_EXPOSE_DEBUG_OTP=True)
-def test_debug_otp_exposure_warns_for_staging():
-    messages = checks.check_debug_otp_exposure(None)
-
-    assert [message.id for message in messages] == ["SHOPMAN_W007"]
-
-
-@override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_DEBUG_OTP=False)
-def test_debug_otp_exposure_disabled_is_clean():
-    assert checks.check_debug_otp_exposure(None) == []
+    assert "pos=pdv.evil.example" in errors[0].hint
 
 
 @override_settings(DEBUG=False, SHOPMAN_ENVIRONMENT="production", SHOPMAN_EXPOSE_MOCK_CAPTURE=True)
@@ -592,11 +595,33 @@ def test_fiscal_resolver_check_silent_without_active_selling_channel(db):
     SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
     SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.nao_existe",
 )
-def test_fiscal_resolver_that_does_not_import_blocks_deploy(selling_channel):
-    # O motor engole o ImportError e cai no fallback: a emissão fica desligada
-    # em silêncio. É exatamente o modo de falha que o check existe para pegar.
-    messages = checks.check_fiscal_emission_resolver(None)
-    assert [m.id for m in messages] == ["SHOPMAN_E013"]
+def test_fiscal_resolver_that_does_not_import_blocks_every_check(selling_channel):
+    # Caminho que não importa deixou de ser só do ``--deploy`` (E013): o E028 é
+    # um check comum, roda no ``migrate`` do PRE_DEPLOY e no boot do runserver.
+    assert checks.check_fiscal_emission_resolver(None) == []
+    messages = checks.check_fiscal_emission_resolver_importable(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E028"]
+
+
+@override_settings(
+    DEBUG=True,
+    SHOPMAN_FISCAL_ADAPTER=None,
+    SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.nao_existe"
+    ),
+)
+def test_broken_resolver_path_fails_even_in_debug_without_db():
+    # Sem banco, sem adapter, em DEBUG: caminho quebrado é defeito em qualquer
+    # ambiente. Só o caminho quebrado é acusado, o bom passa.
+    messages = checks.check_fiscal_emission_resolver_importable(None)
+    assert [m.id for m in messages] == ["SHOPMAN_E028"]
+    assert "nao_existe" in messages[0].msg
+
+
+def test_fiscal_resolver_importable_check_runs_outside_deploy():
+    from django.core.checks.registry import registry
+
+    assert checks.check_fiscal_emission_resolver_importable in registry.get_checks(include_deployment_checks=False)
 
 
 @override_settings(
@@ -668,6 +693,71 @@ def test_channel_config_fiscal_enabled_is_not_the_predicate_anymore(db):
     Channel.objects.create(ref="pdv", name="PDV", config={"fiscal": {"enabled": True}})
 
     assert checks.check_fiscal_adapter(None) == []
+
+
+@override_settings(SHOPMAN_FISCAL_ADAPTER=None)
+def test_check_is_quiet_while_migrate_has_not_added_the_new_shop_column(db):
+    # O ``migrate`` roda os checks antes de migrar: o modelo já pede a coluna
+    # nova (``staff_hours_start`` no beta de 06/11) e o banco ainda não a tem.
+    # O check não pode soltar traceback no release nem fingir uma resposta.
+    from django.core.cache import cache
+    from django.db import connection
+    from django.db.utils import ProgrammingError
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+    from shopman.shop.services import pos
+
+    cache.delete(SHOP_CACHE_KEY)
+    touched = []
+
+    def schema_behind(execute, sql, params, many, context):
+        if "shop_shop" in sql:
+            touched.append(sql)
+            raise ProgrammingError("column shop_shop.staff_hours_start does not exist")
+        return execute(sql, params, many, context)
+
+    with patch.object(pos, "logger") as pos_logger, connection.execute_wrapper(schema_behind):
+        assert checks.check_fiscal_adapter(None) == []
+    assert touched, "o check precisa ler a loja para responder"
+    pos_logger.warning.assert_not_called()
+
+
+@pytest.mark.parametrize("deploy", [False, True], ids=["migrate", "check-deploy"])
+def test_no_check_throws_a_traceback_while_the_shop_table_is_behind(db, deploy):
+    # O release roda ``check --deploy`` e depois ``migrate`` (que roda os checks
+    # sem a tag deploy), os dois com o modelo novo e o banco velho. Nenhum check
+    # pode explodir nem soltar traceback no log por ler a ``Shop`` inteira: o
+    # ``check_live_provider_without_test_doors`` lia ``Shop.load()`` e logava a
+    # ``ProgrammingError`` com ``exc_info`` duas vezes por release.
+    import logging
+
+    from django.core.cache import cache
+    from django.core.checks import run_checks
+    from django.db import connection
+    from django.db.utils import ProgrammingError
+
+    from shopman.shop.models.shop import SHOP_CACHE_KEY
+
+    cache.delete(SHOP_CACHE_KEY)
+    touched = []
+    tracebacks = []
+    real_handle = logging.Logger.handle
+
+    def schema_behind(execute, sql, params, many, context):
+        if "shop_shop" in sql and "staff_hours_start" in sql:
+            touched.append(sql)
+            raise ProgrammingError("column shop_shop.staff_hours_start does not exist")
+        return execute(sql, params, many, context)
+
+    def handle(logger_self, record):
+        if record.exc_info:
+            tracebacks.append(f"{record.name}: {record.getMessage()}")
+        return real_handle(logger_self, record)
+
+    with patch.object(logging.Logger, "handle", handle), connection.execute_wrapper(schema_behind):
+        run_checks(include_deployment_checks=deploy)
+
+    assert tracebacks == []
 
 
 # ── produção: catálogo QC e configuração resolvida são gates de release ─────

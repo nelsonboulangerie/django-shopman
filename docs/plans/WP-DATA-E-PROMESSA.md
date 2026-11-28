@@ -117,7 +117,7 @@ Mesma sacola serve concierge do WhatsApp, recompra e oferta (`cart.py:91-92`; ch
 
 - **Fonte da data.** Lida em dois caminhos de entrada, e só um deles a traz:
   - Eventos (`/ifood/events/` e polling): busca o pedido completo e mapeia `orderTiming` e `schedule` (`shopman/shop/services/ifood_events.py:281-283`; `shopman/shop/services/ifood_orders.py:94-95`). `map_schedule` lê `preparationStartDateTime`, `schedule.deliveryDateTimeStart` e `deliveryDateTimeEnd` (`shopman/shop/services/ifood_schedule.py:19-36`). Com `order_timing == "SCHEDULED"`, a ingestão grava `order.data["delivery_date"]` = data local do início da janela (`shopman/shop/services/ifood_ingest.py:164-169`; `ifood_schedule.py:58-63`), o mesmo campo de todos os canais.
-  - Webhook antigo `/ifood/` (`shopman/shop/webhooks/urls.py:16`): `_to_ingest_payload` repassa só ref, loja, criação, cliente, entrega, itens e observação (`shopman/shop/webhooks/ifood.py:235-253`). O agendamento se perde e o pedido vira imediato. Qual dos dois o iFood chama no alpha: **NÃO VERIFICADO**.
+  - Webhook antigo `/ifood/`: perdia o agendamento. Removido em 30/10/2026; os eventos são o único caminho de entrada.
 - **Slot.** Só coerência da janela (início de preparo antes do início da janela, início antes do fim) (`ifood_schedule.py:44-55`). Sem horário de funcionamento, capacidade ou lead time. Reagendar é recusado: "A data do pedido do iFood é combinada no iFood." (`shopman/shop/services/reschedule.py:222-225`).
 - **Disponibilidade.** `check_on_commit=False` para o iFood (`seed.py:6191`), então nada recusa.
 - **Reserva.** Com janela válida, no commit, na data do agendamento (`ifood_schedule.py:70-75`; `stock.py:115`). Sem janela válida e antes da hora, adiada até o preparo (`lifecycle.py:316-326`, `:473-474`, `:1013-1014`). O iFood herda `stock.preorder=True` (sem chave no seed), embora o comentário do config diga que marketplace declara False (`shopman/shop/config.py:184-190`). Pedido de teste não reserva (`stock.py:103-105`).
@@ -153,7 +153,7 @@ Mesma sacola serve concierge do WhatsApp, recompra e oferta (`cart.py:91-92`; ch
 
 **L2. A resolução ao adicionar não recebe a data da sacola** (`cart.py:184-190`; `availability.py:748-752`). Reserva, trava o quant e só depois recusa. É o objeto da fase 2 e de D18(c).
 
-**L3. Frestas por onde uma segunda data entra na sacola.** (a) Primeira linha é produto feito na hora ou não rastreado: não fixa data (`availability.py:273-277`). (b) Reserva de 30 min vencida sai do conjunto "de antes" (`availability.py:302`) e a próxima data é aceita (inferido, **NÃO VERIFICADO** por teste). (c) iFood pelo webhook antigo perde a data (`webhooks/ifood.py:235-253`).
+**L3. Frestas por onde uma segunda data entra na sacola.** (a) Primeira linha é produto feito na hora ou não rastreado: não fixa data (`availability.py:273-277`). (b) Reserva de 30 min vencida sai do conjunto "de antes" (`availability.py:302`) e a próxima data é aceita (inferido, **NÃO VERIFICADO** por teste). (c) iFood pelo webhook antigo perdia a data (rota removida em 30/10/2026).
 
 **L4. Docstrings que contradizem D17.** `shopman/storefront/tests/web/test_cart_one_date_per_order.py:5-6` diz "No balcão a régua é outra: a comanda pode ter linhas de datas diferentes, uma data por linha", o que o código não faz (`pos_intent.py:345-385`; D17).
 

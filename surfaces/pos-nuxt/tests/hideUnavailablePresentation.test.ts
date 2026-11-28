@@ -9,6 +9,8 @@ import {
   hideUnavailableProducts,
   isUnavailableProduct,
   parseHideUnavailable,
+  productsForOrderDate,
+  unplannedOrderNote,
 } from "../app/presentation/catalog";
 
 function product(overrides: Partial<POSProductProjection> & { sku: string }): POSProductProjection {
@@ -80,5 +82,58 @@ describe("presentation/catalog — ocultar indisponíveis", () => {
     expect(parseHideUnavailable("0")).toBe(false);
     expect(parseHideUnavailable(null)).toBe(false);
     expect(parseHideUnavailable("true")).toBe(false);
+  });
+});
+
+describe("productsForOrderDate — a grade da encomenda lê o saldo do dia combinado", () => {
+  // Beta test de 05/11/2026 (PDV2-04): o esgotado de HOJE bloqueava a
+  // encomenda para amanhã, e o que a grade deixava entrar o salvamento recusava.
+  const amanha = { date: "2026-11-07", is_today: false, sold_out_skus: ["BAG"] };
+
+  it("o esgotado de hoje entra amanhã; o sem saldo amanhã sai com a data no motivo", () => {
+    const grade = productsForOrderDate([baguete, brioche], amanha, "2026-11-07");
+    expect(grade.find((p) => p.sku === "BRI")?.sold_out).toBe(false);
+    expect(grade.find((p) => p.sku === "BAG")).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 07/11" });
+  });
+
+  it("duas réguas (WP-E3): plano esgotado bloqueia; data sem lote planejado entra como pedido à Produção", () => {
+    const daquiADez = { date: "2026-11-30", is_today: false, sold_out_skus: ["BAG"], unplanned_skus: ["BRI"] };
+    const grade = productsForOrderDate([baguete, brioche], daquiADez, "2026-11-30");
+    expect(grade.find((p) => p.sku === "BAG")).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 30/11" });
+    const semPlano = grade.find((p) => p.sku === "BRI")!;
+    expect(semPlano).toMatchObject({ sold_out: false, sold_out_reason: "" });
+    expect(semPlano.unplanned_note).toBe("Ainda sem lote planejado para 30/11: vira pedido à Produção");
+    expect(isUnavailableProduct(semPlano)).toBe(false);
+    expect(unplannedOrderNote("2026-11-30")).toBe("Ainda sem lote planejado para 30/11: vira pedido à Produção");
+  });
+
+  it("sem plano não vence o bloqueio: o SKU nas duas listas fica sem saldo", () => {
+    const grade = productsForOrderDate([baguete], { date: "2026-11-30", is_today: false, sold_out_skus: ["BAG"], unplanned_skus: ["BAG"] }, "2026-11-30");
+    expect(grade[0]).toMatchObject({ sold_out: true, sold_out_reason: "Sem saldo para 30/11" });
+    expect(grade[0]!.unplanned_note).toBeUndefined();
+  });
+
+  it("bloqueio com motivo do catálogo continua", () => {
+    const grade = productsForOrderDate([semCaixa], amanha, "2026-11-07");
+    expect(grade[0]).toBe(semCaixa);
+  });
+
+  it("sem a resposta da data escolhida, ou para hoje, a grade fica como está", () => {
+    const produtos = [baguete, brioche];
+    expect(productsForOrderDate(produtos, null, "2026-11-07")).toBe(produtos);
+    expect(productsForOrderDate(produtos, amanha, "2026-11-08")).toBe(produtos);
+    expect(productsForOrderDate(produtos, { ...amanha, is_today: true }, "2026-11-07")).toBe(produtos);
+    expect(productsForOrderDate(produtos, amanha, "")).toBe(produtos);
+  });
+});
+
+describe("Exibir no estreito (dono, 07/11/2026)", () => {
+  it("só a área de produtos de celular junta vista, densidade e olho num botão", async () => {
+    const { collapseViewControls, VIEW_MENU_MAX_WIDTH } = await import("../app/presentation/catalog");
+    expect(collapseViewControls(0)).toBe(false);
+    expect(collapseViewControls(333)).toBe(true);
+    expect(collapseViewControls(430)).toBe(true);
+    expect(collapseViewControls(VIEW_MENU_MAX_WIDTH)).toBe(false);
+    expect(collapseViewControls(768)).toBe(false);
   });
 });

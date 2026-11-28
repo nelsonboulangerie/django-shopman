@@ -29,6 +29,7 @@ class ErrorCode(StrEnum):
     # Customer errors
     ACCOUNT_NOT_FOUND = "account_not_found"
     ACCOUNT_INACTIVE = "account_inactive"
+    IDENTITY_CONFLICT = "identity_conflict"
 
     # Access link email errors
     ACCESS_LINK_DISABLED = "access_link_disabled"

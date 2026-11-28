@@ -1,12 +1,18 @@
 <script setup lang="ts">
+import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
 import OrderIFoodNegotiations from "~/components/OrderIFoodNegotiations.vue";
 import ActionList from "~/components/ActionList.vue";
 import OrderIFoodSummary from "~/components/OrderIFoodSummary.vue";
 import OrderNotificationReceipts from "~/components/OrderNotificationReceipts.vue";
+import OrderDetailPending from "~/components/OrderDetailPending.vue";
+import { useGestorAccess } from "~/composables/useGestorAccess";
+import { orderDetailDenial } from "~/presentation/gestorSections";
+import { danfeLine } from "~/presentation/danfe";
 // Detalhe do pedido no GESTOR. As seções (resumo, cliente, nota fiscal, itens,
 // observação, nota da cozinha, histórico) são do `OperatorOrderDetail` do kit — a
 // MESMA tela do detalhe da encomenda no PDV (decisão do dono, 28/09/2026). Aqui
-// fica só o que é do Gestor: a barra de ações do fluxo, o iFood, o entregador, o
+// fica só o que é do Gestor: a faixa "O que falta neste pedido" (acima do kit), a barra
+// de ações do fluxo, o iFood, o entregador, o
 // editor da nota da cozinha e os diálogos. Lê a projeção no contexto "orders"
 // (useOrderDetail); as ações vão pelo proxy do Django e a leitura se refaz.
 import {
@@ -16,19 +22,38 @@ import {
   confirmationRemainingLabel,
   ifoodAcceptNotice,
   lucideIcon,
+  onRoadLine,
   realtimeIndicator,
   splitRef,
   statusTone,
   undoLine,
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
+import type { ManagerAction } from "../../../operator-kit/app/presentation/managerAuth";
 import { onMounted, onBeforeUnmount } from "vue";
+import { settledRefresh } from "~/utils/settledRefresh";
+import type { Action } from "~/generated/ordersContract";
 import { ORDERS_HISTORY_TRAIL, ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
 import { COURIER_CALL_HASH } from "~/presentation/courier";
-import { orderTicketMenuItem } from "~/presentation/orderTicket";
+import { PROMISE_HASH } from "~/presentation/preorderList";
+import { RESOLVE } from "~/presentation/orderPromise";
+import { CANCEL_HASH, RESOLVE_HASH, parseNotifyHash, type NoticePick } from "~/presentation/promiseResolution";
+import {
+  pendingFocusKey,
+  PROMISE_PENDING_KEY,
+  REFUND_RETRY,
+  refundRetrySentence,
+  refundRetryToast,
+} from "~/presentation/orderPending";
+import { contactRequestNotice } from "~/presentation/contactRequest";
+import { REFUND, refundToast } from "~/presentation/orderRefund";
+import { ifoodChatNotice } from "~/presentation/ifoodWidget";
+import { orderTicketMenuItem, stationPrints } from "~/presentation/orderTicket";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
-import type { CancellationReason } from "~/types/orders";
+import { retentionNoPrinterReason, retentionReceiptMenuItem } from "~/presentation/retentionReceipt";
+import { useRetentionReceiptPrint } from "~/composables/useRetentionReceiptPrint";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 definePageMeta({ key: (route) => route.path });
 const route = useRoute();
@@ -64,39 +89,140 @@ const {
   deviceAgent,
   pending,
   error,
+  forbidden,
+  notFound,
   refresh,
+  printDanfe,
+  danfePrinting,
   busy,
   mutationError,
   confirm,
   advance,
   reject,
   cancel,
-  fetchCancellationReasons,
+  returnOrder,
+  markNotPickedUp,
+  retryRefund,
+  refundOrder,
   settleCash,
   equipmentBack,
+  courierBack,
   undoHandoff,
   undoReady,
   requeueFiscal,
   retryIFoodAccept,
   resendPaymentLink,
+  notifyCustomer,
   saveNotes,
   addComment,
-  courierDispatch,
   courierDispatchAgain,
   courierReminderDismiss,
+  resolveContactRequest,
   courierCancel,
+  courierCustody,
   courierQuote,
   managerChallenge,
   authorize,
   dismissManagerChallenge,
 } = useOrderDetail(orderRef.value);
 
+// Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876), com
+// quem a casa sugere levar junto já marcado. Vindo do lembrete do cartão
+// (`#courier-call`), a página abre já com o sheet.
+const courierCall = useOrderCourierCall({ onCalled: () => refresh() });
+const courierSheet = courierCall.sheet;
+let courierArmed = false;
+watch(
+  () => Boolean(order.value?.courier?.can_dispatch),
+  (can) => {
+    if (!can || courierArmed || route.hash !== COURIER_CALL_HASH) return;
+    courierArmed = true;
+    void courierCall.open(order.value?.ref ?? orderRef.value);
+  },
+  { immediate: true },
+);
+
+// "O que falta neste pedido" (WP-G05): a faixa só aponta; o gesto é o que a página já
+// tem. Cancelar a cobrança que venceu abre com o motivo marcado, como no cartão.
+function onPendingAction(ref_: string) {
+  if (ref_ === "requeue-fiscal") void requeueFiscal();
+  else if (ref_ === "resend-payment-link") void resendPaymentLink();
+  else if (ref_ === "print-danfe") void printDanfe();
+  else if (ref_ === REFUND_RETRY) void submitRefundRetry();
+  else if (ref_ === RESOLVE) resolveOpen.value = true;
+  else if (ref_ === "cancel")
+    void openDialog("cancel", {
+      reasonKey: order.value?.payment_lapsed ? PAYMENT_NOT_CONFIRMED : "",
+    });
+}
+// "Resolver" a promessa em risco (WP-G08): o botão mora na linha da promessa, na faixa
+// "O que falta neste pedido", e abre o diálogo das escolhas. Tirar o item grava dali e
+// o pedido é relido; cancelar o pedido inteiro abre o cancelar de sempre, com o motivo
+// e o dinheiro.
+const resolveOpen = ref(false);
+// "Avisar o cliente" (WP-G07): pelo ⋯ do pedido, um diálogo com os três avisos. A
+// recusa do envio fica escrita no diálogo, que segue aberto com a escolha marcada.
+const noticeOpen = ref(false);
+const noticeFailure = ref("");
+// O aviso e os itens que abrem marcados quando o pedido chega do "Resolver" (WP-G08);
+// pelo menu, nada vem marcado.
+const noticePick = ref<NoticePick>({ kind: "", lines: [] });
+const noticeAction = computed(() => projectedAction("customer-notice"));
+function openNotice(pick: NoticePick = { kind: "", lines: [] }) {
+  menuOpen.value = false;
+  noticeFailure.value = "";
+  noticePick.value = pick;
+  noticeOpen.value = true;
+}
+function notifyFromResolve(_ref: string, pick: NoticePick) {
+  openNotice(pick);
+}
+async function onSendNotice(inputs: Record<string, unknown>) {
+  noticeFailure.value = "";
+  if (await notifyCustomer(inputs)) noticeOpen.value = false;
+  else noticeFailure.value = mutationError.value;
+}
+function cancelFromResolve() {
+  void openDialog("cancel");
+}
+// A DANFE no ⋯ do pedido (P1-14): imprimir e reimprimir, o mesmo gesto do cartão.
+const danfe = computed(() => (order.value ? danfeLine(order.value) : null));
+// Quem só expede abre o pedido pelo sino: a recusa diz por quê e onde ele conduz o
+// pedido (P1-20).
+const { expeditesOnly, landingPath } = useGestorAccess();
+const denial = computed(() =>
+  orderDetailDenial(code.value.code, {
+    expeditesOnly: expeditesOnly.value,
+    landingPath: landingPath.value,
+  }),
+);
+// A conta não abre este pedido: o cabeçalho não fala de conexão nem oferece o menu de um
+// pedido que a pessoa não pode ler. "Sem conexão" em vermelho, ali, era mentira: a rede
+// respondeu, quem não abre é a conta (visto na prévia do WP-G05).
+const accessDenied = computed(() => forbidden.value && !order.value);
+
+// Ouvidoria: o cliente avaliou mal e pediu para falar com o responsável. O caso fica
+// aberto no pedido até alguém marcar "Resolvido", com uma frase do que foi feito.
+const contactResolveOpen = ref(false);
+async function onResolveContact(choice: { reason: string }) {
+  if (await resolveContactRequest(choice.reason)) contactResolveOpen.value = false;
+}
+
 // A Via Pedido (P2-19): o mesmo papel do PDV, pela impressora desta estação.
 const ticketPrinter = provideOrderTicketPrinter(deviceAgent);
 
+// O recibo do valor retido (#3538): sai sozinho no fim do "Não retirado" e o menu
+// reimprime. O cliente tem o mesmo recibo no link do pedido.
+const retentionPrinter = useRetentionReceiptPrint(deviceAgent);
+
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
-const { realtime } = useOrderEvents(orderRef.value, () => refresh());
+// O push espera a rajada assentar: uma leitura por rajada, não uma por evento (GES-17).
+// Conta que não abre o detalhe (403 de permissão): reler não concede nada, e o servidor
+// não precisa receber a mesma recusa a cada evento ou a cada 30 s.
+const pushRefresh = settledRefresh(() => (forbidden.value ? undefined : refresh()));
+onBeforeUnmount(() => pushRefresh.cancel());
+const { realtime } = useOrderEvents(orderRef.value, pushRefresh);
 
 // Próximo foco (F4 do laudo do Gestor): o aviso com prazo ("Responder") e o link da
 // Fila chegam com `#ifood-negotiations`. Abrir o pedido não basta: a página vai até a
@@ -108,6 +234,11 @@ const IFOOD_NEGOTIATIONS = "ifood-negotiations";
 // O aviso "o aceite não chegou ao iFood" chega com `#ifood-accept`: o foco vai ao
 // Tentar de novo, com o prazo do iFood à vista.
 const IFOOD_ACCEPT = "ifood-accept";
+// A lista de Encomendas e o aviso do painel chegam com `#promise` (WP-G08): a página
+// vai à linha da promessa em risco, na faixa "O que falta neste pedido", com o teclado
+// no primeiro gesto dela ("Resolver"). O "Cancelar o pedido inteiro" do diálogo do
+// painel chega com `#cancel` e abre o cancelar (mais abaixo); se o pedido não pode mais
+// ser cancelado, a página vai à mesma linha, onde o "Resolver" diz o que ainda dá.
 const focusKey = computed(() => {
   if (
     route.hash === `#${IFOOD_NEGOTIATIONS}` &&
@@ -116,6 +247,14 @@ const focusKey = computed(() => {
     return IFOOD_NEGOTIATIONS;
   if (route.hash === `#${IFOOD_ACCEPT}` && order.value?.ifood_accept_failed)
     return IFOOD_ACCEPT;
+  const toPromise =
+    route.hash === PROMISE_HASH ||
+    (route.hash === CANCEL_HASH && order.value?.can_cancel === false);
+  if (
+    toPromise &&
+    order.value?.pending?.some((item) => item.key === PROMISE_PENDING_KEY)
+  )
+    return pendingFocusKey(PROMISE_PENDING_KEY);
   return null;
 });
 const { reveal } = useNextFocus();
@@ -144,25 +283,28 @@ const customerHref = computed(() =>
     : "",
 );
 
-// kitchen-note editor (seeded from the projection; saved explicitly). The note —
+// kitchen-note editor (seeded from the projection; saved by "Salvar nota" or along
+// with Aceitar/Avançar, see `flushKitchenNote`). The note:
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
 const projectedAction = (ref_: string) =>
   order.value?.actions?.find((action) => action.ref === ref_);
 // O avanço que a tela mostra como botão. "Marcar pronto" com a Cozinha
 // trabalhando vem como ``priority: "menu"``: o pronto chega sozinho quando ela
 // conclui, e o gesto à mão mora no menu do pedido (⋯), não na barra.
+// O mesmo vale para o "Adiantar" da encomenda que ainda espera a hora da Cozinha
+// (WP-G02, ``priority: "secondary"``): o gesto existe, à vista, mas não é o do momento.
 const advanceAction = computed(() => {
   const action = projectedAction("advance");
-  return action && action.priority !== "menu" ? action : undefined;
+  return action && action.priority === "primary" ? action : undefined;
 });
 const menuAdvance = computed(() => {
   const action = projectedAction("advance");
-  return action && action.priority === "menu" ? action : undefined;
+  return action && action.priority !== "primary" ? action : undefined;
 });
 const menuOpen = ref(false);
-function onMenuAdvance() {
+async function onMenuAdvance() {
   menuOpen.value = false;
-  advance();
+  if (await flushKitchenNote()) advance();
 }
 // "O sistema fez · desfazer": a mesma linha do card.
 const nowMs = useNowTick();
@@ -179,6 +321,10 @@ const handoffUndo = computed(() =>
   undo.value?.kind === "handoff" && undo.value.canUndo ? undo.value : null,
 );
 
+// Pedido encerrado (ou quem não pode gerenciar): a nota da cozinha fica só de
+// leitura. O servidor desliga a ação `notes`; o editor sai junto, para a tela não
+// prometer "Aparece no ticket da cozinha" num ticket que já não existe.
+const notesEditable = computed(() => projectedAction("notes")?.enabled === true);
 const notes = ref("");
 const notesBase = ref("");
 const notesRevision = ref("");
@@ -217,6 +363,22 @@ async function saveKitchenNote() {
     if (!error.value)
       notesRevision.value = order.value?.revisions?.kitchen_note || "";
   }
+}
+// A nota da cozinha vai JUNTO com o gesto do momento (beta 06/11): o atalho
+// "Bem assado" só preenchia o rascunho, o operador tocava Aceitar sem ver o
+// "Salvar nota" e o ticket da Cozinha saía sem ela. Rascunho pendente se grava
+// ANTES do Aceitar/Avançar; se a gravação falha (ou a nota mudou por outra mão),
+// o gesto para ali e o aviso fica no bloco, com o texto preservado.
+async function flushKitchenNote(): Promise<boolean> {
+  if (!notesDirty.value || !notesEditable.value) return true;
+  if (notesConflict.value) {
+    useSonner.error(
+      "A nota da cozinha mudou enquanto você escrevia. Escolha qual texto fica antes de seguir.",
+    );
+    return false;
+  }
+  await saveKitchenNote();
+  return !notesDirty.value;
 }
 const reasonDirty = ref(false);
 const negotiationDirty = ref(false);
@@ -287,11 +449,24 @@ function applyNoteTag(tag: string) {
   notes.value = appendTag(notes.value, tag);
 }
 
-// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog, which is
-// marketplace-aware: for an iFood order it shows the provider's required coded reasons
-// (fetched live per order); other channels cancel from the canonical reason list
-// (`cancel_reasons`) and reject from the store presets + free text.
-const dialog = ref<"" | "reject" | "cancel" | "settle" | "dispatch">("");
+// reject + cancel + settle dialogs. Reject/cancel share OrderReasonDialog: one canonical
+// reason list (`cancel_reasons`) in every channel; on iFood orders the server already
+// left out the reasons iFood does not offer, and maps the reason to iFood's code.
+const dialog = ref<
+  | ""
+  | "reject"
+  | "cancel"
+  | "settle"
+  | "dispatch"
+  | "courier-back"
+  | "return"
+  | "no-show"
+  | "refund"
+>("");
+// O motivo já marcado quando a tela sabe o porquê: cancelar o Pix vencido abre com
+// "Pagamento não confirmado" (o operador ainda pode trocar).
+const PAYMENT_NOT_CONFIRMED = "payment_not_confirmed";
+const cancelInitialKey = ref("");
 const cashDrafts = useOrderCashDrafts();
 const settlementDraft = computed(
   () =>
@@ -395,64 +570,27 @@ function updateDispatchEquipment(next: string[]) {
     ? [...next.filter((ref_) => !ref_.startsWith("card_machine:")), added]
     : next;
 }
-const reasons = ref<CancellationReason[]>([]);
-const reasonsLoading = ref(false);
-const reasonsError = ref("");
-let reasonsRequest = 0;
-async function loadReasons() {
-  const request = ++reasonsRequest;
-  reasonsLoading.value = true;
-  reasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons();
-    if (request === reasonsRequest) reasons.value = result;
-  } catch {
-    if (request === reasonsRequest)
-      reasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === reasonsRequest) reasonsLoading.value = false;
-  }
-}
-
-// Store-configured REJECT presets (Admin/Unfold) for non-marketplace channels.
-const presets = computed(() => order.value?.cancellation_presets ?? []);
-// The canonical cancel reasons (one list, in the backend).
+// The canonical reject/cancel reasons (one list, in the backend).
 const cancelReasons = computed(() => order.value?.cancel_reasons ?? []);
 
-async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
+async function openDialog(
+  kind: "reject" | "cancel" | "settle" | "dispatch",
+  options: { reasonKey?: string } = {},
+) {
+  cancelInitialKey.value = kind === "cancel" ? (options.reasonKey ?? "") : "";
   if (kind === "settle")
     cashDrafts.settlement(orderRef.value, settlementDraft.value);
   if (kind === "dispatch")
     cashDrafts.dispatch(orderRef.value, dispatchDraft.value);
   dialog.value = kind;
-  if (kind === "reject" || kind === "cancel") {
-    // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
-    reasons.value = [];
-    await loadReasons();
-  }
 }
 
-// OrderReasonDialog emits the chosen (trimmed) reason + code (+ the reason key when
-// cancelling outside iFood, where the text is the internal note); we route to the
+// OrderReasonDialog emits the chosen reason key + the internal note; we route to the
 // right action, then reconcile.
-async function submitReason(payload: {
-  reason: string;
-  cancellationCode: string;
-  reasonKey: string;
-}) {
+async function submitReason(payload: { reasonKey: string; internalNote: string }) {
   let ok = false;
-  if (dialog.value === "reject")
-    ok = await reject(
-      payload.reason || "Pedido recusado",
-      payload.cancellationCode,
-    );
-  else if (dialog.value === "cancel")
-    ok = await cancel(
-      payload.reasonKey
-        ? { reasonKey: payload.reasonKey, internalNote: payload.reason, reason: "", cancellationCode: "" }
-        : { reasonKey: "", internalNote: "", reason: payload.reason, cancellationCode: payload.cancellationCode },
-    );
+  if (dialog.value === "reject") ok = await reject(payload);
+  else if (dialog.value === "cancel") ok = await cancel(payload);
   if (ok) dialog.value = "";
 }
 
@@ -467,11 +605,122 @@ async function submitReason(payload: {
 // pedido" com o Confirmar aceso sobre um pedido JÁ cancelado. Achado na prova
 // de navegador — nenhum teste de componente ou de composable alcança este
 // estado, porque `dialog` é estado da PÁGINA.
+// Devolução: o diálogo diz o valor e o destino do dinheiro; o PIN vem depois, no
+// mesmo `OperatorManagerAuth`, com a mesma frase (`returnMoneySentence`).
+const RETURNABLE_STATUSES = new Set(["delivered", "completed"]);
+const returnMoneySentence = ref("");
+async function submitReturn(payload: {
+  items: { line_id: string; qty: string }[];
+  reason: string;
+  contract: Action;
+  moneySentence: string;
+}) {
+  returnMoneySentence.value = payload.moneySentence;
+  if (await returnOrder(payload, payload.contract)) {
+    dialog.value = "";
+    useSonner.success("Devolução registrada.");
+  }
+}
+
+// Não retirado (WP-G11): a porta existe quando o servidor manda a ação `no-show`
+// no detalhe (pedido pronto, de retirada, fora do iFood); a tela não repete a
+// régua. O diálogo lê a prévia e confirma com a ação DELA; o PIN vem depois, no
+// mesmo `OperatorManagerAuth`, com a frase do dinheiro do servidor.
+const noShowAction = computed(() => projectedAction("no-show"));
+const noShowMoneySentence = ref("");
+async function submitNoShow(payload: { contract: Action; moneySentence: string }) {
+  noShowMoneySentence.value = payload.moneySentence;
+  if (await markNotPickedUp(payload.contract)) onNoShowDone();
+}
+async function onNoShowDone() {
+  dialog.value = "";
+  useSonner.success("Pedido encerrado como não retirado.");
+  // Ficou dinheiro com a loja: o recibo sai agora, na impressora desta estação.
+  await refresh();
+  const done = order.value;
+  if (!done?.retention_receipt_printable || done.retention_receipt_printed) return;
+  if (stationPrints(deviceAgent.value)) await retentionPrinter.print(done.ref);
+  else useSonner.info(`O recibo do valor retido não saiu aqui. ${retentionNoPrinterReason(deviceAgent.value)}`);
+}
+
+// Tentar o estorno de novo (WP-G13): o botão mora na linha "Estorno não saiu" da faixa.
+// Não há diálogo próprio: o valor é do servidor, e o gerente o lê no MESMO
+// `OperatorManagerAuth`. `true` do gesto diz que a tentativa foi gravada; se o dinheiro
+// voltou, quem diz é o pedido relido. A recusa do meio de pagamento não vira aviso
+// solto: o servidor a escreve na própria linha (`failure`).
+const refundRetrying = ref(false);
+async function submitRefundRetry() {
+  refundRetrying.value = true;
+  try {
+    if (await retryRefund()) onRefundRetryDone();
+  } finally {
+    refundRetrying.value = false;
+  }
+}
+function onRefundRetryDone() {
+  const told = refundRetryToast(order.value?.cancelled_money, order.value?.pending);
+  if (told) useSonner.success(told);
+}
+
+// Estornar UM pedido (#2727, item 5): a exceção financeira do Gerente. A porta só
+// existe quando o servidor manda a ação `refund` (quem tem a permissão, pedido com
+// cobrança online paga). O diálogo lê a prévia (os valores DESTA cobrança), e o
+// recibo diz se o dinheiro voltou; a recusa do meio de pagamento vira o aviso, e a
+// tentativa fica na linha do tempo do pedido.
+const refundAction = computed(() => projectedAction(REFUND));
+async function submitRefund(payload: { contract: Action; amountQ: number; intentRef?: string }) {
+  const receipt = await refundOrder(payload.contract, payload.amountQ, payload.intentRef);
+  if (!receipt) return;
+  dialog.value = "";
+  const told = refundToast(receipt);
+  if (told?.tone === "success") useSonner.success(told.text);
+  else if (told) useSonner.error(told.text);
+}
+
+// O ato que o gerente assina e a frase que ele lê, pelo gesto que pediu a assinatura.
+const managerAuthAction = computed<ManagerAction>(() => {
+  if (managerChallenge.value?.action === "return") return "order_return";
+  if (managerChallenge.value?.action === "no-show") return "order_no_show";
+  if (managerChallenge.value?.action === REFUND_RETRY) return "refund_retry";
+  return "cancel_order";
+});
+const managerAuthDetail = computed(() => {
+  if (managerChallenge.value?.action === "return") return returnMoneySentence.value;
+  if (managerChallenge.value?.action === "no-show") return noShowMoneySentence.value;
+  if (managerChallenge.value?.action === REFUND_RETRY)
+    return refundRetrySentence(
+      order.value?.cancelled_money,
+      order.value?.actions?.find((item) => item.ref === REFUND_RETRY),
+    );
+  return order.value?.cancel_money_effect || "";
+});
+// A espera longa que o gerente não vê: o gesto fala com o meio de pagamento.
+const managerAuthBusyText = computed(() => {
+  if (managerAuthAction.value === "refund_retry")
+    return "Pedindo o estorno ao meio de pagamento. Leva alguns segundos.";
+  if (managerAuthAction.value === "cancel_order" && order.value?.cancel_waits_for_gateway)
+    return "Cancelando e falando com o meio de pagamento. Leva alguns segundos.";
+  return "";
+});
+
+async function signed(approval: Record<string, string>) {
+  // O desafio some quando a assinatura vale: o gesto assinado se lê antes.
+  const signedAction = managerChallenge.value?.action;
+  refundRetrying.value = signedAction === REFUND_RETRY;
+  try {
+    if (!(await authorize(approval))) return;
+  } finally {
+    refundRetrying.value = false;
+  }
+  if (signedAction === "no-show") onNoShowDone();
+  else if (signedAction === REFUND_RETRY) onRefundRetryDone();
+  else dialog.value = "";
+}
 async function signWithPin(username: string, pin: string) {
-  if (await authorize({ username, pin })) dialog.value = "";
+  await signed({ username, pin });
 }
 async function signWithBadge(badge: string) {
-  if (await authorize({ badge })) dialog.value = "";
+  await signed({ badge });
 }
 
 async function submitSettle() {
@@ -490,7 +739,17 @@ async function submitSettle() {
   }
 }
 
-function onAdvance() {
+async function onCourierBack() {
+  if (await courierBack()) dialog.value = "";
+}
+// Voltou diferente: o acerto à mão, quando há dinheiro a acertar.
+function onCourierBackDifferent() {
+  dialog.value = "";
+  if (order.value?.can_settle_delivery_cash) void openDialog("settle");
+}
+
+async function onAdvance() {
+  if (!(await flushKitchenNote())) return;
   if (dispatchAsks.value) openDialog("dispatch");
   else advance();
 }
@@ -523,6 +782,10 @@ const volumeCheck = useVolumeCheck({
 // celular. Ela fica só no que é comportamento: a direção da gaveta (aberta depois de
 // montar) e a posição do dispositivo (`useOutsideStore`).
 const { belowMd: isPhone } = useScreen();
+// "Marcar como entregue" ao lado de "Entregador voltou": a alternativa ao primário.
+const courierBackAdvance = computed(() =>
+  primary.value?.key === "courier-back" ? advanceAction.value : undefined,
+);
 function menuDo(fn: () => unknown) {
   menuOpen.value = false;
   void fn();
@@ -535,7 +798,9 @@ const detailMenuItems = computed(() => [
     "data-action": "refresh",
     onSelect: () => refresh(),
   },
-  ...(menuAdvance.value
+  // No celular o avanço secundário mora aqui; do `md` para cima ele é botão à vista no
+  // cabeçalho (dono, 14/11/2026: o que é útil não fica escondido com espaço de sobra).
+  ...(menuAdvance.value && isPhone.value
     ? [
         {
           label: menuAdvance.value.label,
@@ -557,6 +822,36 @@ const detailMenuItems = computed(() => [
           }),
           "data-action": "order-ticket",
           onSelect: () => menuDo(() => ticketPrinter.print(orderRef.value)),
+        },
+      ]
+    : []),
+  ...(order.value?.retention_receipt_printable
+    ? [
+        {
+          ...retentionReceiptMenuItem(deviceAgent.value, {
+            printing: retentionPrinter.printing.value,
+            printed: order.value.retention_receipt_printed,
+          }),
+          "data-action": "retention-receipt",
+          onSelect: () => menuDo(async () => {
+            await retentionPrinter.print(orderRef.value);
+            await refresh();
+          }),
+        },
+      ]
+    : []),
+  ...(courierBackAdvance.value && isPhone.value
+    ? [
+        {
+          label: courierBackAdvance.value.label,
+          // O que saiu pode ser só o troco, só a maquininha ou o dinheiro a
+          // receber: a frase vale para qualquer combinação.
+          description: "O que saiu com o entregador continua em aberto.",
+          icon: "i-lucide-check",
+          "data-action": "advance",
+          disabled: busy.value || !courierBackAdvance.value.enabled,
+          title: courierBackAdvance.value.reason || undefined,
+          onSelect: () => menuDo(onAdvance),
         },
       ]
     : []),
@@ -599,6 +894,35 @@ const detailMenuItems = computed(() => [
         },
       ]
     : []),
+  ...(danfe.value
+    ? [
+        {
+          label:
+            danfePrinting.value || danfe.value.sending
+              ? "Imprimindo…"
+              : danfe.value.action,
+          description: danfe.value.status,
+          icon: "i-lucide-printer",
+          "data-action": "print-danfe",
+          disabled: danfePrinting.value || danfe.value.sending,
+          onSelect: () => menuDo(printDanfe),
+        },
+      ]
+    : []),
+  ...(noticeAction.value
+    ? [
+        {
+          label: "Avisar o cliente",
+          description: noticeAction.value.enabled
+            ? "Vai atrasar, faltou um item ou precisamos remarcar."
+            : noticeAction.value.reason,
+          icon: "i-lucide-message-circle-warning",
+          "data-action": "customer-notice",
+          disabled: busy.value || !noticeAction.value.enabled,
+          onSelect: () => openNotice(),
+        },
+      ]
+    : []),
   ...(order.value?.can_resend_payment_link
     ? [
         {
@@ -607,6 +931,55 @@ const detailMenuItems = computed(() => [
           "data-action": "resend-payment-link",
           disabled: busy.value,
           onSelect: () => menuDo(resendPaymentLink),
+        },
+      ]
+    : []),
+  // Devolução depois da venda (WP-G12): pedido entregue ou concluído, fora do
+  // iFood (lá o reembolso é do portal deles). A régua inteira é da prévia do
+  // servidor, que o diálogo lê ao abrir; aqui só se decide se a porta aparece.
+  ...(order.value &&
+  RETURNABLE_STATUSES.has(order.value.status) &&
+  order.value.channel_ref !== "ifood"
+    ? [
+        {
+          label: "Registrar devolução (pede gerente)",
+          icon: "i-lucide-undo-2",
+          "data-action": "return",
+          disabled: busy.value,
+          onSelect: () => menuDo(() => (dialog.value = "return")),
+        },
+      ]
+    : []),
+  // Não retirado (WP-G11): o servidor decide se a porta existe (a ação `no-show`
+  // do detalhe) e se já pode ser tocada. Antes da hora ela fica no lugar,
+  // desabilitada, dizendo a partir de quando.
+  ...(noShowAction.value
+    ? [
+        {
+          label: "Não retirado (pede gerente)",
+          description:
+            (!noShowAction.value.enabled && noShowAction.value.reason) || undefined,
+          icon: "i-lucide-package-x",
+          "data-action": "no-show",
+          disabled: busy.value || !noShowAction.value.enabled,
+          title: noShowAction.value.reason || undefined,
+          onSelect: () => menuDo(() => (dialog.value = "no-show")),
+        },
+      ]
+    : []),
+  // Estornar (#2727, item 5): só a quem tem a permissão, e o servidor diz se já pode.
+  ...(refundAction.value
+    ? [
+        {
+          label: "Estornar",
+          description:
+            (!refundAction.value.enabled && refundAction.value.reason) || undefined,
+          icon: "i-lucide-rotate-ccw",
+          "data-action": "refund",
+          color: "error" as const,
+          disabled: busy.value || !refundAction.value.enabled,
+          title: refundAction.value.reason || undefined,
+          onSelect: () => menuDo(() => (dialog.value = "refund")),
         },
       ]
     : []),
@@ -640,19 +1013,33 @@ const primary = computed(() => {
       enabled: confirmAction.enabled,
       reason: confirmAction.reason,
     };
+  // Na rua com troco ou maquininha: o gesto do momento é o MESMO do cartão,
+  // "Entregador voltou", que fecha a saída inteira. "Marcar como entregue" fecha só a
+  // metade e fica no menu, com o aviso do que continua em aberto.
+  const back = projectedAction("courier-back");
+  if (back)
+    return {
+      key: "courier-back" as const,
+      label: back.label,
+      icon: "lucide:undo-2",
+      enabled: back.enabled,
+      reason: back.reason,
+    };
   const advance = advanceAction.value;
   if (advance) {
     return advance.enabled
       ? {
           key: "advance" as const,
-          label: o.next_action_label || advance.label,
+          label: advance.label,
           icon: "lucide:arrow-right",
           enabled: true,
           reason: "",
         }
       : {
+          // Travado, o botão continua com o nome do gesto: o motivo é um fato só e
+          // mora na faixa "O que falta neste pedido" (P1-16, P2-26).
           key: "advance" as const,
-          label: (o.advance_block_label || advance.label).replace(/…$/, ""),
+          label: advance.label,
           icon: "lucide:lock",
           enabled: false,
           reason: advance.reason,
@@ -706,18 +1093,95 @@ const thumbAction = computed(() => {
   };
 });
 // O estado escrito que vale em toda largura (as pílulas de pagamento são só do celular).
+// O chat do cliente iFood (DEV-2026-019): o widget sobe na casca (app.vue); o
+// detalhe só diz onde ele está, ou que não carregou.
+const ifoodWidget = useIFoodWidget();
+const ifoodChat = computed(() =>
+  ifoodChatNotice(ifoodWidget.state.value, order.value?.channel_ref === "ifood"),
+);
+// No detalhe de um pedido iFood o botão do iFood aparece sempre, mesmo depois da
+// entrega: o cliente também escreve depois (DEV-2026-023).
+watch(
+  () => order.value?.channel_ref === "ifood",
+  (isIFood) => ifoodWidget.setViewingIFoodOrder(isIFood),
+  { immediate: true },
+);
+onBeforeUnmount(() => ifoodWidget.setViewingIFoodOrder(false));
 // O aceite que não chegou ao iFood (P1-3): o fato, o prazo dele contando e o reenvio.
 const acceptNotice = computed(() =>
   order.value ? ifoodAcceptNotice(order.value, nowMs.value) : null,
 );
+// O que saiu com o entregador, a mesma linha do cartão (troco e maquininha): sem
+// ela, o detalhe oferecia fechar a entrega sem mostrar o que ainda está na rua.
+const custodyLines = computed(() => {
+  const o = order.value;
+  if (!o || !["dispatched", "delivered"].includes(o.status)) return [];
+  return [
+    { key: "change", icon: "lucide:coins", text: o.change_label },
+    {
+      key: "equipment",
+      icon: o.equipment_label ? "lucide:smartphone-nfc" : "lucide:bike",
+      text: onRoadLine(o),
+    },
+  ].filter((line) => line.text);
+});
+// Pix ou link vencido: o avanço não destrava mais sozinho. O próximo passo vem
+// pronto na faixa "O que falta": cancelar com o motivo já marcado.
+const cancelUnpaid = computed(() =>
+  Boolean(order.value?.payment_lapsed && order.value?.can_cancel),
+);
+function openCancelUnpaid() {
+  void openDialog("cancel", { reasonKey: PAYMENT_NOT_CONFIRMED });
+}
+// O cartão da Fila chega com `#cancel-unpaid`: o diálogo abre com o motivo marcado.
+const CANCEL_UNPAID_HASH = "#cancel-unpaid";
+watch(
+  () => route.hash === CANCEL_UNPAID_HASH && cancelUnpaid.value,
+  (arrive) => {
+    if (arrive && !dialog.value) openCancelUnpaid();
+  },
+  { immediate: true },
+);
+// O "Avisar o cliente" do diálogo "Resolver" do painel chega com `#notify=...`: o
+// diálogo do G07, com o aviso e os itens em risco marcados.
+watch(
+  () => (noticeAction.value?.enabled ? parseNotifyHash(route.hash) : null),
+  (pick) => {
+    if (pick && !noticeOpen.value) openNotice(pick);
+  },
+  { immediate: true },
+);
+// O "Resolver no Gestor" das Encomendas do PDV chega com `#resolve`: o diálogo das
+// escolhas abre, se a promessa ainda está em risco e a pessoa pode resolver.
+watch(
+  () =>
+    route.hash === RESOLVE_HASH &&
+    order.value?.promise?.state === "at_risk" &&
+    Boolean(order.value?.promise?.actions?.some((action) => action.ref === RESOLVE && action.enabled)),
+  (arrive) => {
+    if (arrive && !resolveOpen.value) resolveOpen.value = true;
+  },
+  { immediate: true },
+);
+// O "Cancelar o pedido inteiro" do diálogo "Resolver" do painel chega com `#cancel`
+// (WP-G08): o MESMO diálogo do menu do pedido, com o motivo por escolher e a régua do
+// gerente.
+watch(
+  () => route.hash === CANCEL_HASH && Boolean(order.value?.can_cancel),
+  (arrive) => {
+    if (arrive && !dialog.value) void openDialog("cancel");
+  },
+  { immediate: true },
+);
+// O trinco do avanço (o pagamento que falta, o dia da encomenda, o lote) é linha da
+// faixa "O que falta neste pedido", escrito em toda largura; aqui fica o que é do
+// momento: o aceite do iFood, o prazo, o desfazer e o que saiu com o entregador.
 const stateInEveryWidth = computed(() =>
   Boolean(
+    custodyLines.value.length ||
     acceptNotice.value ||
     deadlineText.value ||
-      undo.value ||
-      (advanceAction.value &&
-        !advanceAction.value.enabled &&
-        order.value?.advance_block_reason),
+      undo.value,
   ),
 );
 const BACK_VARIANTS = [
@@ -725,11 +1189,14 @@ const BACK_VARIANTS = [
   { icon: "i-lucide-chevron-left", class: "max-md:hidden" },
 ] as const;
 const thumbReject = computed(() => (primary.value ? rejectThumb.value : undefined));
-function runPrimary() {
+async function runPrimary() {
   const p = primary.value;
   if (!p?.enabled || busy.value) return;
-  if (p.key === "confirm") confirm();
+  if (p.key === "confirm") {
+    if (await flushKitchenNote()) confirm();
+  }
   else if (p.key === "advance") onAdvance();
+  else if (p.key === "courier-back") dialog.value = "courier-back";
   else openDialog("settle");
 }
 // O ao vivo do cabeçalho: a hora da última leitura útil e o estado do empurrão (SSE).
@@ -755,10 +1222,7 @@ onMounted(() => {
 const readClock = computed(() => {
   const at = clockReady.value ? readMetadata?.value?.generated_at : "";
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 const channelIcon = computed(
@@ -785,6 +1249,14 @@ const deadlineText = computed(() => {
     : { before: "Confirma sozinho em", left, after: "se ninguém recusar." };
 });
 // Cartão autorizado esperando aceite: o prazo da reserva e os dois gestos (P1-4).
+// Os avisos do topo do pedido fecham (X) e voltam no próximo carregamento, ou antes quando
+// a causa muda (a chave leva a grandeza): a regra do kit (`useAlertDismissals`).
+const notices = useAlertDismissals();
+const contactKey = computed(() => `contact:${order.value?.contact_request?.requested_at_display ?? ""}`);
+const contactNotice = computed(() =>
+  order.value?.contact_request ? contactRequestNotice(order.value.contact_request) : null,
+);
+const cardAuthKey = computed(() => `card-auth:${cardAuth.value?.title ?? ""}`);
 const cardAuth = computed(() =>
   cardAuthorizationNotice(
     order.value?.card_authorization_expires_iso,
@@ -829,11 +1301,58 @@ const outside = useOutsideStore(
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!-- Cabeçalho de UMA linha (G14, prévia v3 `depois-gestor-detalhe`):
          ‹ Pedidos | Pedido S84 · estado · ao vivo | bilhete de volta | ⋯ | a ação primária.
          No celular (v3 `depois-gestor-celular` (c)): ← U68 · iFood · ⋯, e o gesto desce
          para o polegar. -->
+    <OperatorCompactBar :title="`Pedido ${code.code}`" search-button-label="Buscar na suíte">
+      <template #lead>
+        <NuxtButton
+          :to="backLocation"
+          icon="i-lucide-arrow-left"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 shrink-0 justify-center"
+          :aria-label="fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'"
+          data-compact-back
+        />
+      </template>
+      <template #identity>
+        <div class="flex min-w-0 items-center gap-1" data-compact-record>
+          <div class="min-w-0 flex-1">
+            <p class="flex min-w-0 items-center gap-1.5">
+              <!-- O código nunca cede a largura: a 375 ele sumia inteiro, atrás do estado. -->
+              <span class="shrink-0 text-lg font-semibold leading-tight text-highlighted">{{ code.code }}</span>
+              <NuxtBadge v-if="order?.status_label" :color="statusColor(order.status)" :label="order.status_label" class="shrink-0" />
+              <NuxtBadge v-if="order?.ifood_logistics_label" color="info" icon="i-lucide-bike" :label="order.ifood_logistics_label" class="min-w-0 truncate" data-detail-ifood-logistics />
+            </p>
+            <p v-if="order" class="flex min-w-0 items-center gap-1 text-xs text-muted">
+              <Icon :name="channelIcon" class="size-3.5 shrink-0" /><span class="truncate">{{ order.channel_name || order.channel_ref }}</span>
+            </p>
+          </div>
+          <!-- No celular o contador ("7 de 11") sai de vista e as setas ficam: a largura
+               vai para o código, o estado e o canal, que cortavam ("Loj…"). O grupo
+               segue dizendo a posição ao leitor de tela. -->
+          <OperatorRecordNav v-if="!returnTicket" class="max-sm:[&_[data-operator-record-count]]:hidden" :trail="recordTrailKey" :current="orderRef" :to="recordLocation" previous-label="Pedido anterior" next-label="Próximo pedido" />
+        </div>
+      </template>
+      <!-- O ⋮ do pedido no canto, depois do sino, como em toda a suíte. -->
+      <template #more>
+        <NuxtButton
+          icon="i-lucide-ellipsis-vertical"
+          color="neutral"
+          variant="ghost"
+          square
+          class="size-11 shrink-0 justify-center"
+          aria-label="Mais ações do pedido"
+          :aria-expanded="menuOpen"
+          data-action="menu-phone"
+          @click="menuOpen = !menuOpen"
+        />
+      </template>
+    </OperatorCompactBar>
     <OperatorPageHeader
       :title="`Pedido ${code.code}`"
       :phone-title="code.code"
@@ -851,7 +1370,7 @@ const outside = useOutsideStore(
           variant="ghost"
           square
           :aria-label="
-            fromHistory ? 'Voltar para o histórico' : 'Voltar para a fila'
+            fromHistory ? 'Voltar para o histórico' : 'Voltar para os pedidos'
           "
           data-detail-back
         />
@@ -874,9 +1393,25 @@ const outside = useOutsideStore(
           :label="order.status_label"
           data-detail-status
         />
+        <!-- Pedido com entregador do iFood: onde está o entregador, ao lado do status. -->
+        <NuxtBadge
+          v-if="order?.ifood_logistics_label"
+          color="info"
+          icon="i-lucide-bike"
+          :label="order.ifood_logistics_label"
+          data-detail-ifood-logistics
+        />
+        <!-- A encomenda do dia que espera a hora da Cozinha: a mesma frase do cartão. -->
+        <NuxtBadge
+          v-if="order?.kitchen_release_label"
+          color="neutral"
+          icon="i-lucide-chef-hat"
+          :label="order.kitchen_release_label"
+          data-detail-kitchen-wait
+        />
         <!-- `min-w-0`: sem ele o invólucro segura a largura do rótulo completo e o
              selo não encolhe (cortava "Atualiza sozinho a cada" a 800 px). -->
-        <span class="hidden min-w-0 md:inline-flex">
+        <span v-if="!accessDenied" class="hidden min-w-0 md:inline-flex">
           <OperatorLiveStatus
             :tone="liveTone"
             :time="readClock"
@@ -898,20 +1433,8 @@ const outside = useOutsideStore(
           next-label="Próximo pedido"
         />
       </template>
-      <!-- O kit mostra `#phone-actions` só abaixo de `md`; o `#actions`, daqui para cima. -->
-      <template #phone-actions>
-        <NuxtButton
-          type="button"
-          icon="i-lucide-ellipsis"
-          color="neutral"
-          variant="ghost"
-          square
-          aria-label="Mais ações do pedido"
-          :aria-expanded="menuOpen"
-          data-action="menu-phone"
-          @click="menuOpen = !menuOpen"
-        />
-      </template>
+      <!-- Abaixo de `md` o cabeçalho é a linha do chão (`OperatorCompactBar`, acima), com
+           o ⋯ do pedido; o `#actions` vale daqui para cima. -->
       <template #actions>
         <!-- bilhete de volta: quem veio de outro app volta para onde estava -->
         <NuxtButton
@@ -923,7 +1446,8 @@ const outside = useOutsideStore(
           data-detail-return
         />
         <NuxtButton
-          icon="i-lucide-ellipsis"
+          v-if="!accessDenied"
+          icon="i-lucide-ellipsis-vertical"
           label="Mais ações do pedido"
           color="neutral"
           variant="outline"
@@ -931,6 +1455,35 @@ const outside = useOutsideStore(
           :aria-expanded="menuOpen"
           data-action="menu"
           @click="menuOpen = !menuOpen"
+        />
+        <!-- O avanço que não é o gesto do momento (o pronto com a Cozinha ou o iFood
+             conduzindo; o entregue ao lado do "Entregador voltou"): à vista, secundário. -->
+        <NuxtButton
+          v-if="menuAdvance"
+          type="button"
+          :icon="menuAdvance.priority === 'secondary' ? 'i-lucide-arrow-right' : 'i-lucide-check'"
+          :label="menuAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !menuAdvance.enabled"
+          :title="menuAdvance.reason || undefined"
+          data-action="advance-secondary"
+          @click="onMenuAdvance"
+        />
+        <NuxtButton
+          v-else-if="courierBackAdvance"
+          type="button"
+          icon="i-lucide-check"
+          :label="courierBackAdvance.label"
+          color="neutral"
+          variant="outline"
+          :disabled="busy || !courierBackAdvance.enabled"
+          :title="
+            courierBackAdvance.reason ||
+            'O que saiu com o entregador continua em aberto.'
+          "
+          data-action="advance-secondary"
+          @click="onAdvance"
         />
         <NuxtButton
           v-if="rejectAction"
@@ -1005,7 +1558,8 @@ const outside = useOutsideStore(
       />
       <!-- fora da loja: o detalhe mostra só o que pede decisão (G18) -->
       <NuxtAlert
-        v-if="outside.askConsent.value"
+        v-if="outside.askConsent.value && notices.isOpen('outside-consent')"
+        v-bind="notices.closeProps"
         color="info"
         variant="subtle"
         icon="i-lucide-map-pin"
@@ -1022,9 +1576,11 @@ const outside = useOutsideStore(
           },
         ])"
         data-outside-consent
+        @update:open="notices.onOpen('outside-consent', $event)"
       />
       <NuxtAlert
-        v-if="outside.away.value"
+        v-if="outside.away.value && notices.isOpen('outside-band')"
+        v-bind="notices.closeProps"
         color="info"
         variant="subtle"
         icon="i-lucide-map-pin-off"
@@ -1037,9 +1593,51 @@ const outside = useOutsideStore(
           },
         ])"
         data-outside-band
+        @update:open="notices.onOpen('outside-band', $event)"
       />
       <NuxtAlert
-        v-if="order && cardAuth"
+        v-if="order?.contact_request && notices.isOpen(contactKey)"
+        id="customer-contact"
+        v-bind="notices.closeProps"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-message-circle-heart"
+        :description="contactNotice?.description"
+        :actions="alertActions('warning', [
+          // O aviso manda chamar o cliente: o botão já leva à conversa.
+          !!order.customer_whatsapp_url && {
+            label: 'Chamar no WhatsApp',
+            icon: 'i-lucide-message-circle',
+            to: order.customer_whatsapp_url,
+            target: '_blank',
+          },
+          {
+            label: 'Resolvido',
+            onClick: () => { contactResolveOpen = true; },
+          },
+        ])"
+        data-contact-request
+        @update:open="notices.onOpen(contactKey, $event)"
+      >
+        <!-- As estrelas dizem a nota de relance; o texto continua para o leitor de tela.
+             Glifo e não ícone: o modo CSS dos ícones é máscara, e máscara não preenche. -->
+        <template #title>
+          {{ contactNotice?.title }}
+          <template v-if="contactNotice?.showsRating">
+            <span class="ms-1 tracking-wider" aria-hidden="true">
+              <span
+                v-for="n in 5"
+                :key="n"
+                :class="n <= order.contact_request.rating ? 'text-warning' : 'text-muted opacity-50'"
+              >★</span>
+            </span>
+            <span class="sr-only">: nota {{ order.contact_request.rating }} de 5</span>
+          </template>
+        </template>
+      </NuxtAlert>
+      <NuxtAlert
+        v-if="order && cardAuth && notices.isOpen(cardAuthKey)"
+        v-bind="notices.closeProps"
         :color="cardAuth.tone"
         variant="subtle"
         icon="i-lucide-credit-card"
@@ -1047,6 +1645,7 @@ const outside = useOutsideStore(
         :description="cardAuth.description"
         :actions="alertActions(cardAuth.tone, cardAuthActions)"
         data-card-authorization
+        @update:open="notices.onOpen(cardAuthKey, $event)"
       />
 
       <div
@@ -1057,6 +1656,29 @@ const outside = useOutsideStore(
         <NuxtSkeleton class="h-24 w-full" />
         <NuxtSkeleton class="h-64 w-full" />
       </div>
+      <!-- A conta não abre o detalhe (403 de permissão): quem só expede chega aqui pelo
+           sino. A recusa diz por quê e devolve a pessoa ao lugar onde ela conduz o
+           pedido, sem "tentar de novo" (P1-20). -->
+      <div
+        v-else-if="forbidden && !order"
+        class="grid flex-1 place-items-center"
+        data-order-forbidden
+      >
+        <OperatorScreenState
+          state="forbidden"
+          :title="denial.title"
+          :description="denial.description"
+        >
+          <template #actions>
+            <NuxtButton
+              :label="denial.back.label"
+              :to="denial.back.to"
+              color="neutral"
+              variant="outline"
+            />
+          </template>
+        </OperatorScreenState>
+      </div>
       <!-- `!stationLocked`: com a estação travada a leitura volta 403 e este aviso
          dizia "Pedido não encontrado", que é falso e assusta. Nesse estado quem
          fala é a identificação, que sobe por cima. -->
@@ -1065,13 +1687,32 @@ const outside = useOutsideStore(
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Não foi possível carregar o pedido"
+        :title="
+          !order && notFound
+            ? 'Pedido não encontrado'
+            : 'Não foi possível carregar o pedido'
+        "
         :description="
           order
             ? 'Mantivemos a última leitura e seu rascunho; atualize antes de confirmar ações.'
-            : 'Pedido não encontrado ou falha ao carregar.'
+            : notFound
+              ? `Não existe pedido com o código ${orderRef}.`
+              : 'A leitura falhou. Confira a conexão e toque em Atualizar, no menu do pedido.'
         "
         data-order-error
+      />
+
+      <!-- O que falta neste pedido: cada pendência com o gesto que resolve, acima do
+           detalhe do kit (WP-G05). Some sozinha quando nada falta. -->
+      <OrderDetailPending
+        v-if="order"
+        :pending="order.pending"
+        :money="order.cancelled_money"
+        :promise="order.promise"
+        :busy="busy"
+        :danfe-printing="danfePrinting"
+        :refund-retrying="refundRetrying"
+        @act="onPendingAction"
       />
 
       <OperatorOrderDetail
@@ -1105,7 +1746,8 @@ const outside = useOutsideStore(
         </template>
 
         <!-- O estado do momento, escrito: no celular as pílulas e o prazo (v3 (c)); em todo
-           tamanho, o "o sistema fez · desfazer" e o bloqueio do avanço com o motivo. -->
+           tamanho, o "o sistema fez · desfazer". O bloqueio do avanço mora na faixa
+           "O que falta neste pedido", acima. -->
         <template #actions>
           <section
             v-if="order.payment_method_label || stateInEveryWidth"
@@ -1194,25 +1836,37 @@ const outside = useOutsideStore(
               <!-- A saída tocada: o aviso diz o fato; o Desfazer mora no botão que a
                    fez (o primário do cabeçalho, a ação na base no celular). -->
             </NuxtAlert>
-            <NuxtAlert
-              v-if="
-                advanceAction &&
-                !advanceAction.enabled &&
-                order.advance_block_reason
-              "
-              color="error"
-              variant="subtle"
-              icon="i-lucide-lock"
-              :title="
-                order.advance_block_label.replace(/…$/, '') || 'Bloqueado'
-              "
-              :description="order.advance_block_reason"
-              data-detail-block
-            />
+            <ul
+              v-if="custodyLines.length"
+              class="flex flex-col gap-1 text-sm"
+              data-detail-custody
+            >
+              <li
+                v-for="line in custodyLines"
+                :key="line.key"
+                class="flex items-center gap-1.5"
+                :data-detail-custody-line="line.key"
+              >
+                <Icon :name="line.icon" class="size-4 shrink-0" />
+                <span>{{ line.text }}</span>
+              </li>
+            </ul>
           </section>
         </template>
 
         <template v-if="!outside.away.value" #after-profile>
+          <!-- chat do cliente iFood: o widget do iFood mora no canto da tela (casca);
+               aqui só se diz onde ele está, ou que não carregou (DEV-2026-019). -->
+          <NuxtAlert
+            v-if="ifoodChat"
+            :color="ifoodChat.tone"
+            variant="subtle"
+            :icon="ifoodChat.icon"
+            :title="ifoodChat.title"
+            :description="ifoodChat.description"
+            data-ifood-chat
+            :data-ifood-chat-state="ifoodWidget.state.value"
+          />
           <!-- corrida de entrega (logística externa) -->
           <OrderCourierPanel
             v-if="order.courier"
@@ -1226,9 +1880,8 @@ const outside = useOutsideStore(
             :dispatch-action="
               order.actions.find((action) => action.ref === 'courier-dispatch')
             "
-            :equipment-options="order.equipment_options ?? []"
             :busy="busy"
-            :arm-dispatch="route.hash === COURIER_CALL_HASH"
+            :calling="courierCall.calling.value === order.ref"
             :dispatch-again-action="
               order.actions.find(
                 (action) => action.ref === 'courier-dispatch-again',
@@ -1236,11 +1889,16 @@ const outside = useOutsideStore(
             "
             :quoting="quoting"
             :quote-error="quoteError"
+            :custody-action="
+              order.actions.find((action) => action.ref === 'courier-custody')
+            "
+            :equipment-options="order.equipment_options"
             @quote="onCourierQuote"
             @dismiss-quote-error="quoteError = ''"
-            @dispatch="courierDispatch"
+            @call="courierCall.open(order.ref)"
             @dispatch-again="onCourierDispatchAgain"
             @cancel="courierCancel"
+            @separate="courierCustody"
             @dismiss-reminder="courierReminderDismiss"
           />
           <!-- comprovante de entrega dos avisos ao cliente (D3) -->
@@ -1248,10 +1906,13 @@ const outside = useOutsideStore(
         </template>
 
         <!-- A nota da cozinha se EDITA no Gestor: o editor entra no lugar da leitura. -->
-        <template v-if="!outside.away.value" #kitchen-note>
+        <template v-if="!outside.away.value && notesEditable" #kitchen-note>
           <NuxtCard as="section">
             <div class="flex flex-col gap-2">
               <!-- one-tap tags (configuráveis no Admin) — anexam ao texto, sem duplicar -->
+              <p v-if="noteTags.length" class="text-sm text-muted-foreground" data-kitchen-note-tags-scope>
+                Acrescentar à nota:
+              </p>
               <div v-if="noteTags.length" class="flex flex-wrap gap-1.5">
                 <NuxtButton
                   v-for="(tag, i) in noteTags"
@@ -1266,7 +1927,7 @@ const outside = useOutsideStore(
               </div>
               <NuxtFormField
                 label="Nota para a cozinha"
-                description="Aparece no ticket da cozinha (KDS)."
+                description="Aparece no ticket deste pedido, na tela da Cozinha."
               >
                 <NuxtTextarea
                   id="order-notes"
@@ -1325,26 +1986,106 @@ const outside = useOutsideStore(
       data-detail-thumb
     />
 
-    <!-- reject / cancel: marketplace-aware reason dialog (iFood coded reasons,
-         the canonical cancel list, or store presets + free text for reject) -->
+    <OperatorReasonDialog
+      v-model:open="contactResolveOpen"
+      title="Ouvidoria resolvida"
+      description="Conte em uma frase o que foi feito. Fica no histórico do pedido; o cliente não lê."
+      confirm-label="Marcar resolvido"
+      reason-label="O que foi feito"
+      placeholder="Ex.: falei com o cliente no WhatsApp, pedi desculpas e combinamos a troca."
+      :maxlength="500"
+      required
+      :busy="busy"
+      @confirm="onResolveContact"
+    />
+    <!-- reject / cancel: the canonical reason list for both -->
     <OrderReasonDialog
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
-      :loading="reasonsLoading"
-      :error="reasonsError"
       :marketplace="order?.channel_ref === 'ifood'"
-      :reasons="reasons"
-      :presets="presets"
       :cancel-reasons="cancelReasons"
+      :initial-key="cancelInitialKey"
+      :order="order"
+      :money-effect="order?.cancel_money_effect || ''"
       :busy="busy"
       @dirty-change="reasonDirty = $event"
-      @retry="loadReasons"
       @update:open="
         (v) => {
           if (!v) dialog = '';
         }
       "
       @confirm="submitReason"
+    />
+
+    <!-- "Resolver" a promessa em risco: as escolhas, a mensagem ao cliente e o que conclui -->
+    <OrderCustomerNoticeDialog
+      v-if="noticeAction"
+      :open="noticeOpen"
+      :order-ref="orderRef"
+      :customer-name="order?.customer_name || ''"
+      :busy="busy"
+      :failure="noticeFailure"
+      :initial-kind="noticePick.kind"
+      :initial-lines="noticePick.lines"
+      @update:open="(value: boolean) => (noticeOpen = value)"
+      @send="onSendNotice"
+    />
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="orderRef"
+      :managers="order?.managers || []"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
+      @notify="notifyFromResolve"
+    />
+
+    <!-- devolução depois da venda: itens, quantidade, motivo e o valor que volta -->
+    <OrderReturnDialog
+      :open="dialog === 'return'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitReturn"
+    />
+
+    <!-- não retirado: o destino de cada item, o dinheiro e o texto do cliente -->
+    <OrderNoShowDialog
+      :open="dialog === 'no-show'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitNoShow"
+    />
+
+    <!-- estornar UM pedido: o pago, o disponível, o valor e a segunda confirmação -->
+    <OrderRefundDialog
+      :open="dialog === 'refund'"
+      :order-ref="orderRef"
+      :busy="busy"
+      @update:open="
+        (v) => {
+          if (!v) dialog = '';
+        }
+      "
+      @confirm="submitRefund"
+    />
+
+    <!-- entregador voltou: o MESMO diálogo da Fila (confere e fecha a saída inteira) -->
+    <CourierBackDialog
+      :card="dialog === 'courier-back' ? order : null"
+      :busy="busy"
+      @confirm="onCourierBack"
+      @different="onCourierBackDifferent"
+      @close="dialog = ''"
     />
 
     <!-- settle delivery cash dialog -->
@@ -1501,25 +2242,40 @@ const outside = useOutsideStore(
     <!-- Segunda assinatura: o mesmo diálogo canônico do PDV, com a MESMA lista de
          gerentes (``managers`` da projeção de detalhe, montada por
          ``pos._manager_cards``). Selecionar, não digitar: nome digitado erra, e o
-         servidor resolve a assinatura por username. Lista vazia ainda cai no
-         campo livre — é a porta de saída, não o caminho normal. -->
+         servidor resolve a assinatura por username. Lista vazia diz que não
+         há outro gerente e deixa o crachá valendo; nunca vira campo de nome. -->
     <OperatorManagerAuth
       :open="!!managerChallenge"
-      action="cancel_sale"
+      :action="managerAuthAction"
+      :detail="managerAuthDetail"
       :managers="order?.managers || []"
       :busy="busy"
+      :busy-text="managerAuthBusyText"
       :error="
         managerChallenge?.code === 'manager_approval_invalid'
           ? managerChallenge.message
           : ''
       "
       @update:open="
-        (aberto: boolean) => {
-          if (!aberto) dismissManagerChallenge();
+        (open: boolean) => {
+          if (!open) dismissManagerChallenge();
         }
       "
       @authorize="signWithPin"
       @authorize-badge="signWithBadge"
+    />
+
+    <!-- Chamar entregador: o MESMO sheet das Entregas e do cartão Pronto (#2876). -->
+    <CourierCallSheet
+      v-bind="courierSheet"
+      @close="courierCall.closeSheet"
+      @confirm="courierCall.confirmSheet"
+      @alone="courierCall.confirmAlone"
+      @toggle="courierCall.toggleCompanion"
+      @change="courierCall.setChange"
+      @machine="courierCall.chooseMachine"
+      @carrier="courierCall.chooseCarrier"
+      @note="courierCall.setNote"
     />
   </main>
 </template>

@@ -43,10 +43,10 @@ def _fail(detail: str, *, index: int | None = None, key: str = "") -> RecipeBook
 def is_web_url(url: str) -> bool:
     """Link aceitável: ``http`` ou ``https``, com host. Nada de ``javascript:``, ``data:``, ``file:``."""
     try:
-        parts = urlsplit(url)
+        preps = urlsplit(url)
     except ValueError:
         return False
-    return parts.scheme in ("http", "https") and bool(parts.netloc) and not any(ch.isspace() for ch in url)
+    return preps.scheme in ("http", "https") and bool(preps.netloc) and not any(ch.isspace() for ch in url)
 
 
 def _text(raw: Any, *, index: int, key: str, limit: int, label: str) -> str:

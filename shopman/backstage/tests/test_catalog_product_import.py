@@ -18,9 +18,9 @@ pytestmark = pytest.mark.django_db
 IMPORT_URL = "/api/v1/backstage/catalog/product/import/"
 
 CSV = (
-    "sku;name;base_price_q;unit;availability_policy;is_published;is_sellable;shelf_life_days\n"
-    "IMPORTADO;Pão importado;7,50;un;planned_ok;sim;sim;\n"
-    "PAO;Pão novo;6,00;un;planned_ok;1;1;\n"
+    "SKU;Produto;Preço (R$);Publicado;À venda;Coleção (informativa);Canal: Loja online\n"
+    "IMPORTADO;Pão importado;7,50;Sim;Sim;;À venda\n"
+    "PAO;Pão novo;6,00;Sim;Sim;Pães;À venda\n"
 )
 
 
@@ -50,8 +50,13 @@ def test_preview_reports_error_per_row(catalog):
 
 
 def test_import_requires_the_sku_column(catalog):
-    with pytest.raises(CatalogError, match="coluna sku"):
-        catalog_service.preview_product_import({"csv": "name;price\nPão;5"}, actor_id=1)
+    with pytest.raises(CatalogError, match="coluna SKU"):
+        catalog_service.preview_product_import({"csv": "Produto;Preço (R$)\nPão;5"}, actor_id=1)
+
+
+def test_import_rejects_unknown_header_instead_of_ignoring_typo(catalog):
+    with pytest.raises(CatalogError, match="colunas desconhecidas: Preco"):
+        catalog_service.preview_product_import({"csv": "SKU;Produto;Preco\nPAO;Pão;5"}, actor_id=1)
 
 
 def test_preview_endpoint_returns_changes(client, operator, catalog):
@@ -68,7 +73,8 @@ def test_preview_endpoint_returns_changes(client, operator, catalog):
 
 def test_apply_import_upserts_by_sku(client, operator, catalog):
     client.force_login(operator)
-    body = {"csv": CSV, "base_revision": "import-1", "expected_actor_id": operator.pk}
+    preview = client.post(IMPORT_URL, {"csv": CSV, "preview": True}, content_type="application/json").json()["preview"]
+    body = {"csv": CSV, "base_revision": preview["base_revision"], "expected_actor_id": operator.pk}
     response = client.post(
         IMPORT_URL,
         body,
@@ -84,6 +90,40 @@ def test_apply_import_upserts_by_sku(client, operator, catalog):
     catalog["pao"].refresh_from_db()
     assert catalog["pao"].name == "Pão novo"
     assert catalog["pao"].base_price_q == 600
+
+
+def test_apply_rejects_preview_after_target_product_changes(client, operator, catalog):
+    client.force_login(operator)
+    preview = client.post(IMPORT_URL, {"csv": CSV, "preview": True}, content_type="application/json").json()["preview"]
+    catalog["pao"].name = "Mudança concorrente"
+    catalog["pao"].save(update_fields=["name", "updated_at"])
+    response = client.post(
+        IMPORT_URL,
+        {"csv": CSV, "base_revision": preview["base_revision"], "expected_actor_id": operator.pk},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    assert response.status_code == 409
+    assert response.json()["outcome"] == "not_applied"
+    assert "mudou desde a prévia" in response.json()["detail"]
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].name == "Mudança concorrente"
+
+
+def test_apply_with_row_errors_returns_not_applied_receipt(client, operator, catalog):
+    client.force_login(operator)
+    invalid_csv = CSV.replace("7,50", "preço inválido")
+    preview = client.post(IMPORT_URL, {"csv": invalid_csv, "preview": True}, content_type="application/json").json()["preview"]
+    response = client.post(
+        IMPORT_URL,
+        {"csv": invalid_csv, "base_revision": preview["base_revision"], "expected_actor_id": operator.pk},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid4()),
+    )
+    assert response.status_code == 422
+    receipt = response.json()
+    assert receipt["ok"] is False
+    assert receipt["outcome"] == "not_applied"
+    assert receipt["errors"]
+    assert not Product.objects.filter(sku="IMPORTADO").exists()
 
 
 def test_import_apply_requires_intention(client, operator, catalog):

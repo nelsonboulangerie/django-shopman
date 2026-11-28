@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { useScreen } from "../composables/useScreen";
 // VINCULAR ESTE DISPOSITIVO A UM POSTO DE TRABALHO: uma vez por máquina, em qualquer app.
 //
 // Aparece para quem gere operadores, logado, num dispositivo que ainda não é posto.
@@ -71,9 +70,7 @@ async function confirmar() {
   if (await provision(escolhido.value, { confirm: pedeConfirmacao.value }))
     emit("done");
 }
-// No celular as ações vão para baixo do texto (orientação oficial do Alert); ao lado,
-// elas espremiam a frase numa coluna estreita.
-const { belowMd: phone } = useScreen();
+// A orientação vertical oficial preserva a frase e põe a ação abaixo em toda largura.
 </script>
 
 <template>
@@ -81,43 +78,58 @@ const { belowMd: phone } = useScreen();
     <NuxtAlert
       color="neutral"
       variant="soft"
-      :orientation="phone ? 'vertical' : 'horizontal'"
       icon="i-lucide-map-pin"
       :title="copy.setup_title"
       class="shrink-0"
       data-station-setup
     >
-      <template #description>{{
-        options.length ? copy.setup_lead : copy.setup_empty
-      }}</template>
+      <!-- No celular o convite é o título e os dois botões (F-16 do laudo do Gestor,
+           #3170): com a explicação ele ocupava um quarto da tela. A explicação segue
+           no painel que "Vincular" abre (a `description` do Slideover abaixo). -->
+      <template #description>
+        <span class="hidden sm:inline" data-station-setup-lead>{{
+          options.length ? copy.setup_lead : copy.setup_empty
+        }}</span>
+      </template>
       <template #actions>
-        <NuxtButton
-          v-if="options.length"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          :label="copy.setup_confirm"
-          data-station-setup-open
-          @click="open = true"
-        />
-        <NuxtButton
-          v-else-if="emptyTo"
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-map-pin-plus"
-          :label="copy.manage_title"
-          :to="emptyTo"
-          data-station-setup-empty-link
-        />
-        <NuxtButton
-          size="xs"
-          color="neutral"
-          variant="outline"
-          label="Agora não"
-          data-station-setup-dismiss
-          @click="emit('dismiss')"
-        />
+        <!-- No celular as duas ações dividem uma linha (F-16, #3170): uma embaixo da
+             outra, o convite ocupava um quarto da tela. O bloco é a grade de duas
+             colunas no celular e some do `sm` para cima (`sm:contents`), devolvendo os
+             botões ao arranjo de sempre do alerta. O alerta fica sem ajuste por fora:
+             a trava do Gestor (`canonicalPilot.guardrails`) só o admite nas peças que
+             nomeia. -->
+        <div
+          class="grid w-full grid-cols-2 gap-2 sm:contents"
+          data-station-setup-actions
+        >
+          <NuxtButton
+            v-if="options.length"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            :label="copy.setup_confirm"
+            data-station-setup-open
+            @click="open = true"
+          />
+          <NuxtButton
+            v-else-if="emptyTo"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-map-pin-plus"
+            :label="copy.manage_title"
+            :to="emptyTo"
+            data-station-setup-empty-link
+          />
+          <NuxtButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            label="Agora não"
+            data-station-setup-dismiss
+            @click="emit('dismiss')"
+          />
+        </div>
       </template>
     </NuxtAlert>
 

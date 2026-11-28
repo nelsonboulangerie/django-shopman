@@ -20,7 +20,10 @@
 //                       últimos dias, personalizado; ‹ › e a data) e o painel de
 //                       filtros único da suíte (`OperatorFilterPanel`): o resto mora
 //                       nos filtros completos, e os favoritos são do balcão
-//                       (`pos`/`preorders`). Na mesa, grade ou lista e, no fim, a
+//                       (`pos`/`preorders`). No celular (filtro único da suíte, dono
+//                       04/11/2026) os recortes de todo dia são os filtros rápidos do
+//                       painel, aberto pelo ícone da linha do chão, e o Período fica
+//                       numa faixa logo abaixo. Na mesa, grade ou lista e, no fim, a
 //                       leitura: "Hoje" (o que falta para o dia, sempre de hoje) e o
 //                       resumo do período. Durante a busca os recortes e o Período
 //                       saem (a busca não tem período) e entra "Incluir concluídas".
@@ -53,12 +56,20 @@ import {
   SEARCH_MIN_CHARS,
   SEARCH_PLACEHOLDER,
   TO_RECEIVE_CLASS,
+  TO_RECEIVE_LINK_CLASS,
   canDropOn,
   canMoveCard,
   canSearch,
   checkCount,
   checkPaymentNotice,
   dayColumnTitle,
+  dayOpen,
+  flipDay,
+  todayIndicators,
+  NO_FILTERS,
+  cardsToReceive,
+  dayCountLine,
+  dayHasToReceive,
   dayToReceiveLine,
   filterDays,
   filterDimensions,
@@ -68,6 +79,8 @@ import {
   fromActiveFilters,
   fromPanelFilters,
   groupByWindow,
+  nextActionFirst,
+  hasFilters,
   listSummary,
   moveTargets,
   parseLayout,
@@ -77,8 +90,8 @@ import {
   periodParams,
   periodSelectionOf,
   periodSummaryLabel,
-  preorderCountLabel,
   printPlan,
+  QUICK_FILTERS,
   quickFilterItems,
   quickKeysOf,
   searchCompletedHeading,
@@ -99,6 +112,7 @@ import {
   type PreordersView,
 } from "~/presentation/preorders";
 import type { PeriodSelection } from "../../../../operator-kit/app/presentation/dates";
+import { periodLabel, resolvePeriod } from "../../../../operator-kit/app/presentation/dates";
 import { filterBarActiveFilters } from "../../../../operator-kit/app/presentation/filterBar";
 import type { FilterPanelQuery } from "../../../../operator-kit/app/presentation/filterPanel";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
@@ -138,13 +152,18 @@ const filters = computed<PreorderFilters>({
   get: () => ({ fulfillment: view.value.fulfillment, pay: view.value.pay, print: view.value.print }),
   set: (next) => update(next),
 });
+const hasPeriodFilters = computed(() => hasFilters(filters.value));
+const todaySummaryLabel = computed(() => hasPeriodFilters.value ? "Hoje, sem filtros" : "Hoje");
 const allCards = computed(() => flattenDays(list.value?.days ?? []));
-const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], filters.value));
+// A próxima ação primeiro: a pronta abre o dia, a entregue desce para o fim (P1-11).
+const days = computed<PreorderDay[]>(() => filterDays(list.value?.days ?? [], filters.value)
+  .map((entry) => ({ ...entry, orders: nextActionFirst(entry.orders) })));
 const shownCount = computed(() => flattenDays(days.value).length);
 const day = computed(() => days.value[0] ?? null);
 const summary = computed(() => (list.value ? listSummary(list.value.count, list.value.total_display) : ""));
+const periodHasToReceive = computed(() => (list.value?.to_receive_q ?? cardsToReceive(allCards.value)) > 0);
 const toReceive = computed(() => (list.value && list.value.count
-  ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display)
+  ? toReceiveLine(list.value.to_receive_q, list.value.to_receive_display, cardsToReceive(allCards.value))
   : ""));
 // O resumo do período some quando o período é só hoje: a linha "Hoje" já diz.
 const showSummary = computed(() => !!summary.value && !periodIsToday(view.value, today.value));
@@ -224,6 +243,34 @@ const printAction = computed<OperatorHeaderAction | null>(() => {
 const deskActions = computed<OperatorHeaderAction[]>(() => (printAction.value ? [printAction.value] : []));
 function openDay(date: string) {
   update({ mode: "day", date });
+}
+// Os dias recolhidos na grade: hoje nasce aberto, o resto só abre no toque (dono,
+// 03/11/2026). A escolha vive enquanto o PDV está aberto, inclusive na volta do detalhe.
+const flippedDayList = useState<string[]>("pos-preorders-flipped-days", () => []);
+const flippedDays = computed(() => new Set(flippedDayList.value));
+function toggleDay(date: string) {
+  flippedDayList.value = [...flipDay(flippedDays.value, date)];
+}
+// A coluna estreita do dia recolhido: "Qua", e o nome inteiro para o leitor de tela.
+const NuxtButtonComponent = resolveComponent("NuxtButton");
+
+
+// O cabeçalho do dia conta o dia INTEIRO, como o `orders_count` do servidor e a
+// frase do período: o toque em "N encomendas com pagamento pendente" limpa os
+// filtros, e a lista tem de mostrar exatamente as N (prévia do #2597).
+const wholeDays = computed(() => new Map((list.value?.days ?? []).map((day) => [day.date, day])));
+function wholeDay(day: PreorderDay): PreorderDay {
+  return wholeDays.value.get(day.date) ?? day;
+}
+function narrowWeekday(day: PreorderDay): string {
+  const w = day.weekday_display || "";
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+function narrowDayLabel(day: PreorderDay): string {
+  const parts = [dayColumnTitle(day), dayCountLine(day, ", ")];
+  const receive = dayToReceiveLine(wholeDay(day));
+  if (receive) parts.push(receive);
+  return day.orders.length ? `${parts.join(". ")}. Abrir o dia.` : `${parts.join(". ")}.`;
 }
 
 // ── Cliente veio buscar: a busca da tela ──
@@ -388,6 +435,50 @@ watch(result, (value) => {
   }
 });
 
+// ── A linha do chão no celular (modelo de navegação, 31/10/2026) ──
+// O cabeçalho vira uma linha: período, recortes e o painel moram no Filtros dela, e o
+// recorte ativo fica nomeado na faixa logo abaixo, com a contagem e o Limpar. "Hoje"
+// segue à vista numa linha própria: é a leitura do caixa, e esconder no ⋮ esconderia o
+// que falta receber.
+const compactPeriodOff = computed(() => !periodIsToday(view.value, today.value));
+const compactFilterActive = computed(() => !searching.value && (compactPeriodOff.value || activeFilters.value.length > 0));
+const compactFilterLabel = computed(() => [
+  compactPeriodOff.value
+    ? periodLabel(periodSelection.value, resolvePeriod(periodSelection.value, { today: today.value }), today.value).replace(" · ", ", ")
+    : "",
+  ...activeFilters.value.map((filter) => filter.label),
+].filter(Boolean).join(", "));
+const compactSummary = computed(() => {
+  if (searching.value) {
+    if (resultCount.value == null) return "";
+    return resultCount.value === 1 ? "1 encontrada." : `${resultCount.value} encontradas.`;
+  }
+  return shownCount.value === 1 ? "1 encomenda." : `${shownCount.value} encomendas.`;
+});
+const compactOptions = computed<OperatorHeaderAction[]>(() => [
+  { label: "Nova encomenda", icon: "i-lucide-plus", onSelect: () => void navigateTo(NEW_ORDER_ROUTE) },
+  ...deskActions.value,
+]);
+// Limpar volta à chegada da tela: sem busca, sem recortes, no dia de hoje.
+// O atalho do indicador de Hoje: o dia de hoje, com o recorte do fato (A receber, Sem
+// Via, Conferir). Limpar volta a tudo.
+function applyTodayFilter(filter: Partial<PreorderFilters>) {
+  typed.value = "";
+  update({ ...NO_FILTERS, ...filter, q: "", mode: "day", date: today.value, to: "" });
+}
+// As frases "N encomendas com pagamento pendente" do período e da grade contam o
+// período inteiro, sem filtro: o toque limpa os outros filtros e a busca, como o
+// atalho de Hoje, para a lista mostrar exatamente as N da frase.
+function showToReceive(patch: Partial<PreordersView> = {}) {
+  typed.value = "";
+  update({ ...NO_FILTERS, pay: "to_receive", q: "", ...patch });
+}
+function compactClear() {
+  typed.value = "";
+  update({ ...fromActiveFilters({}), q: "", mode: "day", date: today.value, to: "" });
+}
+const compactPhone = useScreen().belowMd;
+
 function refreshAll() {
   void refreshPos();
   void period.refresh();
@@ -403,8 +494,94 @@ function refreshAll() {
     :actions="deskActions"
     :alerts="alerts"
     :active-filters="searching ? [] : activeFilters"
+    :compact-query="typed"
+    :compact-filter-active="compactFilterActive"
+    :compact-filter-label="compactFilterLabel"
+    :compact-summary="compactSummary"
+    :compact-options="compactOptions"
     @refresh="refreshAll"
+    @compact-clear="compactClear"
   >
+    <!-- O filtro único da suíte no celular (dono, 04/11/2026): o ícone na linha do chão,
+         antes da busca, com o número no canto, como o sino. Na mesa os recortes de todo
+         dia têm a faixa de um toque; aqui eles são os filtros rápidos do painel. -->
+    <template v-if="!searching && list && list.count" #compact-filter-panel>
+      <OperatorFilterPanel
+        v-model="activePanel"
+        :dimensions="dimensions"
+        :quick="[...QUICK_FILTERS]"
+        trigger="icon"
+        :chips="false"
+        surface="pos"
+        screen="preorders"
+        data-compact-panel
+      />
+    </template>
+    <!-- O período (que dia é a tela) segue à vista no celular, logo abaixo da linha; na
+         busca, "Incluir concluídas" toma o lugar dele. -->
+    <template #compact-primary>
+      <OperatorPeriodPicker
+        v-if="!searching"
+        v-model="periodSelection"
+        compact
+        :presets="PREORDERS_PERIOD_PRESETS"
+        custom
+        :max-span-days="PREORDERS_MAX_SPAN_DAYS"
+        :today="today"
+        label="Período das encomendas"
+        data-compact-period
+      />
+      <NuxtSwitch v-else v-model="includeCompleted" label="Incluir concluídas" />
+    </template>
+    <!-- HOJE no celular (dono, 03/11/2026: "só indicadores, e o toque mostra mais"): uma
+         faixa branca, como a linha do chão. Cada fato é um indicador com ícone, valor e
+         uma legenda curta (lê-se sem tocar); o que pede gesto é atalho para o recorte
+         dele (A receber, Sem Via, Conferir), e a seta abre as frases inteiras. -->
+    <template v-if="!searching && todayLine.length" #compact-below>
+      <div class="flex items-stretch border-b border-default bg-card md:hidden" role="group" :aria-label="todaySummaryLabel" data-compact-today>
+        <span class="flex items-center px-3 text-sm font-semibold text-primary">{{ todaySummaryLabel }}</span>
+        <component
+          :is="indicator.filter ? 'button' : 'span'"
+          v-for="indicator in todayIndicators(todayLine)"
+          :key="indicator.key"
+          v-bind="indicator.filter ? { type: 'button' } : {}"
+          class="flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center px-1 py-1 leading-none tabular-nums"
+          :class="[
+            indicator.urgent
+              ? (indicator.key === 'check' ? 'text-warning' : 'text-highlighted')
+              : 'text-muted',
+            indicator.filter ? 'hover:bg-elevated active:bg-elevated' : '',
+          ]"
+          :aria-label="indicator.filter ? `${indicator.text}. Mostrar só essas.` : indicator.text"
+          :data-compact-today-indicator="indicator.key"
+          @click="indicator.filter ? applyTodayFilter(indicator.filter) : undefined"
+        >
+          <span class="inline-flex items-center gap-1 text-sm" :class="indicator.urgent ? 'font-semibold' : ''">
+            <NuxtIcon :name="indicator.icon" class="size-4 shrink-0" aria-hidden="true" />{{ indicator.value }}
+          </span>
+          <span class="mt-0.5 op-micro text-muted" aria-hidden="true">{{ indicator.caption }}</span>
+        </component>
+        <NuxtPopover :content="{ align: 'end', sideOffset: 4 }">
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            square
+            icon="i-lucide-chevron-down"
+            class="size-11 shrink-0 justify-center self-center"
+            aria-label="Hoje: ver as frases inteiras"
+            data-compact-today-more
+          />
+          <template #content>
+            <ul class="grid gap-2 p-3 text-sm" data-compact-today-details>
+              <li v-for="indicator in todayIndicators(todayLine)" :key="indicator.key" class="flex items-center gap-2">
+                <NuxtIcon :name="indicator.icon" class="size-4 shrink-0 text-muted" aria-hidden="true" />
+                <span :class="indicator.urgent ? 'font-semibold text-highlighted' : 'text-muted'">{{ indicator.text }}</span>
+              </li>
+            </ul>
+          </template>
+        </NuxtPopover>
+      </div>
+    </template>
     <!-- A BUSCA DA TELA: "Cliente veio buscar" (o `/` abre; Tab troca para o app e a
          suíte). O que ela acha toma o lugar do período, na própria tela. -->
     <template #search>
@@ -508,23 +685,42 @@ function refreshAll() {
         role="group"
       >
         <p v-if="todayLine.length" class="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm" data-preorders-today>
-          <span class="font-semibold text-primary">Hoje</span>
-          <span
-            v-for="fact in todayLine"
-            :key="fact.key"
-            :class="fact.key === 'to_receive' && fact.urgent
-              ? TO_RECEIVE_CLASS
-              : fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted'"
-            :data-preorders-today-fact="fact.key"
-          >{{ fact.text }}</span>
+          <span class="font-semibold text-primary" data-preorders-today-label>{{ todaySummaryLabel }}</span>
+          <template v-for="fact in todayLine" :key="fact.key">
+            <!-- O que falta receber é ATALHO (dono, prévia do #2597): o toque liga o
+                 filtro "A receber" e mostra só essas encomendas. -->
+            <NuxtButton
+              v-if="fact.key === 'to_receive' && fact.urgent"
+              color="neutral"
+              variant="ghost"
+              :class="TO_RECEIVE_LINK_CLASS"
+              :aria-label="`${fact.text}. Mostrar só essas.`"
+              data-preorders-today-fact="to_receive"
+              @click="applyTodayFilter({ pay: 'to_receive' })"
+            >{{ fact.text }}</NuxtButton>
+            <span
+              v-else
+              :class="fact.key === 'check' ? 'tabular-nums text-warning' : 'tabular-nums text-muted'"
+              :data-preorders-today-fact="fact.key"
+            >{{ fact.text }}</span>
+          </template>
         </p>
         <div
           v-if="list && list.count && showSummary"
           class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5"
           data-preorders-summary
         >
-          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode) }}</span>
-          <p v-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
+          <span class="text-sm font-semibold text-muted">{{ periodSummaryLabel(view.mode, hasPeriodFilters) }}</span>
+          <NuxtButton
+            v-if="toReceive && periodHasToReceive"
+            color="neutral"
+            variant="ghost"
+            :class="TO_RECEIVE_LINK_CLASS"
+            :aria-label="`${toReceive}. Mostrar só essas.`"
+            data-preorders-to-receive
+            @click="showToReceive()"
+          >{{ toReceive }}</NuxtButton>
+          <p v-else-if="toReceive" :class="TO_RECEIVE_CLASS" data-preorders-to-receive>{{ toReceive }}</p>
           <p class="text-xs tabular-nums text-muted" data-preorders-total>{{ summary }}</p>
         </div>
       </div>
@@ -545,7 +741,7 @@ function refreshAll() {
         v-else-if="search.error.value && !result"
         state="error"
         what="a busca das encomendas"
-        :description="`${httpErrorMessage(search.error.value, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(search.error.value)"
         data-preorders-search-error
         @retry="search.refresh()"
       />
@@ -637,7 +833,7 @@ function refreshAll() {
         v-if="period.error.value && !list"
         state="error"
         what="as encomendas"
-        :description="`${httpErrorMessage(period.error.value, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(period.error.value)"
         data-preorders-period-error
         @retry="period.refresh()"
       />
@@ -701,13 +897,17 @@ function refreshAll() {
             </NuxtCard>
           </div>
 
-          <!-- SEMANA: uma única árvore responsiva. Em grade, os dias lado a lado,
-               cada um com largura útil; em lista, um embaixo do outro. Cada dia é
-               também onde se SOLTA o card arrastado (reagendar). -->
+          <!-- Hoje leva a moldura do "próximo" do KDS: borda de 2 px e halo, no dourado
+               (dono, 03/11/2026). -->
+          <!-- SEMANA: uma única árvore responsiva. Em grade, os dias lado a lado numa
+               LINHA SÓ (dono, 03/11/2026): o dia aberto ganha a largura útil e o
+               recolhido vira uma coluna estreita (dia, data, a conta e o sinal do que
+               falta receber), aberta no toque. Em lista, um embaixo do outro. Cada dia
+               é também onde se SOLTA o card arrastado (reagendar). -->
           <div v-else data-week-board>
             <div
               :class="asGrid
-                ? 'grid grid-cols-[repeat(auto-fit,minmax(min(17rem,100%),1fr))] items-start gap-3'
+                ? 'grid gap-2 md:flex md:items-stretch md:overflow-x-auto md:p-1.5'
                 : 'grid max-w-4xl gap-3'"
               :data-week-grid="asGrid ? '' : undefined"
               :data-week-list="asGrid ? undefined : ''"
@@ -718,45 +918,121 @@ function refreshAll() {
                 as="section"
                 variant="outline"
                 class="min-w-0 transition"
-                :class="[weekDay.is_today ? 'ring-primary/60' : '', dropClass(weekDay.date)]"
-                :ui="{ body: 'flex min-w-0 flex-col gap-2 p-3 sm:p-3' }"
+                :class="[
+                  weekDay.is_today ? 'ring-2 ring-primary shadow-[0_0_0_4px_color-mix(in_oklab,var(--ui-primary)_18%,transparent)]' : '',
+                  dropClass(weekDay.date),
+                  asGrid ? (dayOpen(weekDay, flippedDays) && weekDay.orders.length ? 'md:min-w-[17rem] md:flex-1' : 'md:w-16 md:shrink-0') : '',
+                ]"
+                :ui="{ body: asGrid && !(dayOpen(weekDay, flippedDays) && weekDay.orders.length)
+                  ? 'flex h-full min-w-0 flex-col p-0 sm:p-0'
+                  : 'flex min-w-0 flex-col gap-2 p-3 sm:p-3' }"
                 :data-week-day="weekDay.date"
+                :data-week-day-narrow="asGrid && !(dayOpen(weekDay, flippedDays) && weekDay.orders.length) ? '' : undefined"
                 :data-drop-target="dropDate === weekDay.date ? 'over' : undefined"
                 @dragover="onDragOver($event, weekDay.date)"
                 @dragleave="onDragLeave($event, weekDay.date)"
                 @drop.prevent="onDrop(weekDay.date)"
               >
+                <!-- A COLUNA ESTREITA (grade): o dia recolhido, ou sem encomenda. O toque
+                     abre o dia com encomenda; o vazio só diz que está vazio. Abaixo de md
+                     (a semana não cabe numa linha) a coluna deita e vira uma LINHA fina,
+                     um dia embaixo do outro (dono, 03/11/2026). -->
+                <component
+                  :is="weekDay.orders.length ? NuxtButtonComponent : 'div'"
+                  v-if="asGrid && !(dayOpen(weekDay, flippedDays) && weekDay.orders.length)"
+                  v-bind="weekDay.orders.length
+                    ? { color: 'neutral', variant: 'ghost', block: true, 'aria-expanded': false }
+                    : { role: 'group' }"
+                  class="flex h-full min-h-11 flex-row items-center justify-start gap-2 rounded-[inherit] px-3 py-2 text-left md:min-h-40 md:flex-col md:gap-1.5 md:px-1 md:py-3 md:text-center"
+                  :class="weekDay.is_today ? 'bg-primary/10' : ''"
+                  :aria-label="narrowDayLabel(weekDay)"
+                  :aria-current="weekDay.is_today ? 'date' : undefined"
+                  data-week-day-toggle
+                  @click="weekDay.orders.length ? toggleDay(weekDay.date) : undefined"
+                >
+                  <span class="text-xs font-semibold" :class="weekDay.is_today ? 'text-primary' : 'text-highlighted'" aria-hidden="true">
+                    {{ weekDay.is_today ? "Hoje" : narrowWeekday(weekDay) }}
+                  </span>
+                  <span class="text-xs tabular-nums text-muted" aria-hidden="true">{{ weekDay.day_display }}</span>
+                  <!-- Deitada (celular), a linha tem espaço para a conta por extenso. -->
+                  <span class="min-w-0 truncate text-xs tabular-nums text-muted md:hidden" aria-hidden="true">
+                    {{ dayCountLine(weekDay) }}
+                  </span>
+                  <OperatorCountChip
+                    v-if="weekDay.orders_count"
+                    :count="weekDay.orders_count"
+                    aria-hidden="true"
+                    data-week-day-count
+                  />
+                  <NuxtIcon
+                    v-if="dayHasToReceive(wholeDay(weekDay))"
+                    name="i-lucide-hand-coins"
+                    class="size-4 text-warning"
+                    aria-hidden="true"
+                    data-week-day-to-receive-sign
+                  />
+                  <NuxtIcon v-if="weekDay.orders.length" name="i-lucide-chevron-right" class="ms-auto size-4 text-muted md:ms-0 md:mt-auto" aria-hidden="true" />
+                </component>
+                <template v-else>
                 <!-- Hoje: o cabeçalho ganha fundo da cor primária e diz "Hoje, ter 29/09";
-                     o dia da semana nunca some. Na lista, o cabeçalho é uma linha só. -->
+                     o dia da semana nunca some. Na lista, o cabeçalho é uma linha só.
+                     O toque no cabeçalho ABRE ou RECOLHE o dia (dono, 03/11/2026: só
+                     hoje nasce aberto); "Ver só este dia" leva ao modo Dia. -->
+                <!-- O CABEÇALHO DO DIA ABERTO (versão 1, dono, 03/11/2026): uma linha, sem
+                     bloco de destaque; o título (hoje na cor primária), a conta e o que
+                     falta receber à esquerda, a seta de recolher à direita. O cabeçalho
+                     inteiro recolhe no toque; "Ver só este dia" mora no pé do dia. -->
                 <NuxtButton
                   color="neutral"
                   variant="ghost"
                   block
-                  class="grid justify-start gap-1 text-left"
-                  :class="[
-                    weekDay.is_today ? 'bg-primary/10 hover:bg-primary/15' : '',
-                    asGrid ? '' : 'sm:flex sm:flex-wrap sm:items-baseline sm:gap-x-4',
-                  ]"
-                  :aria-label="`Abrir o dia ${dayColumnTitle(weekDay)}`"
+                  class="flex min-w-0 items-start justify-between gap-2 text-left"
+                  :aria-expanded="weekDay.orders.length ? dayOpen(weekDay, flippedDays) : undefined"
+                  :aria-label="weekDay.orders.length
+                    ? `${dayOpen(weekDay, flippedDays) ? 'Recolher' : 'Abrir'} ${dayColumnTitle(weekDay)}`
+                    : dayColumnTitle(weekDay)"
                   :aria-current="weekDay.is_today ? 'date' : undefined"
-                  data-week-day-open
-                  @click="openDay(weekDay.date)"
+                  data-week-day-toggle
+                  :data-week-day-expanded="dayOpen(weekDay, flippedDays) ? '' : undefined"
+                  @click="toggleDay(weekDay.date)"
                 >
-                  <span class="text-sm font-semibold" :class="weekDay.is_today ? 'text-primary' : 'text-highlighted'" data-week-day-title>
-                    {{ dayColumnTitle(weekDay) }}
+                  <span class="grid min-w-0 gap-1">
+                    <span class="text-sm font-semibold" :class="weekDay.is_today ? 'text-primary' : 'text-highlighted'" data-week-day-title>
+                      {{ dayColumnTitle(weekDay) }}
+                    </span>
+                    <span class="text-xs font-normal tabular-nums text-muted" data-week-day-total>
+                      {{ dayCountLine(weekDay) }}
+                    </span>
                   </span>
-                  <span class="text-xs font-normal tabular-nums text-muted" data-week-day-total>
-                    <template v-if="weekDay.orders_count">{{ preorderCountLabel(weekDay.orders_count) }} · {{ weekDay.total_display }}</template>
-                    <template v-else>Nenhuma encomenda</template>
-                  </span>
-                  <span v-if="dayToReceiveLine(weekDay)" :class="TO_RECEIVE_CLASS" data-week-day-to-receive>
-                    {{ dayToReceiveLine(weekDay) }}
-                  </span>
+                  <!-- Na grade, recolher estreita a coluna (‹); na lista e no celular, sobe (˄). -->
+                  <NuxtIcon
+                    v-if="weekDay.orders.length"
+                    :name="asGrid ? 'i-lucide-chevron-left' : 'i-lucide-chevron-up'"
+                    class="mt-0.5 size-5 shrink-0 text-muted max-md:hidden"
+                    aria-hidden="true"
+                  />
+                  <NuxtIcon v-if="weekDay.orders.length" name="i-lucide-chevron-up" class="mt-0.5 size-5 shrink-0 text-muted md:hidden" aria-hidden="true" />
                 </NuxtButton>
+                <!-- O que falta receber no dia é ATALHO, fora do botão de recolher (botão
+                     não mora dentro de botão): o toque mostra só essas encomendas do dia. -->
+                <NuxtButton
+                  v-if="dayToReceiveLine(wholeDay(weekDay))"
+                  color="neutral"
+                  variant="ghost"
+                  :class="['-mt-1 justify-start px-3', TO_RECEIVE_LINK_CLASS]"
+                  :aria-label="`${dayColumnTitle(weekDay)}: ${dayToReceiveLine(wholeDay(weekDay))}. Mostrar só essas.`"
+                  data-week-day-to-receive
+                  @click="showToReceive({ mode: 'day', date: weekDay.date })"
+                >{{ dayToReceiveLine(wholeDay(weekDay)) }}</NuxtButton>
                 <!-- R7: o dia vazio diz "Nenhuma encomenda" uma vez só, no cabeçalho. -->
-                <div v-if="weekDay.orders.length" class="grid gap-2 border-t border-default pt-2">
+                <div
+                  v-if="weekDay.orders.length && dayOpen(weekDay, flippedDays)"
+                  class="-mx-3 grid divide-y divide-default border-t border-default"
+                  data-week-day-orders
+                >
                   <PosPreorderRow
                     v-for="card in weekDay.orders"
+                    layout="lines"
                     :key="card.ref"
                     :back="back"
                     :card="card"
@@ -775,6 +1051,18 @@ function refreshAll() {
                     </template>
                   </PosPreorderRow>
                 </div>
+                <NuxtButton
+                  v-if="weekDay.orders.length"
+                  color="primary"
+                  variant="ghost"
+                  trailing-icon="i-lucide-arrow-right"
+                  label="Ver só este dia"
+                  class="min-h-11 justify-self-end"
+                  :aria-label="`Ver só ${dayColumnTitle(weekDay)}`"
+                  data-week-day-only
+                  @click="openDay(weekDay.date)"
+                />
+                </template>
               </NuxtCard>
             </div>
           </div>
@@ -808,7 +1096,8 @@ function refreshAll() {
     <!-- CELULAR: a ação do momento no polegar (o QR da mensagem do cliente). -->
     <template #footer>
       <OperatorActionBar
-        :action="{ label: 'Ler código da encomenda', icon: 'i-lucide-scan-qr-code', onSelect: () => { scannerOpen = true; } }"
+        :action="{ label: 'Ler código da encomenda', shortLabel: 'Ler código', icon: 'i-lucide-scan-qr-code', onSelect: () => { scannerOpen = true; } }"
+        :secondary="compactPhone ? { label: 'Nova encomenda', shortLabel: 'Nova', icon: 'i-lucide-plus', onSelect: () => navigateTo(NEW_ORDER_ROUTE) } : undefined"
         label="Ler código da encomenda"
         data-preorders-scan-bar
       />

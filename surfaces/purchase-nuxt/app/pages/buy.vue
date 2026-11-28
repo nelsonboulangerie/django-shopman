@@ -3,8 +3,8 @@
 // cartão por insumo, com o fornecedor, a sugestão e o gesto de enviar o pedido.
 import type { EnrichedMaterial } from "~/types/purchase";
 import { coverageLabel, formatMoney, purchaseSuggestionLabel } from "~/presentation/purchase";
-import { baseSectionPath } from "~/presentation/purchaseSections";
-import { REQUEST_BADGE, REQUEST_LABEL, plural } from "~/presentation/purchaseUi";
+import { baseSectionPath, supplierPath } from "~/presentation/purchaseSections";
+import { REQUEST_BADGE, REQUEST_LABEL, plural, supplierLacksOrderContact } from "~/presentation/purchaseUi";
 
 const {
   reorderRows,
@@ -51,6 +51,10 @@ function openQuoteFor(material: EnrichedMaterial, supplierRef?: string) {
   void navigateTo(baseSectionPath("costs"));
 }
 
+// Fornecedor sem e-mail nem telefone: o pedido não tem por onde sair. O cartão diz
+// antes, e o gesto vira cadastrar o contato (CMP-09).
+const lacksOrderContact = (row: { supplier?: { canReceiveOrder?: boolean } | null }) => supplierLacksOrderContact(row.supplier);
+
 const sendingSku = ref("");
 async function send(sku: string) {
   sendingSku.value = sku;
@@ -60,11 +64,14 @@ async function send(sku: string) {
     sendingSku.value = "";
   }
 }
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <OperatorCompactBar title="Comprar" :tone="sealTone" :time="sealTime" :conn-label="sealConn" :search="false" :options="headerActions" />
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Comprar" :actions="headerActions" actions-label="Mais ações de Comprar" :alerts="blockerAlerts">
       <template #status>
         <PurchaseReadStatus />
       </template>
@@ -93,12 +100,31 @@ async function send(sku: string) {
                   class="shrink-0"
                 />
               </div>
+              <ul
+                v-if="row.material.internalRequests?.length"
+                class="mt-3 flex flex-col gap-1 rounded-md border border-default px-3 py-2 text-sm"
+                aria-label="Solicitações da Produção"
+                data-buy-internal-requests
+              >
+                <li
+                  v-for="request in row.material.internalRequests"
+                  :key="request.workOrderRef"
+                  class="flex items-start gap-2"
+                  data-buy-internal-request
+                >
+                  <NuxtIcon name="i-lucide-chef-hat" class="mt-0.5 size-4 shrink-0 text-muted" />
+                  <span>{{ request.line }}</span>
+                </li>
+              </ul>
               <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
                 <div class="col-span-2"><dt class="text-xs text-muted">Cobertura</dt><dd class="font-semibold tabular-nums">{{ coverageLabel(row.material.coverageDays) }}</dd></div>
                 <div class="col-span-2"><dt class="text-xs text-muted">Comprar</dt><dd class="font-semibold tabular-nums">{{ purchaseSuggestionLabel(row.material, row.suggestedQty) }}</dd></div>
                 <div class="min-w-0"><dt class="text-xs text-muted">Fornecedor</dt><dd class="font-semibold">{{ row.supplier?.displayName || row.supplier?.name || "Sem fornecedor" }}</dd></div>
                 <div><dt class="text-xs text-muted">Estimado</dt><dd class="font-semibold tabular-nums">{{ row.estimatedCostQ == null ? "sem custo" : formatMoney(row.estimatedCostQ) }}</dd></div>
               </dl>
+              <p v-if="lacksOrderContact(row) && purchaseRequestStatus(row.material.sku) !== 'sent'" class="mt-3 text-sm text-warning" data-buy-no-contact>
+                Fornecedor sem e-mail nem telefone: o pedido não tem por onde sair.
+              </p>
               <div class="mt-3 grid grid-cols-2 gap-2">
                 <NuxtButton
                   label="Lançar custo"
@@ -122,9 +148,20 @@ async function send(sku: string) {
                     @click="cancelPurchaseRequest(row.material.sku, row.material.name)"
                   />
                   <OperatorButton
+                    v-else-if="lacksOrderContact(row) && row.supplier"
+                    label="Cadastrar contato"
+                    short-label="Contato"
+                    icon="i-lucide-contact"
+                    color="neutral"
+                    variant="outline"
+                    block
+                    :to="supplierPath(row.supplier.ref)"
+                    data-buy-register-contact
+                  />
+                  <OperatorButton
                     v-else
-                    label="Enviar pedido"
-                    short-label="Enviar"
+                    :label="row.supplier?.sendDirectly ? 'Enviar pedido' : 'Revisar pedido'"
+                    :short-label="row.supplier?.sendDirectly ? 'Enviar' : 'Revisar'"
                     icon="i-lucide-send"
                     block
                     :loading="sendingSku === row.material.sku"

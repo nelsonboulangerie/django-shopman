@@ -1,0 +1,21 @@
+[B 375 1 para quando] regioes=1 fontes=[14, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B 375 2 cardapio do dia] regioes=2 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=['Mostrar só disponíveis:32x18'] cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B 375 3 sacola] regioes=1 fontes=[14] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B 375 4 checkout] resumo_do_quando='qui, 26/11 · A partir das 15h'
+[B 375 4 checkout] seta_visivel=True texto_legivel_sob_a_seta=nenhum
+[B 375 4 checkout] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B 375 5 trocar] aviso='Baguette de Tradition não está disponível para sexta, 27/11\n\nVocê pode seguir para sexta, 27/11 sem ele, ou manter o dia que tinha.\n\nSeguir sem ele\nManter o dia que tinha'
+[B 375 5 trocar] regioes=1 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B 375 6 depois da troca] linha='Para sexta, 27/11\n·\nTudo pronto a partir das 9h\n·\nTrocar'
+[B desktop 1 para quando] regioes=1 fontes=[14, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B desktop 2 cardapio do dia] regioes=2 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=['Mostrar só disponíveis:32x18'] cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B desktop 3 sacola] regioes=1 fontes=[14] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B desktop 4 checkout] resumo_do_quando='qui, 26/11 · A partir das 15h'
+[B desktop 4 checkout] seta_visivel=False texto_legivel_sob_a_seta=nenhum
+[B desktop 4 checkout] regioes=1 fontes=[14, 16] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[B desktop 5 trocar] aviso='Baguette de Tradition não está disponível para sexta, 27/11\n\nVocê pode seguir para sexta, 27/11 sem ele, ou manter o dia que tinha.\n\nSeguir sem ele\nManter o dia que tinha'
+[B desktop 5 trocar] regioes=1 fontes=[14, 16, 20] decisivo_abaixo_de_14=nenhum alvos_abaixo_de_24=nenhum cobertos=nenhum rolagem_lateral=0 axe=nenhuma
+[main A 375 checkout] resumo_do_quando='Amanhã · A partir das 12h'
+[main A 375 checkout] seta_visivel=True texto_legivel_sob_a_seta=['Amanhã · A partir das 12h']
+[main A desktop checkout] resumo_do_quando='Amanhã · A partir das 12h'
+[main A desktop checkout] seta_visivel=False texto_legivel_sob_a_seta=nenhum

@@ -11,11 +11,11 @@ export function isLowerQualityGrade(gradeRef: string): boolean {
   return LOWER_QUALITY_GRADE_REFS.has(gradeRef);
 }
 
-// ── Estado da tela de fechamento ────────────────────────────────────────────
+// ── Estado da tela de finalização ────────────────────────────────────────────
 
 export interface QcEntryState {
   /**
-   * A âncora do fechamento: o que ENTROU no forno (started quando existe,
+   * A âncora da finalização: o que ENTROU no forno (started quando existe,
    * senão o previsto da ordem — ver ovenAnchor). null = fornada avulsa
    * (nasce sem expectativa).
    */
@@ -40,7 +40,7 @@ export interface QcEntryState {
  * A âncora do modelo subtrativo é a fornada REAL que entrou no forno
  * (QC-FORNADA §1: "a quantidade prevista que chega ao forno é quente").
  *
- * E, no Fechamento, essa É a quantidade prevista: o que entrou no forno é o
+ * E, na Finalização, essa É a quantidade prevista: o que entrou no forno é o
  * que se espera que saia dele, salvo ocorrência. O plano da produção
  * (planejou 10, enfornou 11) já cumpriu seu papel na tela anterior — aqui
  * ele não é mais informação, é ruído; e ancorar nele pré-preencheria 10,
@@ -155,7 +155,7 @@ export function applyDiscountGrade(
   return next;
 }
 
-/** Perda derivada: o que não saiu do forno. Fora do plano não há previsto, logo não há perda derivável. */
+/** Perda derivada: o que não ficou pronto. Fora do plano não há previsto, logo não há perda derivável. */
 export function lossQty(state: QcEntryState): number {
   if (state.planned === null) return 0;
   return Math.max(0, state.planned - state.fullQty - state.discountQty);
@@ -165,7 +165,7 @@ export function finishedTotal(state: QcEntryState): number {
   return state.fullQty + state.discountQty;
 }
 
-/** Total contabilizado no fechamento: vendável + perda declarada. */
+/** Total contabilizado na finalização: vendável + perda declarada. */
 export function reportedTotal(state: QcEntryState): number {
   return finishedTotal(state) + lossQty(state);
 }
@@ -249,21 +249,137 @@ export function buildPartition(state: QcEntryState): QcPartitionGroup[] {
   return groups;
 }
 
-// ── Edição por numpad (inteiro, entrada tipo calculadora) ───────────────────
+// ── A unidade do lote (P1-22) ───────────────────────────────────────────────
+// Pão se conta por peça; massa e creme se pesam, com vírgula. A tela recebe a
+// unidade do lote e escreve cada quantidade com ela. Sem conversão de escala:
+// o número digitado é o número mostrado, na unidade em que o lote foi aberto.
 
-/** Primeiro dígito sobre um valor pré-preenchido SUBSTITUI (o previsto é sugestão, não texto). */
-export function typeDigit(
-  current: number,
-  digit: string,
-  fresh: boolean,
-  max = 9999,
-): number {
-  const next = fresh ? Number(digit) : Number(`${current}${digit}`);
-  if (!Number.isFinite(next)) return current;
-  return Math.min(next, max);
+const COUNT_UNITS = new Set(["", "un", "un.", "und", "pc", "pç", "unidade"]);
+
+/** Peça inteira (sem vírgula no teclado) ou grandeza que se pesa ou mede. */
+export function isCountUnit(unit: string | null | undefined): boolean {
+  return COUNT_UNITS.has((unit ?? "").trim().toLowerCase());
 }
 
-export function typeBackspace(current: number): number {
-  const text = String(current);
-  return text.length <= 1 ? 0 : Number(text.slice(0, -1));
+/** Casas decimais aceitas pelo teclado: nenhuma na peça, três no peso. */
+export function quantityDecimals(unit: string | null | undefined): number {
+  return isCountUnit(unit) ? 0 : 3;
+}
+
+/** O teto do teclado. Passar dele avisa; nunca corta em silêncio. */
+export const QUANTITY_MAX = 9999;
+
+/** Arredonda na casa do teclado: soma de 0,1 + 0,2 não vira 0,30000000000000004. */
+export function roundQuantity(value: number, decimals = 3): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+const NUMBER_FORMAT = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 3,
+});
+
+/** "32", "2,5": o número na voz da tela, sem unidade. */
+export function formatQcNumber(value: number): string {
+  return NUMBER_FORMAT.format(roundQuantity(value));
+}
+
+/** "32 un.", "2,5 kg": a quantidade com a unidade do lote escrita. */
+export function formatQcQuantity(
+  value: number,
+  unit: string | null | undefined,
+): string {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  return `${formatQcNumber(value)} ${isCountUnit(normalized) ? "un." : normalized}`;
+}
+
+/** Texto do teclado ("2,5") para número (2.5). Vírgula pendurada vale o inteiro. */
+export function parseQuantityText(text: string): number {
+  const value = Number.parseFloat(text.replace(",", "."));
+  return Number.isFinite(value) ? value : 0;
+}
+
+/** Número para o texto do teclado: 2.5 → "2,5"; 0 → "0". */
+export function quantityText(value: number): string {
+  return String(roundQuantity(value)).replace(".", ",");
+}
+
+export type QuantityKeyResult =
+  | { ok: true; text: string }
+  | { ok: false; reason: "max" | "decimals" | "no_decimal" };
+
+/**
+ * Uma tecla sobre o texto do teclado, como numa calculadora: o primeiro dígito
+ * sobre um valor sugerido o SUBSTITUI; a vírgula só existe onde o lote se pesa,
+ * uma vez, e com o número de casas da unidade. Passar do teto não corta calado:
+ * devolve o motivo para a tela dizer.
+ */
+export function typeQuantityKey(
+  current: string,
+  key: string,
+  fresh: boolean,
+  decimals: number,
+  max = QUANTITY_MAX,
+): QuantityKeyResult {
+  const base = fresh ? "" : current === "0" ? "" : current;
+  if (key === ",") {
+    if (decimals === 0) return { ok: false, reason: "no_decimal" };
+    if (base.includes(",")) return { ok: true, text: base };
+    return { ok: true, text: `${base || "0"},` };
+  }
+  if (!/^\d$/.test(key)) return { ok: true, text: current };
+  const [, fraction] = base.split(",");
+  if (fraction !== undefined && fraction.length >= decimals) {
+    return { ok: false, reason: "decimals" };
+  }
+  const next = `${base}${key}`;
+  if (parseQuantityText(next) > max) return { ok: false, reason: "max" };
+  return { ok: true, text: next.includes(",") ? next : String(Number(next)) };
+}
+
+/** Apaga o último caractere; o vazio é zero. */
+export function backspaceQuantityText(current: string): string {
+  const next = current.slice(0, -1);
+  return next === "" ? "0" : next;
+}
+
+// ── Rendeu diferente do previsto: o motivo em um toque (P1-07) ──────────────
+// A decisão de 05/11 (#2150) pede o motivo; não pede teclado. Mesmo desenho dos
+// motivos da perda: um toque escolhe e segue; "Outro" abre o texto.
+
+// Cada motivo diz a CAUSA, nunca repete a pergunta. A lista segue a unidade do
+// lote: "peça maior que o padrão" não existe num creme pesado em quilo.
+const YIELD_REASONS = {
+  shortfall: {
+    count: [
+      "Peças maiores que o padrão",
+      "Massa perdida antes do forno",
+      "Receita feita com menos massa",
+    ],
+    measured: [
+      "Ficou na bacia e no batedor",
+      "Evaporou mais no cozimento",
+      "Receita feita com menos insumo",
+    ],
+  },
+  overshoot: {
+    count: [
+      "Peças menores que o padrão",
+      "Sobra de massa aproveitada",
+      "Receita feita com mais massa",
+    ],
+    measured: [
+      "Evaporou menos no cozimento",
+      "Sobra aproveitada no preparo",
+      "Receita feita com mais insumo",
+    ],
+  },
+} as const;
+
+/** Os motivos prontos de "rendeu menos" ou "rendeu mais", na unidade do lote. */
+export function yieldReasons(
+  kind: "shortfall" | "overshoot",
+  unit: string | null | undefined,
+): readonly string[] {
+  return YIELD_REASONS[kind][isCountUnit(unit) ? "count" : "measured"];
 }

@@ -71,10 +71,22 @@ class SignInNotificationTests(TestCase):
 
         A segunda entrada na MESMA estação é o dia normal: a primeira é sempre
         "estação nunca usada", que é o que o destaque deve pegar.
+
+        O relógio fica ao meio-dia: o expediente da equipe (5h às 19h) é régua de
+        destaque, e o mesmo teste rodado às 21h via "fora do expediente" e reprovava
+        só à noite, na fila de merge (revisão do #2148).
         """
-        self._unlock_pin()
-        self.client.post("/api/v1/backstage/operator/lock/", {"perm": POS_PERM})
-        self._unlock_pin()
+        from unittest import mock
+
+        from django.utils import timezone
+
+        meio_dia = timezone.localtime(timezone.now()).replace(
+            hour=12, minute=0, second=0, microsecond=0
+        )
+        with mock.patch("django.utils.timezone.now", return_value=meio_dia):
+            self._unlock_pin()
+            self.client.post("/api/v1/backstage/operator/lock/", {"perm": POS_PERM})
+            self._unlock_pin()
 
         ultimo = UserNotification.objects.order_by("-pk").first()
         self.assertFalse(ultimo.action_data["highlight"])
@@ -132,7 +144,7 @@ class SignInNotificationTests(TestCase):
 
         self._unlock_pin()
         evento = SignInEvent.objects.get()
-        # Às 03h de um dia com expediente 09-18: fora da janela.
+        # Às 03h de um dia com venda das 9h às 18h: fora do expediente da equipe também.
         madrugada = timezone.localtime(evento.created_at).replace(hour=3, minute=0)
         SignInEvent.objects.filter(pk=evento.pk).update(created_at=madrugada)
         evento.refresh_from_db()
@@ -146,6 +158,49 @@ class SignInNotificationTests(TestCase):
         SignInEvent.objects.filter(pk=evento.pk).update(created_at=meio_dia)
         evento.refresh_from_db()
         self.assertNotIn("outside_hours", detect_anomalies(evento))
+
+    def test_expediente_da_equipe_e_nao_o_horario_de_venda(self):
+        """Beta 05/11 (CEN-02): com venda das 9h às 18h, todo acesso da equipe de
+        madrugada virava destaque. A régua é o expediente da equipe (5h às 19h,
+        decisão do dono), configurável na Shop."""
+        import datetime
+
+        from django.utils import timezone
+
+        from shopman.backstage.services.sign_in_audit import ANOMALY_LABELS, detect_anomalies
+
+        loja = Shop.objects.first()
+        loja.opening_hours = {
+            dia: {"open": "09:00", "close": "18:00"}
+            for dia in ("monday", "tuesday", "wednesday", "thursday", "friday",
+                        "saturday", "sunday")
+        }
+        loja.save(update_fields=["opening_hours"])
+        self.assertEqual(
+            (loja.staff_hours_start, loja.staff_hours_end),
+            (datetime.time(5, 0), datetime.time(19, 0)),
+        )
+
+        self._unlock_pin()
+        evento = SignInEvent.objects.get()
+        base = timezone.localtime(evento.created_at)
+
+        def em(hora, minuto=0):
+            SignInEvent.objects.filter(pk=evento.pk).update(
+                created_at=base.replace(hour=hora, minute=minuto)
+            )
+            evento.refresh_from_db()
+            return detect_anomalies(evento)
+
+        self.assertNotIn("outside_hours", em(6, 18))  # a produção, antes da loja abrir
+        self.assertNotIn("outside_hours", em(18, 45))  # depois de fechar a venda
+        self.assertIn("outside_hours", em(4, 30))
+        self.assertIn("outside_hours", em(19, 30))
+
+        loja.staff_hours_start = datetime.time(7, 0)
+        loja.save(update_fields=["staff_hours_start"])
+        self.assertIn("outside_hours", em(6, 18))
+        self.assertEqual(ANOMALY_LABELS["outside_hours"], "fora do expediente da equipe")
 
     # ── A regra de destaque é configurável, e falha para os defaults ──────
 
@@ -200,6 +255,22 @@ class SignInNotificationTests(TestCase):
         usuarios = {item["station_display"] for item in resp.json()["sign_ins"]}
         self.assertEqual(len(resp.json()["sign_ins"]), 1)
         self.assertEqual(usuarios, {"pdv-main"})
+
+    def test_posto_aparece_pelo_nome_e_a_data_nao_se_repete(self):
+        """Beta 05/11 (CEN-13, MKT-24): o aviso dizia "05/11 às 06:23 · pdv-main"
+        e a tela punha a hora de novo ao lado. O posto vai pelo nome; a hora, uma vez
+        (a tela a põe, pelo ``created_at_display``)."""
+        from shopman.backstage.models import Workstation
+
+        Workstation.objects.create(ref="pdv-main", label="PDV principal", kind="service")
+        self._unlock_pin()
+
+        aviso = UserNotification.objects.get(user=self.op)
+        self.assertTrue(aviso.message.startswith("PDV principal"))
+        self.assertNotIn(" às ", aviso.message)
+        self.assertNotIn("pdv-main", aviso.message)
+        resp = self.client.get(SIGN_INS)
+        self.assertEqual(resp.json()["sign_ins"][0]["station_display"], "PDV principal")
 
     def test_nao_existe_parametro_que_leia_a_conta_alheia(self):
         """A porta que não existe não vaza — nem por query string."""

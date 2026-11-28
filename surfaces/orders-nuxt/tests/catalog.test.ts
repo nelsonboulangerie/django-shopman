@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   availableAnywhere,
   cellPrice,
+  cellValidity,
+  rowValidities,
   cellState,
   cellSyncView,
   cellView,
@@ -70,6 +72,7 @@ const row = (
   image_url: "",
   primary_collection: "",
   primary_collection_name: "",
+  is_active: true,
   is_published: true,
   is_sellable: true,
   base_price_q: 500,
@@ -112,6 +115,10 @@ describe("cellState", () => {
   it("product unpublish gates every cell", () => {
     expect(cellState(row({ is_published: false }), cell())).toBe("unpublished");
   });
+
+  it("archived product gates every listed cell", () => {
+    expect(cellState(row({ is_active: false }), cell())).toBe("archived");
+  });
 });
 
 describe("cellView", () => {
@@ -120,6 +127,16 @@ describe("cellView", () => {
     expect(v.state).toBe("available");
     expect(v.label).toBe("Disponível");
     expect(v.toneClass).toContain("success");
+  });
+});
+
+describe("rowStatus", () => {
+  it("identifica o produto arquivado antes dos estados efêmeros", () => {
+    expect(
+      rowStatus(
+        row({ is_active: false, is_published: true, is_sellable: true }),
+      ),
+    ).toEqual({ off: true, label: "Arquivado", tone: "muted", hint: "" });
   });
 });
 
@@ -402,4 +419,41 @@ describe("pimSummary", () => {
   it("sem PIM → falta marca e categoria", () => {
     expect(pimSummary(row()).missing).toEqual(["marca", "categoria"]);
   });
+});
+
+describe("vigência por canal", () => {
+  it("omite o selo sem limites e diz as duas datas por extenso numérico", () => {
+    expect(cellValidity(cell())).toBe("");
+    expect(
+      cellValidity(
+        cell({ valid_from: "2026-10-20", valid_until: "2026-11-02" }),
+      ),
+    ).toBe("Vale de 20/10/2026 até 02/11/2026");
+  });
+  it("aceita qualquer uma das pontas aberta", () => {
+    expect(cellValidity(cell({ valid_from: "2026-10-20" }))).toBe(
+      "Vale a partir de 20/10/2026",
+    );
+    expect(cellValidity(cell({ valid_until: "2026-10-20" }))).toBe(
+      "Vale até 20/10/2026",
+    );
+  });
+});
+
+
+it("agrupa uma mesma vigência e conserva o canal das janelas diferentes", () => {
+  const validity = { valid_from: "2026-10-20", valid_until: "2026-10-22" };
+  const product = row({ cells: [
+    cell({ surface_ref: "web", ...validity }),
+    cell({ surface_ref: "ifood", ...validity }),
+    cell({ surface_ref: "pdv", valid_until: "2026-10-25" }),
+  ] });
+  expect(rowValidities(product, [
+    surface({ ref: "web", short_name: "Site" }),
+    surface({ ref: "ifood", short_name: "iFood" }),
+    surface({ ref: "pdv", short_name: "PDV" }),
+  ])).toEqual([
+    { channels: "Site, iFood", label: "Vale de 20/10/2026 até 22/10/2026" },
+    { channels: "PDV", label: "Vale até 25/10/2026" },
+  ]);
 });

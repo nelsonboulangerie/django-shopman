@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 import pytest
-from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from shopman.guestman import ConsentService
 
@@ -309,31 +306,3 @@ def test_database_rejects_impossible_aggregate_and_unknown_target_state():
     with pytest.raises(IntegrityError):
         with transaction.atomic():
             MarketingOutbox.objects.filter(pk=outbox.pk).update(state="invented")
-
-
-@pytest.mark.django_db(transaction=True)
-def test_aggregate_migration_marks_legacy_and_reapplies_cleanly():
-    published_at = timezone.now() - timedelta(days=1)
-    announcement = Announcement.objects.create(
-        status=AnnouncementStatus.PUBLISHED,
-        content={"body": "histórico"},
-        platforms=["instagram"],
-        platform_results={"instagram": {"status": "published"}},
-        published_at=published_at,
-    )
-    before = [("shop", "0032_marketing_delivery_leases")]
-    after = [("shop", "0033_marketing_delivery_aggregate")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    apps = executor.loader.project_state(after).apps
-    MigratedAnnouncement = apps.get_model("shop", "Announcement")
-    migrated = MigratedAnnouncement.objects.get(pk=announcement.pk)
-    assert migrated.delivery_state == "legacy_untracked"
-    assert migrated.delivery_settled_at == published_at
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

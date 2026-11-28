@@ -336,3 +336,20 @@ def test_no_bridge_converte_sem_deixar_a_conversao_para_tras(leite, cenario):
     # A conversão do saldo acontece do mesmo jeito: a ponte é só o cadastro da compra.
     quant = Quant.objects.get(sku="LEITE-INTEGRAL-A")
     assert quant.quantity == Decimal("8.240")
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Custo sem embalagem na base nova em grama: se guarda por kg (beta CMP-07)
+# ────────────────────────────────────────────────────────────────────────
+def test_de_litro_para_grama_o_custo_sem_embalagem_fica_por_quilo(leite, cenario):
+    call_command("convert_material_base_unit", "LEITE-INTEGRAL-A", "--to", "g", "--apply")
+
+    leite.refresh_from_db()
+    assert leite.unit == "g"
+    custo = cenario["custo"]
+    custo.refresh_from_db()
+    # R$ 5,00 o litro ÷ 1,03 kg = R$ 4,85 o quilo. Por grama, o centavo
+    # inteiro arredondaria R$ 0,00485 para zero.
+    assert custo.cost_q == 485
+    assert custo.priced_unit_label == "kg"
+    assert custo.cost_for_base_qty_q(1030) == 500

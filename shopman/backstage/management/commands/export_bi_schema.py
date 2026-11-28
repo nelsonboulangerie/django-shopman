@@ -18,6 +18,14 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.projections.bi_ai import (
+    BIAiFallback,
+    BIAiGap,
+    BIAiReason,
+    BIAiReport,
+    BIAiSpendDay,
+    BIAiSpendRow,
+)
 from shopman.backstage.projections.bi_cash import (
     BICashAccountRow,
     BICashAccounts,
@@ -40,6 +48,16 @@ from shopman.backstage.projections.bi_customers import (
     BICustomerSegmentRow,
     BICustomersReport,
     BICustomersWeekRow,
+)
+from shopman.backstage.projections.bi_delivery_cost import (
+    BIDeliveryCostDay,
+    BIDeliveryCostReport,
+    BIDeliveryCostService,
+)
+from shopman.backstage.projections.bi_delivery_timing import (
+    BIDeliveryTimingReport,
+    BIRideTimingService,
+    BITimingRow,
 )
 from shopman.backstage.projections.bi_explore import (
     BIExploreMetricOption,
@@ -65,8 +83,10 @@ from shopman.backstage.projections.bi_over_short import (
     BIOverShortTypical,
     BIOverShortUnavailable,
 )
+from shopman.backstage.projections.bi_preorder_kitchen import BIPreorderKitchenReport, BIPreorderKitchenRow
 from shopman.backstage.projections.bi_production import (
     BIOvenTimeRow,
+    BIProductionBatchMargin,
     BIProductionDay,
     BIProductionPrevious,
     BIProductionReport,
@@ -90,6 +110,7 @@ from shopman.backstage.projections.bi_sales import (
     BISalesChannelRow,
     BISalesDay,
     BISalesDiscountKindRow,
+    BISalesNoShow,
     BISalesPrevious,
     BISalesReport,
     BISourceConflict,
@@ -108,6 +129,7 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/bi-nuxt/app/generated/biContract.ts")
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
     BIOvenTimeRow,
+    BIProductionBatchMargin,
     BIProductionDay,
     BIProductionPrevious,
     BIProductionReport,
@@ -126,6 +148,7 @@ CONTRACT_DATACLASSES = (
     BISalesPrevious,
     BISourceConflict,
     BISalesDiscountKindRow,
+    BISalesNoShow,
     BISalesReport,
     BICashDay,
     BICashOperatorRow,
@@ -140,6 +163,20 @@ CONTRACT_DATACLASSES = (
     BICustomerSegmentRow,
     BICustomersWeekRow,
     BICustomersReport,
+    BIDeliveryCostService,
+    BIDeliveryCostDay,
+    BIDeliveryCostReport,
+    BITimingRow,
+    BIRideTimingService,
+    BIDeliveryTimingReport,
+    BIAiSpendRow,
+    BIAiSpendDay,
+    BIAiReason,
+    BIAiGap,
+    BIAiFallback,
+    BIAiReport,
+    BIPreorderKitchenRow,
+    BIPreorderKitchenReport,
     BIExploreRow,
     BIExploreMetricOption,
     BIExploreReport,

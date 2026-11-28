@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django_ratelimit.core import is_ratelimited
-from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
@@ -26,10 +27,13 @@ from shopman.shop.observability import (
     log_catalog_observation,
 )
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.policies import preorder_date
+from shopman.shop.protocols import ReserveRefusal
 from shopman.shop.request_memo import stock_reads_scope
 from shopman.shop.services import remote_mutations, storefront_links
 from shopman.shop.services.cart import LINE_NOTES_MAX_LENGTH, CartDateMismatchError
 from shopman.storefront.api import clean_name, clean_text
+from shopman.storefront.cart import CartItemRefused
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.continuum import compare_shadow, head_age_ms, shadow_enabled
 from shopman.storefront.presentation import (
@@ -46,21 +50,31 @@ from shopman.storefront.presentation import (
     notify_subscribed_skus,
     present_cart_date_mismatch,
 )
+from shopman.storefront.presentation.product_detail import build_product_recommendations
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
+    CartMutationDateRefused,
+    CartMutationDayChangeRefused,
     CartMutationNotFound,
     CartMutationOptionRefused,
     CartMutationUnavailable,
     add_line_with_options,
+    change_cart_day,
     set_line_qty,
     set_qty_by_sku,
 )
 
 from .actions import action_payload, retry_after_action
 from .projections import projection_data
-from .public_cache import PublicEdgeCacheMixin, PublicReadMixin
+from .public_cache import (
+    PRIVATE_NO_STORE,
+    RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+    PublicEdgeCacheMixin,
+    PublicReadMixin,
+)
 from .serializers import (
     AddCartLineSerializer,
+    CartDaySerializer,
     CartLineNotesSerializer,
     DetailSerializer,
     SetSkuQtySerializer,
@@ -71,6 +85,12 @@ logger = logging.getLogger(__name__)
 
 CART_RATE_LIMIT_RETRY_SECONDS = 30
 REORDER_RATE_LIMIT_RETRY_SECONDS = 60
+COUPON_RATE_LIMIT_RETRY_SECONDS = 60
+
+
+# Cabeçalho da semente do BFF (`server/utils/djangoProxy.ts`): pede à leitura da
+# sacola que garanta a sessão do Django antes da primeira escrita.
+SESSION_SEED_HEADER = "X-Shopman-Session-Seed"
 
 
 def _unit_count_label(qty: int) -> str:
@@ -160,10 +180,51 @@ def _date_mismatch_payload(exc, *, product=None) -> dict:
     }
 
 
-def _stock_error_payload(exc, *, product=None, request=None) -> dict:
+def _planned_offer_title(exc) -> str:
+    """"Disponível a partir das 15h": quando o próximo lote deixa o item disponível.
+
+    O pedaço de quando sai da MESMA promessa do card e do produto
+    (``presentation/promise``), para o dia que a reserva vai segurar. Sem promessa
+    (prontidão não apurada), a frase não inventa hora: "no próximo lote".
+    """
+    template = resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").title or "Disponível {when}"
+    return template.replace("{when}", _planned_offer_when(exc))
+
+
+def _planned_offer_when(exc) -> str:
+    from datetime import date, time
+
+    from shopman.utils.formatting import format_clock
+
+    from shopman.shop.projections.ready_promise import read_promise_facts
+    from shopman.storefront.presentation.promise import KIND_READY, promise_for
+
+    planned = exc.planned_target_date
+    if isinstance(planned, str):
+        try:
+            planned = date.fromisoformat(planned)
+        except ValueError:
+            planned = None
+    try:
+        facts = read_promise_facts([exc.sku], channel_ref=STOREFRONT_CHANNEL_REF)
+        promise = promise_for(exc.sku, facts, orderable=True, planned_for=planned)
+    except Exception:
+        logger.warning("planned offer: promessa do próximo lote indisponível sku=%s", exc.sku, exc_info=True)
+        promise = None
+    # Pronto agora não é próximo lote: a folha só sobe porque o de agora acabou.
+    if promise is None or promise.kind == KIND_READY:
+        return "no próximo lote"
+    hours, minutes = promise.ready_at.split(":")
+    hour = format_clock(time(int(hours), int(minutes)))
+    if promise.day_label == "hoje":
+        return f"a partir das {hour}"
+    return f"{promise.day_label}, a partir das {hour}"
+
+
+def _stock_error_payload(exc, *, product=None, request=None, name: str = "") -> dict:
     if isinstance(exc, CartDateMismatchError):
         return _date_mismatch_payload(exc, product=product)
-    item_name = getattr(product, "name", None) or getattr(exc, "sku", "")
+    item_name = name or getattr(product, "name", None) or getattr(exc, "sku", "")
     reason = _stock_reason(exc)
     actions = [
         action_payload(
@@ -205,8 +266,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
     # "Me avise quando disponível": escassez genuína (não pausa/encomenda, que têm
     # enquadramento próprio) ganha o caminho de reposição — mesmo fluxo do sino da
     # PDP. Sem estoque agora (available_qty 0) não há clamp, então esta é a única
-    # ação de avanço além de continuar comprando.
-    is_notifiable = not exc.is_paused and not exc.is_planned
+    # ação de avanço além de continuar comprando. Só a FALTA avisa: pausado, fora
+    # da vitrine do canal ou de outra data não voltam com reposição.
+    is_notifiable = exc.error_code == ReserveRefusal.INSUFFICIENT_SUPPLY and not exc.is_planned
     if is_notifiable:
         actions.append(action_payload(
             ref="notify_when_available",
@@ -230,6 +292,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         "requested_qty": exc.requested_qty,
         "available_qty": exc.available_qty,
         "line_qty": line_qty,
+        # A linha que já passou do teto (recusa do envio do pedido): o teto a
+        # encolhe. Sem ela, a folha mira a mutação que acabou de ser recusada.
+        "line_id": getattr(exc, "line_id", None),
         "is_paused": exc.is_paused,
         "is_planned": exc.is_planned,
         "is_notifiable": is_notifiable,
@@ -241,12 +306,9 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         # Pré-reserva: item planejado tem próximo lote conhecido. Enquadra a escassez
         # como oferta ("garantir o seu") em vez de só "esgotou". A reserva de fato é o
         # planned-hold que já existe no carrinho.
-        "planned_offer_title": (
-            resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").title or "Já vem quentinho"
-        ) if exc.is_planned else "",
+        "planned_offer_title": _planned_offer_title(exc) if exc.is_planned else "",
         "planned_offer_message": (
             resolve_copy("KINTSUGI_PLANNED_OFFER", moment="*", audience="*").message
-            or "Sai fresquinho no próximo lote. Quer garantir o seu?"
         ) if exc.is_planned else "",
         # Kintsugi: enquadra a escassez com voz acolhedora (registro, admin-configurável).
         # Um enquadramento só — a pausa não ganha manchete própria, senão o cliente
@@ -257,8 +319,8 @@ def _stock_error_payload(exc, *, product=None, request=None) -> dict:
         ),
         "substitutes_intro": (
             resolve_copy("KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO", moment="*", audience="*").message
-            or "Que tal um destes no lugar?"
-        ),
+            or "Que tal um destes no lugar de {name}?"
+        ).replace("{name}", item_name),
         "substitutes": exc.substitutes,
         "actions": actions,
         "items": [
@@ -388,15 +450,75 @@ class StorefrontShellView(ServerTimingMixin, APIView):
     authentication_classes = []
 
     def get(self, request):
+        from shopman.shop.services import experience as experience_service
+        from shopman.storefront.presentation.home import STOREFRONT_SURFACE, build_team_preview
+
         cart = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+        assignments = experience_service.resolve(request, STOREFRONT_SURFACE)
+        team_preview = build_team_preview(
+            experience_service.team_preview_refs(assignments),
+            opted_out=experience_service.is_opted_out(request),
+        )
         shell = build_shell(
             request=request,
             cart_has_items=cart.items_count > 0 and not cart.is_empty,
+            experience=assignments,
+            team_preview=team_preview,
         )
-        return Response({
-            "shell": projection_data(shell),
+        shell_data = projection_data(shell)
+        if shell_data.get("team_preview") is None:
+            # Ausente, não ``null``: cliente comum e anônimo nem sabem que o selo existe.
+            shell_data.pop("team_preview", None)
+        response = Response({
+            "shell": shell_data,
             "cart": projection_data(cart),
         })
+        if experience_service.has_non_default(assignments) or team_preview is not None:
+            # X14: versão fora do padrão é de alguém. A borda ignora ``Vary``, então
+            # o corpo nunca pode ser cacheável. Quem tem sessão nem chega à gêmea
+            # pública (``carries_credentials`` recusa cookie), e a gêmea, sem
+            # cliente, só resolve o padrão. O selo da equipe também é de alguém,
+            # mesmo quando a pessoa pediu a versão de sempre.
+            response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
+
+
+class StorefrontExperienceOptOutView(APIView):
+    """POST/DELETE /api/v1/storefront/experience/opt-out/ — "Ver a versão de sempre" (DEV-2026-096).
+
+    POST: a sessão passa a ver o padrão em todos os experimentos, até a pessoa sair
+    (o logout descarta a sessão) ou desfazer. DELETE: desfaz ("Voltar à versão de
+    teste"). Só para cliente identificado; quem decide a versão segue sendo o
+    servidor (``shop.services.experience``), e a sacola aberta é remarcada na hora
+    com a versão que a pessoa passa a ver. A loja relê o shell depois.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    throttle_classes = []
+
+    def post(self, request):
+        return self._apply(request, opted_out=True)
+
+    def delete(self, request):
+        return self._apply(request, opted_out=False)
+
+    def _apply(self, request, *, opted_out: bool):
+        from shopman.shop.services import experience as experience_service
+        from shopman.storefront.cart import remark_experience
+        from shopman.storefront.identity import get_authenticated_customer
+
+        if not get_authenticated_customer(request):
+            response = Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        else:
+            if opted_out:
+                experience_service.opt_out(request)
+            else:
+                experience_service.opt_in(request)
+            remark_experience(request)
+            response = Response({"opted_out": opted_out})
+        response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
 
 
 @extend_schema_view(
@@ -439,89 +561,6 @@ class StorefrontSiteView(PublicReadMixin, ServerTimingMixin, APIView):
         return Response({"site": projection_data(site)})
 
 
-def _gone_products() -> dict:
-    """{sku apagado: {"collection": ref, "collection_name": nome}} — o 410 da loja.
-
-    Produto apagado nao deixa rastro no banco, e o 404 mentiria por omissao:
-    diria "nunca existiu" sobre um endereco que o Google indexou. A lapide
-    (``RetiredProduct``) guarda que existiu e de que prateleiras ele saiu.
-
-    Sai a PRIMEIRA coleccao que ainda existe e ainda tem produto publicado. A
-    prateleira vazia nao vira destino: a colecao "Combos" ficou sem nenhum item
-    quando o combo saiu, em 23/09/2026.
-
-    A lapide vale enquanto o SKU nao EXISTIR no catalogo — e existir aqui inclui
-    o despublicado. Codigo pode renascer fora da vitrine (a geleia `GL` sai hoje
-    e volta como dois produtos), e dizer "nao existe mais" sobre algo que existe
-    seria mentira: para esse a resposta e o 404, que e reversivel.
-    """
-    from shopman.shop.models import RetiredProduct
-    from shopman.shop.projections import catalog_context
-
-    def primeira_viva(refs):
-        for ref in refs:
-            colecao = catalog_context.get_active_collection(ref)
-            if colecao is None:
-                continue
-            if catalog_context.filter_by_collection(catalog_context.published_products(), ref).exists():
-                return ref, colecao.name
-        return "", ""
-
-    existentes = frozenset(catalog_context.products_queryset().values_list("sku", flat=True))
-    saida = {}
-    for lapide in RetiredProduct.objects.all():
-        if lapide.sku in existentes:
-            continue
-        ref, nome = primeira_viva(lapide.refs)
-        saida[lapide.sku] = {"collection": ref, "collection_name": nome}
-    return saida
-
-
-@extend_schema_view(
-    get=extend_schema(
-        tags=["storefront"],
-        summary="Retired product codes and where they went",
-        responses={200: OpenApiResponse(description="{'redirects': {sku aposentado: sku de hoje}}")},
-    ),
-)
-class StorefrontSkuRedirectsView(ServerTimingMixin, APIView):
-    """GET /api/v1/storefront/sku-redirects/ — o que a loja precisa para dar 301.
-
-    A URL do produto é o SKU, e o catálogo trocou de código duas vezes
-    (``CROISSANT`` → ``CT`` → ``CRO``). Sem este mapa, endereço que o Google
-    indexou vira 404 e a página recomeça do zero na busca.
-
-    Só sai o código que chega a produto VIVO (``retired_skus``): quem não chega
-    não tem destino honesto, e mandar a pessoa para outro 404 é pior que dizer
-    que não existe.
-
-    Público e sem sessão, como o resto do que a loja mostra a quem não entrou. O
-    ``Cache-Control`` é curto de propósito: rename é raro, mas quando acontece a
-    loja tem de acompanhar no mesmo dia.
-    """
-
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get(self, request):
-        from shopman.shop.projections import catalog_context
-        from shopman.shop.services.sku_history import retired_skus
-
-        # "Existe" para a LOJA e "existe" para o catalogo nao sao a mesma coisa:
-        # produto despublicado continua no catalogo (o `MIB` saiu da vitrine em
-        # 23/09/2026 e fica para a encomenda do restaurante), mas a loja responde
-        # 404 nele. Passar o catalogo inteiro como destino mandaria `MINI-BAGUETE`
-        # para o `MIB`, que e 404 — um 301 para lugar nenhum, pior que o 404 do
-        # comeco. O destino de um 301 da loja tem de ser pagina que a loja mostra.
-        published = frozenset(catalog_context.published_products().values_list("sku", flat=True))
-        response = Response({
-            "redirects": retired_skus(published),
-            "gone": _gone_products(),
-        })
-        response["Cache-Control"] = "public, max-age=300"
-        return response
-
-
 @extend_schema_view(
     get=extend_schema(
         tags=["storefront"],
@@ -537,14 +576,24 @@ class StorefrontMenuView(APIView):
     include_cart = True
 
     def get(self, request, collection: str | None = None):
+        # ``?date=AAAA-MM-DD``: o dia do "Para quando?" (OC-33 B1). Leitura aditiva:
+        # sem ela (ou com hoje) o cardápio é o de sempre. A gêmea pública recusa
+        # qualquer parâmetro, então o dia nunca vai para o cache de borda.
+        target_date, refusal = preorder_date.chosen_day(request.GET.get("date"))
+        if refusal:
+            return Response(
+                {"detail": refusal, "field": "date", "errors": {"date": [refusal]}},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         with capture_catalog_timing() as timing:
             with catalog_stage("projection"):
                 if collection is not None:
-                    catalog_service.ensure_active_collection(collection)
+                    catalog_service.get_active_collection_or_404(collection, request=request)
                 catalog = build_catalog(
                     channel_ref=STOREFRONT_CHANNEL_REF,
                     collection_ref=collection,
                     request=request,
+                    target_date=target_date,
                 )
                 with catalog_stage("personalization"):
                     catalog_projection = projection_data(catalog)
@@ -555,7 +604,8 @@ class StorefrontMenuView(APIView):
             shadow = None
             shadow_error = False
             shadow_query_count = 0
-            if collection is None and shadow_enabled():
+            # A sombra compara o cardápio de HOJE; o de outro dia não tem cabeça.
+            if collection is None and target_date is None and shadow_enabled():
                 try:
                     queries_before_shadow = timing.query_count
                     with catalog_stage("shadow"):
@@ -580,8 +630,8 @@ class StorefrontMenuView(APIView):
             "query_count": timing.query_count,
             "snapshot_bytes": shadow.snapshot_bytes if shadow else 0,
             "cache_status": shadow.cache_status if shadow else "off",
-            "snapshot_sequence": shadow.head.sequence if shadow else 0,
-            "snapshot_age_ms": head_age_ms(shadow.head) if shadow else 0,
+            "snapshot_sequence": shadow.head.sequence if shadow and shadow.head else 0,
+            "snapshot_age_ms": head_age_ms(shadow.head) if shadow and shadow.head else 0,
             "shadow_equal": shadow.equal if shadow else None,
             "shadow_error": shadow_error,
             "shadow_ms": timing.durations_ms.get("shadow", 0.0),
@@ -607,7 +657,21 @@ class StorefrontMenuView(APIView):
     get=extend_schema(
         tags=["storefront"],
         summary="Storefront canonical catalog projection",
-        responses={200: OpenApiResponse(description="Catalog projection without cart projection.")},
+        parameters=[
+            OpenApiParameter(
+                "date",
+                str,
+                required=False,
+                description=(
+                    "O dia do 'Para quando?' (AAAA-MM-DD, OC-33 B1). Disponibilidade e promessa "
+                    "respondem para esse dia; hoje ou ausente = o cardápio de sempre."
+                ),
+            ),
+        ],
+        responses={
+            200: OpenApiResponse(description="Catalog projection without cart projection."),
+            400: OpenApiResponse(description="Dia que a casa não combina (field=date)."),
+        },
     ),
 )
 class StorefrontCatalogView(StorefrontMenuView):
@@ -647,6 +711,7 @@ class StorefrontProductView(ServerTimingMixin, APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    include_cart = True
 
     def get(self, request, sku: str):
         product = build_product_detail(
@@ -656,10 +721,67 @@ class StorefrontProductView(ServerTimingMixin, APIView):
         )
         if product is None:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
-        return Response({
-            "product": projection_data(product),
-            "cart": _cart_payload(request),
-        })
+        payload = {"product": projection_data(product)}
+        if self.include_cart:
+            payload["cart"] = _cart_payload(request)
+        response = Response(payload)
+        response["Cache-Control"] = PRIVATE_NO_STORE
+        return response
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["storefront"],
+        summary="Public storefront product detail projection",
+        responses={
+            200: OpenApiResponse(description="Product detail projection without cart projection."),
+            404: DetailSerializer,
+        },
+    ),
+)
+class StorefrontPublicProductView(PublicEdgeCacheMixin, StorefrontProductView):
+    """PDP do visitante sem sessão, com o mesmo TTL do catálogo público.
+
+    A sacola vem do shell: não pertence ao corpo compartilhado do produto.
+    Cookie, credencial e parâmetros são recusados pelo mixin canônico.
+    """
+
+    include_cart = False
+
+
+class StorefrontProductRecommendationsView(ServerTimingMixin, APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, sku: str):
+        recommendations = build_product_recommendations(
+            sku=sku, channel_ref=STOREFRONT_CHANNEL_REF, request=request,
+        )
+        if recommendations is None:
+            return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"recommendations": projection_data(recommendations)})
+
+
+class StorefrontPublicProductRecommendationsView(
+    PublicEdgeCacheMixin, StorefrontProductRecommendationsView
+):
+    """GET /api/v1/storefront/public/products/{sku}/recommendations/ — cacheável.
+
+    A gêmea existe porque este é o ÚNICO request que a PDP faz depois do SSR, e
+    ele pagava TTFB inteiro (~0,72 s medidos) para o mesmo corpo que todo visitante
+    anônimo recebe: o rail mostra o que se parece com o produto, e para quem não
+    tem sessão o corpo é idêntico por construção. Sem cookie, a borda serve a
+    seção por 30 s, mais 30 s de revalidação em segundo plano
+    (``RECOMMENDATIONS_EDGE_CACHE_CONTROL``, sob o teto de 60 s do X8).
+
+    O que é pessoal (favorito, quantidade na sacola) não se perde: o request
+    anônimo já vem com ``is_favorite=false`` e ``qty_in_cart=0``, e o cliente
+    sobrescreve os dois a partir do estado que recebeu no shell. Quem tem sessão
+    continua na rota privada de sempre: o BFF só manda para a gêmea o GET sem
+    cookie de sessão (``djangoProxy.ts``).
+    """
+
+    edge_cache_control = RECOMMENDATIONS_EDGE_CACHE_CONTROL
 
 
 @extend_schema_view(
@@ -674,16 +796,30 @@ class StorefrontCartView(ServerTimingMixin, APIView):
     """GET /api/v1/storefront/cart/
 
     É a ÚNICA leitura que ainda entrega o ``csrftoken``, e de propósito: quem vai
-    mutar e ainda não tem o token (o ``useShopmanCsrfHeaders`` do navegador e o
-    ``ensureDjangoCsrfCookie`` do BFF) busca-o aqui. As demais leituras deixaram
-    de carimbar o cookie, que só serve para mutação.
+    mutar e ainda não tem o token (o ``seedDjangoSession`` do BFF) busca-o aqui.
+    As demais leituras deixaram de carimbar o cookie, que só serve para mutação.
+
+    Com ``X-Shopman-Session-Seed: 1`` (só a semente do BFF manda) a leitura
+    também garante a sessão do Django. Sem isso, a sessão nascia na primeira
+    escrita, e se o BFF desistisse dela pelo prazo o ``sessionid`` se perdia
+    com a resposta: a nova tentativa abria outra sessão e outra reserva, e a
+    primeira ficava segurando o item (laudo da loja, P2-06). Com a sessão
+    garantida antes, a nova tentativa cai na mesma sacola. A leitura comum da
+    sacola não cria sessão: quem só olha segue anônimo e servido pela borda.
     """
 
     permission_classes = [AllowAny]
     authentication_classes = []
 
     def get(self, request):
-        return Response({"cart": _cart_payload(request)})
+        if request.headers.get(SESSION_SEED_HEADER) == "1" and not request.session.session_key:
+            # ``create()`` grava a linha e marca a sessão como modificada, então o
+            # SessionMiddleware devolve o ``sessionid`` nesta mesma resposta.
+            request.session.create()
+        # ``server_now_iso``: o relógio do servidor, no envelope e não na projeção
+        # (WP-L11). A sacola conta o prazo da reserva por ele: a tela mede a
+        # diferença para o relógio do aparelho na chegada desta resposta.
+        return Response({"cart": _cart_payload(request), "server_now_iso": timezone.now().isoformat()})
 
 
 @extend_schema_view(
@@ -747,13 +883,19 @@ class OrderReorderView(APIView):
             )
 
         try:
-            order = order_service.get_accessible_order(request, ref)
+            order, access_mode = order_service.get_accessible_order_with_mode(request, ref)
         except Exception:
             logger.debug("surface.post degraded; using fallback", exc_info=True)
             return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
 
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+
+        # O link do aviso vê o pedido, mas não mexe na sacola (DEV-2026-093).
+        if access_mode != order_service.ACCESS_FULL:
+            from .tracking import login_required_response
+
+            return login_required_response(order.ref, "reorder")
 
         mode = (request.data.get("mode") if hasattr(request, "data") else None) or ""
         mode = str(mode).strip().lower()
@@ -803,6 +945,14 @@ class OrderReorderView(APIView):
         return Response({**result.response_body, "cart": _cart_payload(request), "replayed": result.replayed}, status=result.response_code)
 
 
+def _offer_still_in_bag(request, offer_skus: list[str]) -> bool:
+    """Algum item que a oferta trouxe ainda está na sacola, com quantidade?"""
+    from shopman.storefront.cart import CartService
+
+    items = CartService.get_cart_summary(request, include_items=True)["items"]
+    return any(item.get("sku") in offer_skus and float(item.get("qty") or 0) > 0 for item in items)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["cart"],
@@ -830,6 +980,11 @@ class OfferClaimView(APIView):
     fica, e a resposta diz `kept_existing_items` para a tela perguntar DEPOIS se o
     cliente quer manter tudo. Quem responde "só a oferta" volta com `mode=replace`, que
     esvazia a sacola e remonta a oferta. Nunca se troca sem esse pedido explícito.
+
+    **A mesma oferta entra uma vez por sacola** (decisão do dono, 06/11/2026): abrir o
+    mesmo link de novo, nesta aba, em outra ou em outro dispositivo com a mesma sacola,
+    não soma outra unidade; a resposta volta com `already_claimed`, `added` vazio, e a
+    tela leva à sacola como na primeira visita. Ofertas diferentes continuam somando.
     """
 
     permission_classes = [AllowAny]
@@ -871,7 +1026,7 @@ class OfferClaimView(APIView):
             except offer_service.OfferUnavailable as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
 
-        CartService._get_or_create_session(request)
+        _cart, cart_key = CartService._get_or_create_session(request)
 
         def execute_claim() -> tuple[dict, int]:
             try:
@@ -896,23 +1051,71 @@ class OfferClaimView(APIView):
             # somar: depois não há como saber (um item que já estava lá E está na oferta
             # volta em `added`). E dentro da execução, o toque repetido no mesmo link
             # repete a resposta guardada — com o mesmo `kept_existing_items`.
+            def assemble() -> tuple[dict, int]:
+                result = offer_service.add_offer_items(
+                    request, promotion,
+                    cart_service=CartService,
+                    channel_ref=STOREFRONT_CHANNEL_REF,
+                )
+                return (
+                    {
+                        "assembled": result.assembled,
+                        "added": list(result.added),
+                        "skipped": _skipped_offer_items(result.skipped, request=request),
+                    },
+                    status.HTTP_200_OK,
+                )
+
+            already_claimed = False
             if mode == "replace":
                 CartService.clear_items(request)
                 kept_existing_items = False
+                assembly, _code = assemble()
             else:
                 kept_existing_items = CartService.has_items(request)
-            result = offer_service.add_offer_items(
-                request, promotion,
-                cart_service=CartService,
-                channel_ref=STOREFRONT_CHANNEL_REF,
-            )
+                # ⚠️ A mesma oferta entra UMA vez na mesma sacola (decisão do dono,
+                # 06/11/2026). O recibo é da SACOLA, não do navegador: a chave que a
+                # página guarda só cobre o toque duplo naquela aba, e a sacola viaja
+                # para outra aba e para outro dispositivo no login. Oferta diferente
+                # tem recibo próprio e continua somando ("a oferta sempre soma",
+                # 24/09/2026). Só fica recibo quando algo entrou: a oferta que não
+                # montou nada pode ser tentada de novo quando o estoque voltar.
+                # O escopo é a ref que `_get_or_create_session` acabou de devolver, nunca
+                # a lida de novo da sessão HTTP: `has_items` pode esvaziá-la, e um escopo
+                # com ref vazia seria o mesmo para todo visitante da oferta.
+                in_cart_scope = remote_mutations.mutation_scope("web", "offer-in-cart", cart_key, promotion.ref)
+
+                def claim_in_cart() -> remote_mutations.RemoteMutationResult:
+                    return remote_mutations.run_idempotent_mutation(
+                        scope=in_cart_scope,
+                        key=promotion.ref,
+                        cache_response=lambda body, code: code < 400 and bool(body.get("added")),
+                        execute=assemble,
+                    )
+
+                claimed = claim_in_cart()
+                if claimed.replayed and not _offer_still_in_bag(request, claimed.response_body.get("added") or []):
+                    # O recibo diz "a oferta está nesta sacola" e a sacola desmente: o
+                    # cliente tirou tudo o que ela trouxe. Abrir o link de novo devolve a
+                    # oferta UMA vez, que é o destino da primeira visita.
+                    remote_mutations.release_receipt(scope=in_cart_scope, key=promotion.ref)
+                    claimed = claim_in_cart()
+                already_claimed = claimed.replayed
+                if already_claimed:
+                    # A oferta já está nesta sacola: nada a somar, nada a perguntar, e o
+                    # destino é o mesmo da primeira visita (a sacola).
+                    kept_existing_items = False
+                    assembly = {"assembled": True, "added": [], "skipped": []}
+                else:
+                    assembly = claimed.response_body
             return (
                 {
-                    "ok": result.assembled,
+                    "ok": assembly["assembled"],
                     "offer": {"ref": promotion.ref, "name": promotion.name},
-                    "added": list(result.added),
-                    "skipped": _skipped_offer_items(result.skipped, request=request),
+                    "added": assembly["added"],
+                    "skipped": assembly["skipped"],
                     "kept_existing_items": kept_existing_items,
+                    "already_claimed": already_claimed,
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,
@@ -938,6 +1141,39 @@ class OfferClaimView(APIView):
         return Response({**outcome.response_body, "cart": _cart_payload(request), "replayed": outcome.replayed}, status=outcome.response_code)
 
 
+def _brl(value_q: int) -> str:
+    from shopman.utils.monetary import format_money
+
+    return f"R$ {format_money(int(value_q or 0))}"
+
+
+def coupon_not_better_message(result: dict) -> str:
+    """O cupom não vence o desconto que os itens dele já têm (o maior ganha)."""
+    code = str(result.get("coupon_code") or "").strip().upper() or "cupom"
+    label = str(result.get("standing_label") or "").strip()
+    standing_q = int(result.get("standing_q") or 0)
+    if label and standing_q > 0:
+        return (
+            f"Os itens deste cupom já têm desconto de {_brl(standing_q)} ({label}), "
+            f"igual ou maior que o do {code}. Os descontos não se somam: guarde o cupom para outra compra."
+        )
+    return (
+        "Os itens deste cupom já têm um desconto igual ou maior. "
+        f"Os descontos não se somam: guarde o {code} para outra compra."
+    )
+
+
+def coupon_replaced_notice(replaced: dict | None) -> str:
+    """O cupom venceu e entrou no lugar de um desconto que já valia."""
+    if not replaced:
+        return ""
+    label = str(replaced.get("label") or "").strip()
+    total_q = int(replaced.get("total_q") or 0)
+    if not label or total_q <= 0:
+        return ""
+    return f"Cupom aplicado no lugar do desconto que já valia ({label}, {_brl(total_q)}), porque dá mais."
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["cart"],
@@ -958,19 +1194,51 @@ class CartCouponView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
+    # O balde próprio abaixo vale para anônimo E logado; o throttle anônimo
+    # padrão não somaria nada além disso.
+    throttle_classes = []
 
     ERROR_MESSAGES = {
         "empty_code": "Informe o código do cupom.",
         "no_cart": "Sacola vazia.",
-        "invalid_coupon": "Cupom não encontrado.",
-        "coupon_exhausted": "Este cupom já foi utilizado.",
-        "coupon_expired": "Cupom expirado.",
-        "coupon_wrong_channel": "Este cupom não vale nesta loja.",
-        "coupon_not_eligible": "Este cupom não está disponível para a sua conta.",
     }
+    #: Uma resposta só para todo cupom recusado (laudo S8, 23/10). Dizer "não
+    #: encontrado", "já utilizado", "expirado" ou "não vale para a sua conta" era
+    #: um oráculo: separava código que existe de código inventado, e permitia
+    #: varrer a base de cupons. O motivo real fica no log, não na resposta.
+    REJECTED_CODE = "coupon_rejected"
+    REJECTED_MESSAGE = "Não foi possível usar este cupom nesta compra."
+    #: Balde próprio, por conta logada ou por IP: conta só o cupom RECUSADO. Quem
+    #: aplica o cupom que recebeu nunca esbarra nele; quem chuta códigos para na
+    #: décima recusa do minuto.
+    RATE_LIMIT = "10/m"
+    RATE_LIMIT_GROUP = "storefront-api-coupon-rejected"
+
+    @classmethod
+    def _rejections(cls, request, *, increment: bool):
+        from django.conf import settings
+        from django_ratelimit.core import get_usage
+
+        if not getattr(settings, "RATELIMIT_ENABLE", True):
+            return None
+        return get_usage(
+            request,
+            group=cls.RATE_LIMIT_GROUP,
+            key="user_or_ip",
+            rate=cls.RATE_LIMIT,
+            method="POST",
+            increment=increment,
+        )
 
     def post(self, request):
         from shopman.storefront.cart import CartService
+
+        usage = self._rejections(request, increment=False)
+        if usage and usage["count"] >= usage["limit"]:
+            return _rate_limited_response(
+                detail="Muitas tentativas de cupom. Aguarde um minuto e tente de novo.",
+                retry_after_seconds=COUPON_RATE_LIMIT_RETRY_SECONDS,
+            )
 
         code = clean_text(request.data.get("code")) if hasattr(request, "data") else ""
         if not code:
@@ -981,14 +1249,29 @@ class CartCouponView(APIView):
 
         result = CartService.apply_coupon(request, code)
         if result.get("ok"):
-            return Response({"cart": _cart_payload(request)})
+            body = {"cart": _cart_payload(request)}
+            notice = coupon_replaced_notice(result.get("replaced"))
+            if notice:
+                body["notice"] = notice
+            return Response(body)
 
         error_key = result.get("error", "invalid_coupon")
+        if error_key == "coupon_not_better":
+            # O cupom é válido (não é oráculo nem tentativa recusada): só não vence o
+            # desconto que já vale, e não foi gasto.
+            return Response(
+                {"detail": coupon_not_better_message(result), "error_code": error_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if error_key in self.ERROR_MESSAGES:
+            return Response(
+                {"detail": self.ERROR_MESSAGES[error_key], "error_code": error_key},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        self._rejections(request, increment=True)
+        logger.info("cupom recusado: %s", error_key)
         return Response(
-            {
-                "detail": self.ERROR_MESSAGES.get(error_key, "Cupom inválido."),
-                "error_code": error_key,
-            },
+            {"detail": self.REJECTED_MESSAGE, "error_code": self.REJECTED_CODE},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -1107,7 +1390,7 @@ class CheckoutLoyaltyView(APIView):
             customer_info = getattr(request, "customer", None)
             if customer_info is not None:
                 try:
-                    redeem_q = checkout_context.loyalty_balance(customer_info.uuid)
+                    redeem_q = checkout_context.loyalty_balance(customer_info.subject_id)
                 except Exception:
                     logger.debug("loyalty balance lookup degraded", exc_info=True)
                     redeem_q = 0
@@ -1130,6 +1413,7 @@ class CheckoutLoyaltyView(APIView):
         responses={
             200: OpenApiResponse(description="Cart mutation response plus authoritative cart projection."),
             400: DetailSerializer,
+            403: OpenApiResponse(description="Item de coleção exclusiva de grupo (error_code=group_exclusive)."),
             404: DetailSerializer,
             409: OpenApiResponse(
                 description=(
@@ -1163,15 +1447,23 @@ class CartSkuQtyView(APIView):
 
         serializer = SetSkuQtySerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        chosen_date, refused = _chosen_cart_date(serializer.validated_data.get("date"))
+        if refused is not None:
+            return refused
 
         try:
             outcome = set_qty_by_sku(
                 request,
                 sku=sku.strip(),
                 qty=serializer.validated_data["qty"],
+                chosen_date=chosen_date,
             )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused)
         except CartMutationOptionRefused as refused:
             return _option_refused_response(refused)
         except CartMutationUnavailable as unavailable:
@@ -1197,6 +1489,20 @@ def _cart_mutation_response(request, outcome) -> Response:
     })
 
 
+def cart_item_refused_response(refused: CartItemRefused, *, field: str = "sku") -> Response:
+    """403 no dialeto ``{detail, field, errors}``: o item é de um grupo que o visitante não integra."""
+    return Response(
+        {
+            "detail": refused.detail,
+            "field": field,
+            "errors": {field: [refused.detail]},
+            "error_code": refused.error_code,
+            "skus": refused.skus,
+        },
+        status=status.HTTP_403_FORBIDDEN,
+    )
+
+
 def _option_refused_response(refused: CartMutationOptionRefused) -> Response:
     """A escolha no produto não fecha: 400 no dialeto ``{detail, field, errors}``."""
     error = refused.error
@@ -1211,6 +1517,34 @@ def _option_refused_response(refused: CartMutationOptionRefused) -> Response:
         },
         status=status.HTTP_400_BAD_REQUEST,
     )
+
+
+def _date_refused_response(message: str) -> Response:
+    """400 no dialeto ``{detail, field, errors}``: o dia escolhido não pode ser combinado."""
+    return Response(
+        {
+            "detail": message,
+            "field": "date",
+            "errors": {"date": [message]},
+            "error_code": "date_refused",
+        },
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _chosen_cart_date(raw):
+    """``(dia, recusa)``: o dia do "Para quando?" que chega com o Adicionar (OC-33 B1).
+
+    Sem ``date``, ``(None, None)``: a sacola segue a régua de sempre. Hoje volta
+    como hoje (a escolha explícita de hoje também é escolha); dia que a casa não
+    combina volta como a resposta de recusa.
+    """
+    if raw is None or not str(raw).strip():
+        return None, None
+    day, refusal = preorder_date.chosen_day(raw)
+    if refusal:
+        return None, _date_refused_response(refusal)
+    return day or timezone.localdate(), None
 
 
 def _cart_rate_limited(request, *, group: str, method: str):
@@ -1233,6 +1567,7 @@ def _cart_rate_limited(request, *, group: str, method: str):
                 description="Escolha que não fecha com o cadastro (error_code option_required, "
                 "option_unknown ou option_unavailable).",
             ),
+            403: OpenApiResponse(description="Item de coleção exclusiva de grupo (error_code=group_exclusive)."),
             404: DetailSerializer,
             409: OpenApiResponse(description="Estoque insuficiente, ou item de outra data."),
         },
@@ -1258,15 +1593,23 @@ class CartLinesView(APIView):
         serializer = AddCartLineSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        chosen_date, refused = _chosen_cart_date(data.get("date"))
+        if refused is not None:
+            return refused
         try:
             outcome = add_line_with_options(
                 request,
                 sku=data["sku"].strip(),
                 qty=data["qty"],
                 options=[{"group": o["group"].strip(), "ref": o["ref"].strip()} for o in data["options"]],
+                chosen_date=chosen_date,
             )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
         except CartMutationNotFound:
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused)
         except CartMutationOptionRefused as refused:
             return _option_refused_response(refused)
         except CartMutationUnavailable as unavailable:
@@ -1275,6 +1618,65 @@ class CartLinesView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         return _cart_mutation_response(request, outcome)
+
+
+@extend_schema_view(
+    put=extend_schema(
+        tags=["cart"],
+        summary="Move the whole cart to another day (OC-33 B1, the 'Trocar')",
+        request=CartDaySerializer,
+        responses={
+            200: OpenApiResponse(description="A sacola inteira passou para o dia (ou não havia sacola)."),
+            400: OpenApiResponse(description="Dia que a casa não combina (error_code=date_refused); nada mudou."),
+            409: OpenApiResponse(
+                description=(
+                    "Item que não dá no dia novo (error_code=cart_day_change_refused), nomeado um a um; "
+                    "nada mudou. Reenviar com `without` (os SKUs) segue sem eles."
+                ),
+            ),
+        },
+    ),
+)
+class CartDayView(APIView):
+    """PUT /api/v1/cart/day/ — o "Trocar": a sacola inteira muda de dia, ou nada muda."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = CartDaySerializer
+    throttle_classes = []
+
+    def put(self, request):
+        limited = _cart_rate_limited(request, group="storefront-api-cart-day", method="PUT")
+        if limited is not None:
+            return limited
+        serializer = CartDaySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        chosen_date, refused = _chosen_cart_date(serializer.validated_data["date"])
+        if refused is not None:
+            return refused
+        try:
+            change_cart_day(
+                request,
+                chosen_date=chosen_date,
+                without_skus=[sku.strip() for sku in serializer.validated_data["without"]],
+            )
+        except CartMutationDateRefused as refused_date:
+            return _date_refused_response(refused_date.message)
+        except CartMutationDayChangeRefused as day_refused:
+            refusal = day_refused.refusal
+            return Response(
+                {
+                    "detail": refusal.detail,
+                    "title": refusal.title,
+                    "field": "date",
+                    "error_code": refusal.error_code,
+                    "date": refusal.day.isoformat(),
+                    "date_label": refusal.day_label,
+                    "items": refusal.items,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response({"cart": _cart_payload_after_mutation(request)})
 
 
 @extend_schema_view(

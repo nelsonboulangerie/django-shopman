@@ -5,6 +5,9 @@
 // (o Admin tem a mesma, para quem prefere lá): o que foi unificado, por quem, o que
 // passou de um cadastro para o outro, e quanto tempo ainda resta.
 import type { MergeAuditRowProjection } from "~/generated/ordersContract";
+import { customerLabel, undoMergeDescription } from "~/presentation/customers";
+
+const undoDescription = undoMergeDescription;
 
 useHead({ title: "Unificações de clientes" });
 
@@ -26,7 +29,7 @@ async function confirmUndo() {
   confirming.value = null;
   if (ok)
     useSonner.success(
-      `Unificação desfeita: ${row.source_ref} voltou a ser um cadastro separado.`,
+      `Unificação desfeita: ${customerLabel(row.source_name, row.source_ref)} voltou a ser um cadastro separado.`,
     );
 }
 // Celular (abaixo de `sm`, README do kit "Barra do topo no celular" e "Toolbar no
@@ -103,7 +106,14 @@ const phoneHeaderActions = computed(() => [
       >
         <template #merge-cell="{ row }">
           <div :data-merge-row="row.original.id">
-            <span class="font-mono text-xs">{{ row.original.source_ref }}</span>
+            <span v-if="row.original.source_name" class="font-medium">{{
+              row.original.source_name
+            }}</span>
+            <span
+              class="font-mono text-xs"
+              :class="row.original.source_name ? 'ms-1 text-muted-foreground' : ''"
+              >{{ row.original.source_ref }}</span
+            >
             <Icon
               name="lucide:arrow-right"
               class="mx-1 inline-block size-3.5 align-middle text-muted-foreground"
@@ -168,7 +178,7 @@ const phoneHeaderActions = computed(() => [
       title="Desfazer a unificação?"
       :description="
         confirming
-          ? `${confirming.source_ref} volta a ser um cadastro separado, com ${confirming.moved_label}.${confirming.loyalty_merged ? ` Os pontos de fidelidade somados ficam em ${confirming.target_ref}: o desfazer não os devolve.` : ''}`
+          ? undoDescription(confirming)
           : ''
       "
       @update:open="

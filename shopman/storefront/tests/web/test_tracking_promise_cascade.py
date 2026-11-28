@@ -21,7 +21,7 @@ from shopman.shop.projections import order_tracking
 from shopman.shop.projections.order_tracking import build_tracking
 
 # Estados em que a bola é do cliente: ele precisa agir (pagar/tentar) AGORA.
-CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry"}
+CUSTOMER_BALL_STATES = {"payment_pix_ready", "payment_card_ready", "payment_retry", "waitlist_confirming"}
 
 
 @pytest.fixture
@@ -191,7 +191,7 @@ def test_link_deadline_travels_on_the_promise(make_order, patch_payment):
 
 
 def test_card_without_deadline_carries_no_consequence(make_order, patch_payment):
-    """O cartão da loja online não tem prazo: nada a prometer sobre vencimento."""
+    """Sessão de cartão sem prazo gravado: nada a prometer sobre vencimento."""
     patch_payment()
     order = make_order(status="accepted", payment={"method": "card", "checkout_url": "https://pay"})
     promise = build_tracking(order).promise
@@ -395,3 +395,198 @@ def test_one_order_one_state_one_phrase(make_order, patch_payment):
     # E a copy estática do bloco vem no payload do acompanhamento (uma tela só).
     assert proj.copy.pix_copy_btn
     assert proj.copy.pix_instruction
+
+
+def test_card_with_deadline_says_until_when(make_order, patch_payment):
+    """O cartão da loja online agora vence (beta 06/11, F2): a nota de rodapé
+    diz a consequência ("se o prazo passar"), então a frase diz QUAL prazo.
+    Sem isso o cliente lia um prazo que a tela não mostrava."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(minutes=30)).isoformat()
+    order = make_order(
+        status="new",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CARD-1",
+            "checkout_url": "https://pay",
+            "expires_at": expires_at,
+        },
+    )
+    promise = build_order_tracking(order).promise
+    assert promise.title == "Pague com cartão"
+    assert promise.message.startswith("Finalize no ambiente seguro até ")
+    assert " às " in promise.message
+    assert promise.message.endswith(" para garantir o pedido.")
+    assert "{deadline}" not in promise.message
+    assert promise.footnote == "Se o prazo passar, liberamos a reserva e avisamos você."
+
+
+# ── Cartão: prazo à vista, reserva no cartão, cobrança recusada (beta 06/11) ──
+
+
+def test_declined_card_footnote_names_the_deadline(make_order, patch_payment):
+    """A frase do cartão recusado não diz o prazo: a nota não pode dizer "Se o
+    prazo passar" como se ele estivesse na tela. Ela diz qual é."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(minutes=30)).isoformat()
+    order = make_order(
+        status="new",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CARD-DECLINED",
+            "checkout_url": "https://pay",
+            "expires_at": expires_at,
+            "last_decline": {"code": "card_declined", "at": timezone.now().isoformat()},
+        },
+    )
+    promise = build_order_tracking(order).promise
+    assert promise.state == "payment_card_declined"
+    assert "prazo" not in promise.message
+    assert promise.footnote.startswith("Se o pagamento não for feito até ")
+    assert " às " in promise.footnote
+    assert "{deadline}" not in promise.footnote
+
+
+def _authorized_wait_data():
+    from shopman.shop.projections.order_tracking import TrackingPromiseData
+
+    return TrackingPromiseData(
+        state="payment_authorized",
+        tone="info",
+        deadline_at=None,
+        deadline_kind=None,
+        timer_mode="none",
+        deadline_action="none",
+        requires_active_notification=False,
+        notification_topic=None,
+        payment_method="card",
+        fulfillment_wait_kind="preorder",
+    )
+
+
+@pytest.mark.parametrize("status", ["new", "accepted"])
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_authorized_card_waiting_says_money_is_reserved_not_a_waitlist(status, when):
+    """"Sua reserva está na fila de espera" soava como produto em lista de espera.
+    O que existe é o valor reservado no cartão, cobrado quando a loja aceita."""
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _authorized_wait_data(),
+        status=status,
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+    )
+    assert "fila de espera" not in message
+    assert "cartão" in message
+    assert "{when}" not in message
+    if when:
+        assert when in message
+    if status == "new":
+        assert "só é cobrado quando a loja confirmar" in message
+
+
+def test_state_payment_capture_failed(make_order, patch_payment):
+    """A cobrança no aceite foi recusada: nada de "Cartão autorizado"."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment(live_status="authorized")
+    order = make_order(
+        status="accepted",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-CAP-FAIL",
+            "capture_failure": {"code": "stripe_error", "at": timezone.now().isoformat(), "intent_ref": "PAY-CAP-FAIL"},
+        },
+    )
+    tracking = build_order_tracking(order)
+    assert tracking.promise.state == "payment_capture_failed"
+    assert tracking.promise.title == "Não conseguimos cobrar o cartão"
+    assert tracking.payment_status_label == "Cobrança não concluída"
+    assert tracking.status_label == "Cobrança não concluída"
+
+
+def test_capture_failure_of_an_older_intent_does_not_leak(make_order, patch_payment):
+    patch_payment(live_status="authorized")
+    order = make_order(
+        status="accepted",
+        payment={
+            "method": "card",
+            "intent_ref": "PAY-NEW",
+            "capture_failure": {"code": "stripe_error", "at": timezone.now().isoformat(), "intent_ref": "PAY-OLD"},
+        },
+    )
+    assert _promise_state(order) == "payment_authorized"
+
+
+def _preorder_wait_data(state: str):
+    from shopman.shop.projections.order_tracking import TrackingPromiseData
+
+    return TrackingPromiseData(
+        state=state,
+        tone="info",
+        deadline_at=None,
+        deadline_kind=None,
+        timer_mode="none",
+        deadline_action="none",
+        requires_active_notification=True,
+        notification_topic=None,
+        payment_method="pix",
+        fulfillment_wait_kind="preorder",
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "paid"),
+    [("store_checking", True), ("store_checking", False), ("received", False), ("payment_confirmed", True)],
+)
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_preorder_not_accepted_yet_is_not_called_reserved(state, paid, when):
+    """Laudo de encomendas 09/11: encomenda paga ainda ``new`` dizia "reservada"
+    enquanto a Conta dizia "Aguardando a loja". Antes do aceite, quem confirma
+    é a loja; pago, o cliente sabe que o valor volta se ela não puder."""
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _preorder_wait_data(state),
+        status="new",
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+        payment_confirmed=paid,
+    )
+    assert "reservada" not in message
+    # Com dia combinado quem nomeia a encomenda é a frase do dia (#2749).
+    assert ("A loja confirma e avisa" if when else "A loja confirma sua encomenda") in message
+    assert message.count("encomenda") == 1
+    assert "{when}" not in message
+    if when:
+        assert when in message
+    if paid and state == "store_checking":
+        assert message.startswith("Pagamento recebido.")
+    if paid:
+        # Pago e ainda não aceito: nas duas frases o cliente lê que o valor volta
+        # (WP-L06, P1-07; o estado ``payment_confirmed`` não prometia).
+        assert "devolvemos o valor" in message
+
+
+@pytest.mark.parametrize("when", ["sábado, 19/07", None])
+def test_preorder_accepted_is_reserved(when):
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _promise_copy
+
+    _title, message = _promise_copy(
+        _preorder_wait_data("received"),
+        status="accepted",
+        is_delivery=False,
+        copy=build_copy("TRACKING"),
+        when_display=when,
+    )
+    assert "reservada" in message

@@ -48,7 +48,7 @@ def curated(db):
     ListingItem.objects.create(listing=listing, product=product, price_q=1600)
     rule = RuleConfig.objects.create(
         ref="happy-hour", rule_path="shopman.shop.rules.pricing.HappyHourRule",
-        label="Happy hour", params={"percent": 10},
+        label="Happy hour", params={"discount_percent": 10, "start": "16:00", "end": "17:00"},
     )
     rule.channels.add(channel)
     promotion = Promotion.objects.create(
@@ -115,7 +115,7 @@ def test_roundtrip_restores_deleted_and_mutated_rows(curated, tmp_path):
     assert product.metadata == {"fiscal": {"ncm": "1905.90.90"}}
     assert sorted(t.name for t in product.keywords.all()) == ["integral", "pao"]
     rule = RuleConfig.objects.get(ref="happy-hour")
-    assert rule.params == {"percent": 10}
+    assert rule.params == {"discount_percent": 10, "start": "16:00", "end": "17:00"}
     assert list(rule.channels.values_list("ref", flat=True)) == ["pos"]
     assert Coupon.objects.get(code="BEMVINDO").promotion.ref == "promo-teste"
     item = ListingItem.objects.get(listing__ref="balcao", product__sku="PAO-01")
@@ -126,14 +126,30 @@ def test_roundtrip_restores_deleted_and_mutated_rows(curated, tmp_path):
 
 
 def _formula(water: int) -> dict:
+    def ingredient(ref: str, sku: str, name: str, role: str, quantity: int) -> dict:
+        return {
+            "ref": ref,
+            "sku": sku,
+            "name": name,
+            "role": role,
+            "composition": "additional",
+            "quantity": {
+                "kind": "fixed",
+                "minimum": quantity,
+                "target": quantity,
+                "maximum": quantity,
+                "unit": "g",
+            },
+        }
+
     return {
         "anchor": {"kind": "flour"},
         "basis_g": 1000,
-        "items": [
-            {"sku": "FARINHA", "name": "Farinha", "role": "flour", "quantity": 1000, "unit": "g"},
-            {"sku": "AGUA", "name": "Água", "role": "liquid", "quantity": water, "unit": "g"},
+        "standardized": True,
+        "ingredients": [
+            ingredient("ingredient-flour", "FARINHA", "Farinha", "flour", 1000),
+            ingredient("ingredient-water", "AGUA", "Água", "liquid", water),
         ],
-        "parts": [],
     }
 
 

@@ -18,7 +18,7 @@ module.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any
 
@@ -29,8 +29,8 @@ from shopman.orderman.models import Directive
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
+from shopman.shop.services import customer_orders, payment_status
 from shopman.shop.services import payment as payment_service
-from shopman.shop.services import payment_status
 
 #: Formas DIGITAIS do acompanhamento: o cliente paga por conta própria, e o
 #: pedido espera por isso. Pix (QR na tela) mais as sessões hospedadas
@@ -55,6 +55,7 @@ CARRIER_TRACKING_URLS: dict[str, str] = {
 }
 
 TERMINAL_STATUSES = frozenset({"completed", "cancelled", "returned"})
+
 
 # Cadência do polling do acompanhamento (segundos). 30s espelha a referência de
 # mercado (iFood) e reduz o "esperei e nada" após o operador mudar o status.
@@ -83,6 +84,14 @@ class TrackingItemData:
     qty: int
     unit_price_q: int
     line_total_q: int
+    # A linha como a conta a mostra (dono, 16/11/2026, #2570 decisão 1): com a
+    # promoção do produto já abatida e o valor cheio riscado ao lado. O cupom não
+    # entra na linha: ele sai uma vez só, embaixo, no resumo. ``bill_*`` é o
+    # cobrado mais o cupom desta linha; ``full_line_total_q`` é o preço de lista
+    # (o riscado), zero quando a linha não tem promoção.
+    bill_unit_price_q: int = 0
+    bill_line_total_q: int = 0
+    full_line_total_q: int = 0
 
 
 @dataclass(frozen=True)
@@ -128,11 +137,28 @@ class TrackingPickupData:
 
 
 @dataclass(frozen=True)
-class TrackingCancellationRequestData:
-    """Customer request awaiting a human cancellation/refund decision."""
+class TrackingCancellationContactData:
+    """O preparo começou: no lugar do cancelar, o contato com o responsável.
 
-    protocol: str
-    requested_at: str
+    ``requested``: o cliente já pediu, e a tela diz que o responsável vai chamar.
+    """
+
+    requested: bool
+
+
+@dataclass(frozen=True)
+class TrackingRatingFollowupData:
+    """What follows the customer's rating: the ombudsman offer and the Google invite.
+
+    ``google_review_url`` vale para TODA nota (a política do Google proíbe convidar
+    só quem gostou); ``contact_offered`` segue ``policies/rating_contact.py``.
+    ``comment`` é o que o cliente escreveu, para a tela copiar no gesto do convite.
+    """
+
+    comment: str
+    google_review_url: str
+    contact_offered: bool
+    contact_requested: bool
 
 
 @dataclass(frozen=True)
@@ -151,6 +177,20 @@ class TrackingFiscalNoteData:
     url: str
     is_test: bool
     cancelled: bool
+
+
+@dataclass(frozen=True)
+class TrackingMoneyOutcomeData:
+    """O destino do dinheiro de um pedido cancelado (``payment.cancelled_money``).
+
+    ``outcome``: refunded | refund_requested | card_hold_released | nothing_charged.
+    ``late_pix`` marca o Pix que chegou depois do prazo e foi devolvido.
+    """
+
+    outcome: str
+    amount_q: int = 0
+    method: str = ""
+    late_pix: bool = False
 
 
 @dataclass(frozen=True)
@@ -183,6 +223,15 @@ class TrackingPromiseData:
     # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
     # calendário é lado de escrita; a presentation só lê projections).
     payment_deadline_phrase: str = ""
+    # Até quando a loja responde ao pedido que ainda espera a decisão dela (ISO),
+    # nos dois modos do canal: é o instante em que o ``confirmation.timeout`` do
+    # pedido está agendado (aceite automático no ``auto_confirm``, cancelamento
+    # com devolução no ``auto_cancel``). Só nos estados em que a bola é da loja.
+    acceptance_deadline_at: str | None = None
+    # ready_pickup: "hoje às 15h" quando a retirada ainda não pode acontecer
+    # agora (a janela combinada não começou ou a loja está fechada). Vazio
+    # quando o cliente pode vir já.
+    pickup_from_phrase: str = ""
     # ── Payment block (só nos degraus em que há o que pagar) ──────────
     payment_method: str = ""  # pix | card | link | "" — o resto do bloco só faz sentido com um método
     pix_qr_code: str | None = None  # data: URI já normalizada
@@ -195,6 +244,25 @@ class TrackingPromiseData:
     # reservations that are waiting on production.
     fulfillment_wait_kind: str = ""
     fulfillment_wait_until: str | None = None
+    # A cobrança do cartão não passou depois do aceite e esta é a cobrança NOVA
+    # (``payment.awaiting_repayment``): a frase diz por que pedimos de novo.
+    repayment: bool = False
+    # ...e o cliente pode trocar para Pix (ação ``pay_with_pix``).
+    repayment_pix_allowed: bool = False
+    # Entrega pronta ou na rua: onde a corrida está, no vocabulário neutro
+    # (``courier.customer_wait``). ``courier_stage`` só em ``ready_delivery``
+    # ("" sem corrida viva, "called", "late", "replaced", "coming", "at_store");
+    # ``courier_driver`` é o primeiro nome do entregador (em "replaced", o de
+    # quem desistiu); ``courier_pickup_eta_at`` (ISO) é a chegada prevista à loja.
+    courier_stage: str = ""
+    courier_driver: str = ""
+    courier_pickup_eta_at: str | None = None
+    # Na rua (#2509, opção 1 da coordenação): a posição do entregador vira TEXTO, nunca
+    # mapa. ``courier_near`` diz que a posição fresca está a até
+    # ``COURIER_NEAR_METERS`` do endereço DESTE pedido; ``courier_seen_at`` (ISO) é a
+    # hora da última posição, para a frase dizer a idade quando ela envelhece.
+    courier_near: bool = False
+    courier_seen_at: str | None = None
 
 
 @dataclass(frozen=True)
@@ -240,12 +308,16 @@ class TrackingData:
     shop_name: str
     is_debug: bool
     last_updated_iso: str
-    # Cancelamento pelo estabelecimento: motivo escolhido no Gestor e estado
-    # do estorno (Pix/cartão) visíveis ao cliente — a página não depende da
-    # notificação para contar a história.
+    # Cancelamento: motivo escolhido no Gestor e o destino do dinheiro (nada
+    # cobrado, reserva desfeita, devolvido, devolvendo) visíveis ao cliente. A
+    # página não depende da notificação para contar a história.
     cancellation_note: str = ""
-    refund_status_key: str | None = None
-    cancellation_request: TrackingCancellationRequestData | None = None
+    money_outcome: TrackingMoneyOutcomeData | None = None
+    cancellation_contact: TrackingCancellationContactData | None = None
+    # O que entrou de dinheiro, para o diálogo de cancelar dizer quanto volta.
+    paid_amount_q: int = 0
+    paid_method: str = ""  # pix | card
+    rating_followup: TrackingRatingFollowupData | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
     # trocado); esta tela não depende dela para o cliente saber que a fornada
@@ -268,6 +340,32 @@ class TrackingData:
     # A nota fiscal chega ao cliente pela página do pedido (decisão do dono,
     # 25/09/2026): a loja online não imprime nem pede e-mail.
     fiscal_note: TrackingFiscalNoteData | None = None
+    # Encomenda paga e não retirada: o recibo do valor que a loja reteve (#3538),
+    # a mesma leitura do papel do balcão (``no_show.RetentionReceipt``).
+    retention_receipt: Any = None
+    # A conta e o que o cliente informou no checkout, para o Resumo do pedido
+    # contar o mesmo que a revisão contou (beta 06/11): os descontos selados no
+    # commit (vazio quando o pedido foi editado depois: a conta selada já não é
+    # a que vale), presente, CPF da nota, observação e endereço de entrega.
+    discount_lines: tuple[Any, ...] = ()
+    is_gift: bool = False
+    gift_recipient_name: str = ""
+    gift_message: str = ""
+    tax_id: str = ""
+    customer_notes: str = ""
+    delivery_address: str = ""
+    # Como esta tela foi aberta (DEV-2026-093): ``full`` (quem fez o pedido, a conta
+    # dona, staff) ou ``capability`` (só o link do aviso). Na capacidade, o endereço
+    # sai abreviado e as ações que pedem entrada saem da lista; ``login_required_for``
+    # diz quais saíram, para a tela convidar a entrar no lugar delas.
+    access_mode: str = "full"
+    login_required_for: tuple[str, ...] = ()
+
+
+#: O que o link do aviso NÃO faz sem entrar (DEV-2026-093): cancelar, pedir de novo,
+#: avaliar e confirmar a vaga da fila. Pagar, falar com a loja e confirmar o
+#: recebimento continuam. A API recusa as mesmas no servidor (``tracking.py``).
+CAPABILITY_WITHHELD_ACTIONS = ("cancel_order", "reorder", "rate_order")
 
 
 @dataclass(frozen=True)
@@ -287,19 +385,93 @@ class TrackingStatusData:
 # ──────────────────────────────────────────────────────────────────────
 
 
-
 def _slot_label(slot_ref: str | None) -> str | None:
     """As DUAS grades: canônico da encomenda e meia hora do PDV — um resolvedor só."""
     if not slot_ref:
         return None
     from shopman.shop.services.fulfillment_window import window_label
 
-    return window_label(slot_ref) or None
+    return window_label(slot_ref, for_customer=True) or None
 
-def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
-    """Build the full tracking data projection for an order."""
+
+def as_customer_sees(order):
+    """O pedido no estado que o CLIENTE pode ler agora.
+
+    O pronto da Cozinha entra em READY na hora, mas o aviso de pronto espera a
+    janela de desfazer (``order_undo.ready_hold``): até ela fechar, o Gestor
+    ainda pode devolver o pedido ao preparo. O cliente não pode ler "Pronto"
+    antes do aviso e ver o pronto sumir depois (beta 06/11): enquanto a janela
+    estiver aberta, ele vê o pedido em preparo. Devolve uma cópia rasa só para
+    leitura; o pedido de verdade não muda.
+    """
+    if order.status != "ready":
+        return order
+    from shopman.shop.services import order_undo
+
+    if not order_undo.ready_hold(order):
+        return order
+    import copy
+
+    held = copy.copy(order)
+    held.status = "preparing"
+    held.ready_held_for_undo = True
+    return held
+
+
+def build_tracking(order, *, is_debug: bool = False, access_mode: str = "full") -> TrackingData:
+    """Build the full tracking data projection for an order.
+
+    ``access_mode="capability"`` (aberto só pelo link do aviso, DEV-2026-093): o
+    endereço de entrega sai abreviado (rua e bairro) e cancelar, pedir de novo e
+    avaliar saem das ações. Decidido aqui, no servidor; a tela só desenha.
+    """
+    data = _build_tracking(order, is_debug=is_debug)
+    if access_mode != customer_orders.ACCESS_CAPABILITY:
+        return data
+    return _as_capability_view(order, data)
+
+
+def _as_capability_view(order, data: TrackingData) -> TrackingData:
+    withheld = [action.ref for action in data.actions if action.ref in CAPABILITY_WITHHELD_ACTIONS]
+    withheld += [
+        action.ref for action in data.promise.actions
+        if action.ref in CAPABILITY_WITHHELD_ACTIONS and action.ref not in withheld
+    ]
+    if data.waitlist_state == "confirming":
+        withheld.append("waitlist_confirm")
+    return replace(
+        data,
+        actions=tuple(a for a in data.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        promise=replace(
+            data.promise,
+            actions=tuple(a for a in data.promise.actions if a.ref not in CAPABILITY_WITHHELD_ACTIONS),
+        ),
+        delivery_address=abbreviated_delivery_address(order) if data.delivery_address else "",
+        access_mode=customer_orders.ACCESS_CAPABILITY,
+        login_required_for=tuple(withheld),
+    )
+
+
+def abbreviated_delivery_address(order) -> str:
+    """Rua e bairro, sem número nem complemento: o que a tela aberta pelo link mostra.
+
+    Só do endereço estruturado: o texto livre não separa o número com segurança, e
+    sem estrutura a tela não mostra endereço nenhum (o "Entrega" continua).
+    """
+    structured = (order.data or {}).get("delivery_address_structured") or {}
+    if not isinstance(structured, dict):
+        return ""
+    parts = [
+        str(structured.get("route") or "").strip(),
+        str(structured.get("neighborhood") or "").strip(),
+    ]
+    return ", ".join(part for part in parts if part)
+
+
+def _build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     from shopman.shop.services import order_composition
 
+    order = as_customer_sees(order)
     interaction = InteractionContext.from_order(order, surface_ref="tracking")
     server_now = timezone.now()
     payment_expired = _is_payment_timeout_cancelled(order)
@@ -313,7 +485,9 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_delivery=is_delivery,
         is_pickup=is_pickup,
     )
-    pickup = _pickup_data() if is_pickup else None
+    # Pedido cancelado ou devolvido não tem retirada: "Como chegar" ali é
+    # convite para uma viagem perdida (beta 06/11, PIXEXP-10).
+    pickup = _pickup_data() if is_pickup and order.status not in {"cancelled", "returned"} else None
 
     delivery_fee_q = order_data.get("delivery_fee_q")
     delivery_distance_km = order_data.get("delivery_distance_km")
@@ -327,8 +501,14 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     # interna do operador nunca. Sem chave ou com "Outro motivo", a tela não
     # inventa motivo; no Pix vencido quem explica é a promessa da tela.
     cancellation_note = "" if _is_payment_timeout_cancelled(order) else _cancellation_customer_text(order_data)
-    refund_status_key = _refund_status_key(order)
-    cancellation_request = _cancellation_request(order)
+    money_outcome = _money_outcome(order)
+    if _note_says_card_hold_released(order_data, money_outcome):
+        # A frase do motivo já diz que nada foi cobrado e a reserva foi desfeita
+        # (é a mesma do aviso, que não tem bloco de dinheiro): repetir abaixo é
+        # ler duas vezes a mesma coisa.
+        money_outcome = None
+    cancellation_contact = _cancellation_contact(order)
+    rating_followup = _rating_followup(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -360,12 +540,13 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     can_cancel = payment_status.can_cancel(order)
-    can_mock_confirm_payment = _can_mock_confirm_payment(order)
+    can_mock_confirm_payment = _mock_confirmation_projection_value(order)
     actions = _build_order_actions(
         order,
         can_cancel=can_cancel,
-        cancellation_requested=cancellation_request is not None,
-        can_rate=_can_rate(order),
+        cancellation_contact_offered=bool(cancellation_contact and not cancellation_contact.requested),
+        can_rate=customer_orders.can_rate(order),
+        can_request_contact=bool(rating_followup and rating_followup.contact_offered),
         can_mock_confirm_payment=can_mock_confirm_payment,
     )
 
@@ -374,11 +555,14 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
         cancellation_note=cancellation_note,
-        refund_status_key=refund_status_key,
-        cancellation_request=cancellation_request,
+        money_outcome=money_outcome,
+        cancellation_contact=cancellation_contact,
+        paid_amount_q=_paid_amount_q(order) if can_cancel and payment_confirmed else 0,
+        paid_method="pix" if str(((order_data.get("payment") or {}).get("method")) or "").lower() == "pix" else "card",
+        rating_followup=rating_followup,
         order_ref=interaction.order_ref,
         status=order.status,
-        display_status_key=_display_status_key(order),
+        display_status_key=display_status_key(order),
         is_delivery=is_delivery,
         is_pickup=is_pickup,
         is_preorder=is_preorder,
@@ -416,11 +600,45 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
         fiscal_note=_fiscal_note(order_data),
+        retention_receipt=_retention_receipt(order),
+        discount_lines=_sealed_discount_lines(order),
+        is_gift=bool(order_data.get("is_gift")),
+        gift_recipient_name=str((order_data.get("recipient") or {}).get("name") or "").strip(),
+        gift_message=str(order_data.get("gift_message") or "").strip(),
+        tax_id=str((order_data.get("fiscal") or {}).get("tax_id") or "").strip(),
+        customer_notes=str(order_data.get("order_notes") or "").strip(),
+        delivery_address=str(order_data.get("delivery_address") or "").strip() if is_delivery else "",
         **_waitlist_info(
             order,
-            payment_unsettled=payment_pending or payment_status_key == "card_authorized",
+            payment_unsettled=payment_pending or payment_status_key in {"card_authorized", "card_capture_failed"},
         ),
     )
+
+
+def _sealed_discount_lines(order) -> tuple[Any, ...]:
+    """Os descontos que o commit selou, na régua da sacola (uma linha por origem).
+
+    Pedido editado depois (``order_composition.adjustment``) não tem conta
+    selada que valha: as linhas do desconto contariam a conta velha.
+    """
+    from shopman.shop.projections.cart import _discount_lines
+    from shopman.shop.services import order_composition
+
+    if order_composition.adjustment(order) is not None:
+        return ()
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    # A promoção do produto já está na linha (com o cheio riscado); embaixo sai
+    # só o que é da conta: cupom, pontos e os modificadores do pedido.
+    discount = dict(pricing.get("discount") or {})
+    discount["items"] = [d for d in discount.get("items") or [] if isinstance(d, dict) and d.get("type") == "coupon"]
+    return _discount_lines(discount, pricing)
+
+
+def _retention_receipt(order):
+    """O recibo do valor retido de um pedido não retirado, ou ``None`` (#3538)."""
+    from shopman.shop.services import no_show
+
+    return no_show.retention_receipt(order)
 
 
 def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
@@ -442,10 +660,11 @@ def _fiscal_note(order_data: dict) -> TrackingFiscalNoteData | None:
 
 def build_tracking_status(order) -> TrackingStatusData:
     """Build the polling data projection for tracking status partials."""
+    order = as_customer_sees(order)
     return TrackingStatusData(
         order_ref=order.ref,
         status=order.status,
-        display_status_key=_display_status_key(order),
+        display_status_key=display_status_key(order),
         progress_steps=_build_progress_steps(order),
         timeline=_build_timeline(order),
         is_terminal=order.status in TERMINAL_STATUSES,
@@ -457,12 +676,16 @@ def build_tracking_status(order) -> TrackingStatusData:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _display_status_key(order) -> str:
+def display_status_key(order) -> str:
     """Resolve the semantic status descriptor the customer sees.
 
     Returns a key that Presentation maps to a label + colour. Falls back to the
-    raw ``order.status`` for the plain cases.
+    raw ``order.status`` for the plain cases. Dono único do estado que o cliente
+    lê: acompanhamento, lista de pedidos da Conta e faixa da home passam por
+    aqui, para que nenhuma superfície diga "Aguardando a loja" com o pagamento
+    ainda em aberto.
     """
+    order = as_customer_sees(order)
     order_data = order.data or {}
     fulfillment_type = order_data.get("fulfillment_type") or order_data.get("delivery_method", "")
     is_delivery = fulfillment_type == "delivery"
@@ -479,9 +702,20 @@ def _display_status_key(order) -> str:
         if payment_captured or live_payment_status == "authorized" or not has_intent:
             return "waiting_store_confirmation"
         return "payment_pending"
-    if method in payment_service.HOSTED_CHECKOUT_METHODS and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
+    if (
+        method in payment_service.HOSTED_CHECKOUT_METHODS
+        and live_payment_status == "authorized"
+        and order.status in {"new", "accepted"}
+    ):
+        if payment_service.capture_failure(order):
+            return "card_capture_failed"
         return "card_authorized"
-    if order.status == "accepted" and method in _DIGITAL_PAYMENT_METHODS and not payment_captured and live_payment_status != "authorized":
+    if (
+        order.status == "accepted"
+        and method in _DIGITAL_PAYMENT_METHODS
+        and not payment_captured
+        and live_payment_status != "authorized"
+    ):
         return "payment_pending"
     if order.status == "new":
         return "waiting_store_confirmation"
@@ -523,6 +757,8 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     if payment_status.has_sufficient_captured_payment(order):
         return False, True, "payment_confirmed", payment.get("expires_at") or None
     if status == "authorized" and method in payment_service.HOSTED_CHECKOUT_METHODS:
+        if payment_service.capture_failure(order):
+            return False, False, "card_capture_failed", payment.get("expires_at") or None
         return False, False, "card_authorized", payment.get("expires_at") or None
     if not (payment.get("intent_ref") or payment.get("status")) and order.status == "new":
         return False, False, None, None
@@ -531,35 +767,59 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     return True, False, "payment_pending", payment.get("expires_at") or None
 
 
-def _refund_status_key(order) -> str | None:
-    """Estorno visível ao cliente: refunded | processing | None.
+def _money_outcome(order) -> TrackingMoneyOutcomeData | None:
+    """O que aconteceu com o dinheiro do pedido cancelado, para o cliente ler.
 
-    Só faz sentido para pedido cancelado com pagamento capturado: o dinheiro
-    precisa voltar, e o cliente precisa saber. payment_status é a fonte viva
-    (captured/refunded/…); o estorno do cartão/Pix passa por aqui.
+    Lê TODOS os intents do pedido (``payment_service.cancelled_money``): o Pix
+    que chega depois do prazo mora num intent próprio, e ler só o canônico
+    calava justamente o caso de quem pagou.
     """
-    if order.status != "cancelled":
+    money = payment_service.cancelled_money(order)
+    if money is None:
         return None
-    live = (payment_status.get_payment_status(order) or "").lower()
-    if live in {"refunded", "refund"}:
-        return "refunded"
-    if payment_status.has_sufficient_captured_payment(order) or live in {"captured", "paid"}:
-        return "processing"
-    return None
-
-
-def _cancellation_request(order) -> TrackingCancellationRequestData | None:
-    from shopman.shop.services import cancellation_requests
-
-    request = cancellation_requests.current(order)
-    if request is None:
-        return None
-    return TrackingCancellationRequestData(
-        protocol=request.protocol,
-        requested_at=request.requested_at.isoformat(),
+    return TrackingMoneyOutcomeData(
+        outcome=money.outcome,
+        amount_q=money.amount_q,
+        method=money.method,
+        late_pix=money.late_pix,
     )
 
-def _can_mock_confirm_payment(order) -> bool:
+
+def _cancellation_contact(order) -> TrackingCancellationContactData | None:
+    """O contato no lugar do cancelar: só depois que o preparo começou."""
+    from shopman.shop.policies import customer_cancellation
+    from shopman.shop.services import customer_contact
+
+    if not customer_cancellation.offers_contact_instead(order.status):
+        return None
+    requested = customer_contact.current(order, origin=customer_contact.ORIGIN_CANCELLATION) is not None
+    return TrackingCancellationContactData(requested=requested)
+
+
+def _paid_amount_q(order) -> int:
+    try:
+        return int(payment_service.captured_balance_q(order) or 0)
+    except Exception:
+        logger.warning("tracking.paid_amount_unreadable order=%s", order.ref, exc_info=True)
+        return 0
+
+
+def _rating_followup(order) -> TrackingRatingFollowupData | None:
+    from shopman.shop.services import customer_contact
+
+    data = order.data if isinstance(order.data, dict) else {}
+    rating = data.get("customer_rating")
+    if not (isinstance(rating, dict) and rating.get("rating")):
+        return None
+    return TrackingRatingFollowupData(
+        comment=str(rating.get("comment") or ""),
+        google_review_url=customer_contact.google_review_url(),
+        contact_offered=customer_contact.contact_offered(order),
+        contact_requested=customer_contact.current(order, origin=customer_contact.ORIGIN_RATING) is not None,
+    )
+
+
+def _mock_confirmation_projection_value(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
 
     Pergunta o ambiente ao dono dela (``payment_service.mock_capture_allowed``),
@@ -580,18 +840,6 @@ def _can_mock_confirm_payment(order) -> bool:
         return False
     status = (payment_status.get_payment_status(order) or "").lower()
     return status not in {"", "unknown", "captured", "paid", "refunded", "cancelled", "failed"}
-
-
-def _rating_data(order) -> dict:
-    data = order.data if isinstance(order.data, dict) else {}
-    rating = data.get("customer_rating")
-    return rating if isinstance(rating, dict) else {}
-
-
-def _can_rate(order) -> bool:
-    if order.status not in {"delivered", "completed"}:
-        return False
-    return not bool(_rating_data(order).get("rating"))
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -630,6 +878,7 @@ def _action(
     payload_schema: dict | None = None,
     idempotency: str = "required",
     confirmation: dict | None = None,
+    value: str = "",
 ) -> Action:
     return Action(
         ref=ref,
@@ -643,6 +892,7 @@ def _action(
         payload_schema=payload_schema or {},
         idempotency=idempotency,
         confirmation=confirmation or {},
+        value=value,
     )
 
 
@@ -669,119 +919,116 @@ def _build_order_actions(
     order,
     *,
     can_cancel: bool,
-    cancellation_requested: bool,
+    cancellation_contact_offered: bool,
     can_rate: bool,
     can_mock_confirm_payment: bool,
+    can_request_contact: bool = False,
 ) -> tuple[Action, ...]:
     actions: list[Action] = []
     if can_cancel:
-        actions.append(_action(
-            ref="cancel_order",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_CANCEL_ORDER", "Cancelar pedido"),
-            priority="danger",
-            href=f"/api/v1/orders/{order.ref}/cancel/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["idempotency_key"],
-                "properties": {
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="cancel_order",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_CANCEL_ORDER", "Cancelar pedido"),
+                priority="danger",
+                href=f"/api/v1/orders/{order.ref}/cancel/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-            confirmation={
-                "title": _copy_title("TRACKING_CANCEL_CONFIRM_TITLE", "Cancelar pedido"),
-                "warning_title": _copy_title(
-                    "TRACKING_CANCEL_WARNING_TITLE",
-                    "Essa ação altera o pedido em andamento",
-                ),
-                "warning_message": _copy_message(
-                    "TRACKING_CANCEL_WARNING_MESSAGE",
-                    "O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.",
-                ),
-                "message": _copy_message(
-                    "TRACKING_CANCEL_CONFIRM_MESSAGE",
-                    "Confirme apenas se não quiser mais seguir com este pedido.",
-                ),
-                "ack_label": _copy_title(
-                    "TRACKING_CANCEL_ACK_LABEL",
-                    "Entendo que o pedido será cancelado e deixará de ser preparado.",
-                ),
-                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                "confirm_label": _copy_title("TRACKING_CANCEL_CONFIRM_CTA", "Confirmar cancelamento"),
-                "severity": "danger",
-            },
-        ))
-    elif order.status not in {"cancelled", "returned"} and not cancellation_requested:
-        actions.append(_action(
-            ref="request_cancellation",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_REQUEST_CANCELLATION", "Solicitar cancelamento"),
-            priority="danger",
-            href=f"/api/v1/orders/{order.ref}/cancellation-request/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["idempotency_key"],
-                "properties": {
-                    "reason": {"type": "string", "maxLength": 500},
-                    "idempotency_key": {"type": "string"},
+                idempotency="required",
+                # Sem ``confirmation``: o diálogo do cancelamento é da tela, com a
+                # copy de ``tracking.copy.cancel_dialog_*`` e a frase do dinheiro
+                # (``cancel_dialog_money_line``). O bloco que vivia aqui ninguém
+                # desenhava, e carregava jargão de gateway (beta 06/11, F6).
+            )
+        )
+    elif cancellation_contact_offered:
+        # Depois que o preparo começou o pedido não se cancela mais (dono,
+        # 06/11/2026): no lugar do cancelar, falar com o responsável, pela mesma
+        # ouvidoria da avaliação baixa.
+        actions.append(
+            _action(
+                ref="request_cancellation_contact",
+                kind="mutation",
+                label=_copy_title("TRACKING_CANCELLATION_CONTACT_CTA", "Quero falar com o responsável"),
+                priority="secondary",
+                href=f"/api/v1/orders/{order.ref}/contact-request/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["origin", "idempotency_key"],
+                    "properties": {
+                        "origin": {"type": "string", "enum": ["cancellation"]},
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-            confirmation={
-                "title": _copy_title(
-                    "TRACKING_REQUEST_CANCELLATION_TITLE",
-                    "Solicitar cancelamento",
-                ),
-                "message": _copy_message(
-                    "TRACKING_REQUEST_CANCELLATION_MESSAGE",
-                    "Como o pedido já avançou, a equipe precisa analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.",
-                ),
-                "confirm_label": _copy_title(
-                    "TRACKING_REQUEST_CANCELLATION_CONFIRM_CTA",
-                    "Enviar solicitação",
-                ),
-                "cancel_label": _copy_title("TRACKING_CANCEL_KEEP_CTA", "Manter pedido"),
-                "severity": "danger",
-            },
-        ))
+                idempotency="required",
+            )
+        )
     if can_rate:
-        actions.append(_action(
-            ref="rate_order",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_RATE_ORDER", "Avaliar pedido"),
-            priority="secondary",
-            href=f"/api/v1/orders/{order.ref}/rate/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "required": ["rating", "idempotency_key"],
-                "properties": {
-                    "rating": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "comment": {"type": "string", "maxLength": 500},
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="rate_order",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_RATE_ORDER", "Avaliar pedido"),
+                priority="secondary",
+                href=f"/api/v1/orders/{order.ref}/rate/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["rating", "idempotency_key"],
+                    "properties": {
+                        "rating": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "comment": {"type": "string", "maxLength": 500},
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="required",
-        ))
+                idempotency="required",
+            )
+        )
+    if can_request_contact:
+        actions.append(
+            _action(
+                ref="request_contact",
+                kind="mutation",
+                label=_copy_title("TRACKING_RATING_CONTACT_CTA", "Quero falar com o responsável"),
+                priority="primary",
+                href=f"/api/v1/orders/{order.ref}/contact-request/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "required": ["idempotency_key"],
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                    },
+                },
+                idempotency="required",
+            )
+        )
     if can_mock_confirm_payment:
-        actions.append(_action(
-            ref="mock_confirm_payment",
-            kind="mutation",
-            label=_copy_title("TRACKING_ACTION_MOCK_CONFIRM_PAYMENT", "Capturar pagamento teste"),
-            priority="quiet",
-            href=f"/api/v1/payment/{order.ref}/mock-confirm/",
-            method="POST",
-            payload_schema={
-                "type": "object",
-                "properties": {
-                    "idempotency_key": {"type": "string"},
+        actions.append(
+            _action(
+                ref="mock_confirm_payment",
+                kind="mutation",
+                label=_copy_title("TRACKING_ACTION_MOCK_CONFIRM_PAYMENT", "Capturar pagamento teste"),
+                priority="quiet",
+                href=f"/api/v1/payment/{order.ref}/mock-confirm/",
+                method="POST",
+                payload_schema={
+                    "type": "object",
+                    "properties": {
+                        "idempotency_key": {"type": "string"},
+                    },
                 },
-            },
-            idempotency="recommended",
-        ))
+                idempotency="recommended",
+            )
+        )
     if order.status in TERMINAL_STATUSES:
         actions.append(_reorder_action(order))
     return tuple(actions)
@@ -806,6 +1053,8 @@ def _promise(
     eta_at: str | None = None,
     next_opening_phrase: str = "",
     payment_deadline_phrase: str = "",
+    acceptance_deadline_at: str | None = None,
+    pickup_from_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
     pix_copy_paste: str | None = None,
@@ -813,6 +1062,13 @@ def _promise(
     checkout_url: str | None = None,
     fulfillment_wait_kind: str = "",
     fulfillment_wait_until: str | None = None,
+    repayment: bool = False,
+    repayment_pix_allowed: bool = False,
+    courier_stage: str = "",
+    courier_driver: str = "",
+    courier_pickup_eta_at: str | None = None,
+    courier_near: bool = False,
+    courier_seen_at: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -827,6 +1083,8 @@ def _promise(
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
         payment_deadline_phrase=payment_deadline_phrase,
+        acceptance_deadline_at=acceptance_deadline_at,
+        pickup_from_phrase=pickup_from_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
         pix_copy_paste=pix_copy_paste,
@@ -834,6 +1092,13 @@ def _promise(
         checkout_url=checkout_url,
         fulfillment_wait_kind=fulfillment_wait_kind,
         fulfillment_wait_until=fulfillment_wait_until,
+        repayment=repayment,
+        repayment_pix_allowed=repayment_pix_allowed,
+        courier_stage=courier_stage,
+        courier_driver=courier_driver,
+        courier_pickup_eta_at=courier_pickup_eta_at,
+        courier_near=courier_near,
+        courier_seen_at=courier_seen_at,
     )
 
 
@@ -854,19 +1119,14 @@ def _pix_payload(payment: dict) -> tuple[str | None, str | None]:
     discordam.
     """
     qr_code = _qr_image_src(payment.get("qr_code") or payment.get("pix_qr_code") or None)
-    copy_paste = (
-        payment.get("copy_paste")
-        or payment.get("pix_copy_paste")
-        or payment.get("pix_code")
-        or None
-    )
+    copy_paste = payment.get("copy_paste") or payment.get("pix_copy_paste") or payment.get("pix_code") or None
     return qr_code, copy_paste
 
 
 def _commitment_info(order):
     """Commitment date + preorder flag, on the lifecycle's own ruler.
 
-    Same predicate as ``lifecycle._physical_work_deferred``: the order is a
+    Same predicate as ``lifecycle.awaits_kitchen_release``: the order is a
     preorder while its commitment date is in the future — on the day it
     rejoins the normal flow (KDS, preparing, ready).
     """
@@ -877,24 +1137,18 @@ def _commitment_info(order):
     return commitment_date, is_preorder
 
 
-def _hold_pk(hold_id: object) -> int | None:
-    raw = str(hold_id or "")
-    if not raw.startswith("hold:"):
-        return None
-    try:
-        return int(raw.split(":", 1)[1])
-    except (TypeError, ValueError):
-        return None
-
-
 def _pending_planned_hold_date(order) -> date | None:
     """Earliest active planned/demand hold still waiting for materialization."""
-    hold_entries = ((order.data or {}).get("hold_ids") or [])
-    hold_pks = [
-        pk
-        for pk in (_hold_pk(entry.get("hold_id")) for entry in hold_entries if isinstance(entry, dict))
-        if pk is not None
-    ]
+    from shopman.shop.services.stock import hold_pks as canonical_hold_pks
+
+    try:
+        hold_pks = canonical_hold_pks((order.data or {}).get("hold_ids"))
+    except ValueError:
+        # A leitura da previsão não repara nem aceita reservas inválidas. O
+        # contrato de estoque continua estrito; o cliente ainda pode consultar
+        # pagamento, itens e histórico, sem inventar uma promessa de fornada.
+        logger.warning("order_tracking.invalid_hold_reference order=%s", order.ref)
+        return None
     if not hold_pks:
         return None
     try:
@@ -905,18 +1159,15 @@ def _pending_planned_hold_date(order) -> date | None:
 
     from shopman.shop.services import waitlist
 
-    holds = (
-        Hold.objects.filter(
-            pk__in=hold_pks,
-            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-            expires_at__isnull=True,
-            # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
-            # demanda (café) carimbado antes da separação de 29/08 devolve a
-            # data de hoje e o acompanhamento abre a narrativa de fornada.
-            **waitlist.WAITLIST_HOLD_FILTER,
-        )
-        .only("target_date")
-    )
+    holds = Hold.objects.filter(
+        pk__in=hold_pks,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__isnull=True,
+        # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
+        # demanda (café) carimbado antes da separação de 29/08 devolve a
+        # data de hoje e o acompanhamento abre a narrativa de fornada.
+        **waitlist.WAITLIST_HOLD_FILTER,
+    ).only("target_date")
     planned_dates = [hold.target_date for hold in holds if hold.target_date]
     return min(planned_dates) if planned_dates else None
 
@@ -968,6 +1219,11 @@ def _build_promise(
         return _promise(
             fulfillment_wait_kind=wait_kind,
             fulfillment_wait_until=wait_until,
+            acceptance_deadline_at=(
+                _acceptance_deadline_at(order)
+                if kwargs.get("state") in _STORE_DECISION_STATES
+                else None
+            ),
             **kwargs,
         )
 
@@ -1039,6 +1295,9 @@ def _build_promise(
                         kind="copy",
                         label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
                         idempotency="none",
+                        # O código que o rótulo promete: a conversa o entrega em
+                        # mensagem própria, a página o tem no bloco de pagamento.
+                        value=str(pix_copy or ""),
                     ),
                 ),
                 payment_method="pix",
@@ -1051,22 +1310,56 @@ def _build_promise(
             # hospedada, o mesmo botão que abre a URL do gateway. O que muda
             # é o `payment_method`, e é ele que a tela rotula.
             #
-            # O LINK tem prazo (o cartão da loja online não): o mesmo
-            # `expires_at` que arma o `payment.timeout` vira o prazo da
+            # A sessão hospedada tem prazo (link e cartão da loja online): o
+            # mesmo `expires_at` que arma o `payment.timeout` vira o prazo da
             # promessa — "pague até hoje às 16h para garantir o pedido" — e a
             # consequência (a reserva é liberada) entra na copy, como no Pix.
-            # Sem contagem regressiva: o relógio do link é de horas, e o mm:ss
-            # da tela é instrumento de dez minutos.
+            # Sem contagem regressiva: o relógio é de meia hora ou mais, e o
+            # mm:ss da tela é instrumento de dez minutos.
             has_deadline = bool(payment_expires_at)
+            # A última tentativa foi RECUSADA (webhook ou conferência com o
+            # gateway gravaram ``payment.last_decline``): a tela diz que o cartão
+            # não passou, em vez de repetir o convite como se nada tivesse
+            # acontecido (beta 06/11, F3). A ação é a mesma: a sessão do gateway
+            # continua aberta para outro cartão.
+            declined = bool(payment.get("last_decline"))
+            repayment = payment_service.awaiting_repayment(order)
+            pix_switch: tuple = ()
+            if repayment is not None:
+                # Captura recusada depois do aceite (main, 07/11): o Pix sai pelo
+                # mesmo prazo do novo pagamento (``switch_repayment_to_pix``).
+                if repayment.get("pix_allowed") and order.status == "accepted":
+                    pix_switch = (
+                        _action(
+                            ref="pay_with_pix",
+                            kind="mutation",
+                            label=_copy_title("TRACKING_PROMISE_REPAYMENT_PIX_ACTION", "Pagar com Pix"),
+                            href=f"/api/v1/orders/{order.ref}/payment/pix/",
+                            method="POST",
+                            idempotency="required",
+                        ),
+                    )
+            elif declined and not payment_service.pix_switch_blocker(order):
+                # Recusado, o Pix entra como saída ao lado de outro cartão, quando o
+                # canal aceita Pix e ele pode nascer agora (decisão do dono, F3).
+                pix_switch = (
+                    _action(
+                        ref="pay_with_pix",
+                        kind="mutation",
+                        label=_copy_title("TRACKING_PROMISE_PIX_SWITCH_ACTION", "Pagar com Pix"),
+                        priority="secondary",
+                        href=f"/api/v1/orders/{order.ref}/payment/switch-to-pix/",
+                        method="POST",
+                        idempotency="required",
+                    ),
+                )
             return promise(
-                state="payment_card_ready",
-                tone="info",
+                state="payment_card_declined" if declined else "payment_card_ready",
+                tone="warning" if declined else "info",
                 deadline_at=payment_expires_at,
                 deadline_kind="payment" if has_deadline else None,
                 deadline_action="cancel_order_on_timeout" if has_deadline else "none",
-                payment_deadline_phrase=(
-                    format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""
-                ),
+                payment_deadline_phrase=(format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""),
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
                 actions=(
@@ -1077,18 +1370,56 @@ def _build_promise(
                         href=checkout_url,
                         idempotency="none",
                     ),
+                    *pix_switch,
                 ),
                 payment_method=method,
                 checkout_url=checkout_url,
+                repayment=repayment is not None,
+                repayment_pix_allowed=repayment is not None and bool(pix_switch),
             )
         if is_hosted:
             # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
-            # mesma ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
+            # mesma ação "tentar de novo" pede a conferência, que regenera o intent.
             return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
+    # ── 3b. BOLA DO CLIENTE — a loja está chamando a fila (#2771) ───
+    # A fornada ficou pronta e a vaga é do cliente por um prazo curto: quem age
+    # é ele, pelo botão do cartão da fila. Sem este degrau a cascata caía em
+    # ``store_checking`` e a frase principal dizia "Estamos conferindo a
+    # disponibilidade. Avisamos em seguida." ao lado do chamado com relógio:
+    # duas mensagens para o mesmo momento, e a primeira mandava esperar.
+    #
+    # Vem depois dos degraus de pagar: código de pagamento na tela é gesto mais
+    # concreto que o chamado. Na prática os dois não se cruzam, porque a
+    # cobrança da fila nasce NA confirmação.
+    waitlist_calling, waitlist_call_deadline = _waitlist_call(order)
+    if waitlist_calling:
+        return promise(
+            state="waitlist_confirming",
+            tone="info",
+            deadline_at=waitlist_call_deadline,
+            deadline_kind="waitlist" if waitlist_call_deadline else None,
+            # Sem ``timer_mode="countdown"``: quem conta o tempo na tela é o cartão
+            # da fila, ao lado do botão. Duas contagens seriam ruído.
+            deadline_action="release_waitlist_slot" if waitlist_call_deadline else "none",
+            requires_active_notification=True,
+            notification_topic="waitlist_available",
+            # O bloco "Total · Pix · o prazo para pagar começa quando o código
+            # aparecer" segue na tela durante o chamado, como estava antes deste
+            # degrau existir: é ele que diz quanto e como ela paga DEPOIS de
+            # confirmar. Sem a forma de pagamento na promessa o bloco sumia.
+            payment_method="pix" if payment_open and method == "pix" and not has_pix_code else None,
+        )
+
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
+        # A cobrança no aceite foi recusada (autorização vencida ou negada pelo
+        # emissor): "Cartão autorizado" mentiria. A loja já tem o alerta e o
+        # Gestor diz "Cobrança recusada"; aqui a mesma verdade, sem pedir nada
+        # ao cliente que ele não possa fazer (beta 06/11).
+        if payment_service.capture_failure(order):
+            return promise(state="payment_capture_failed", tone="warning", payment_method=method)
         return promise(state="payment_authorized", tone="info", payment_method=method)
 
     # ── 5. BOLA DA LOJA — o cliente só espera ───────────────────────
@@ -1136,10 +1467,31 @@ def _build_promise(
 
     if order.status == "ready":
         if is_delivery:
-            return promise(state="ready_delivery", tone="success", requires_active_notification=False)
+            # Entre a chamada do entregador e a coleta, a frase acompanha a
+            # corrida (L2 da revisão das Entregas): o ``courier_changed`` do SSE
+            # faz a página reler, e o estado vem daqui. O link de rastreio só
+            # depois da coleta (decisão 7 = B), no ``dispatched`` abaixo.
+            from shopman.shop.services.courier import customer_wait, get_block
+
+            wait = customer_wait(get_block(order))
+            return promise(
+                state="ready_delivery",
+                # Demora e desistência não são boa notícia: o ✔ verde mentiria.
+                # Tom neutro (nunca o amarelo, que pediria uma ação que o
+                # cliente não tem); o resto do caminho segue como sucesso.
+                tone="info" if wait["stage"] in {"late", "replaced"} else "success",
+                requires_active_notification=False,
+                courier_stage=wait["stage"],
+                courier_driver=wait["driver"],
+                courier_pickup_eta_at=wait["pickup_eta_at"] or None,
+            )
         # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
         # botão. O que resolve de verdade ("Como chegar") vive na aba de retirada.
-        return promise(state="ready_pickup", tone="success")
+        return promise(
+            state="ready_pickup",
+            tone="success",
+            pickup_from_phrase=_pickup_from_phrase(order, business_state=business_state),
+        )
 
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
@@ -1176,10 +1528,17 @@ def _build_promise(
                         idempotency="none",
                     ),
                 )
+        from shopman.shop.services.courier import driver_first_name, get_block
+
+        driver = get_block(order).get("driver") if is_delivery else None
+        near, seen_at = _courier_closeness(order) if is_delivery else (False, None)
         return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
+            courier_near=near,
+            courier_seen_at=seen_at,
+            courier_driver=driver_first_name(driver.get("name") or "") if isinstance(driver, dict) else "",
             requires_active_notification=True,
             notification_topic="order_dispatched",
             actions=actions,
@@ -1189,31 +1548,100 @@ def _build_promise(
     return promise(state="received", tone="info")
 
 
-#: Letras da corrida (Machine) em que ela já acabou: finalizada, não atendida,
-#: cancelada. O link da parada deixa de mostrar o entregador.
-_COURIER_ENDED_STATUSES = frozenset({"F", "N", "C"})
+#: "Diego está chegando." a esta distância do endereço do pedido (tela aprovada, §4.5.2).
+COURIER_NEAR_METERS = 80
+#: Posição mais velha que isto não diz "chegando": a frase passa a dizer a idade.
+COURIER_FRESH_SECONDS = 60
+
+
+def _courier_closeness(order) -> tuple[bool, str | None]:
+    """Se o entregador está perto DESTE endereço, e desde quando é a posição (#2509).
+
+    Só a parada do cliente: a distância é até o endereço dele, e nada da rota sai daqui.
+    Sem corrida viva, sem posição ou sem coordenada do endereço, ``(False, None)``.
+    """
+    import math
+
+    from shopman.shop.services import courier_position
+    from shopman.shop.services.courier import get_block
+
+    block = get_block(order)
+    ride_ref = block.get("ride_ref")
+    if not ride_ref or _courier_ride_ended(block):
+        return False, None
+    position = courier_position.read(ride_ref)
+    if position is None:
+        return False, None
+    address = (order.data or {}).get("delivery_address_structured") or {}
+    try:
+        lat, lng = float(address.get("latitude")), float(address.get("longitude"))
+    except (TypeError, ValueError):
+        return False, position["at"].isoformat()
+    phi1, phi2 = math.radians(lat), math.radians(position["latitude"])
+    dphi, dlmb = phi2 - phi1, math.radians(position["longitude"] - lng)
+    h = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlmb / 2) ** 2
+    meters = 2 * 6_371_000 * math.asin(math.sqrt(h))
+    fresh = courier_position.age_seconds(position) <= COURIER_FRESH_SECONDS
+    return fresh and meters <= COURIER_NEAR_METERS, position["at"].isoformat()
+
+
+def _courier_ride_ended(block: dict) -> bool:
+    """A corrida já acabou (entregue, não atendida, cancelada): a parada deixa de
+    mostrar o entregador. O estado vem do serviço da corrida (``RideState``)."""
+    from shopman.shop.protocols import RideState
+    from shopman.shop.services import delivery_services
+
+    return delivery_services.ride_state(block) in (RideState.DONE, RideState.NOT_SERVED, RideState.CANCELLED)
+
+
+def _pickup_from_phrase(order, *, business_state: BusinessCalendarState) -> str:
+    """"hoje às 15h" quando o pedido pronto ainda não pode ser retirado agora.
+
+    Duas coisas seguram a retirada: a janela que o cliente escolheu ainda não
+    começou, ou a loja está fechada. Vale a mais tarde das duas. Vazio quando o
+    cliente pode vir já. Sem isto a tela dizia "Está esperando por você no
+    balcão" às 5h59, com a loja fechada até as 9h e a retirada marcada para as
+    15h (beta 06/11, SMS-02).
+    """
+    from shopman.shop.services import fulfillment_window
+
+    now = timezone.now()
+    candidates: list[datetime] = []
+    promised = fulfillment_window.promised_at(order)
+    if promised is not None and promised > now:
+        candidates.append(promised)
+    if business_state.is_closed and business_state.next_open_at is not None:
+        candidates.append(business_state.next_open_at)
+    if not candidates:
+        return ""
+    return format_deadline(max(candidates), now=now)
 
 
 def _courier_tracking_url(order) -> str:
     """O link da TaOn para o cliente seguir o entregador, ou ``""``.
 
     Vem de ``order.data.courier.tracking_url`` (gravado no aceite da corrida,
-    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída.
-    Só link http(s): o valor vem de terceiro e vira ``href`` na página.
+    ``services/courier._enrich_accepted``), o mesmo que vai no aviso de saída, e
+    só quando o link foi casado com a parada DESTE pedido
+    (``courier.proven_tracking``): na corrida com várias paradas, o link de outra
+    parada mostraria a entrega de outro cliente. Só link http(s): o valor vem de
+    terceiro e vira ``href`` na página.
     """
+    from shopman.shop.services.courier import proven_tracking
+
     courier = (order.data or {}).get("courier")
     if not isinstance(courier, dict):
         return ""
-    if str(courier.get("status") or "") in _COURIER_ENDED_STATUSES:
+    if _courier_ride_ended(courier):
         return ""
-    url = str(courier.get("tracking_url") or "").strip()
+    url = proven_tracking(courier)["url"].strip()
     if not url.lower().startswith(("https://", "http://")):
         return ""
     return url
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
-    """intent_error + sessão hospedada sem URL: reabrir o acompanhamento regenera o intent."""
+    """intent_error + sessão hospedada sem URL: o POST de conferência refaz a cobrança."""
     return _promise(
         state="payment_retry",
         tone="warning",
@@ -1221,9 +1649,10 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
         actions=(
             _action(
                 ref="retry_payment",
-                kind="link",
+                kind="mutation",
                 label=_copy_title("TRACKING_PROMISE_RETRY_ACTION", "Tentar novamente"),
-                href=f"/pedido/{order.ref}",
+                href=f"/api/v1/orders/{order.ref}/payment/check/",
+                method="POST",
                 idempotency="none",
             ),
         ),
@@ -1238,10 +1667,15 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
 
 def _build_timeline(order) -> tuple[TrackingTimelineEventData, ...]:
     raw: list[tuple] = []
+    # Pedido READY lido como em preparo (``as_customer_sees``): a passagem a
+    # pronto ainda está na janela de desfazer, e o histórico não a conta.
+    ready_held = bool(getattr(order, "ready_held_for_undo", False))
 
     for event in order.events.order_by("seq"):
         payload = event.payload or {}
         label_key = payload.get("new_status", "") if event.type == "status_changed" else ""
+        if ready_held and label_key == "ready":
+            continue
         raw.append((event.created_at, event.type, label_key))
 
     for ful in order.fulfillments.all():
@@ -1285,7 +1719,7 @@ def _build_progress_steps(
     if payment_confirmed is None:
         payment_confirmed = _payment_info(order)[1]
 
-    include_payment = _should_show_payment_step(order)
+    include_payment = _payment_step_projection_value(order)
     cancelled = order.status == "cancelled"
     active_key = _active_progress_key(
         order,
@@ -1294,30 +1728,48 @@ def _build_progress_steps(
         payment_confirmed=payment_confirmed,
     )
 
+    accepted_at = _progress_timestamp(order, "accepted")
     specs: list[tuple[str, str | None]] = [
         ("received", _iso(order.created_at)),
-        ("availability", _progress_timestamp(order, "accepted")),
+        ("availability", accepted_at),
     ]
     if include_payment:
-        specs.append(("payment", _payment_confirmed_timestamp(order)))
+        paid_at = _payment_confirmed_timestamp(order)
+        payment_spec = ("payment", paid_at)
+        paid_dt, accepted_dt = _parse_datetime(paid_at), _parse_datetime(accepted_at)
+        if payment_confirmed and paid_dt and (accepted_dt is None or paid_dt < accepted_dt):
+            # Pagou ANTES de a loja aceitar (a loja online cobra ao pedir): o
+            # passo "Pago" vem antes de "Aceito", na ordem em que aconteceu.
+            # Com a ordem fixa, o Pix pago com o pedido ainda novo sumia do
+            # histórico, e depois do aceite voltava DEPOIS de "Aceito" e como
+            # "em andamento" (beta 06/11, SMS-11).
+            specs.insert(1, payment_spec)
+        else:
+            specs.append(payment_spec)
     specs.append(("preparing", _progress_timestamp(order, "preparing")))
     if is_delivery:
-        specs.extend([
-            ("ready_delivery", _progress_timestamp(order, "ready")),
-            ("dispatched", _progress_timestamp(order, "dispatched")),
-            ("delivered", _progress_timestamp(order, "delivered")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready_delivery", _progress_timestamp(order, "ready")),
+                ("dispatched", _progress_timestamp(order, "dispatched")),
+                ("delivered", _progress_timestamp(order, "delivered")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     elif is_pickup:
-        specs.extend([
-            ("ready", _progress_timestamp(order, "ready")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready", _progress_timestamp(order, "ready")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     else:
-        specs.extend([
-            ("ready", _progress_timestamp(order, "ready")),
-            ("completed", _progress_timestamp(order, "completed")),
-        ])
+        specs.extend(
+            [
+                ("ready", _progress_timestamp(order, "ready")),
+                ("completed", _progress_timestamp(order, "completed")),
+            ]
+        )
     if cancelled:
         specs[-1] = ("cancelled", _progress_timestamp(order, "cancelled"))
 
@@ -1335,10 +1787,10 @@ def _build_progress_steps(
         else:
             state = "pending"
         steps.append(TrackingProgressStepData(key=key, state=state, at=timestamp))
-    return tuple(step for step in steps if _should_render_progress_step(step))
+    return tuple(step for step in steps if _progress_step_projection_value(step))
 
 
-def _should_render_progress_step(step: TrackingProgressStepData) -> bool:
+def _progress_step_projection_value(step: TrackingProgressStepData) -> bool:
     if step.state == "pending":
         return False
     if step.key == "received":
@@ -1360,8 +1812,10 @@ def _active_progress_key(
     if order.status == "new":
         return "availability" if payment_confirmed else "received"
     if order.status == "accepted":
+        # Pagamento confirmado nunca é "em andamento": aceito e pago, o que vem
+        # é o preparo.
         if include_payment and payment_confirmed:
-            return "payment"
+            return "preparing"
         return "availability"
     if order.status == "preparing":
         return "preparing"
@@ -1376,7 +1830,7 @@ def _active_progress_key(
     return "received"
 
 
-def _should_show_payment_step(order) -> bool:
+def _payment_step_projection_value(order) -> bool:
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
     if method in _DIGITAL_PAYMENT_METHODS or method == "external":
@@ -1429,11 +1883,7 @@ def _progress_timestamp(order, status: str) -> str | None:
 
 
 def _event_for_status(order, status: str):
-    return (
-        order.events.filter(type="status_changed", payload__new_status=status)
-        .order_by("created_at", "seq")
-        .first()
-    )
+    return order.events.filter(type="status_changed", payload__new_status=status).order_by("created_at", "seq").first()
 
 
 def _payment_confirmed_timestamp(order) -> str | None:
@@ -1474,17 +1924,90 @@ def _build_items(order) -> tuple[TrackingItemData, ...]:
     # Pedido + ajustes: o acompanhamento mostra o pedido que vale agora.
     from shopman.shop.services import order_composition
 
-    return tuple(
-        TrackingItemData(
+    # Pedido editado depois não tem conta selada que valha: a linha mostra o
+    # cobrado, sem cupom devolvido e sem riscado (o mesmo de ``_sealed_discount_lines``).
+    sealed = order_composition.adjustment(order) is None
+    pricing = (order.snapshot or {}).get("pricing") or {}
+    discount_records = [d for d in (pricing.get("discount") or {}).get("items") or [] if isinstance(d, dict)]
+
+    from shopman.shop.discount_spread import SPLIT_OF
+
+    items = []
+    # A linha que o rateio do desconto partiu (#3240) aparece inteira: a cliente
+    # comprou 3 Croissants. A conta devolve o cupom à linha (``_bill_line_of``),
+    # então as duas partes têm o mesmo preço na tela e somam sem perder nada.
+    row_of: dict[str, int] = {}
+    for item in order_composition.effective_items(order):
+        if item.sku == "__DELIVERY_FEE__":
+            continue
+        if sealed:
+            bill_unit_q, bill_total_q, full_total_q = _bill_line_of(item, discount_records)
+        else:
+            bill_unit_q, bill_total_q, full_total_q = int(item.unit_price_q), int(item.line_total_q), 0
+        data = TrackingItemData(
             sku=item.sku,
             name=item.name or item.sku,
             qty=int(item.qty),
             unit_price_q=int(item.unit_price_q),
             line_total_q=int(item.line_total_q),
+            bill_unit_price_q=bill_unit_q,
+            bill_line_total_q=bill_total_q,
+            full_line_total_q=full_total_q,
         )
-        for item in order_composition.effective_items(order)
-        if item.sku != "__DELIVERY_FEE__"
-    )
+        origin = row_of.get(str((item.meta or {}).get(SPLIT_OF) or ""))
+        if origin is not None:
+            first = items[origin]
+            items[origin] = replace(
+                first,
+                qty=first.qty + data.qty,
+                line_total_q=first.line_total_q + data.line_total_q,
+                bill_line_total_q=first.bill_line_total_q + data.bill_line_total_q,
+                full_line_total_q=first.full_line_total_q + data.full_line_total_q,
+            )
+            continue
+        row_of[str(item.line_id or "")] = len(items)
+        items.append(data)
+    return tuple(items)
+
+
+def _bill_line_of(item, discount_records: list[dict]) -> tuple[int, int, int]:
+    """A linha da conta: (unitário, total, total cheio riscado ou 0).
+
+    Todo desconto selado já saiu do preço da linha. A conta devolve à linha o
+    CUPOM (que o resumo subtrai uma vez só, embaixo) e deixa nela a promoção do
+    produto, com o preço de lista riscado ao lado. O preço de lista vem do
+    ``meta._list_q`` (a fonte da sacola) ou, sem ele, do registro selado.
+    """
+    from decimal import ROUND_HALF_UP, Decimal
+
+    def _round(value: Decimal) -> int:
+        return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+    charged_q = int(item.line_total_q)
+    qty = Decimal(str(item.qty))
+    records = [d for d in discount_records if item.line_id and d.get("line_id") == item.line_id]
+    if not records:
+        records = [d for d in discount_records if not d.get("line_id") and d.get("sku") == item.sku]
+
+    def _off(rows: list[dict]) -> int:
+        return sum(int(d.get("discount_q", 0) or 0) * int(d.get("qty", 0) or 0) for d in rows)
+
+    coupon_q = _off([d for d in records if d.get("type") == "coupon"])
+    # O cupom de valor FIXO é de PEDIDO: o registro dele (sem ``line_id`` e sem
+    # ``sku``) não casa com linha nenhuma, mas o rateio já tirou a fatia do preço
+    # desta linha e a carimbou em ``meta._disc`` (``scope="order"``). Sem
+    # devolvê-la, o resumo subtraía o cupom de novo (#3246).
+    order_disc = (item.meta or {}).get("_disc") or {}
+    if order_disc.get("scope") == "order" and order_disc.get("type") == "coupon":
+        coupon_q += int(order_disc.get("line_amount_q", 0) or 0)
+    bill_total_q = charged_q + coupon_q
+    listed = (item.meta or {}).get("_list_q")
+    if listed is not None:
+        full_q = _round(qty * int(listed))
+    else:
+        full_q = bill_total_q + _off([d for d in records if d.get("type") != "coupon"])
+    bill_unit_q = _round(Decimal(bill_total_q) / qty) if qty else int(item.unit_price_q)
+    return bill_unit_q, bill_total_q, (full_q if full_q > bill_total_q else 0)
 
 
 def _carrier_tracking_url(carrier: str, tracking_code: str) -> str | None:
@@ -1619,19 +2142,16 @@ def _confirmation_info(
         return False, None
     if business_state is not None and business_state.is_closed:
         return False, None
-    try:
-        from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig
 
-        cfg = ChannelConfig.for_channel(order.channel_ref).confirmation
-        if cfg.mode == "auto_confirm":
-            expires_at = _confirmation_deadline(order)
-            if not expires_at:
-                return False, None
-            if expires_at <= timezone.now():
-                return False, None
-            return True, expires_at.isoformat()
-    except Exception:
-        logger.warning("order_tracking_confirmation_failed order=%s", order.ref, exc_info=True)
+    cfg = ChannelConfig.for_channel(order.channel_ref).confirmation
+    if cfg.mode == "auto_confirm":
+        expires_at = _confirmation_deadline(order)
+        if not expires_at:
+            return False, None
+        if expires_at <= timezone.now():
+            return False, None
+        return True, expires_at.isoformat()
     return False, None
 
 
@@ -1647,17 +2167,48 @@ def _store_confirmation_is_deferred(
     return store_review_deferred_state(order, state=business_state) is not None
 
 
-def _confirmation_deadline(order) -> datetime | None:
-    directive = (
-        Directive.objects.filter(
-            topic="confirmation.timeout",
-            payload__order_ref=order.ref,
-            payload__action="confirm",
-            status="queued",
-        )
-        .order_by("available_at", "id")
-        .first()
+#: Os estados em que a bola é da loja e o cliente só espera a decisão dela.
+_STORE_DECISION_STATES = frozenset(
+    {"payment_authorized", "payment_confirmed", "store_checking", "store_closed", "received"}
+)
+
+
+def _acceptance_deadline_at(order) -> str | None:
+    """Até quando a loja responde a ESTE pedido (ISO), ou ``None``.
+
+    A fonte é a própria Directive ``confirmation.timeout`` que o lifecycle
+    agendou (``lifecycle._schedule_confirmation_timeout``), qualquer que seja a
+    ação dela: no ``auto_confirm`` o pedido é aceito sozinho nesse instante, no
+    ``auto_cancel`` é cancelado e o dinheiro volta. O prazo não é recalculado
+    aqui: quem conta (tempo de loja aberta, prazo longo da encomenda e da casa
+    fechada) é quem agenda, e a tela lê o que ficou agendado.
+
+    Sem prazo a publicar: pedido que a loja já decidiu (aceito, cancelado, em
+    preparo), pedido sem Directive na fila, e prazo que já venceu (dizer "até
+    8h40" às 8h45 é promessa errada; a frase segue sem o trecho do prazo).
+    """
+    if order.status != "new":
+        return None
+    deadline = _confirmation_deadline(order, action=None)
+    if deadline is None or deadline <= timezone.now():
+        return None
+    return deadline.isoformat()
+
+
+def _confirmation_deadline(order, *, action: str | None = "confirm") -> datetime | None:
+    """O instante agendado do ``confirmation.timeout`` do pedido.
+
+    ``action="confirm"`` é a contagem do aceite automático (``auto_confirm``);
+    ``action=None`` aceita qualquer ação, para o prazo de resposta da loja.
+    """
+    timers = Directive.objects.filter(
+        topic="confirmation.timeout",
+        payload__order_ref=order.ref,
+        status="queued",
     )
+    if action is not None:
+        timers = timers.filter(payload__action=action)
+    directive = timers.order_by("available_at", "id").first()
     if not directive:
         return None
     if directive.available_at:
@@ -1668,7 +2219,11 @@ def _confirmation_deadline(order) -> datetime | None:
 def _eta_at(order) -> str | None:
     """ETA ISO for the two windows the customer cares about:
 
-    - ``preparing`` → quando o pedido fica pronto (prep_time).
+    - ``preparing`` → quando o pedido fica pronto: a MESMA conta do Gestor e da
+      página do entregador (``kitchen_eta.ready_eta``: o início real do preparo
+      mais a mediana dos preparos de agora, ou a meta da estação). Antes era o
+      ``prep_time_minutes`` fixo da loja, e o cliente e o balcão liam horas
+      diferentes para o mesmo pedido (#3168).
     - ``dispatched`` + delivery → janela estimada de CHEGADA (saída + tempo médio
       de entrega). Couriers são terceirizados/sem rastreio, então é uma estimativa
       honesta por configuração, não um horário rastreado.
@@ -1679,12 +2234,23 @@ def _eta_at(order) -> str | None:
 
         shop = Shop.load()
         round_to_5 = False
+        not_before: datetime | None = None
+        ready_at = None
         if order.status == "preparing":
-            minutes = getattr(shop, "prep_time_minutes", None) or 30
+            from shopman.shop.services import kitchen_eta
+
+            minutes = 0
             baseline = getattr(order, "preparing_at", None)
             if baseline is None:
                 event = _event_for_status(order, "preparing")
                 baseline = event.created_at if event else None
+            now = timezone.now()
+            ready_at = kitchen_eta.ready_eta(
+                order,
+                kitchen_eta.prep_expectation(now=now),
+                now=now,
+            )
+            not_before = _eta_not_before(order)
         elif order.status == "dispatched":
             data = order.data or {}
             if (data.get("fulfillment_type") or data.get("delivery_method", "")) != "delivery":
@@ -1693,11 +2259,24 @@ def _eta_at(order) -> str | None:
             round_to_5 = True
             event = _event_for_status(order, "dispatched")
             baseline = event.created_at if event else None
+            # Saiu antes da janela escolhida: a chegada prometida não fica antes
+            # dela. "Chega por volta de 19:25" para a janela das 19:30 às 20:00
+            # desdizia o combinado (beta 06/11).
+            from shopman.shop.services import fulfillment_window
+
+            not_before = fulfillment_window.promised_at(order)
         else:
             return None
         if baseline is None:
             return None
-        eta = baseline + timezone.timedelta(minutes=int(round(minutes)))
+        # Preparo antigo não vira uma promessa nova na próxima abertura.
+        # Sem uma previsão atualizada, o acompanhamento conserva o estado,
+        # mas não inventa um horário para o cliente nem para a notificação.
+        if order.status == "preparing" and timezone.localdate(baseline) < timezone.localdate():
+            return None
+        eta = ready_at if ready_at is not None else baseline + timezone.timedelta(minutes=int(round(minutes)))
+        if not_before is not None and not_before > eta:
+            eta = not_before
         if round_to_5:
             # Tempo "redondo" e levemente conservador: arredonda PARA CIMA ao
             # próximo múltiplo de 5 (um respiro a mais na promessa).
@@ -1711,6 +2290,27 @@ def _eta_at(order) -> str | None:
         return None
 
 
+def _eta_not_before(order) -> datetime | None:
+    """O mais cedo que o preparo pode PROMETER: a janela combinada e a abertura.
+
+    O preparo que começa cedo (pedido das 15h separado às 5h40) não antecipa a
+    entrega nem a retirada. Somar o tempo de preparo ao início do preparo dava
+    "Deve sair para entrega às 06:12" para uma entrega marcada das 15h às 15h30,
+    com a loja fechada até as 9h (beta 06/11, SMS-02). O aviso do WhatsApp lê o
+    mesmo ``_eta_at``, então os dois mudam juntos.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    candidates: list[datetime] = []
+    promised = fulfillment_window.promised_at(order)
+    if promised is not None:
+        candidates.append(promised)
+    state = current_business_state()
+    if state.is_closed and state.next_open_at is not None:
+        candidates.append(state.next_open_at)
+    return max(candidates) if candidates else None
+
+
 def _contact_and_share(order) -> tuple[str, str, str]:
     """Return (whatsapp_url, support_base_url, shop_name) as data.
 
@@ -1721,12 +2321,13 @@ def _contact_and_share(order) -> tuple[str, str, str]:
     shop_name = "loja"
     try:
         from shopman.shop.models import Shop
+        from shopman.shop.models.shop import is_whatsapp_link
 
         shop = Shop.load()
         if shop:
             shop_name = shop.name or "loja"
             for link in shop.social_links or []:
-                if "wa.me" in link or "whatsapp.com" in link:
+                if is_whatsapp_link(link):
                     whatsapp_url = link
                     break
             if not whatsapp_url and shop.phone:
@@ -1769,6 +2370,25 @@ def _parse_datetime(value) -> datetime | None:
 
 
 _WAITLIST_NONE = {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+
+def _waitlist_call(order) -> tuple[bool, str | None]:
+    """A loja está chamando este pedido da fila? E até quando vale o chamado (ISO).
+
+    Mesma verdade de :func:`_waitlist_info` (``waitlist.state_for``), lida aqui
+    para a promessa. A consulta ao estado só acontece quando o bloco gravado já
+    diz ``confirming``: pedido fora da fila não paga por ela.
+    """
+    from shopman.shop.services import waitlist
+
+    if order.status not in {"new", "accepted"}:
+        return False, None
+    block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+    if block.get("state") != waitlist.CONFIRMING:
+        return False, None
+    if waitlist.state_for(order) != waitlist.CONFIRMING:
+        return False, None
+    return True, block.get("deadline") or None
 
 
 def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
@@ -1830,10 +2450,25 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
 def _cancellation_customer_text(order_data: dict) -> str:
     from shopman.shop.services import cancel_reasons
 
-    reason = cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key"))
+    if cancel_reasons.cancel_reason(order_data.get("cancellation_reason_key")) is None:
+        return ""
+    reason = cancel_reasons.cancel_reason(cancel_reasons.reason_key_of(order_data))
     if reason is None or reason.key == cancel_reasons.OTHER:
         return ""
-    return reason.customer_text
+    # Pela função, não pelo campo: o "Não retirado" completa a frase com o
+    # destino do dinheiro (``order.data["no_show"]``). Sem a frase do recibo:
+    # nesta página ele aparece inteiro (``retention_receipt``).
+    return cancel_reasons.customer_text(order_data, receipt_hint=False)
+
+
+def _note_says_card_hold_released(order_data: dict, money_outcome) -> bool:
+    from shopman.shop.services import cancel_reasons
+
+    return (
+        money_outcome is not None
+        and money_outcome.outcome == "card_hold_released"
+        and cancel_reasons.reason_key_of(order_data) == "card_capture_failed"
+    )
 
 
 def _is_payment_timeout_cancelled(order) -> bool:
@@ -1855,6 +2490,7 @@ __all__ = [
     "TrackingTimelineEventData",
     "build_tracking",
     "build_tracking_status",
+    "display_status_key",
 ]
 
 
@@ -1862,4 +2498,9 @@ def convenience_pending(order_ref: str) -> tuple[str, ...]:
     from shopman.orderman.models import Directive
 
     from shopman.shop.directives import CHECKOUT_CONVENIENCE
-    return tuple(Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref).exclude(status="done").values_list("payload__effect", flat=True))
+
+    return tuple(
+        Directive.objects.filter(topic=CHECKOUT_CONVENIENCE, payload__order_ref=order_ref)
+        .exclude(status="done")
+        .values_list("payload__effect", flat=True)
+    )

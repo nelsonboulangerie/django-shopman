@@ -124,3 +124,45 @@ def test_acerto_recusa_o_que_nao_faz_sentido(counter, ana):
     assert house_account.balance_q("CLI-ANA") == 2400
     assert not Entry.objects.filter(kind=Entry.Kind.ACCOUNT_SETTLED).exists()
     assert not get_user_model().objects.filter(username="ninguem").exists()
+
+
+def test_acerto_fora_do_dinheiro_pede_o_gerente_e_grava_quem_assinou(counter, ana):
+    """Beta 07/11: a Caixa zerou R$ 156,00 de conta na casa tocando "Pix", sem
+    cobrança e sem gerente. Fora do dinheiro nada passa pela gaveta, e nada no fim
+    do turno confere que o dinheiro entrou: o PDV exige a segunda assinatura."""
+    from django.contrib.auth.models import Permission
+    from shopman.doorman.models import PinCredential
+
+    from shopman.backstage.services import pos as pos_service
+
+    _sale_on_account(counter, customer_ref="CLI-ANA", client_request_id="g-1", total_q=1200)
+    gerente = get_user_model().objects.create_user(username="joyce", password="x", is_staff=True)
+    gerente.user_permissions.add(Permission.objects.get(codename="adjust_shift"))
+    PinCredential.set_for(gerente, "4321")
+
+    for method in ("pix", "credit", "debit", "external"):
+        with pytest.raises(PosIntentError) as exc:
+            pos_service.settle_account(operator=counter.operator, customer_ref="CLI-ANA", amount_raw="12,00", method=method)
+        assert exc.value.code == "manager_approval_required"
+    assert house_account.balance_q("CLI-ANA") == 1200
+
+    settlement = pos_service.settle_account(
+        operator=counter.operator, customer_ref="CLI-ANA", amount_raw="12,00", method="pix",
+        manager_approval={"username": "joyce", "pin": "4321"},
+    )
+    assert settlement.settled_q == 1200
+    intent = PaymentIntent.objects.get(ref=settlement.intent_refs[0])
+    assert (intent.gateway_data["settled_with"], intent.gateway_data["approved_by"]) == ("pix", "joyce")
+    assert house_account.balance_q("CLI-ANA") == 0
+
+
+def test_acerto_em_dinheiro_segue_sem_pin(counter, ana):
+    """Em dinheiro a nota entra na gaveta e a contagem confere: nada muda."""
+    from shopman.backstage.services import pos as pos_service
+
+    _sale_on_account(counter, customer_ref="CLI-ANA", client_request_id="g-2", total_q=1200)
+    settlement = pos_service.settle_account(
+        operator=counter.operator, customer_ref="CLI-ANA", amount_raw="12,00", method="cash",
+    )
+    assert settlement.settled_q == 1200
+    assert "approved_by" not in PaymentIntent.objects.get(ref=settlement.intent_refs[0]).gateway_data

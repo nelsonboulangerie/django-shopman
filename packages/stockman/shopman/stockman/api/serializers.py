@@ -25,6 +25,7 @@ class AvailabilitySerializer(serializers.Serializer):
     breakdown = BreakdownSerializer(required=False)
     is_planned = serializers.BooleanField(default=False)
     is_paused = serializers.BooleanField(default=False)
+    is_tracked = serializers.BooleanField(default=False)
     positions = PositionAvailabilitySerializer(many=True, required=False)
 
 
@@ -37,6 +38,7 @@ class BulkAvailabilitySerializer(serializers.Serializer):
     breakdown = BreakdownSerializer(required=False)
     is_planned = serializers.BooleanField(default=False)
     is_paused = serializers.BooleanField(default=False)
+    is_tracked = serializers.BooleanField(default=False)
 
 
 # ── Promise ──────────────────────────────────────────────────────
@@ -48,7 +50,9 @@ class PromiseDecisionSerializer(serializers.Serializer):
     target_date = serializers.DateField(allow_null=True)
     availability_policy = serializers.CharField(required=False)
     reason_code = serializers.CharField(allow_null=True, required=False)
-    available_qty = serializers.DecimalField(max_digits=12, decimal_places=3)
+    available_qty = serializers.DecimalField(max_digits=12, decimal_places=3, allow_null=True)
+    orderable_ceiling = serializers.DecimalField(max_digits=12, decimal_places=3, allow_null=True)
+    is_tracked = serializers.BooleanField()
     available = serializers.DecimalField(max_digits=12, decimal_places=3)
     expected = serializers.DecimalField(max_digits=12, decimal_places=3)
     planned = serializers.DecimalField(max_digits=12, decimal_places=3)

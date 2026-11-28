@@ -6,7 +6,8 @@
 // prévia lado a lado (`CustomerMergeDialog`).
 import type { CustomerAddressProjection, CustomerCandidateProjection } from "~/generated/ordersContract";
 import type { CustomerAddressMutationPayload, CustomerDuplicatePayload, CustomerMutationPayload } from "~/types/customers";
-import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
+import { contactOwner, mutationFieldErrors, type ContactOwner } from "~/utils/mutationFieldErrors";
+import { mergedNotice } from "~/presentation/customers";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
 
 const route = useRoute();
@@ -24,16 +25,14 @@ function compare(candidate: CustomerCandidateProjection | null) {
   mergeOpen.value = true;
 }
 
-async function onMerged({
-  targetRef,
-  sourceRef,
-}: {
+async function onMerged(side: {
   targetRef: string;
   sourceRef: string;
+  targetName?: string;
+  sourceName?: string;
 }) {
-  useSonner.success(
-    `${sourceRef} foi unificado a ${targetRef}. Dá para desfazer em Unificações por 24 horas.`,
-  );
+  const { targetRef } = side;
+  useSonner.success(mergedNotice(side));
   if (targetRef !== customerRef.value)
     await router.push(`/customers/${encodeURIComponent(targetRef)}`);
   else await refresh();
@@ -53,17 +52,20 @@ const editOpen = ref(false);
 const editBusy = ref(false);
 const editError = ref("");
 const editFieldErrors = ref<Record<string, string>>({});
+const editContactOwner = ref<ContactOwner | null>(null);
 let editKey = crypto.randomUUID();
 watch(editOpen, (open) => {
   if (!open) return;
   editError.value = "";
   editFieldErrors.value = {};
+  editContactOwner.value = null;
 });
 async function saveCustomer(payload: CustomerMutationPayload) {
   if (editBusy.value || !customer.value) return;
   editBusy.value = true;
   editError.value = "";
   editFieldErrors.value = {};
+  editContactOwner.value = null;
   try {
     const response = await updateCustomer(customer.value.ref, payload, editKey);
     if (response.outcome !== "applied") {
@@ -77,6 +79,7 @@ async function saveCustomer(payload: CustomerMutationPayload) {
   } catch (failure) {
     editError.value = httpErrorMessage(failure, "Não foi possível salvar o cliente.");
     editFieldErrors.value = mutationFieldErrors(failure);
+    editContactOwner.value = contactOwner(failure);
     if (httpError(failure).status) editKey = crypto.randomUUID();
   } finally {
     editBusy.value = false;
@@ -359,8 +362,8 @@ const phoneHeaderActions = computed(() => [
                   <dd>{{ customer.email || "Sem e-mail" }}</dd>
                 </div>
                 <div class="flex gap-2">
-                  <dt class="text-muted-foreground">CPF</dt>
-                  <dd>{{ customer.document_display || "Sem CPF" }}</dd>
+                  <dt class="text-muted-foreground">CPF/CNPJ</dt>
+                  <dd>{{ customer.document_display || "Sem CPF/CNPJ" }}</dd>
                 </div>
                 <div v-if="customer.birthday_display" class="flex gap-2">
                   <dt class="text-muted-foreground">Aniversário</dt>
@@ -543,13 +546,13 @@ const phoneHeaderActions = computed(() => [
             <ul v-if="customer.addresses.length" class="mt-1 space-y-1 text-sm">
               <li v-for="address in customer.addresses" :key="address.id" class="flex items-start justify-between gap-2 rounded-md border border-border p-2">
                 <div>
-                  <span class="font-medium">{{ address.label }}</span>
-                  <NuxtBadge v-if="address.is_default" class="ms-2" color="neutral" label="Padrão" />
+                  <span v-if="address.label" class="font-medium">{{ address.label }}</span>
+                  <NuxtBadge v-if="address.is_default" :class="address.label ? 'ms-2' : ''" color="neutral" label="Padrão" />
                   <p>{{ address.formatted_address }}</p>
                   <p v-if="address.complement" class="text-xs text-muted-foreground">{{ address.complement }}</p>
                   <p v-if="!address.is_verified" class="text-xs text-muted-foreground">Ainda não verificado</p>
                 </div>
-                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="`Editar ${address.label}`" @click="editAddress(address)" />
+                <NuxtButton v-if="customer.is_active" icon="i-lucide-pencil" color="neutral" variant="ghost" square :aria-label="address.label ? `Editar ${address.label}` : `Editar ${address.formatted_address}`" @click="editAddress(address)" />
               </li>
             </ul>
             <p v-else class="mt-1 text-sm text-muted-foreground">
@@ -575,6 +578,7 @@ const phoneHeaderActions = computed(() => [
       :busy="editBusy"
       :error="editError"
       :field-errors="editFieldErrors"
+      :contact-owner="editContactOwner"
       @save="saveCustomer"
     />
     <CustomerDuplicatePanel

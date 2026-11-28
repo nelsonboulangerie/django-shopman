@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopman-utils"
 version = "0.3.0"
 description = "Shared primitives and admin helpers for the Shopman suite"
-license = "MIT"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
 authors = [
     {name = "Pablo Valentini", email = "pablondrina@gmail.com"}
 ]
@@ -33,6 +34,8 @@ unfold = [
 dev = [
     "pytest",
     "pytest-django",
+    # Os settings da suíte ligam `unfold` para testar o caminho canônico do admin.
+    "django-unfold>=0.107,<0.108",
 ]
 
 [tool.setuptools.packages.find]

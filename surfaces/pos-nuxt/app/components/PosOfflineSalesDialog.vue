@@ -15,6 +15,11 @@ const props = defineProps<{
   sending: boolean;
   /** `false`: sem IndexedDB, a fila vive só nesta aba. */
   durable: boolean;
+  /**
+   * A chave da loja (`offline_sale_enabled`). Desligada, sem rede o balcão não vende:
+   * a lista mostra só o que foi guardado antes, sem prometer o que funciona agora.
+   */
+  saleEnabled: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -39,14 +44,18 @@ const pendingCount = computed(() => props.sales.filter((sale) => sale.status ===
   <NuxtModal
     :open="open"
     title="Vendas sem conexão"
-    :description="online ? 'As vendas guardadas são enviadas sozinhas.' : 'O balcão continua vendendo neste dispositivo.'"
+    :description="online
+      ? 'As vendas guardadas são enviadas sozinhas.'
+      : saleEnabled
+        ? 'O balcão continua vendendo neste dispositivo.'
+        : 'Esta loja não vende sem conexão. As vendas guardadas antes são enviadas quando a rede voltar.'"
     :ui="{ content: 'sm:max-w-lg' }"
     data-pos-offline-sales
     @update:open="(value: boolean) => emit('update:open', value)"
   >
     <template #body>
       <div class="grid gap-4">
-        <ul v-if="!online" class="grid gap-2" data-pos-offline-works>
+        <ul v-if="!online && saleEnabled" class="grid gap-2" data-pos-offline-works>
           <li v-for="item in WORKS" :key="item.title" class="flex items-start gap-2">
             <Icon :name="item.icon" class="mt-0.5 size-4 shrink-0" :class="item.tone" aria-hidden="true" />
             <span class="min-w-0">

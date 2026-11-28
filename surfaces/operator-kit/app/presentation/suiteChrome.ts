@@ -7,7 +7,13 @@
 // e no desktop, barra de seções embaixo no tablet em pé e no celular (até 4 + Mais),
 // Alt 1…9 em todo app, impresso no desktop.
 import type { OperatorSection } from "./appBar";
-import { countChipDotProps, countChipProps, type CountChipColor } from "./countChip";
+import {
+  countChipDotProps,
+  countChipProps,
+  UNKNOWN_COUNT,
+  unknownCountChipProps,
+  type CountChipColor,
+} from "./countChip";
 
 /**
  * Onde o rail existe: tablet DEITADO (a partir de 768px) e qualquer tela de 1024px para
@@ -51,18 +57,22 @@ export interface RailSignal {
   color: RailSignalColor;
   /** Contagem (chip numérico). Ausente = ponto de estado. */
   count?: number;
+  /** A contagem falhou: o chip escreve "?" (`UNKNOWN_COUNT`), nunca zero. */
+  unknown?: boolean;
   /** O estado por extenso, para tooltip e leitor de tela ("1 desligado"). */
   state?: string;
 }
 
 /**
- * O sinal da seção: com `badge` numérico e maior que zero, o número; senão, com
- * `attention`, o ponto. Zero não é sinal. A cor é `tone` (padrão `warning`).
+ * O sinal da seção: com `badge` numérico e maior que zero, o número; com `badge` "?"
+ * (`UNKNOWN_COUNT`), a contagem que falhou; senão, com `attention`, o ponto. Zero não é
+ * sinal. A cor é `tone` (padrão `warning`).
  */
 export function sectionRailSignal(section: OperatorSection): RailSignal | undefined {
   const color = section.tone ?? "warning";
   const count = Number.parseInt(section.badge ?? "", 10);
   if (Number.isFinite(count) && count > 0) return { color, count, state: section.attention || undefined };
+  if (section.badge === UNKNOWN_COUNT) return { color, unknown: true, state: section.attention || undefined };
   if (section.attention) return { color, state: section.attention };
   return undefined;
 }
@@ -74,6 +84,7 @@ export function sectionRailSignal(section: OperatorSection): RailSignal | undefi
  * mesmo chip vai no fluxo, por `OperatorCountChip`.
  */
 export function railSignalChip(signal: RailSignal): { color: RailSignalColor; text?: string; size?: "4xl"; inset?: boolean; ui: { base: string } } {
+  if (signal.unknown) return unknownCountChipProps(signal.color);
   if (signal.count === undefined) return countChipDotProps(signal.color);
   return countChipProps(signal.count, signal.color);
 }
@@ -87,6 +98,7 @@ export function railSignalLabel(label: string, signal?: RailSignal): string {
   if (!signal) return label;
   const parts = [label];
   if (signal.count !== undefined) parts.push(`${signal.count} ${signal.count === 1 ? "pendência" : "pendências"}`);
+  if (signal.unknown) parts.push("contagem indisponível");
   if (signal.state) parts.push(signal.state);
   return parts.join(" · ");
 }
@@ -272,7 +284,9 @@ export function suiteShortcutGroup(sections: readonly OperatorSection[], options
   if (options.search) items.push({ keys: ["/"], label: "Buscar nesta tela" });
   if (options.rail) items.push({ keys: ["C"], label: "Barra lateral: aberta, compacta ou oculta" });
   items.push({ keys: ["?"], label: "Abrir esta ajuda" });
-  return { title: options.appLabel ? `Em todo o ${options.appLabel}` : "Em todo o app", items };
+  // Sem artigo: "Em todo o Cozinha" errava o gênero (beta 05/11, KDS-12), e cada app
+  // tem o seu (a Cozinha, o PDV, o B.I.). O nome do app abre, como no "Voltar à Central".
+  return { title: options.appLabel ? `${options.appLabel}: em qualquer tela` : "Em qualquer tela", items };
 }
 
 /**
@@ -313,6 +327,8 @@ export interface OperatorAlertLike {
   origin_label?: string;
   origin_icon?: string;
   subject?: string;
+  /** Também no topo da tela (o servidor diz, por tipo: `AlertSpec.on_screen`). */
+  on_screen?: boolean;
   actions?: ReadonlyArray<{
     kind: string;
     enabled: boolean;
@@ -333,13 +349,19 @@ export interface InboxAlertView {
   canAck: boolean;
   href?: string;
   hrefLabel?: string;
+  /** O segundo lugar onde o aviso se resolve ("Abrir conversa" sob "Responder no Live Chat"). */
+  secondaryHref?: string;
+  secondaryHrefLabel?: string;
   /** O gesto que resolve ali mesmo ("Aceitar"), quando o servidor o oferece. */
   actLabel?: string;
+  /** O gesto direto vem depois do lugar que resolve, em contorno (quem monta o cartão decide). */
+  actSecondary?: boolean;
   respondByIso?: string;
   deadlineKind?: "external" | "house";
   origin?: string;
   originIcon?: string;
   subject?: string;
+  onScreen?: boolean;
 }
 
 /**
@@ -362,7 +384,9 @@ export function inboxAlertDescription(alert: { message: string; meta?: string; s
  */
 export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
   const actions = alert.actions ?? [];
-  const context = actions.find((action) => action.kind === "open_alert_context" && action.enabled && action.href);
+  // O servidor manda os lugares na ordem: o primeiro é o principal, o segundo o secundário.
+  const contexts = actions.filter((action) => action.kind === "open_alert_context" && action.enabled && action.href);
+  const [context, secondary] = contexts;
   const canAck = actions.some((action) => action.kind === "acknowledge_alert" && action.enabled);
   const direct = actions.find(
     (action) =>
@@ -380,6 +404,7 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     seen: !canAck,
     canAck,
     ...(context ? { href: context.href ?? undefined, hrefLabel: context.label } : {}),
+    ...(secondary ? { secondaryHref: secondary.href ?? undefined, secondaryHrefLabel: secondary.label } : {}),
     ...(direct ? { actLabel: direct.label } : {}),
     ...(alert.respond_by_iso ? { respondByIso: alert.respond_by_iso } : {}),
     ...(alert.deadline_kind === "external" || alert.deadline_kind === "house"
@@ -388,7 +413,47 @@ export function operatorAlertToInbox(alert: OperatorAlertLike): InboxAlertView {
     ...(alert.origin_label ? { origin: alert.origin_label } : {}),
     ...(alert.origin_icon ? { originIcon: alert.origin_icon } : {}),
     ...(alert.subject ? { subject: alert.subject } : {}),
+    ...(alert.on_screen ? { onScreen: true } : {}),
   };
+}
+
+type OnScreen = {
+  key: string | number; onScreen?: boolean; tone?: string; subject?: string; eyebrow?: string; message?: string;
+  href?: string; hrefLabel?: string; secondaryHref?: string; secondaryHrefLabel?: string;
+};
+
+/** O aviso de tela de um alerta que pede o topo (sem a ação: quem monta põe). */
+export interface InboxScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  description: string;
+  color: "error" | "warning" | "info";
+  /** O botão que resolve a causa ("Abrir conexões de IA"), quando o servidor oferece. */
+  action?: { label: string; to: string };
+  /** O segundo lugar que resolve ("Abrir conversa"), em contorno, ao lado do principal. */
+  secondaryAction?: { label: string; to: string };
+}
+
+/**
+ * Os alertas que pedem o topo da tela viram aviso do cabeçalho, na cor da gravidade
+ * (dono, 19/11/2026: a Concierge sem modelo, cor de erro). O `id` é o do alerta: o
+ * servidor abre um por causa, então outra causa é aviso novo, e o X dispensa só esta.
+ */
+export function inboxScreenAlerts<T extends OnScreen>(items: readonly T[]): InboxScreenAlert[] {
+  return items
+    .filter((item) => item.onScreen)
+    .map((item) => ({
+      key: item.key,
+      id: `alert:${item.key}`,
+      title: item.subject || item.eyebrow || "Aviso",
+      description: item.message || "",
+      color: item.tone === "critical" ? ("error" as const) : item.tone === "warning" ? ("warning" as const) : ("info" as const),
+      ...(item.href ? { action: { label: item.hrefLabel || "Abrir", to: item.href } } : {}),
+      ...(item.href && item.secondaryHref
+        ? { secondaryAction: { label: item.secondaryHrefLabel || "Abrir", to: item.secondaryHref } }
+        : {}),
+    }));
 }
 
 /**
@@ -412,13 +477,18 @@ export interface UrgentAlertsView<T> {
   reminders: T[];
 }
 
-type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string };
+type Urgent = { respondByIso?: string; seen?: boolean; deadlineKind?: string; answer?: unknown };
 
 /**
  * Quais avisos interrompem a tela: os que têm prazo. Vencido o prazo do mundo lá fora
  * (`external`, ex.: o iFood), a decisão já saiu e o aviso sai da tela; vencida a régua
  * da casa (`house`), a causa continua e o aviso fica, atrasado. Entre os não vistos,
  * o de prazo mais curto primeiro.
+ *
+ * O aviso que se resolve com uma resposta escrita (`answer`, a pergunta que a Concierge
+ * levou à equipe) tem degraus (dono, 19/11/2026): primeiro o aviso de tela no topo
+ * (`answerScreenAlerts`), que volta depois do X; a janela só quando o prazo vence. Não
+ * vira lembrete passageiro: o aviso de tela é o lembrete dele.
  */
 export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: number): UrgentAlertsView<T> {
   const running = items
@@ -429,9 +499,58 @@ export function urgentAlerts<T extends Urgent>(items: readonly T[], nowMs: numbe
     )
     .sort((a, b) => a.deadline - b.deadline);
   return {
-    blocking: running.find(({ item }) => !item.seen)?.item ?? null,
-    reminders: running.filter(({ item }) => item.seen).map(({ item }) => item),
+    blocking:
+      running.find(({ item, deadline }) => !item.seen && (!item.answer || deadline <= nowMs))?.item ?? null,
+    reminders: running.filter(({ item }) => item.seen && !item.answer).map(({ item }) => item),
   };
+}
+
+type Answerable = Urgent & { key: string | number; subject?: string; eyebrow?: string; message?: string };
+
+/** O aviso de tela da pergunta que espera resposta, sem a ação (quem monta põe "Responder"). */
+export interface AnswerScreenAlert {
+  key: string | number;
+  id: string;
+  title: string;
+  color: "warning" | "error";
+}
+
+/**
+ * A pergunta que espera resposta escrita como aviso de tela, no topo, na cor da atenção
+ * (dono, 19/11/2026): "Ana espera a resposta da equipe · até 16h04", âmbar; vencido o
+ * prazo, vermelho. O X do aviso dispensa só nesta montagem (regra do kit), e ele volta
+ * enquanto ninguém responde nem assume. O `id` leva a pergunta e o degrau: outra pergunta
+ * é aviso novo, e a mesma volta uma vez quando o prazo vence. Mais antiga primeiro.
+ */
+export function answerScreenAlerts<T extends Answerable>(
+  items: readonly T[],
+  nowMs: number,
+  clock: (iso: string) => string,
+): AnswerScreenAlert[] {
+  return items
+    .filter((item) => item.answer)
+    .map((item) => ({ item, deadline: Date.parse(item.respondByIso ?? "") }))
+    .sort(
+      (a, b) =>
+        (Number.isFinite(a.deadline) ? a.deadline : Infinity) - (Number.isFinite(b.deadline) ? b.deadline : Infinity),
+    )
+    .map(({ item, deadline }) => {
+      const late = Number.isFinite(deadline) && deadline <= nowMs;
+      const subject = item.subject || item.eyebrow || item.message || "Aviso";
+      // Correndo, até que horas; vencido, há quanto passou, como a janela diz.
+      const when = !Number.isFinite(deadline)
+        ? ""
+        : late
+          ? `passou do prazo há ${spanLabel(nowMs - deadline)}`
+          : `até ${clock(item.respondByIso!)}`;
+      return {
+        key: item.key,
+        id: `answer:${item.key}:${late ? "late" : "open"}`,
+        // Espaço que não quebra: o prazo fica junto do fim do assunto ("equipe · até 16h04").
+        title: when ? `${subject}\u00a0·\u00a0${when.replaceAll(" ", "\u00a0")}` : subject,
+        color: late ? ("error" as const) : ("warning" as const),
+      };
+    });
 }
 
 /** "6 min" · "menos de 1 min" · "2 h" · "3 dias": quanto, num relance. */

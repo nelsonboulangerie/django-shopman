@@ -21,8 +21,7 @@ from shopman.utils.monetary import format_money
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import checkout as checkout_projection
 from shopman.shop.projections import customer_context
-from shopman.shop.projections.channel_policy import ChannelPolicyResolution, resolve_channel_policy
-from shopman.shop.projections.copy import build_copy
+from shopman.shop.projections.channel_state import ChannelCapabilities, channel_capabilities
 from shopman.shop.projections.delivery_fiscal import FROM_DOCUMENT
 from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import (
@@ -76,6 +75,18 @@ class StripeTestCardProjection:
 
 
 @dataclass(frozen=True)
+class PaymentMoneyNoticeProjection:
+    """O que acontece com o dinheiro, por forma de pagamento, dito antes de enviar.
+
+    ``method`` é a forma (``pix``, ``card``); ``text`` é a frase inteira, já com
+    o prazo que a loja tem para confirmar o pedido.
+    """
+
+    method: str
+    text: str
+
+
+@dataclass(frozen=True)
 class CheckoutProjection:
     """Full projection for the checkout page.
 
@@ -115,6 +126,9 @@ class CheckoutProjection:
     # Pickup slots
     pickup_slots: tuple[PickupSlotProjection, ...]
     earliest_slot_ref: str | None
+    # "half_hour" (hoje: as meias horas que ainda dão) ou "canonical" (encomenda:
+    # os turnos da casa). A tela desenha a grade compacta numa e a lista na outra.
+    pickup_grid: str
 
     # Loyalty
     loyalty_balance_q: int
@@ -139,6 +153,17 @@ class CheckoutProjection:
     # próximas datas em que a loja opera + dias da semana sem expediente.
     available_dates: tuple[str, ...] = ()
     closed_weekdays: tuple[int, ...] = ()
+    # Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+    # "Hoje" sai de ``available_dates`` e a tela diz por quê.
+    today_over: bool = False
+    # O "hoje" da loja (ISO), no fuso dela. A tela calcula "hoje", "amanhã" e os
+    # limites do calendário a partir daqui, e não do relógio do aparelho. "" se
+    # a leitura falhar (a tela cai no relógio do aparelho).
+    today: str = ""
+    # A frase do dinheiro de cada forma de pagamento, para a revisão do pedido:
+    # paga agora, até quando a loja confirma e o que acontece se não confirmar.
+    # Vazio quando não há prazo a prometer (ver ``_money_notices``).
+    money_notices: tuple[PaymentMoneyNoticeProjection, ...] = ()
 
     # Fulfillment contextual hints shown below the pickup/delivery chips
     pickup_hint: str = ""
@@ -206,7 +231,8 @@ def build_checkout(
     loyalty_value_display: str | None = None
 
     if customer_info:
-        customer_phone = customer_info.phone or ""
+        phone_handle = customer_info.handle("phone") or customer_info.handle("whatsapp")
+        customer_phone = phone_handle.value if phone_handle else ""
         customer_name = customer_info.name or ""
         (
             saved_addresses,
@@ -234,12 +260,14 @@ def build_checkout(
         surface_ref="django_penguin",
         target_kind="checkout",
     )
-    policy = resolve_channel_policy(interaction.channel_ref)
+    policy = channel_capabilities(interaction.channel_ref)
     payment_methods = _payment_methods(channel_ref)
     requested_date = _delivery_date_from_context(request, delivery_date)
-    pickup_slots, earliest_slot_ref = _pickup_slots(cart, delivery_date=requested_date)
+    pickup_slots, earliest_slot_ref, pickup_grid = _pickup_slots(
+        cart, delivery_date=requested_date, channel_ref=channel_ref,
+    )
     max_preorder_days, closed_dates, support_whatsapp_url = _shop_config()
-    available_dates, closed_weekdays = checkout_projection.availability_dates(max_preorder_days)
+    available_dates, closed_weekdays, today_over = checkout_projection.availability_dates(max_preorder_days)
 
     is_authenticated = customer_info is not None
     requires_authentication = _requires_authentication(channel_ref)
@@ -248,7 +276,9 @@ def build_checkout(
 
     fulfillment_options = policy.fulfillment_types
     delivery_windows, earliest_delivery_window_ref = (
-        _delivery_windows(cart, delivery_date=requested_date) if "delivery" in fulfillment_options else ((), None)
+        _delivery_windows(cart, delivery_date=requested_date, channel_ref=channel_ref)
+        if "delivery" in fulfillment_options
+        else ((), None)
     )
     remembered_fulfillment = str(remembered_defaults.get("fulfillment_type") or "")
     default_fulfillment_type = (
@@ -305,12 +335,16 @@ def build_checkout(
         has_delivery="delivery" in fulfillment_options,
         pickup_slots=pickup_slots,
         earliest_slot_ref=earliest_slot_ref,
+        pickup_grid=pickup_grid,
         loyalty_balance_q=loyalty_balance_q,
         loyalty_value_display=loyalty_value_display,
         max_preorder_days=max_preorder_days,
         closed_dates_json=json.dumps(closed_dates),
         available_dates=available_dates,
         closed_weekdays=closed_weekdays,
+        today_over=today_over,
+        today=_shop_today_iso(),
+        money_notices=_money_notices(channel_ref, payment_methods, requested_date),
         is_debug=settings.DEBUG,
         support_whatsapp_url=support_whatsapp_url,
         pickup_hint="Gratuita",
@@ -406,7 +440,7 @@ def _load_customer_context(
     ``reduced=True`` esconde a rua dos endereços salvos — ver ``_reduced_address``.
     """
     try:
-        context = customer_context.checkout_customer_context(customer_info.uuid)
+        context = customer_context.checkout_customer_context(customer_info.subject_id)
     except Exception:
         logger.debug("checkout_projection_customer_context_failed", exc_info=True)
         return (), None, 0, None
@@ -431,19 +465,9 @@ def _load_customer_context(
 
 def _payment_methods(channel_ref: str) -> tuple[PaymentMethodOptionProjection, ...]:
     """Resolve channel payment methods from ChannelConfig."""
-    try:
-        from shopman.shop.config import ChannelConfig
-        from shopman.shop.models import Channel
+    from shopman.shop.config import ChannelConfig
 
-        channel = Channel.objects.get(ref=channel_ref)
-        methods = ChannelConfig.for_channel(channel).payment.available_methods
-    except Exception:
-        logger.debug(
-            "checkout_projection_payment_methods_failed channel=%s",
-            channel_ref,
-            exc_info=True,
-        )
-        methods = ["cash"]
+    methods = ChannelConfig.for_channel(channel_ref).payment.available_methods
 
     return tuple(
         PaymentMethodOptionProjection(
@@ -466,7 +490,7 @@ def _delivery_tax_id_prefill(*, customer_info, reduced: bool):
     if customer_info is None or reduced:
         return DeliveryTaxIdPrefill()
     try:
-        return delivery_tax_id_prefill(customer_info.uuid)
+        return delivery_tax_id_prefill(customer_info.subject_id)
     except Exception:
         logger.warning("checkout_projection_delivery_tax_id_prefill_failed", exc_info=True)
         return DeliveryTaxIdPrefill()
@@ -480,7 +504,7 @@ def _payment_constraints() -> dict:
 
 
 def _checkout_actions(
-    policy: ChannelPolicyResolution,
+    policy: ChannelCapabilities,
     *,
     cart: CartProjection,
     is_authenticated: bool,
@@ -566,36 +590,42 @@ def _pickup_slots(
     cart: CartProjection,
     *,
     delivery_date: str = "",
-) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
-    """Resolve pickup slots and earliest available slot for the cart."""
+    channel_ref: str | None = None,
+) -> tuple[tuple[PickupSlotProjection, ...], str | None, str]:
+    """Os horários de retirada da data pedida, anotados para o carrinho.
+
+    A grade é a de ``fulfillment_window`` (meia hora hoje, turno na encomenda),
+    a mesma da entrega, conferida no commit por ``validate_pickup_slot_selection``.
+    """
     try:
         from shopman.storefront.services.pickup_slots import annotate_slots_for_checkout
 
-        cart_skus = [item.sku for item in cart.items]
-        ctx = annotate_slots_for_checkout(cart_skus, delivery_date=delivery_date)
-        raw_slots = ctx.get("pickup_slots") or []
-        slots = tuple(
-            PickupSlotProjection(
-                ref=str(s.get("ref") or ""),
-                label=str(s.get("label") or ""),
-                starts_at=str(s.get("starts_at") or ""),
-                enabled=bool(s.get("enabled", True)),
-                reason=str(s.get("reason") or ""),
-                is_earliest=bool(s.get("is_earliest", False)),
-            )
-            for s in raw_slots
+        ctx = annotate_slots_for_checkout(
+            [item.sku for item in cart.items], delivery_date=delivery_date, channel_ref=channel_ref,
         )
-        earliest = ctx.get("earliest_slot_ref")
-        return slots, earliest
     except Exception:
-        logger.debug("checkout_projection_slots_failed", exc_info=True)
-        return (), None
+        # Sem grade não há horário a escolher, e o servidor recusaria qualquer um.
+        logger.warning("checkout_projection_slots_failed", exc_info=True)
+        return (), None, "canonical"
+    slots = tuple(
+        PickupSlotProjection(
+            ref=str(s.get("ref") or ""),
+            label=str(s.get("label") or ""),
+            starts_at=str(s.get("starts_at") or ""),
+            enabled=bool(s.get("enabled", True)),
+            reason=str(s.get("reason") or ""),
+            is_earliest=bool(s.get("is_earliest", False)),
+        )
+        for s in ctx.get("pickup_slots") or []
+    )
+    return slots, ctx.get("earliest_slot_ref"), str(ctx.get("grid") or "canonical")
 
 
 def _delivery_windows(
     cart: CartProjection,
     *,
     delivery_date: str = "",
+    channel_ref: str | None = None,
 ) -> tuple[tuple[PickupSlotProjection, ...], str | None]:
     """As janelas de entrega da data pedida (hoje, sem data), anotadas para o carrinho.
 
@@ -607,7 +637,9 @@ def _delivery_windows(
     try:
         from shopman.storefront.services.pickup_slots import annotate_delivery_windows_for_checkout
 
-        context = annotate_delivery_windows_for_checkout([item.sku for item in cart.items], delivery_date=delivery_date)
+        context = annotate_delivery_windows_for_checkout(
+            [item.sku for item in cart.items], delivery_date=delivery_date, channel_ref=channel_ref,
+        )
     except Exception:
         # Sem grade não há janela a escolher, e o servidor recusaria qualquer
         # uma: a tela precisa saber que a leitura falhou, não só ver a lista vazia.
@@ -626,6 +658,99 @@ def _delivery_windows(
         for window in context.get("windows") or []
     )
     return windows, earliest
+
+
+def _shop_today_iso() -> str:
+    try:
+        return checkout_projection.shop_today().isoformat()
+    except Exception:
+        logger.debug("checkout_projection_shop_today_failed", exc_info=True)
+        return ""
+
+
+_WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo")
+
+
+def _acceptance_when(window: checkout_projection.AcceptanceWindow, *, today) -> str:
+    """Até quando a loja confirma, do jeito que a frase diz.
+
+    Com o prazo inteiro no expediente em curso: "em até 5 minutos". Fora disso
+    (casa fechada, ou o fechamento chega antes do fim do prazo), o instante em
+    que ele vence: "até amanhã, quinta, às 10h". "Em até 60 minutos" seria
+    mentira para quem pede às 23h.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+    from shopman.utils.formatting import format_clock
+
+    if window.runs_now:
+        unit = "minuto" if window.minutes == 1 else "minutos"
+        return f"em até {window.minutes} {unit}"
+    deadline = timezone.localtime(window.deadline)
+    day = deadline.date()
+    weekday = _WEEKDAYS[day.weekday()]
+    if day == today:
+        day_label = "hoje"
+    elif day == today + timedelta(days=1):
+        day_label = f"amanhã, {weekday}"
+    else:
+        day_label = f"{weekday}, {day:%d/%m}"
+    article = "à" if deadline.hour == 1 else "às"
+    return f"até {day_label}, {article} {format_clock(deadline)}"
+
+
+def _money_notices(
+    channel_ref: str,
+    payment_methods: tuple[PaymentMethodOptionProjection, ...],
+    requested_date: str,
+    *,
+    now=None,
+) -> tuple[PaymentMoneyNoticeProjection, ...]:
+    """A frase do dinheiro, por forma de pagamento (plano EXCELENCIA-STOREFRONT, P1-06).
+
+    Antes de "Enviar pedido" a cliente não lia que paga agora, que a loja
+    confere em seguida, nem que o valor volta se a loja não confirmar. A frase
+    só existe na loja que cobra ao pedir (``payment.timing == "at_commit"``,
+    ADR-036) e que tem prazo de aceite a prometer: o Pix é pago no pedido e
+    volta inteiro; o cartão é só reservado e a cobrança é o aceite.
+    """
+    from datetime import date
+
+    from django.utils import timezone
+
+    from shopman.shop.config import ChannelConfig
+
+    # Fora de qualquer ``try``: canal sem configuração é defeito de instância e
+    # falha gritando, nunca vira "sem frase" em silêncio.
+    if ChannelConfig.for_channel(channel_ref).payment.timing != "at_commit":
+        return ()
+    try:
+        order_date = date.fromisoformat(requested_date) if requested_date else None
+    except ValueError:
+        # Data ilegível no rascunho: sem data não há prazo a prometer.
+        return ()
+    moment = now or timezone.now()
+    window = checkout_projection.acceptance_window(channel_ref, order_date=order_date, now=moment)
+    if window is None:
+        return ()
+    when = _acceptance_when(window, today=timezone.localdate(moment))
+    texts = {
+        "pix": (
+            f"Você paga agora, pelo Pix. A loja confirma o pedido {when}; "
+            "se não confirmar, o valor volta inteiro para a mesma conta."
+        ),
+        "card": (
+            "O valor fica reservado no cartão agora e só é cobrado quando a loja "
+            f"confirmar o pedido, {when}. Se não confirmar, a reserva é desfeita e "
+            "nada é cobrado."
+        ),
+    }
+    return tuple(
+        PaymentMoneyNoticeProjection(method=method.ref, text=texts[method.ref])
+        for method in payment_methods
+        if method.ref in texts
+    )
 
 
 def _delivery_date_from_context(request: HttpRequest, delivery_date: str | None) -> str:
@@ -658,69 +783,7 @@ def _shop_config() -> tuple[int, list, str]:
     return 30, [], ""
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Validation message builders — render the checkout DATA projections
-# (shop.projections.checkout) as the dicts the form/JS consume.
-# ──────────────────────────────────────────────────────────────────────
-
-
-def present_repricing_warnings(changes) -> list[dict]:
-    """Render repricing-change data as the warning dicts the checkout shows."""
-    if not changes:
-        return []
-    copy = build_copy("CHECKOUT")
-    warnings = []
-    for ch in changes:
-        current_display = f"R$ {format_money(ch.current_price_q)}"
-        message = copy.message(
-            "CHECKOUT_REPRICING_MESSAGE",
-            "O preço de {name} mudou para {price}. Deseja continuar?",
-        ).format(name=ch.name, price=current_display)
-        warnings.append({
-            "sku": ch.sku,
-            "name": ch.name,
-            "cart_price_display": f"R$ {format_money(ch.cart_price_q)}",
-            "current_price_display": current_display,
-            "message": message,
-        })
-    return warnings
-
-
-def present_stock_errors(shortfalls) -> list[dict]:
-    """Render stock-shortfall data as the error dicts the checkout shows."""
-    if not shortfalls:
-        return []
-    copy = build_copy("CHECKOUT")
-    errors = []
-    for sf in shortfalls:
-        if sf.available_qty > 0:
-            unit = _stock_unit_label(int(sf.available_qty))
-            message = copy.message(
-                "CHECKOUT_STOCK_LIMITED",
-                "{name}: temos {qty} {unit} agora.",
-            ).format(name=sf.name, qty=sf.available_qty, unit=unit)
-        else:
-            message = copy.message(
-                "CHECKOUT_STOCK_SOLD_OUT",
-                "{name} está esgotado no momento.",
-            ).format(name=sf.name)
-        errors.append({
-            "line_id": sf.line_id,
-            "sku": sf.sku,
-            "requested_qty": sf.requested_qty,
-            "available_qty": sf.available_qty,
-            "message": message,
-        })
-    return errors
-
-
-def _stock_unit_label(qty: int) -> str:
-    return "unidade disponível" if qty == 1 else "unidades disponíveis"
-
-
 __all__ = [
     "CheckoutProjection",
     "build_checkout",
-    "present_repricing_warnings",
-    "present_stock_errors",
 ]

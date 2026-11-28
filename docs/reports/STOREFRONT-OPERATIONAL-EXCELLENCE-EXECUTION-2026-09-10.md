@@ -6,7 +6,7 @@ O histórico completo e auditável está entre a `main` do GitHub em `1138c95eee
 
 ## Proveniência e preservação
 
-- Plano integral: [fonte congelada](../plans/STOREFRONT-OPERATIONAL-EXCELLENCE-PLAN-2026-09-10.md).
+- Plano integral: [fonte congelada](../plans/completed/STOREFRONT-OPERATIONAL-EXCELLENCE-PLAN-2026-09-10.md).
 - Base congelada inicial: `88314ff0474ba35c6dc69f58bbc2700b545454a4`. A referência local chamada `origin/main` estava recuada e não representava o GitHub. A `main` do GitHub foi buscada diretamente em 2026-09-11 e apontava para `1138c95eee0862630330328cf3bfe2f0b6424796`, com 248 commits ausentes da candidata. Os commits finais da execução foram assentados sobre essa referência; conflitos foram resolvidos preservando os contratos operacionais mais recentes da `main` e incorporando os requisitos ainda necessários desta execução.
 - Worktree candidata: `/private/tmp/shopman-storefront-execution-20260910`, branch `codex/storefront-operational-excellence-20260910`.
 - Repositório independente sem hardlinks: `/private/tmp/shopman-storefront-execution-repo-20260910`; baseline: `/private/tmp/shopman-storefront-baseline-88314ff0`.
@@ -62,7 +62,7 @@ Os diagnósticos originais são assertivas de reprodução do defeito, portanto 
 
 D01–D06 foram aprovadas em 2026-09-11 pelo solicitante, que assumiu todos os papéis responsáveis. A retenção definitiva ficou expressamente pendente, mantendo-se a proteção atual: recibos vinculados já finalizados/em curso não são limpos por idade; a janela definitiva, auditoria produtiva, saneamento e eventual contração exigem decisão posterior. Essa aprovação não autoriza exposição externa.
 
-D07 foi recebida depois dessa implementação inicial e substitui o comportamento one-shot anterior: a autorização persiste; estoque e fornada geram ocorrências distintas; retry do mesmo fato reaproveita a mesma identidade; pausa/cancelamento/opt-out são rechecados até a chamada externa; QC inelegível bloqueia apenas a ocorrência; e contato de `Avise-me` não autoriza marketing genérico. A decisão e seus limites estão no [ADR-029](../decisions/adr-029-persistent-stock-alert-occurrences.md).
+D07 foi recebida depois dessa implementação inicial e substitui o comportamento one-shot anterior: a autorização persiste; estoque e fornada geram ocorrências distintas; retry do mesmo fato reaproveita a mesma identidade; pausa/cancelamento/opt-out são rechecados até a chamada externa; QC inelegível bloqueia apenas a ocorrência; e contato de `Avise-me` não autoriza marketing genérico. A decisão e seus limites estão no [ADR-039](../decisions/adr-039-persistent-stock-alert-occurrences.md).
 
 A revalidação posterior encontrou uma lacuna comprovada: `production_ready` ainda podia se tornar elegível no fechamento da fornada, antes de uma confirmação gerencial explícita do QC. O fechamento agora grava somente a ocorrência pendente; a ação gerencial na Expedição registra `QUALITY_REVIEWED` no livro imutável e só então aplica a política canônica do canal. Uma correção é também uma revisão. Mudança de qualidade antes do provider suprime a entrega; depois de aceite externo, preserva o recibo e abre alerta de conciliação. [Evidência do gate de QC](storefront-operational-20260910/d07-qc-review-gate-20260911.txt).
 

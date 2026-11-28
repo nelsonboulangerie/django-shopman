@@ -1,0 +1,21 @@
+ANTES (serviço original, instrumentação idêntica)
+MINIMUM_QUERIES 1=5 12=38
+API_TIMING cost lines=1 queries=50 projection;dur=621.49, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=12.57, connect;dur=0.00;desc="0", cache;dur=0.19;desc="2", gc;dur=3.62;desc="4"
+API_TIMING cost lines=12 queries=238 projection;dur=883.97, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=33.31, connect;dur=0.00;desc="0", cache;dur=0.10;desc="2", gc;dur=0.21;desc="1"
+API_TIMING minimum lines=1 queries=33 projection;dur=40.89, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=3.63, connect;dur=0.00;desc="0", cache;dur=0.08;desc="1", gc;dur=0.56;desc="1"
+API_TIMING minimum lines=12 queries=66 projection;dur=31.76, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=3.81, connect;dur=0.00;desc="0", cache;dur=0.15;desc="1", gc;dur=0.00;desc="0"
+                            # Object instance wasn't passed in -- must be an
+3 failed, 1 passed, 2 deselected in 69.36s (0:01:09)
+
+ANTES (conversões)
+COST_VALIDATION_QUERIES 1=5 12=38
+1 failed, 5 deselected in 3.21s
+
+DEPOIS (suíte final)
+COST_VALIDATION_QUERIES 1=5 12=5
+MINIMUM_QUERIES 1=4 12=4
+API_TIMING cost lines=1 queries=50 projection;dur=709.95, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=7.11, connect;dur=0.00;desc="0", cache;dur=0.11;desc="2", gc;dur=8.57;desc="3"
+API_TIMING cost lines=12 queries=216 projection;dur=63.05, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=9.66, connect;dur=0.00;desc="0", cache;dur=0.02;desc="2", gc;dur=0.09;desc="1"
+API_TIMING minimum lines=1 queries=32 projection;dur=35.70, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=1.69, connect;dur=0.00;desc="0", cache;dur=0.02;desc="1", gc;dur=0.37;desc="1"
+API_TIMING minimum lines=12 queries=32 projection;dur=707.45, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=5.34, connect;dur=0.00;desc="0", cache;dur=0.62;desc="1", gc;dur=0.07;desc="1"
+28 passed in 100.84s (0:01:40)

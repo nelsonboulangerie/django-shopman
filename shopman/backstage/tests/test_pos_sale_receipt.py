@@ -68,7 +68,7 @@ class POSSaleReceiptTests(TestCase):
         return order
 
     def _receipt_text(self, ref: str) -> tuple[str, dict]:
-        response = self.client.get(f"/api/v1/backstage/pos/orders/{ref}/receipt-escpos/")
+        response = self.client.post(f"/api/v1/backstage/pos/orders/{ref}/receipt-escpos/")
         self.assertEqual(response.status_code, 200)
         body = response.json()
         return base64.b64decode(body["payload_b64"]).decode("cp860", "replace"), body
@@ -120,7 +120,7 @@ class POSSaleReceiptTests(TestCase):
         )
         order.save(update_fields=["data"])
 
-        first = self.client.get("/api/v1/backstage/pos/orders/PDV-RC-3/danfe-escpos/")
+        first = self.client.post("/api/v1/backstage/pos/orders/PDV-RC-3/danfe-escpos/")
         self.assertEqual(first.status_code, 200)
         self.assertFalse(first.json()["reprint"])
         self.assertNotIn(
@@ -129,15 +129,30 @@ class POSSaleReceiptTests(TestCase):
         order.refresh_from_db()
         self.assertTrue(order.data.get("danfe_printed_at"))
 
-        second = self.client.get("/api/v1/backstage/pos/orders/PDV-RC-3/danfe-escpos/")
+        second = self.client.post("/api/v1/backstage/pos/orders/PDV-RC-3/danfe-escpos/")
         self.assertEqual(second.status_code, 200)
         self.assertTrue(second.json()["reprint"])
         self.assertIn(
             "REIMPRESSÃO", base64.b64decode(second.json()["payload_b64"]).decode("cp860", "replace")
         )
 
+    def test_get_does_not_compose_nor_stamp(self) -> None:
+        """Pedir os bytes é emitir a via: só o POST compõe. Um GET (pré-carga,
+        aba reaberta, robô) nunca gasta a primeira via do pedido."""
+        self._order("PDV-RC-5")
+
+        for path in ("receipt-escpos", "danfe-escpos"):
+            response = self.client.get(f"/api/v1/backstage/pos/orders/PDV-RC-5/{path}/")
+            self.assertEqual(response.status_code, 405)
+
+        data = Order.objects.get(ref="PDV-RC-5").data or {}
+        self.assertFalse(data.get("receipt_printed_at"))
+        self.assertFalse(data.get("danfe_printed_at"))
+        first = self.client.post("/api/v1/backstage/pos/orders/PDV-RC-5/receipt-escpos/")
+        self.assertFalse(first.json()["reprint"])
+
     def test_unknown_order_is_404(self) -> None:
-        response = self.client.get("/api/v1/backstage/pos/orders/NAO-EXISTE/receipt-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/NAO-EXISTE/receipt-escpos/")
         self.assertEqual(response.status_code, 404)
 
     def test_requires_pos_permission(self) -> None:
@@ -145,7 +160,7 @@ class POSSaleReceiptTests(TestCase):
         self.client.force_login(intruder)
         self._order("PDV-RC-4")
 
-        response = self.client.get("/api/v1/backstage/pos/orders/PDV-RC-4/receipt-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/PDV-RC-4/receipt-escpos/")
 
         self.assertEqual(response.status_code, 403)
         # O 403 não pode carimbar: o pedido segue "nunca impresso".

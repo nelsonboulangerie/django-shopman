@@ -22,6 +22,9 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
+from django.utils import timezone
+from shopman.utils.formatting import format_clock
+
 from .bi_production import _normalize_window, _previous_window, _qty
 
 #: As bases do "Comparar com" das Vendas (prévia ``depois-bi-vendas``, pino 5): o
@@ -80,6 +83,10 @@ class BISalesPrevious:
     revenue_total_q: int
     average_ticket_q: int
     revenue_by_day: tuple[int, ...]  # alinhado posicionalmente com `days`
+    #: "HH:MM" quando o período inclui hoje: o dia em curso só tem venda até agora,
+    #: e a base é cortada na mesma hora (o dia correspondente da base, até HH:MM;
+    #: os dias depois dele ficam de fora). Vazio quando os dois períodos são inteiros.
+    partial_until: str = ""
 
 
 @dataclass(frozen=True)
@@ -106,6 +113,22 @@ class BISalesDiscountKindRow:
 
 
 @dataclass(frozen=True)
+class BISalesNoShow:
+    """Pedido de retirada que ficou pronto e o cliente não veio (#2698).
+
+    Ele termina cancelado (conta em ``cancelled_total``, fora do faturamento);
+    aqui o dinheiro e a perda dele. ``loss_q`` é o valor de VENDA do que se
+    perdeu, não o custo; ``retained_q`` é o que ficou com a loja por essa perda.
+    """
+
+    orders: int
+    paid_q: int
+    refund_q: int
+    retained_q: int
+    loss_q: int
+
+
+@dataclass(frozen=True)
 class BISalesReport:
     date_from: str
     date_to: str
@@ -118,6 +141,8 @@ class BISalesReport:
     revenue_total_q: int
     average_ticket_q: int
     cancelled_total: int
+    #: O não retirado da janela: já contado em ``cancelled_total``.
+    no_show: BISalesNoShow
     historical_days: int  # dias da janela preenchidos pelo histórico (yooga)
     sources: tuple[str, ...]  # fontes que entraram na janela — hora e dia da semana as somam
     source_conflicts: tuple[BISourceConflict, ...]
@@ -168,8 +193,10 @@ def build_bi_sales(
         day_revenue[sale.day] += sale.total_q
         channel_orders[sale.channel_key] += 1
         channel_revenue[sale.channel_key] += sale.total_q
+        # A hora é a em que o pedido foi feito; o dia da semana é o do dia
+        # combinado, o mesmo que soma o faturamento do dia (#3427).
         by_hour[sale.occurred_at.hour] += 1
-        by_weekday[sale.occurred_at.weekday()] += 1
+        by_weekday[sale.day.weekday()] += 1
         kind_total += sale.discount_kind_total_q
         for kind, amount_q in sale.discount_by_kind:
             kind_totals[kind] += amount_q
@@ -212,6 +239,7 @@ def build_bi_sales(
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         cancelled_total=window.cancelled_native,
+        no_show=_no_show(date_from, date_to, channel=channel_key),
         historical_days=len(window.historical_days),
         sources=window.sources,
         source_conflicts=tuple(
@@ -236,6 +264,13 @@ def build_bi_sales(
     )
 
 
+def _no_show(date_from: date, date_to: date, *, channel: str) -> BISalesNoShow:
+    from shopman.backstage.bi.canonical import local_window
+    from shopman.backstage.bi.sources.orderman import read_no_shows
+
+    return BISalesNoShow(**read_no_shows(local_window(date_from, date_to), channel=channel))
+
+
 def _compare_window(date_from: date, date_to: date, compare: str) -> tuple[date, date]:
     if compare == COMPARE_YEAR:
         return _year_before(date_from), _year_before(date_to)
@@ -257,9 +292,21 @@ def _sales_previous(
     from shopman.backstage.bi.canonical import iter_days, read_sales
 
     prev_from, prev_to = _compare_window(date_from, date_to, compare)
+    # Dia em curso: às 07:25 o hoje tem venda só até 07:25, e comparar com um dia
+    # inteiro da base dá "85% abaixo" toda manhã. A base corta no dia que
+    # corresponde a hoje, na mesma hora (beta 05/11, ge:BI-06).
+    now = timezone.localtime()
+    today = now.date()
+    base_today = None
+    if date_from <= today <= date_to:
+        base_today = prev_from + (today - date_from)
     day_orders: dict[date, int] = defaultdict(int)
     day_revenue: dict[date, int] = defaultdict(int)
     for sale in _only_channel(read_sales(prev_from, prev_to), channel).sales:
+        if base_today is not None and (
+            sale.day > base_today or (sale.day == base_today and sale.occurred_at.time() > now.time())
+        ):
+            continue
         day_orders[sale.day] += 1
         day_revenue[sale.day] += sale.total_q
 
@@ -272,6 +319,7 @@ def _sales_previous(
         revenue_total_q=revenue_total,
         average_ticket_q=revenue_total // orders_total if orders_total else 0,
         revenue_by_day=tuple(day_revenue.get(day, 0) for day in iter_days(prev_from, prev_to)),
+        partial_until=format_clock(now) if base_today is not None else "",
     )
 
 
@@ -341,13 +389,13 @@ def _kind_from_channel(channel) -> str:
     from django.conf import settings
 
     ref = channel.ref
-    if ref == getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"):
+    if ref == settings.SHOPMAN_POS_CHANNEL_REF:
         return "counter"
     if ref == "ifood":
         return "marketplace"
     if ref == "whatsapp":
         return "whatsapp"
-    if ref == getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web"):
+    if ref == settings.SHOPMAN_STOREFRONT_CHANNEL_REF:
         return "web"
     return "other"
 

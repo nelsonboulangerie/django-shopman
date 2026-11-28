@@ -11,6 +11,7 @@ from shopman.backstage.api.projections import projection_data, read_data
 from shopman.backstage.api.telemetry import OperationalObservationMixin
 from shopman.backstage.services import customer_groups as group_service
 from shopman.backstage.services.exceptions import CustomerGroupMutationError
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services.remote_mutations import (
     RemoteMutationConflict,
     RemoteMutationInProgress,
@@ -117,3 +118,29 @@ class CustomerGroupDetailView(_CustomerGroupsBase):
             }, 200
 
         return self._idempotent(request, operation=f"customer-group-update:{ref}", data=data, execute=execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Add or remove several customers from one commercial group",
+        responses={200: OpenApiResponse(description="Aplicado; diz quem mudou, quem já estava e quem ficou de fora.")},
+    ),
+)
+class CustomerGroupMembersView(ServerTimingMixin, _CustomerGroupsBase):
+    """Pôr ou tirar vários clientes de um grupo numa ida (lista de clientes e tela do grupo)."""
+
+    server_timing_methods = ("POST",)
+
+    def post(self, request, ref: str):
+        data = dict(request.data or {})
+        actor = getattr(request.user, "username", "") or "gestor"
+
+        def execute():
+            try:
+                result = group_service.change_group_members(ref, data, actor=actor)
+            except CustomerGroupMutationError as exc:
+                return _refusal(exc)
+            return {"ok": True, "outcome": "applied", **result}, 200
+
+        return self._idempotent(request, operation=f"customer-group-members:{ref}", data=data, execute=execute)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyLineQty, applySkuQty, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, isOptimisticLine, lineHoldState, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
+import { applyLineQty, applySkuQty, batchDayPhrase, cartBatchFloor, cartBatchFloorReason, cartQtyForSku, plainQtyForSku, cartHoldBanner, cartItemsCount, formatCentavos, holdBannerVariant, holdCountdown, discountDisplay, isOptimisticLine, lineHoldState, linePrice, lineTotal, promoSavingsNote, reviewWaitlist, substituteSwapPlan } from '~/presentation/cart'
 import type { CartItemProjection, CartProjection, ProductMutationMeta, SubstituteProjection } from '~/types/shopman'
 
 function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection {
@@ -11,10 +11,12 @@ function line (overrides: Partial<CartItemProjection> = {}): CartItemProjection 
     unit_price_q: 150,
     total_price_q: 300,
     price_display: 'R$ 1,50',
-    total_display: 'R$ 3,00',
+    line_total_display: 'R$ 3,00',
+    line_total_struck_display: null,
+    list_price_q: 150,
     image_url: null,
-    original_price_display: null,
     discount_label: null,
+    promo_price_display: null,
     is_available: true,
     availability_warning: null,
     available_qty: null,
@@ -37,11 +39,15 @@ function cart (items: CartItemProjection[] = []): CartProjection {
     subtotal_q: 300,
     subtotal_display: 'R$ 3,00',
     original_subtotal_q: 300,
-    original_subtotal_display: 'R$ 3,00',
     discount_total_q: 0,
     discount_total_display: 'R$ 0,00',
     has_discount: false,
     discount_lines: [],
+    lines_subtotal_q: 300,
+    lines_subtotal_display: 'R$ 3,00',
+    promo_savings_q: 0,
+    promo_savings_display: null,
+    order_discount_lines: [],
     group_savings_message: '',
     delivery_fee_q: null,
     delivery_fee_display: null,
@@ -51,6 +57,10 @@ function cart (items: CartItemProjection[] = []): CartProjection {
     coupon_code: null,
     coupon_discount_q: null,
     coupon_discount_display: null,
+    coupon_zero_reason: '',
+    coupon_missing_q: 0,
+    coupon_missing_display: null,
+    coupon_fulfillment_types: [],
     has_unavailable_items: false,
     has_awaiting_confirmation_items: false,
     has_ready_for_confirmation_items: false,
@@ -82,7 +92,8 @@ describe('cart presentation — applySkuQty', () => {
     expect(added.sku).toBe('CROIS-001')
     expect(added.qty).toBe(3)
     expect(added.total_price_q).toBe(3600)
-    expect(added.total_display).toBe('R$ 36,00')
+    expect(added.line_total_display).toBe('R$ 36,00')
+    expect(added.line_total_struck_display).toBeNull()
     expect(isOptimisticLine(added)).toBe(true)
     expect(next.items_count).toBe(5)
     expect(next.is_empty).toBe(false)
@@ -93,7 +104,8 @@ describe('cart presentation — applySkuQty', () => {
     expect(next.items).toHaveLength(1)
     expect(next.items[0]!.qty).toBe(5)
     expect(next.items[0]!.total_price_q).toBe(750)
-    expect(next.items[0]!.total_display).toBe('R$ 7,50')
+    expect(next.items[0]!.line_total_display).toBe('R$ 7,50')
+    expect(next.items[0]!.line_total_struck_display).toBeNull()
     expect(next.items[0]!.line_id).toBe('line-1')
     expect(isOptimisticLine(next.items[0]!)).toBe(false)
     expect(next.items_count).toBe(5)
@@ -185,9 +197,9 @@ describe('cart presentation — planned hold', () => {
   it('maps line flags to a hold state, ready taking precedence', () => {
     expect(lineHoldState(line())).toBeNull()
     expect(lineHoldState(line({ is_awaiting_confirmation: true })))
-      .toEqual({ kind: 'awaiting', deadlineIso: null, deadlineDisplay: null, plannedForNotice: null })
+      .toEqual({ kind: 'awaiting', deadlineIso: null, deadlineDisplay: null })
     expect(lineHoldState(line({ is_ready_for_confirmation: true, confirmation_deadline_iso: deadline, confirmation_deadline_display: '12:30' })))
-      .toEqual({ kind: 'ready', deadlineIso: deadline, deadlineDisplay: '12:30', plannedForNotice: null })
+      .toEqual({ kind: 'ready', deadlineIso: deadline, deadlineDisplay: '12:30' })
   })
 
   it('review tells the waitlist story only for same-day orders', () => {
@@ -209,11 +221,93 @@ describe('cart presentation — planned hold', () => {
     expect(reviewWaitlist(noBatch, tomorrow, today)).toBeNull()
   })
 
-  it('carries the expected-batch notice on awaiting lines only', () => {
-    const awaiting = line({ is_awaiting_confirmation: true, planned_for_date: '2026-07-17', planned_for_notice: 'Previsto para amanhã' })
-    expect(lineHoldState(awaiting)?.plannedForNotice).toBe('Previsto para amanhã')
-    const ready = line({ is_ready_for_confirmation: true, planned_for_notice: 'Previsto para amanhã' })
-    expect(lineHoldState(ready)?.plannedForNotice).toBeNull()
+  it('review keeps the batch date in sight when the order is for BEFORE the batch', () => {
+    // Beta 09/11: Kuro Pan na fila da quarta, pedido para retirar HOJE (segunda).
+    // A revisão calava o selo ("data diferente") e o pedido saía sem espera à
+    // vista. Antes da fornada a data prevista continua aparecendo: é ela que
+    // denuncia o "Quando" errado (o servidor recusa esse pedido).
+    const today = '2026-11-09'
+    const wednesday = '2026-11-11'
+    const kuro = line({ is_awaiting_confirmation: true, planned_for_date: wednesday, planned_for_notice: 'Previsto para quarta-feira, 11/11' })
+
+    expect(reviewWaitlist(kuro, today, today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    expect(reviewWaitlist(kuro, '2026-11-10', today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    expect(reviewWaitlist(kuro, wednesday, today)).toEqual({ notice: 'Previsto para quarta-feira, 11/11' })
+    // Depois da fornada: pedido agendado, sem fila.
+    expect(reviewWaitlist(kuro, '2026-11-12', today)).toBeNull()
+  })
+
+  it('finds the latest batch the cart waits for, with the item that waits', () => {
+    const today = '2026-11-09'
+    const items = [
+      line({ name: 'Baguette', planned_for_date: today }),
+      line({ name: 'Kuro Pan', planned_for_date: '2026-11-11' }),
+      line({ name: 'Croissant', planned_for_date: null })
+    ]
+
+    expect(cartBatchFloor(items, today)).toEqual({ date: '2026-11-11', name: 'Kuro Pan' })
+    // Fornada de hoje (mesmo mais tarde) não é piso: hoje continua valendo.
+    expect(cartBatchFloor([line({ name: 'Baguette', planned_for_date: today })], today)).toBeNull()
+    expect(cartBatchFloor([line()], today)).toBeNull()
+  })
+
+  it('says in one sentence why the days before the batch are off', () => {
+    const today = '2026-11-09'
+
+    expect(cartBatchFloorReason({ date: '2026-11-11', name: 'Kuro Pan' }, 'pickup', today))
+      .toBe('Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar.')
+    expect(cartBatchFloorReason({ date: '2026-11-10', name: 'Kuro Pan' }, 'delivery', today))
+      .toBe('Kuro Pan sai amanhã, 10/11. Antes disso, não dá para receber.')
+    expect(cartBatchFloorReason(null, 'pickup', today)).toBe('')
+    expect(cartBatchFloorReason({ date: today, name: 'Baguette' }, 'pickup', today)).toBe('')
+    expect(batchDayPhrase('2026-11-14', today)).toBe('no sábado, 14/11')
+    expect(batchDayPhrase('2026-11-15', today)).toBe('no domingo, 15/11')
+  })
+
+  it('libera a data anterior que já tem saldo para a linha (fornada extra)', () => {
+    const today = '2026-11-09'
+    const kuro = line({
+      name: 'Kuro Pan',
+      is_awaiting_confirmation: true,
+      planned_for_date: '2026-11-13',
+      planned_for_notice: 'Previsto para sexta-feira, 13/11',
+      earlier_available_date: '2026-11-11'
+    })
+    // O piso do pedido é a data com saldo, não a fornada que a sacola esperava.
+    expect(cartBatchFloor([kuro], today)).toEqual({ date: '2026-11-11', name: 'Kuro Pan' })
+    // Com pão pronto hoje, nada segura o pedido.
+    expect(cartBatchFloor([line({ planned_for_date: '2026-11-13', earlier_available_date: today })], today)).toBeNull()
+    // Antes da data com saldo, a espera segue à vista; a partir dela, sem fila.
+    expect(reviewWaitlist(kuro, '2026-11-10', today)).toEqual({ notice: 'Previsto para sexta-feira, 13/11' })
+    expect(reviewWaitlist(kuro, '2026-11-11', today)).toBeNull()
+    expect(reviewWaitlist(kuro, '2026-11-12', today)).toBeNull()
+    // No dia da fornada que a sacola esperava, a história da fila continua.
+    expect(reviewWaitlist(kuro, '2026-11-13', today)).toEqual({ notice: 'Previsto para sexta-feira, 13/11' })
+  })
+
+  it('a sacola conta a espera pela mesma regra da revisão (beta 09/11)', () => {
+    const today = '2026-11-09'
+    const kuro = line({
+      name: 'Kuro Pan',
+      is_awaiting_confirmation: true,
+      planned_for_date: '2026-11-13',
+      planned_for_notice: 'Previsto para sexta-feira, 13/11',
+      earlier_available_date: '2026-11-11'
+    })
+    // A sacola, sem data escolhida, conta pelo piso que o "Finalizar" pré-seleciona:
+    // a quarta com saldo. Sem fila, como na revisão.
+    const floor = cartBatchFloor([kuro], today)!.date
+    expect(reviewWaitlist(kuro, floor, today)).toBeNull()
+    expect(lineHoldState(kuro, floor, today)).toEqual({ kind: 'reserved', deadlineIso: null, deadlineDisplay: null })
+    // Pedido para sexta, o dia da fornada: a fila continua, nas duas telas.
+    expect(lineHoldState(kuro, '2026-11-13', today)).toEqual({ kind: 'awaiting', deadlineIso: null, deadlineDisplay: null })
+    // Pedido para depois da fornada: sem fila, nas duas telas.
+    expect(reviewWaitlist(kuro, '2026-11-14', today)).toBeNull()
+    expect(lineHoldState(kuro, '2026-11-14', today)?.kind).toBe('reserved')
+    // Sem data anterior com saldo, a sacola segue mostrando a fornada esperada.
+    const plain = line({ is_awaiting_confirmation: true, planned_for_date: '2026-11-13', planned_for_notice: 'Previsto para sexta-feira, 13/11' })
+    const plainFloor = cartBatchFloor([plain], today)!.date
+    expect(lineHoldState(plain, plainFloor, today)?.kind).toBe('awaiting')
   })
 
   it('counts down to the deadline and clamps at zero', () => {
@@ -279,5 +373,79 @@ describe('linhas do mesmo SKU', () => {
     expect(cartQtyForSku([comOvo, semOvo], 'CQMO')).toBe(3)
     expect(cartQtyForSku([comOvo, semOvo], 'OUTRO')).toBe(0)
     expect(plainQtyForSku([comOvo, semOvo], 'CQMO')).toBe(1)
+  })
+})
+
+describe('cart presentation — linePrice', () => {
+  it('repete a dupla do cardápio quando a linha tem promoção', () => {
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: 'R$ 5,10' })))
+      .toEqual({ original: 'R$ 6,00', current: 'R$ 5,10' })
+  })
+
+  it('fica só com o cheio sem promoção (cupom mora no resumo)', () => {
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: null })))
+      .toEqual({ original: null, current: 'R$ 6,00' })
+    expect(linePrice(line({ price_display: 'R$ 6,00', promo_price_display: 'R$ 6,00' })))
+      .toEqual({ original: null, current: 'R$ 6,00' })
+  })
+})
+
+// Decisão do dono 1 (16/11/2026): a linha com promoção do produto mostra o
+// total com desconto e o cheio riscado; o resumo fecha com as linhas.
+describe('cart presentation — o preço fecha (WP-L03)', () => {
+  const promoLine = () => line({
+    qty: 2,
+    unit_price_q: 510,
+    total_price_q: 1020,
+    list_price_q: 600,
+    price_display: 'R$ 6,00',
+    promo_price_display: 'R$ 5,10',
+    line_total_display: 'R$ 10,20',
+    line_total_struck_display: 'R$ 12,00'
+  })
+
+  it('o total da linha repete a dupla do unitário: com desconto e o cheio para riscar', () => {
+    expect(lineTotal(promoLine())).toEqual({ original: 'R$ 12,00', current: 'R$ 10,20' })
+  })
+
+  it('sem promoção, a linha tem um total só', () => {
+    expect(lineTotal(line())).toEqual({ original: null, current: 'R$ 3,00' })
+    expect(lineTotal(line({ line_total_display: 'R$ 3,00', line_total_struck_display: 'R$ 3,00' })))
+      .toEqual({ original: null, current: 'R$ 3,00' })
+  })
+
+  it('trocar a quantidade refaz o total com desconto e o cheio riscado na hora', () => {
+    const next = applyLineQty(cart([promoLine()]), 'line-1', 3)
+    expect(next.items[0]!.line_total_display).toBe('R$ 15,30')
+    expect(next.items[0]!.line_total_struck_display).toBe('R$ 18,00')
+  })
+
+  it('desconto de pedido rateado no preço cobrado não vira total de linha', () => {
+    // Cupom ou oferta de valor fixo: o motor cobra R$ 8,00 por unidade, mas a
+    // linha fala o cheio (R$ 13,00) e o desconto mora no resumo (MKT-05).
+    const rated = line({
+      qty: 2,
+      unit_price_q: 800,
+      total_price_q: 1600,
+      list_price_q: 1300,
+      price_display: 'R$ 13,00',
+      line_total_display: 'R$ 26,00',
+      line_total_struck_display: null
+    })
+    const next = applyLineQty(cart([rated]), 'line-1', 3)
+    expect(next.items[0]!.line_total_display).toBe('R$ 39,00')
+    expect(next.items[0]!.line_total_struck_display).toBeNull()
+  })
+
+  it('a nota do Subtotal diz quanto as promoções já abateram, e some sem promoção', () => {
+    expect(promoSavingsNote({ promo_savings_display: 'R$ 1,80' })).toBe('Já com R$ 1,80 de desconto em promoções.')
+    expect(promoSavingsNote({ promo_savings_display: null })).toBe('')
+    expect(promoSavingsNote({ promo_savings_display: '  ' })).toBe('')
+  })
+
+  it('o desconto do resumo leva o sinal de menos, uma vez só', () => {
+    expect(discountDisplay('R$ 2,00')).toBe('- R$ 2,00')
+    expect(discountDisplay('- R$ 2,00')).toBe('- R$ 2,00')
+    expect(discountDisplay('')).toBe('')
   })
 })

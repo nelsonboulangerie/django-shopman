@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 
-const port = Number(process.env.MOCK_PORT || 38792);
+const port = Number(process.env.MOCK_PORT || 28792);
 
 // O DIA do mock. A prévia roda no relógio de verdade (o Período da tela parte da data
 // do dispositivo, e o mock tem de responder pelo mesmo período: "Semana · 05/10 a
@@ -172,6 +172,8 @@ const pos = {
   fiscal_label: "",
   fiscal_message: "",
   danfe_screen_allowed: false,
+  // O retrato é do gerente: a barra de baixo leva o Fim do dia.
+  can_close_day: true,
   operators: [],
   auto_lock_seconds: 0,
 };
@@ -181,6 +183,9 @@ const pos = {
 // folha de baixo no celular) sem backend. Sem a variável, o mock é o de sempre e as
 // fotos das Encomendas não mudam.
 const SALE = process.env.MOCK_SCENARIO === "sale";
+// A ressalva de cadastro na revisão (`MOCK_REVIEW_REMARK=1`): o primeiro item "pausado no
+// cardápio do balcão", como a review real manda (`item_low_stock`, com o sku).
+const REVIEW_REMARK = process.env.MOCK_REVIEW_REMARK === "1";
 const COLUMN_STATES = SALE && process.env.MOCK_COLUMN_STATES === "1";
 // Prévia da mesa como destino do Transferir (MOCK_SEATING=1): o Salão com quatro mesas, a
 // comanda 12 na Mesa 4. Fora da flag, nada muda (retratos e trava de geometria).
@@ -492,7 +497,7 @@ const SAVED_ITEMS = new Map();
 // O rastro da comanda nova criada pelo Transferir (ref nova -> ref de origem).
 const TRANSFERRED_FROM = new Map();
 // Prévia do ENDEREÇO DE ENTREGA (`MOCK_ADDRESS=1`): a comanda 12 vira encomenda com
-// entrega para amanhã, e o F7 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
+// entrega para amanhã, e o F8 abre o Recebimento direto no endereço. `MOCK_MAPS=1`
 // liga a busca do Google e a confirmação do ponto no mapa (a página de prévia injeta
 // um Google falso: a chave aqui não é de verdade). Sem as variáveis, nada muda.
 const ADDRESS = SALE && process.env.MOCK_ADDRESS === "1";
@@ -503,6 +508,15 @@ if (ADDRESS) {
     language: "pt-BR", region: "BR", countries: ["br"], types: ["address"], fields: [], structured_fields: [],
     reverse_geocode_action_ref: "reverse_geocode", shop_latitude: -23.31, shop_longitude: -51.16, bias_radius_m: 15000,
     map_confirmation_enabled: MAPS,
+  };
+}
+/** A linha como a comanda reaberta a mostra, com a "Semana do Café" já vencendo. */
+function withAutoPromo(item) {
+  const auto = autoOffQ(item, item.price_q);
+  if (!auto) return item;
+  return {
+    ...item, list_price_q: item.price_q, charged_price_q: item.price_q - auto,
+    pricing_discount: { type: "promotion", label: AUTO_PROMO.label, amount_q: auto, percent: 0 },
   };
 }
 function tabPayload(ref) {
@@ -516,7 +530,7 @@ function tabPayload(ref) {
     transferred_from: TRANSFERRED_FROM.has(ref)
       ? { tab_display: TRANSFERRED_FROM.get(ref), label: `Transf. da #${TRANSFERRED_FROM.get(ref)}`, title: `Transferida da comanda #${TRANSFERRED_FROM.get(ref)}` }
       : null,
-    items: saved ?? (inUse ? SALE_ITEMS : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
+    items: saved ?? (inUse ? (LINE_DISCOUNT ? SALE_ITEMS.map(withAutoPromo) : SALE_ITEMS) : full ? FULL_ITEMS : COLUMN_STATES && ref === "16" ? KITCHEN_ITEMS : COLUMN_STATES && ref === "17" ? AUTO_ITEMS : []), customer_phone: "",
     // Cliente com cadastro (`customer_ref`): nome sem ref é RASCUNHO de cliente, e a
     // tela segura o salvamento ("Não salvo") até alguém concluir o cadastro.
     customer_name: inUse ? "Ana Souza" : full ? "Roberto Albuquerque" : "",
@@ -561,6 +575,24 @@ const ALUNO = {
   memory: { total_orders: 4, average_order_display: "R$ 21,40", favorite_product: "Café coado", favorite_item: {}, last_order_items: [] },
   group_discount_label: "Aliança Francesa · 10%",
 };
+// `MOCK_CUSTOMER=1`: a cliente da casa com tudo o que o diálogo Cliente mostra
+// (cadastro existente, 29 pedidos, favorito, último pedido, aniversário hoje com a
+// promoção ativa, e-mail comprido), para a trava de geometria do diálogo a 375 px
+// (#2885). A busca devolve a Maria para qualquer termo. Sem a variável, nada muda.
+const CUSTOMER_FULL = SALE && process.env.MOCK_CUSTOMER === "1";
+const MARIA = {
+  ref: "MARIA", name: "Maria Santos", phone: "+5543991111111", email: "maria.santos.cliente@exemplo.com.br",
+  tax_id: "52998224725", fiscal_prefs: { cpf_na_nota: true }, notes: "", dietary_restrictions: "",
+  birthday_display: "29/09", is_birthday_today: true, is_birthday_month: true,
+  birthday_promo_label: "Parabéns! Desconto de aniversário", price_tier: "", is_staff: false,
+  default_address: null, saved_addresses: [], house_account: false, account_balance_q: 0,
+  memory: {
+    total_orders: 29, average_order_display: "R$ 38,20", favorite_product: "Croissant Tradicional",
+    favorite_item: { sku: "CROISSANT", name: "Croissant Tradicional", qty: 1 },
+    last_order_items: [{ sku: "CROISSANT", name: "Croissant Tradicional", qty: 2 }],
+  },
+  group_discount_label: "",
+};
 function groupLinePrices(body) {
   const member = GROUP && body?.customer_ref === ALUNO.ref;
   const prices = {};
@@ -575,15 +607,49 @@ function groupLinePrices(body) {
   }
   return prices;
 }
+// `MOCK_LINE_DISCOUNT=1`: o desconto de linha como o MOTOR decide (o PDV não faz a
+// conta). O Café coado leva a "Semana do Café" (−15%), e o manual disputa com ela pela
+// regra "maior desconto ganha, um por item", com o arredondamento do motor (meio
+// centavo para cima). A revisão e o eco do salvar devolvem o preço de cada linha com
+// desconto manual e dizem quando ele foi descartado. `MOCK_REVIEW_DELAY_MS` segura a
+// resposta, para ver o "calculando". Sem a variável, nada muda.
+const LINE_DISCOUNT = SALE && process.env.MOCK_LINE_DISCOUNT === "1";
+const REVIEW_DELAY_MS = Math.max(0, Number(process.env.MOCK_REVIEW_DELAY_MS || 0));
+const AUTO_PROMO = { CAFE_SKU: "CAFE-COADO", label: "Semana do Café", percent: 15 };
+const autoOffQ = (item, list) => (item.sku === AUTO_PROMO.CAFE_SKU ? Math.floor((list * AUTO_PROMO.percent + 50) / 100) : 0);
+function engineLinePrices(body) {
+  const prices = {};
+  for (const item of Array.isArray(body?.items) ? body.items : []) {
+    const list = Number(item.list_price_q || item.unit_price_q || 0);
+    const auto = autoOffQ(item, list);
+    const discount = item.discount;
+    const value = Number(discount?.value || 0);
+    const manual = value > 0
+      ? Math.min(list, discount.type === "fixed" ? Math.round(value * 100) : Math.floor((list * value + 50) / 100))
+      : 0;
+    if (!manual && !auto) continue;
+    const manualWins = manual > auto;
+    prices[item.line_id] = {
+      charged_price_q: list - Math.max(manual, auto),
+      list_price_q: list,
+      pricing_discount: !manualWins && auto
+        ? { type: "promotion", label: AUTO_PROMO.label, amount_q: auto, percent: (auto * 100) % list === 0 ? (auto * 100) / list : 0 }
+        : null,
+      manual_discount_discarded: value > 0 && !manualWins,
+    };
+  }
+  return prices;
+}
+const later = (fn) => (REVIEW_DELAY_MS ? setTimeout(fn, REVIEW_DELAY_MS) : fn());
 function review(body) {
   const items = Array.isArray(body?.items) ? body.items : [];
-  const linePrices = GROUP ? groupLinePrices(body) : {};
+  const linePrices = GROUP ? groupLinePrices(body) : LINE_DISCOUNT ? engineLinePrices(body) : {};
   const subtotal = items.reduce(
     (sum, item) => sum + Number(linePrices[item.line_id]?.charged_price_q ?? item.unit_price_q ?? 0) * Number(item.qty || 0),
     0,
   );
   return {
-    ...(GROUP ? { line_prices: linePrices } : {}),
+    ...(GROUP || LINE_DISCOUNT ? { line_prices: linePrices } : {}),
     intent_version: "1", tab_ref: body?.tab_ref || "", subtotal_q: subtotal, subtotal_display: brl(subtotal),
     discount_q: 0, discount_display: brl(0), line_discount_q: 0, line_discount_display: brl(0),
     order_discount_q: 0, order_discount_display: brl(0), delivery_fee_q: 0, delivery_fee_display: brl(0),
@@ -591,6 +657,9 @@ function review(body) {
     tender_total_q: 0, tender_total_display: brl(0), tender_count: 0, tendered_q: 0, tendered_amount_display: brl(0),
     change_q: 0, change_display: brl(0), requires_manager_approval: false, manager_approval_threshold_q: 0,
     approval_reasons: [], lines: [],
+    ...(REVIEW_REMARK && items.length
+      ? { warnings: [{ code: "item_low_stock", field: "items", sku: items[0].sku, message: `${items[0].name || items[0].sku}: pausado no cardápio do balcão. A venda vale; confira o cadastro.` }] }
+      : {}),
     ...(ACCOUNT_LIMIT && subtotal > 0
       ? {
           requires_manager_approval: true,
@@ -687,7 +756,7 @@ const preorderDetail = {
   cancel_reasons: [
     { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou e não conseguimos preparar o pedido completo." },
     { key: "cannot_deliver", label: "Não dá para entregar", customer_text: "Não conseguimos fazer a entrega no endereço e no horário do pedido." },
-    { key: "customer_request", label: "O cliente pediu", customer_text: "Cancelamos conforme você nos pediu." },
+    { key: "customer_request", label: "O cliente pediu", customer_text: "Conforme sua solicitação." },
     { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos a confirmação do pagamento a tempo." },
     { key: "store_closing", label: "A loja vai fechar", customer_text: "Precisamos encerrar o atendimento antes do horário do seu pedido." },
     { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
@@ -702,12 +771,12 @@ const DRIVER = { name: "Carlos Mendes", phone: "(43) 99876-1234", vehicle_model:
 const RIDES = {
   "NB-1051": { name: "Bruno Lima", start: "14:00", window: "14h às 15h", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 2000, needs_machine: false, recorded: false }, call: true, balance: 4400 },
   "NB-1052": { name: "Fernanda Okumura de Albuquerque", start: "14:30", window: "14h30 às 15h30", status: "ready", situation: "ready", courier: {}, custody: { change_out_suggested_q: 0, needs_machine: true, recorded: false }, call: true, balance: 9800 },
-  "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", id_mch: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
+  "NB-1053": { name: "Gustavo Reis", start: "13:00", window: "13h às 14h", status: "ready", situation: "ready", courier: { status: "A", ride_state: "assigned", ride_ref: "R-53", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-53", confirmation_code: "4821" } },
   // Na rua com a maquininha e o troco: "Entregador voltou" confere a lista e fecha a saída.
-  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", id_mch: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
-  "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", id_mch: "R-55" }, call: true, attempts: 1 },
+  "NB-1054": { name: "Helena Prado", start: "12:30", window: "12h30 às 13h30", status: "dispatched", situation: "out_for_delivery", courier: { status: "E", ride_state: "on_route", ride_ref: "R-54", driver: DRIVER, tracking_url: "https://rastreio.exemplo/R-54" }, returnLines: ["A Maquininha Azul", "R$ 120,00 em dinheiro: R$ 98,00 do pedido + R$ 22,00 de troco"] },
+  "NB-1055": { name: "Igor Tavares", start: "15:00", window: "15h às 16h", status: "ready", situation: "ready", courier: { status: "N", ride_state: "not_served", ride_ref: "R-55" }, call: true, attempts: 1 },
   "NB-1056": { name: "Joana Ribeiro", start: "15:30", window: "15h30 às 16h30", status: "ready", situation: "ready", courier: {}, noAnswer: true },
-  "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", id_mch: "R-57" } },
+  "NB-1057": { name: "Lucas Ferraz", start: "16:00", window: "16h às 17h", status: "ready", situation: "ready", courier: { status: "P", ride_state: "reopened", ride_ref: "R-57", reopened_driver: "Diego" } },
 };
 const COURIER_LABELS = { D: "Procurando entregador", G: "Aguardando aceite", P: "Procurando entregador", A: "Entregador a caminho da loja", S: "Entregador na loja", E: "Saiu para entrega", F: "Entregue", N: "Não atendida", C: "Corrida cancelada" };
 const COURIER_TONES = { N: "danger", C: "danger", F: "success", A: "info", S: "info", E: "info" };
@@ -718,9 +787,9 @@ function rideBlock(ref) {
   const ride = RIDES[ref];
   const c = ride.courier;
   const status = c.status || "";
-  const active = Boolean(c.id_mch) && !["F", "N", "C"].includes(status);
+  const active = Boolean(c.ride_ref) && !["F", "N", "C"].includes(status);
   return {
-    provider: "machine", status, status_label: ride.noAnswer ? "Sem resposta da TaOn" : COURIER_LABELS[status] || "",
+    provider: "machine", status, ride_state: c.ride_state || "", service_name: "TaOn", status_label: ride.noAnswer ? "Sem resposta da TaOn" : COURIER_LABELS[status] || "",
     active, driver: c.driver || null, tracking_url: c.tracking_url || "", confirmation_code: c.confirmation_code || "",
     estimate_display: "", final_value_display: "", requested_at: "", dispatched_at: "", finished_at: "",
     attempts_count: ride.attempts || 0, position: null,
@@ -732,6 +801,10 @@ function rideBlock(ref) {
     custody: ride.custody || { change_out_suggested_q: 0, needs_machine: false, recorded: false },
     // O andamento lido da TaOn (instantes ISO; a tela conta os minutos).
     ...rideProgress(status, ref),
+    // NB-1057: o entregador desistiu há 3 min e a TaOn procura outro (#2499).
+    reopened_at: c.reopened_driver ? minutesFromNow(-3) : "",
+    reopened_driver: c.reopened_driver || "",
+    reopened_reason: c.reopened_driver ? "withdrew" : "",
   };
 }
 
@@ -762,6 +835,25 @@ function rideCard(ref) {
   });
 }
 
+function cancelConfirmation(ref, block) {
+  const code = ref.replace("NB-", "");
+  const confirmation = {
+    required: true,
+    description: `Cancelar a corrida A? O pedido ${code} volta para Aguardando.`,
+    confirm_label: "Cancelar a corrida A",
+  };
+  if (!["A", "S"].includes(block.status)) return confirmation;
+  return {
+    ...confirmation,
+    reason_question: "Por que cancelar a corrida A?",
+    consequence: `O pedido ${code} volta para Aguardando.`,
+    reasons: [
+      { id: 12, label: "O entregador não está vindo" },
+      { id: 37, label: "Está demorando demais" },
+      { id: 40, label: "Não consegui falar com o entregador" },
+    ],
+  };
+}
 function rideDetail(ref) {
   const block = rideBlock(ref);
   const theCard = rideCard(ref);
@@ -779,7 +871,9 @@ function rideDetail(ref) {
       ...preorderDetail.actions,
       action("courier-dispatch", "Chamar entregador", block.can_dispatch, `Chamar um entregador da TaOn para o pedido ${ref.replace("NB-", "")}? A corrida é cobrada da casa.`),
       action("courier-dispatch-again", "Chamar de novo", block.can_dispatch_again, "A TaOn não respondeu à última chamada. Veja na central se a corrida abriu antes de chamar de novo."),
-      { ...action("courier-cancel", "Solicitar cancelamento da corrida", block.can_cancel), confirmation: { required: true } },
+      // A confirmação do servidor (``courier_cancel_confirmation``): antes do aceite,
+      // a pergunta e um botão; depois, os três motivos (#2494).
+      { ...action("courier-cancel", "Cancelar corrida", block.can_cancel), confirmation: cancelConfirmation(ref, block) },
       ...(RIDES[ref].returnLines && !RIDES[ref].returned
         ? [{ ...action("courier-back", "Entregador voltou", true), priority: "primary", confirmation: { required: true } }]
         : []),
@@ -881,6 +975,8 @@ createServer((req, res) => {
     send(res, 200, { closes: CLOSES });
     return;
   }
+  // A projeção da Central (dados fictícios), para os outros apps do trocador.
+  if (path === "/api/v1/backstage/hub/") { send(res, 200, { hub: { tiles: [{"ref":"pos","label":"PDV","icon":"shopping-basket","url":"http://localhost:3002/","kind":"launch","description":"","status_attention":"1 encomenda na próxima hora","status_summary":"Caixa aberto","status_positive":"","next_item":null},{"ref":"kds","label":"Cozinha","icon":"chef-hat","url":"http://localhost:3003/","kind":"launch","description":"","status_attention":"1 atrasado","status_summary":"3 em preparo","status_positive":"","next_item":null},{"ref":"gestor","label":"Gestor de pedidos","icon":"square-kanban","url":"http://localhost:3004/","kind":"launch","description":"","status_attention":"","status_summary":"","status_positive":"","next_item":null},{"ref":"production","label":"Produção","icon":"croissant","url":"http://localhost:3005/","kind":"launch","description":"","status_attention":"","status_summary":"5 lotes hoje","status_positive":"","next_item":null},{"ref":"purchase","label":"Compras","icon":"package","url":"http://localhost:3008/","kind":"launch","description":"","status_attention":"2 entregas para receber","status_summary":"","status_positive":"","next_item":null},{"ref":"marketing","label":"Marketing","icon":"megaphone","url":"http://localhost:3006/","kind":"launch","description":"","status_attention":"1 anúncio para decidir","status_summary":"","status_positive":"","next_item":null},{"ref":"bi","label":"B.I.","icon":"chart-no-axes-combined","url":"http://localhost:3007/","kind":"launch","description":"","status_attention":"","status_summary":"Vendas de ontem","status_positive":"","next_item":null}] } }); return; }
   if (path === "/api/v1/backstage/operator/session/") {
     send(res, 200, {
       station: "CAIXA-1",
@@ -892,7 +988,17 @@ createServer((req, res) => {
     return;
   }
   if (path === "/api/v1/backstage/pos/") {
-    send(res, 200, { pos: XEPA ? xepaView() : pos, shift: null, tabs: TABS, operator: { id: 7, name: "Ana" } });
+    // A chave da loja "Venda sem conexão" (`Shop.pos_offline_sale_enabled`): LIGADA no
+    // mock, para o caminho sem conexão inteiro seguir exercitado (offline-*.spec.ts,
+    // link-down-sale.spec.ts, retratos). O cookie `pos_offline_sale=off` liga o padrão
+    // da loja de verdade, desligada (offline-sale-off.spec.ts).
+    const offlineSaleEnabled = !/(^|;\s*)pos_offline_sale=off(;|$)/.test(req.headers.cookie || "");
+    send(res, 200, {
+      pos: { ...(XEPA ? xepaView() : pos), offline_sale_enabled: offlineSaleEnabled },
+      shift: null,
+      tabs: TABS,
+      operator: { id: 7, name: "Ana" },
+    });
     return;
   }
   if (SALE && path === "/api/v1/backstage/closing/") {
@@ -920,7 +1026,8 @@ createServer((req, res) => {
         }));
         SAVED_ITEMS.set(ref, items);
         // O eco do salvar diz o que cada linha cobra (o desconto do grupo, como o servidor).
-        send(res, 200, withPreorder({ ...tabPayload(ref), items, ...(GROUP ? { line_prices: groupLinePrices(body) } : {}) }));
+        const echo = GROUP ? groupLinePrices(body) : LINE_DISCOUNT ? engineLinePrices(body) : null;
+        later(() => send(res, 200, withPreorder({ ...tabPayload(ref), items, ...(echo ? { line_prices: echo } : {}) })));
       });
       return;
     }
@@ -986,6 +1093,14 @@ createServer((req, res) => {
       });
       return;
     }
+    if (CUSTOMER_FULL && path === "/api/v1/backstage/pos/customer/search/") {
+      send(res, 200, { results: [{ ref: MARIA.ref, name: MARIA.name, phone: MARIA.phone, document: MARIA.tax_id, email: MARIA.email }] });
+      return;
+    }
+    if (CUSTOMER_FULL && path === "/api/v1/backstage/pos/customer/lookup/") {
+      send(res, 200, { customer: MARIA });
+      return;
+    }
     if (GROUP && path === "/api/v1/backstage/pos/customer/search/") {
       send(res, 200, { results: [{ ref: ALUNO.ref, name: ALUNO.name, phone: ALUNO.phone, document: "", email: "" }] });
       return;
@@ -995,7 +1110,7 @@ createServer((req, res) => {
       return;
     }
     if (path === "/api/v1/backstage/pos/sale/review/") {
-      void readBody(req).then((body) => send(res, 200, { ok: true, review: review(body) }));
+      void readBody(req).then((body) => later(() => send(res, 200, { ok: true, review: review(body) })));
       return;
     }
     // Pagar fecha a venda: o pedido nasce. Com `MOCK_CLOSE=uncertain` a resposta não
@@ -1038,7 +1153,7 @@ createServer((req, res) => {
     const rideGesture = path.match(/^\/api\/v1\/backstage\/orders\/(NB-105\d)\/(courier-cancel|courier-back)\/$/);
     if (rideGesture && RIDES[rideGesture[1]]) {
       const ride = RIDES[rideGesture[1]];
-      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", id_mch: ride.courier.id_mch };
+      if (rideGesture[2] === "courier-cancel") ride.courier = { status: "C", ride_state: "cancelled", ride_ref: ride.courier.ride_ref };
       else ride.returned = true;
       const index = orders.findIndex((order) => order.ref === rideGesture[1]);
       if (index >= 0) orders[index] = rideCard(rideGesture[1]);
@@ -1050,7 +1165,7 @@ createServer((req, res) => {
       const ride = RIDES[call[1]];
       if (call[2] === "courier-dispatch") ride.attempts = (ride.attempts || 0) + (ride.courier.status ? 1 : 0);
       ride.noAnswer = false;
-      ride.courier = { status: "P", id_mch: `R-${call[1]}` };
+      ride.courier = { status: "P", ride_state: "searching", ride_ref: `R-${call[1]}` };
       const index = orders.findIndex((order) => order.ref === call[1]);
       if (index >= 0) orders[index] = rideCard(call[1]);
       send(res, 200, { ok: true, ref: call[1], outcome: "applied", directive_id: 1, status: "queued" });

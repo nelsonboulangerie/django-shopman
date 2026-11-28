@@ -99,7 +99,7 @@ e data, que é exatamente o comportamento pedido.
 1. Criar conta gratuita em maxmind.com e gerar uma **license key** para GeoLite2.
 2. No **GitHub**, criar o segredo de repositório `MAXMIND_LICENSE_KEY` (Settings → Secrets
    and variables → Actions). O runbook passo a passo é
-   [`docs/plans/WP-MAXMIND-CHAVE-DO-DONO.md`](../plans/WP-MAXMIND-CHAVE-DO-DONO.md).
+   [`docs/plans/WP-MAXMIND-CHAVE-DO-DONO.md`](../plans/completed/WP-MAXMIND-CHAVE-DO-DONO.md).
 3. Reconstruir a imagem `web`: rodar o workflow **Deploy images** com
    `components=web`. O log do job `web` diz
    `geolite2: ✓ base em /app/data/… , sha256 conferido.`

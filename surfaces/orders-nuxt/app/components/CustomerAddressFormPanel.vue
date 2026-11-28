@@ -63,9 +63,13 @@ const changedKeys = computed(() => {
   const before = JSON.parse(baseline.value || "{}") as Record<string, unknown>;
   return Object.entries(state()).filter(([key, value]) => before[key] !== value).map(([key]) => key);
 });
+// Endereço sem etiqueta ("Outro" sem nome, como o que o pedido de entrega grava,
+// #2775): editar não obriga a dar nome. Quem ESCOLHE "Outro" agora é que dá.
+const wasUntagged = computed(() => props.address?.label_code === "other" && !props.address.label);
+const nameRequired = computed(() => form.label === "other" && !wasUntagged.value);
 const disabledReason = computed(() => {
   if (!form.formattedAddress.trim()) return "Informe o endereço completo.";
-  if (form.label === "other" && !form.labelCustom.trim()) return "Dê um nome ao endereço.";
+  if (nameRequired.value && !form.labelCustom.trim()) return "Dê um nome ao endereço.";
   return "";
 });
 
@@ -81,7 +85,7 @@ const confirm = useConfirm();
 async function remove() {
   if (!props.address) return;
   const accepted = await confirm({
-    title: `Remover ${props.address.label.toLowerCase()}?`,
+    title: props.address.label ? `Remover ${props.address.label.toLowerCase()}?` : "Remover este endereço?",
     description: "O endereço sai do cadastro. Pedidos antigos preservam o endereço que já foi gravado neles.",
     confirmLabel: "Remover endereço",
     cancelLabel: "Manter endereço",
@@ -93,7 +97,7 @@ async function remove() {
 <template>
   <OperatorFormShell
     :open="open"
-    :title="address ? `Editar ${address.label}` : 'Adicionar endereço'"
+    :title="address ? (address.label ? `Editar ${address.label}` : 'Editar endereço') : 'Adicionar endereço'"
     description="Endereço de entrega do cadastro. Edição manual remove o selo de verificação até nova conferência."
     size="wide"
     :dirty="changedKeys.length > 0"
@@ -116,7 +120,7 @@ async function remove() {
         <NuxtFormField label="Rótulo" :error="fieldErrors.label">
           <NuxtSelect v-model="form.label" :items="[{ value: 'home', label: 'Casa' }, { value: 'work', label: 'Trabalho' }, { value: 'other', label: 'Outro' }]" value-key="value" label-key="label" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField v-if="form.label === 'other'" label="Nome do endereço" required :error="fieldErrors.labelCustom">
+        <NuxtFormField v-if="form.label === 'other'" label="Nome do endereço" :required="nameRequired" :error="fieldErrors.labelCustom">
           <NuxtInput v-model="form.labelCustom" class="w-full" />
         </NuxtFormField>
         <NuxtFormField label="Endereço completo" required class="sm:col-span-2" :error="fieldErrors.formattedAddress">

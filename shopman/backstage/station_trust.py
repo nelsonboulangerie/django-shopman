@@ -126,6 +126,36 @@ def station_ref(request) -> str:
     return next(iter(refs)) if len(refs) == 1 else ""
 
 
+def pos_station_readiness(request) -> dict:
+    """Este dispositivo pode cobrar? A MESMA régua das mutações de dinheiro do PDV.
+
+    A leitura do quadro escolhe uma gaveta mesmo sem estação (``strict=False``), para
+    o balcão não ficar em branco; quem recusa é a mutação (`_terminal_do_pedido`).
+    Sem esta resposta a tela mostrava o caixa aberto, deixava montar a comanda inteira
+    e só recusava no Pagamento ("Não calculado", depois o aviso vermelho). Com ela, a
+    tela diz na chegada o que falta e oferece vincular.
+
+    ``reason``: ``""`` (pronto), ``"none"`` (nenhum vínculo de estação), ``"ambiguous"``
+    (mais de um) ou ``"inactive"`` (o vínculo aponta para um caixa desligado ou que
+    não é caixa do PDV).
+    """
+    from shopman.cashman.models import Terminal
+
+    refs = {
+        device.subject_id
+        for nome, device in _present_station_bindings(request)
+        if nome == station_cookie_name(device.subject_id)
+    }
+    if not refs:
+        return {"ready": False, "reason": "none"}
+    if len(refs) > 1:
+        return {"ready": False, "reason": "ambiguous"}
+    ref = next(iter(refs))
+    if not Terminal.objects.filter(ref=ref, is_active=True).exists():
+        return {"ready": False, "reason": "inactive"}
+    return {"ready": True, "reason": ""}
+
+
 def station_device_id(request) -> str:
     """O ``TrustedDevice.pk`` da estação desta requisição, ou ``""``.
 
@@ -197,6 +227,11 @@ def _present_station_bindings(request):
         device = verified[token]
         if device is not None and device.subject_type == SubjectType.STATION:
             bindings.append((nome, device))
+            # O ``verify_token`` renovou o registro; o cookie acompanha na resposta,
+            # senão o navegador o apagaria no prazo da emissão (DeviceTrustRenewalMiddleware).
+            from shopman.doorman.services.device_trust import DeviceTrustService
+
+            DeviceTrustService.mark_renewal(request, nome, token)
     return bindings
 
 
@@ -311,6 +346,31 @@ def autonomous_operator_for(terminal_ref: str):
         )
         return None
     return conta
+
+
+def is_station_account(user) -> bool:
+    """Esta conta é a de alguma estação? A pergunta é sobre a CONTA, não sobre a requisição.
+
+    Responde ``True`` quando algum terminal ativo declara ``user`` como a conta em
+    cujo nome age (``Terminal.metadata["station"]["operator"]``), qualquer que seja o
+    modo escrito ali. Falha FECHADO de propósito: um modo digitado errado não pode
+    devolver a uma conta de dispositivo o poder de escrever, e alguém que entre por
+    senha com a conta do totem continua sendo o totem.
+
+    Existe para a Produção (WP-F16, P1-27): a conta da estação só lê, qualquer que
+    seja o grupo em que a loja a puser. Ver ``resolve_production_access``.
+    """
+    username = str(getattr(user, "username", "") or "").strip()
+    if not username or not getattr(user, "is_authenticated", False):
+        return False
+
+    from shopman.cashman.models import Terminal
+
+    for metadata in Terminal.objects.filter(is_active=True).values_list("metadata", flat=True):
+        bloco = (metadata or {}).get("station") if isinstance(metadata, dict) else None
+        if isinstance(bloco, dict) and str(bloco.get("operator") or "").strip() == username:
+            return True
+    return False
 
 
 def station_operator(request):

@@ -16,7 +16,9 @@ LISTING / CHANNEL (per-channel availability):
     CatalogService.get_sellable_products(listing_ref) - Products strategically sellable in listing
 """
 
-from decimal import ROUND_HALF_UP, Decimal
+from collections.abc import Sequence
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 from django.db import models
@@ -28,6 +30,7 @@ from shopman.offerman.conf import (
 )
 from shopman.offerman.exceptions import CatalogError
 from shopman.offerman.protocols import ContextualPrice, ProjectedItem, ProjectionResult
+from shopman.utils.monetary import monetary_mult
 
 if TYPE_CHECKING:
     from shopman.offerman.models import Product
@@ -94,20 +97,176 @@ class CatalogService:
         Uses min_qty cascading: finds the ListingItem with the highest
         min_qty that is <= qty. Falls back to base_price_q.
         """
-        if qty <= 0:
-            raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(qty))
-
-        product = cls.get(sku)
-        if not product:
+        listing_ref = listing or channel
+        prices = cls.unit_prices(
+            [(sku, qty)],
+            listings=(listing_ref,) if listing_ref else (),
+        )
+        if not prices or prices[0] is None:
             raise CatalogError("SKU_NOT_FOUND", sku=sku)
+        return prices[0]
 
-        effective_listing = listing or channel
-        if effective_listing:
-            tier_price = cls._get_price_from_listing(product, effective_listing, qty)
-            if tier_price is not None:
-                return tier_price
+    @classmethod
+    def unit_prices(
+        cls,
+        lines: Sequence[tuple[str, Decimal]],
+        *,
+        listings: Sequence[str] = (),
+        sellable_only: bool = True,
+        published_only: bool = False,
+        require_listing_match: bool = False,
+        as_of: datetime | None = None,
+    ) -> list[int | None]:
+        """Resolve list/tier unit prices in bulk, preserving input order.
 
-        return product.base_price_q
+        ``listings`` is an ordered precedence supplied by the orchestrator
+        (for example customer listing, then channel listing). Offerman alone
+        selects the eligible tier inside each listing. Unknown SKUs return
+        ``None`` so batch callers can preserve their partial-result contract.
+
+        By default, a known product that has no eligible item in ``listings``
+        falls back to its base price. With ``require_listing_match=True``, that
+        product returns ``None`` instead. A product that is listed but whose
+        first tier is above the requested quantity still falls back to base.
+        This preserves the distinction between "not in this catalog" and
+        "listed, with no applicable tier" without moving tier selection to a
+        consumer.
+
+        ``as_of``: the catalog as it was at that instant, read from the price
+        history (``Product.history`` / ``ListingItem.history``). Each row that
+        the history knows at ``as_of`` is read from it; a row without a
+        record up to then (created later, or written without history) is read
+        as it is now. Listings themselves have no history and are read as they
+        are now. Same tier selection, same fallback to the base price.
+        """
+        if not lines:
+            return []
+        normalized: list[tuple[str, Decimal]] = []
+        for sku, raw_qty in lines:
+            try:
+                qty = Decimal(str(raw_qty))
+            except (InvalidOperation, TypeError, ValueError):
+                raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(raw_qty)) from None
+            if not qty.is_finite() or qty <= 0:
+                raise CatalogError("INVALID_QUANTITY", sku=sku, qty=str(raw_qty))
+            normalized.append((sku, qty))
+
+        from shopman.offerman.models import ListingItem, Product
+
+        skus = list(dict.fromkeys(sku for sku, _qty in normalized))
+        listing_refs = tuple(dict.fromkeys(ref for ref in listings if ref))
+        tiers: dict[tuple[str, str], list[tuple[Decimal, int]]] = {}
+        listed_skus: set[str] = set()
+        # O preço-base vem junto com o tier (join no Product), e o Product só é
+        # lido de novo para o SKU que nenhuma listing trouxe: uma consulta no
+        # caso comum, não duas.
+        base_prices: dict[str, int] = {}
+        if as_of is not None:
+            tiers, listed_skus, base_prices = cls._catalog_as_of(
+                as_of, skus, listing_refs, sellable_only=sellable_only, published_only=published_only,
+                require_listing_match=require_listing_match,
+            )
+        elif listing_refs:
+            items = ListingItem.objects.filter(
+                listing__ref__in=listing_refs,
+                listing__is_active=True,
+                product__sku__in=skus,
+                product__is_active=True,
+            ).filter(cls._listing_validity_q(prefix="listing__"))
+            if sellable_only:
+                items = items.filter(is_sellable=True)
+            if published_only:
+                items = items.filter(is_published=True)
+            for listing_ref, sku, base_price_q, min_qty, price_q in items.order_by("-min_qty").values_list(
+                "listing__ref", "product__sku", "product__base_price_q", "min_qty", "price_q"
+            ):
+                listed_skus.add(sku)
+                base_prices[sku] = base_price_q
+                tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
+        unlisted = [sku for sku in skus if sku not in base_prices]
+        if unlisted and not require_listing_match and as_of is None:
+            base_prices.update(
+                Product.objects.active().filter(sku__in=unlisted).order_by().values_list("sku", "base_price_q")
+            )
+
+        result: list[int | None] = []
+        for sku, qty in normalized:
+            if sku not in base_prices:
+                result.append(None)
+                continue
+            if require_listing_match and sku not in listed_skus:
+                result.append(None)
+                continue
+            # A listing precifica a unidade comercial (por exemplo, o quilo),
+            # enquanto a quantidade da linha pode ser uma fração dessa unidade.
+            # Toda quantidade positiva abaixo de 1 usa portanto o primeiro tier;
+            # thresholds acima de 1 continuam comparando contra a quantidade real.
+            effective_tier_qty = max(qty, Decimal("1"))
+            price_q = None
+            for listing_ref in listing_refs:
+                price_q = next(
+                    (
+                        tier_price_q
+                        for min_qty, tier_price_q in tiers.get((listing_ref, sku), ())
+                        if min_qty <= effective_tier_qty
+                    ),
+                    None,
+                )
+                if price_q is not None:
+                    break
+            result.append(price_q if price_q is not None else base_prices[sku])
+        return result
+
+    @classmethod
+    def _catalog_as_of(
+        cls,
+        as_of,
+        skus: list[str],
+        listing_refs: tuple[str, ...],
+        *,
+        sellable_only: bool,
+        published_only: bool,
+        require_listing_match: bool,
+    ) -> tuple[dict[tuple[str, str], list[tuple[Decimal, int]]], set[str], dict[str, int]]:
+        """Tiers, listed SKUs and base prices as the history knew them at ``as_of``.
+
+        Row by row: the historical version when there is one up to ``as_of``,
+        the current row otherwise (see ``unit_prices``).
+        """
+        from shopman.offerman.models import ListingItem, Product
+
+        # ``id``, não ``pk``: no histórico o ``pk`` é o do registro histórico.
+        product_fields = ("id", "sku", "base_price_q", "is_active")
+        current_products = Product.objects.filter(sku__in=skus).order_by().values_list(*product_fields)
+        past_products = Product.history.as_of(as_of).filter(sku__in=skus).order_by().values_list(*product_fields)
+        products = {pk: (sku, base_q, active) for pk, sku, base_q, active in current_products}
+        products.update({pk: (sku, base_q, active) for pk, sku, base_q, active in past_products})
+        base_prices = {sku: base_q for sku, base_q, active in products.values() if active}
+
+        tiers: dict[tuple[str, str], list[tuple[Decimal, int]]] = {}
+        listed_skus: set[str] = set()
+        if not listing_refs:
+            return tiers, listed_skus, base_prices
+        sku_by_product = {pk: sku for pk, (sku, _base_q, active) in products.items() if active}
+        item_fields = ("id", "listing__ref", "product_id", "min_qty", "price_q", "is_sellable", "is_published")
+        scope = {"listing__ref__in": listing_refs, "listing__is_active": True, "product_id__in": list(sku_by_product)}
+        validity = cls._listing_validity_q(prefix="listing__")
+        current_items = ListingItem.objects.filter(**scope).filter(validity).order_by().values_list(*item_fields)
+        past_items = (
+            ListingItem.history.as_of(as_of).filter(**scope).filter(validity).order_by().values_list(*item_fields)
+        )
+        items = {row[0]: row[1:] for row in current_items}
+        items.update({row[0]: row[1:] for row in past_items})
+        rows = sorted(items.values(), key=lambda row: row[2], reverse=True)
+        for listing_ref, product_id, min_qty, price_q, is_sellable, is_published in rows:
+            if (sellable_only and not is_sellable) or (published_only and not is_published):
+                continue
+            sku = sku_by_product[product_id]
+            listed_skus.add(sku)
+            tiers.setdefault((listing_ref, sku), []).append((min_qty, price_q))
+        if require_listing_match:
+            base_prices = {sku: base_q for sku, base_q in base_prices.items() if sku in listed_skus}
+        return tiers, listed_skus, base_prices
 
     @classmethod
     def price(
@@ -118,7 +277,7 @@ class CatalogService:
         listing: str | None = None,
     ) -> int:
         up = cls.unit_price(sku, qty=qty, channel=channel, listing=listing)
-        return int(Decimal(str(up * qty)).to_integral_value(rounding=ROUND_HALF_UP))
+        return monetary_mult(qty, up)
 
     @classmethod
     def get_price(
@@ -141,9 +300,7 @@ class CatalogService:
         effective_listing = listing or channel
         if list_unit_price_q is None:
             list_unit_price_q = cls.unit_price(sku, qty=qty, channel=channel, listing=listing)
-        list_total_price_q = int(
-            Decimal(str(list_unit_price_q * qty)).to_integral_value(rounding=ROUND_HALF_UP)
-        )
+        list_line_total_q = monetary_mult(qty, list_unit_price_q)
 
         pricing_backend = get_pricing_backend()
         if pricing_backend is None:
@@ -152,9 +309,9 @@ class CatalogService:
                 qty=qty,
                 listing=effective_listing,
                 list_unit_price_q=list_unit_price_q,
-                list_total_price_q=list_total_price_q,
+                list_line_total_q=list_line_total_q,
                 final_unit_price_q=list_unit_price_q,
-                final_total_price_q=list_total_price_q,
+                final_line_total_q=list_line_total_q,
                 adjustments=[],
                 metadata={"source": "list_price", "context": context or {}},
             )
@@ -164,7 +321,7 @@ class CatalogService:
             qty=qty,
             listing=effective_listing,
             list_unit_price_q=list_unit_price_q,
-            list_total_price_q=list_total_price_q,
+            list_line_total_q=list_line_total_q,
             context=context,
         )
         if price is None:
@@ -173,43 +330,13 @@ class CatalogService:
                 qty=qty,
                 listing=effective_listing,
                 list_unit_price_q=list_unit_price_q,
-                list_total_price_q=list_total_price_q,
+                list_line_total_q=list_line_total_q,
                 final_unit_price_q=list_unit_price_q,
-                final_total_price_q=list_total_price_q,
+                final_line_total_q=list_line_total_q,
                 adjustments=[],
                 metadata={"source": "list_price", "context": context or {}},
             )
         return price
-
-    @classmethod
-    def _get_price_from_listing(
-        cls,
-        product: "Product",
-        listing_ref: str,
-        qty: Decimal,
-    ) -> int | None:
-        try:
-            from shopman.offerman.models import Listing, ListingItem
-
-            listing = Listing.objects.filter(ref=listing_ref).first()
-            if not listing or not listing.is_valid():
-                return None
-
-            item = (
-                ListingItem.objects.filter(
-                    listing=listing,
-                    product=product,
-                    min_qty__lte=qty,
-                    is_sellable=True,
-                )
-                .order_by("-min_qty")
-                .first()
-            )
-
-            return item.price_q if item else None
-
-        except (ImportError, LookupError, ValueError):
-            return None
 
     @classmethod
     def expand(cls, sku: str, qty: Decimal = Decimal("1")) -> list[dict]:
@@ -247,13 +374,15 @@ class CatalogService:
             valid=True,
             sku=sku,
             name=product.name,
-            is_published=product.is_published,
-            is_sellable=product.is_sellable,
+            is_published=product.is_active and product.is_published,
+            is_sellable=product.is_active and product.is_sellable,
             message=cls._get_validation_message(product),
         )
 
     @classmethod
     def _get_validation_message(cls, product: "Product") -> str | None:
+        if not product.is_active:
+            return "Product is archived"
         if not product.is_published:
             return "Product is not published in catalog"
         if not product.is_sellable:
@@ -276,7 +405,7 @@ class CatalogService:
     ) -> list["Product"]:
         from shopman.offerman.models import Product
 
-        qs = Product.objects.all()
+        qs = Product.objects.active()
 
         if only_published:
             qs = qs.filter(is_published=True)
@@ -318,7 +447,7 @@ class CatalogService:
     def get_listed_products(cls, listing_ref: str) -> models.QuerySet["Product"]:
         from shopman.offerman.models import Product
 
-        return Product.objects.filter(
+        return Product.objects.active().filter(
             cls._listing_validity_q(),
             listing_items__listing__ref=listing_ref,
             listing_items__listing__is_active=True,
@@ -326,6 +455,9 @@ class CatalogService:
 
     @classmethod
     def is_product_listed(cls, product: "Product", listing_ref: str) -> bool:
+        if not product.is_active:
+            return False
+
         from shopman.offerman.models import ListingItem
 
         today = timezone.localdate()
@@ -348,7 +480,7 @@ class CatalogService:
 
     @classmethod
     def is_product_published(cls, product: "Product", listing_ref: str) -> bool:
-        if not product.is_published:
+        if not product.is_active or not product.is_published:
             return False
 
         from shopman.offerman.models import ListingItem
@@ -374,7 +506,7 @@ class CatalogService:
 
     @classmethod
     def is_product_sellable(cls, product: "Product", listing_ref: str) -> bool:
-        if not product.is_sellable:
+        if not product.is_active or not product.is_sellable:
             return False
 
         from shopman.offerman.models import ListingItem
@@ -409,6 +541,28 @@ class CatalogService:
             .order_by("product__sku", "min_qty")
         )
 
+        items = list(items)
+        # O preço publicado é o da UNIDADE (qty=1), escolhido pelo mesmo
+        # algoritmo de faixa de todo o resto (``unit_prices``): a faixa de menor
+        # ``min_qty`` só vale se cobre uma unidade; senão vale o preço-base.
+        # Item pausado/oculto segue com o preço da faixa (sellable/published
+        # não filtram aqui). Produto arquivado não tem preço vigente (o
+        # ``unit_prices`` responde ``None``) nem é projetável
+        # (``is_published``/``is_sellable`` falsos): sai pelo ``retract``, que
+        # não lê preço, e o item carrega só o preço-base do cadastro.
+        skus = list(dict.fromkeys(item.product.sku for item in items))
+        unit_prices = dict(
+            zip(
+                skus,
+                cls.unit_prices(
+                    [(sku, Decimal("1")) for sku in skus],
+                    listings=(listing.ref,),
+                    sellable_only=False,
+                ),
+                strict=True,
+            )
+        )
+
         snapshot: dict[str, ProjectedItem] = {}
         for item in items:
             if item.product.sku in snapshot:
@@ -437,9 +591,13 @@ class CatalogService:
                 name=product.name,
                 description=product.long_description or product.short_description,
                 unit=product.unit,
-                price_q=item.price_q,
-                is_published=product.is_published and item.is_published,
-                is_sellable=product.is_sellable and item.is_sellable,
+                price_q=(
+                    unit_prices[product.sku]
+                    if unit_prices[product.sku] is not None
+                    else product.base_price_q
+                ),
+                is_published=product.is_active and product.is_published and item.is_published,
+                is_sellable=product.is_active and product.is_sellable and item.is_sellable,
                 category=primary_collection,
                 image_url=product.image_url or None,
                 # names() clona a queryset e volta ao banco; iterar as tags

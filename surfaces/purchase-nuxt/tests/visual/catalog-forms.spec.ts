@@ -7,12 +7,19 @@ import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 // criar, e as gavetas do casco (criar/editar/duplicar insumo e fornecedor) com
 // os contatos, as conversões e os custos. Mesmo mock hermético da matriz.
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "35021");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "25021");
 const THEMES = ["light", "dark"] as const;
 
 const CASES = [
   { id: "materials-list", route: "/base/materials", ready: "[data-base-table]", click: "", open: "" },
   { id: "suppliers-list", route: "/base/suppliers", ready: "[data-base-suppliers-table]", click: "", open: "" },
+  {
+    id: "material-detail",
+    route: "/base/materials/FAR-T65",
+    ready: "[data-material-sheet]",
+    click: "",
+    open: "",
+  },
   {
     id: "material-edit",
     route: "/base/materials/FAR-T65",
@@ -26,6 +33,13 @@ const CASES = [
     ready: "[data-material-panel]",
     click: 'button[aria-label="Duplicar o insumo"]',
     open: "[data-material-form]",
+  },
+  {
+    id: "supplier-detail",
+    route: "/base/suppliers/MOINHO-PARANA",
+    ready: "[data-supplier-sheet]",
+    click: "",
+    open: "",
   },
   {
     id: "supplier-edit",

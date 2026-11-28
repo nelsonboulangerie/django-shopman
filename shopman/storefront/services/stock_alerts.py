@@ -981,13 +981,9 @@ def delivery_backend(sub) -> str:
     """
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return (
-            ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
-        ) or "manychat"
-    except Exception:
-        logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
-        return "manychat"
+    return (
+        ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend
+    ) or "manychat"
 
 
 def _deliver(

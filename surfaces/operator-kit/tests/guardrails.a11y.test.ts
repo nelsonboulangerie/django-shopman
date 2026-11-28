@@ -2,7 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de NOME ACESSÍVEL: botão de ícone puro tem que dizer o que faz.
 //
@@ -21,7 +22,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const SURFACES = [...OPERATOR_SURFACES, "operator-kit"].sort();
+const SURFACES = [...OPERATOR_KIT_SURFACES, "operator-kit"].sort();
 
 // A lista de exceções saiu junto com o `Ui/Switch.vue` do PDV (promovido ao kit
 // como `UiSwitch`): ela era a única entrada, e era INERTE — a varredura só cobra
@@ -34,7 +35,7 @@ const NAMING_ATTRIBUTES = /aria-label|aria-labelledby|title=|\blabel=|:label\b/;
 function vueFiles(dir: string, found: string[] = []): string[] {
   if (!existsSync(dir)) return found;
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".nuxt" || entry === ".output") continue;
+    if (isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);
@@ -70,7 +71,7 @@ function readElement(source: string, start: number): { attrs: string; body: stri
 function mutePoints(file: string): number[] {
   const source = readFileSync(file, "utf8");
   const offenders: number[] = [];
-  const buttons = /<(?:button|UiButton)\b/g;
+  const buttons = /<(?:button|NuxtButton)\b/g;
   let match: RegExpExecArray | null;
 
   while ((match = buttons.exec(source))) {
@@ -100,8 +101,8 @@ describe("superfícies de operador: botão de ícone puro tem nome", () => {
 
       expect(
         offenders,
-        `Botão de ícone puro sem nome acessível (use <UiIconButton label="…"> ou ` +
-          `aria-label; o leitor de tela anuncia "botão" e mais nada):\n  ` +
+        `Botão de ícone puro sem nome acessível (use <NuxtButton icon="…" aria-label="…"> ` +
+          `ou UiIconButton; o leitor de tela anuncia "botão" e mais nada):\n  ` +
           offenders.join("\n  "),
       ).toEqual([]);
     });

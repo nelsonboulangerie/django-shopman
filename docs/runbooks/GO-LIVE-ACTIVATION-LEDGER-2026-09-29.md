@@ -199,7 +199,7 @@ continua aberto enquanto seus gates operacionais dependentes nao forem comprovad
 | Migration | `N/A` |
 | Env/config/flag | `N/A` |
 | Valor desejado | Novo login gera alerta seguro e a pessoa autenticada consegue listar e encerrar acessos conectados sem expor token ou dado sensivel |
-| Dependencia/gate | `HUMAN_LOGIN_REQUIRED`; nao existe sessao cliente no navegador autorizado. WhatsApp/SMS enviariam mensagem real, a spec Live fixa `SHOPMAN_EXPOSE_DEBUG_OTP=false`, e criar sessao por comando seria escrita/backdoor; portanto nao ha alternativa canonica sem segredo ou efeito externo |
+| Dependencia/gate | `HUMAN_LOGIN_REQUIRED`; nao existe sessao cliente no navegador autorizado. WhatsApp/SMS enviariam mensagem real, OTP nunca volta por HTTP, e criar sessao por comando seria escrita/backdoor; portanto nao ha alternativa canonica sem segredo ou efeito externo |
 | Smoke Live | `PARTIAL_PASS`; em `2026-09-29`, [Seguranca da conta](https://www.nelsonboulangerie.com.br/conta/seguranca) redirecionou corretamente para login. As fixtures focadas do backend passaram `5/5` para listar e revogar acessos; o smoke Live de alerta, lista e encerramento nao foi executado sem autorizacao humana de login |
 | Rollback | Reimplantar o release Live anterior ao merge; nao ha schema, config ou flag a reverter |
 | Evidencia | [PR #1251](https://github.com/nelsonboulangerie/django-shopman/pull/1251); [Deploy Images run 36588469237](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36588469237); [Pre-go-live Smoke run 36589196530](https://github.com/nelsonboulangerie/django-shopman/actions/runs/36589196530); redirecionamento Live e auditoria fail-closed do caminho de OTP em `2026-09-29` |

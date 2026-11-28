@@ -109,10 +109,11 @@ describe("OperatorSuiteSearch", () => {
     expect(groupLabels()).toEqual(["Nesta tela", "No app (Gestor)", "Na suíte"]);
     expect(dialog()!.textContent).toContain("Filtrar o quadro por “maria”");
 
+    // No próprio app (Gestor), o caminho; outro app (PDV), o endereço dele (beta 05/11, PROD-10).
     const results = [...dialog()!.querySelectorAll<HTMLElement>("[data-suite-search-result]")];
     expect(results.map((r) => r.getAttribute("href"))).toEqual([
-      "https://gestor.test/X36",
-      "https://gestor.test/customers/C1",
+      "/X36",
+      "/customers/C1",
       "https://pdv.test/preorders/X36",
     ]);
     expect(results[0]!.getAttribute("aria-label")).toBe("X36 · Maria Santos, Gestor › Pedidos, Em preparo");
@@ -222,8 +223,8 @@ describe("OperatorSuiteSearch", () => {
     await input.setValue("maria");
     await settle();
     expect([...dialog()!.querySelectorAll("[data-suite-search-result]")].map((a) => a.getAttribute("href"))).toEqual([
-      "https://gestor.test/X36",
-      "https://gestor.test/customers/C1",
+      "/X36",
+      "/customers/C1",
       "https://pdv.test/preorders/X36",
     ]);
     await input.trigger("keydown", { key: "Escape" });

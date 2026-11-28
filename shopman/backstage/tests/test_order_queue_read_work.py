@@ -11,10 +11,12 @@ from shopman.orderman.models import Order
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections import order_queue
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 @pytest.mark.django_db
 def test_queue_resolves_each_label_once_per_read_without_retaining_old_copy(monkeypatch):
-    Order.objects.bulk_create([Order(ref=f"LABEL-{i}", status="accepted", data={"payment": {"method": "cash"}}) for i in range(20)])
+    Order.objects.bulk_create([Order(channel_ref="web", ref=f"LABEL-{i}", status="accepted", data={"payment": {"method": "cash"}}) for i in range(20)])
     status = Mock(return_value="Nome configurado")
     method = Mock(return_value="Meio configurado")
     monkeypatch.setattr(order_queue, "order_status_label", status)
@@ -48,6 +50,18 @@ def test_atomic_json_fast_path_keeps_enum_decimal_and_date_contracts():
     assert type(result["value"]["number"]) is int
 
 
+_REVISED_ACTIONS = ("advance", "confirm", "reject", "notes", "assign", "unassign")
+
+
+def _revisions(card) -> dict[str, str]:
+    """A revisão que cada gesto do cartão leva de volta ao servidor."""
+    return {
+        action.ref: action.payload_schema["base_revision"]
+        for action in card.actions
+        if action.ref in _REVISED_ACTIONS and "base_revision" in (action.payload_schema or {})
+    }
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("status", order_queue.ACTIVE_STATUSES)
 def test_batch_card_preserves_item_and_revision_contract_after_fresh_edit(status, django_user_model):
@@ -56,7 +70,7 @@ def test_batch_card_preserves_item_and_revision_contract_after_fresh_edit(status
     from shopman.shop.services.operator_orders import operational_revision
 
     user = django_user_model.objects.create_superuser(username=f"queue-{status}", password="lab-only")
-    order = Order.objects.create(ref=f"RICH-{status}", status=status)
+    order = Order.objects.create(channel_ref="web", ref=f"RICH-{status}", status=status)
     for index in range(5):
         OrderItem.objects.create(order=order, line_id=str(index), sku=f"SKU-{index}", name=f"Item {index}",
                                  qty=Decimal("0.500"), unit_price_q=1000, line_total_q=500)
@@ -67,13 +81,18 @@ def test_batch_card_preserves_item_and_revision_contract_after_fresh_edit(status
                  *queue.expedition_delivery, *queue.expedition_delivery_transit, *queue.preorders)
         card = next(card for card in cards if card.ref == order.ref)
         single = order_queue.build_order_card(Order.objects.get(pk=order.pk), user=user)
-        assert (card.items_summary, card.items_count, card.revisions) == (
-            single.items_summary, single.items_count, single.revisions)
-        for field, revision in card.revisions.items():
-            assert revision == operational_revision(Order.objects.get(pk=order.pk), field=field)
+        assert (card.items_summary, card.items_count, _revisions(card)) == (
+            single.items_summary, single.items_count, _revisions(single))
+        # A revisão viaja na própria ação (``payload_schema.base_revision``): é o
+        # que a tela devolve no gesto. O cartão não repete um mapa de revisões.
+        fresh = Order.objects.get(pk=order.pk)
+        for ref, revision in _revisions(card).items():
+            field = {"notes": "kitchen_note", "assign": "assignment", "unassign": "assignment"}.get(ref, "advance")
+            assert revision == operational_revision(fresh, field=field)
         return card
 
     first = read()
+    assert "notes" in _revisions(first)
     assert first.items_count == 5
     assert first.items_summary.endswith("...")
     OrderItem.objects.filter(order=order, line_id="0").update(qty=Decimal("0.750"), name="Nome revisto")
@@ -81,4 +100,4 @@ def test_batch_card_preserves_item_and_revision_contract_after_fresh_edit(status
     order.save(update_fields=["data"])
     second = read()
     assert "0.75x Nome revisto" in second.items_summary
-    assert second.revisions["kitchen_note"] != first.revisions["kitchen_note"]
+    assert _revisions(second)["notes"] != _revisions(first)["notes"]

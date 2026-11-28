@@ -11,6 +11,10 @@ e explícito, e o código resolve a referência contra ele, sem rede e sem model
 - ``last_change``: a última mudança na sacola, para "não, era o outro";
 - ``parts``: as partes da última mensagem lida pelas intenções no plural e o que houve
   com cada uma, para "você não respondeu" / "e a minha pergunta?" (``asks_again``).
+- ``verifying``: as perguntas que a casa levou à equipe e ainda esperam resposta
+  ("vou verificar", ``verification``). Não mora aqui: vem de
+  ``Conversation.flags["verification"]`` a cada turno, porque a resposta da equipe
+  chega fora do turno e fecha a espera sem depender desta gravação.
 
 Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo relógio.**
 
@@ -21,12 +25,13 @@ Regra do dono (03/10/2026): **a memória vence pelo que acontece, não pelo rel�
 - Pedido entregue ou cancelado deixa de ser "pedido aberto" (não recebe mais item),
   mas segue como "pedido recente" por ``recent_order_days`` (7 por padrão) ou até o
   próximo pedido, o que vier primeiro.
-- Quando a equipe devolve a conversa, a memória zera (``forget``).
+- Quando a equipe devolve a conversa, a memória do diálogo cai e recomeça do domínio
+  (``after_team``): só o pedido aberto do cliente, relido do Orderman, fica em foco.
 - Estado vencido nunca vira suposição: "sim" ou "mais 2" sem referente viram pergunta.
 
 O módulo tem duas metades. A pura (``effective``, ``resolve``, ``next_state``,
 ``memo_of``) recebe tudo por argumento e é o que o placar (``dialogue_eval``) mede. A
-de banco (``for_turn``, ``save_turn``, ``forget``) lê o sistema ao vivo e grava na
+de banco (``for_turn``, ``save_turn``) lê o sistema ao vivo e grava na
 mesma transação da resposta, conferindo o ``turn_fence``: turno revogado não grava.
 """
 
@@ -39,6 +44,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -71,26 +77,35 @@ ASK_ADDRESS = "ask_address"  # set_fulfillment devolveu o que falta do endereço
 ASK_SLOT = "ask_slot"  # horários mostrados
 CHOOSE_ORDER = "choose_order"  # "acrescentar ao pedido X (1) ou pedido novo (2)?"
 CONFIRM_NEW = "confirm_new"  # "o pedido X já foi entregue; quer um pedido novo?"
+#: Duas ou mais coisas pedidas, cada uma com mais de um item ("Para “brioche”: A ou B? Para
+#: “campagne oval”: C ou D?"). ``groups``: ``[{asked, qty, options}]``, na ordem do pedido (#3597).
+CHOOSE_EACH = "choose_each"
 CONFIRM_ADD = "confirm_add"  # "Acrescento 4 croissant ao pedido X? Total novo R$ Y. sim/não" (``order_addition``)
 
 # Copy da casa (registro ``OmotenashiCopy``, editável no Admin).
 ASK_WHAT_KEY = "CONCIERGE_MEMORY_ASK_WHAT"
 ASK_WHICH_KEY = "CONCIERGE_MEMORY_ASK_WHICH"
+ASK_WHICH_EACH_KEY = "CONCIERGE_MEMORY_ASK_WHICH_EACH"
 ASK_PRODUCT_KEY = "CONCIERGE_MEMORY_ASK_PRODUCT"
 ASK_QTY_PRODUCT_KEY = "CONCIERGE_MEMORY_ASK_QTY_PRODUCT"
 ASK_ORDER_OR_NEW_KEY = "CONCIERGE_MEMORY_ASK_ORDER_OR_NEW"
 ASK_NEW_AFTER_CLOSED_KEY = "CONCIERGE_MEMORY_ASK_NEW_AFTER_CLOSED"
 DECLINED_KEY = "CONCIERGE_MEMORY_DECLINED"
+STILL_HERE_KEY = "CONCIERGE_MEMORY_STILL_HERE"
+STILL_HERE_HELP_KEY = "CONCIERGE_MEMORY_STILL_HERE_HELP"
 ARRIVED_THANKS_KEY = "CONCIERGE_MEMORY_ARRIVED_THANKS"
 ORDER_THANKS_KEY = "CONCIERGE_MEMORY_ORDER_THANKS"
 COPY_KEYS = (
     ASK_WHAT_KEY,
     ASK_WHICH_KEY,
+    ASK_WHICH_EACH_KEY,
     ASK_PRODUCT_KEY,
     ASK_QTY_PRODUCT_KEY,
     ASK_ORDER_OR_NEW_KEY,
     ASK_NEW_AFTER_CLOSED_KEY,
     DECLINED_KEY,
+    STILL_HERE_KEY,
+    STILL_HERE_HELP_KEY,
     ARRIVED_THANKS_KEY,
     ORDER_THANKS_KEY,
 )
@@ -186,7 +201,7 @@ def effective(state: dict | None, facts: Facts) -> dict:
         out["order"] = order
 
     if alive and not order_closed_since:
-        for key in ("listed", "focus", "last_change", "parts"):
+        for key in ("listed", "focus", "last_change", "parts", "closing"):
             if state.get(key):
                 out[key] = state[key]
 
@@ -342,7 +357,9 @@ def is_correction(tokens: list[str]) -> bool:
 
 _SINGULAR = {"ele", "ela", "dele", "dela", "nele", "nela"}
 _PLURAL = {"eles", "elas", "deles", "delas", "neles", "nelas", "essas", "esses", "estas", "estes"}
-_DEMONSTRATIVE = {"esse", "essa", "este", "esta"}  # "isso" é concordância, não referência
+#: "isso" é concordância, não referência; "esta" sem acento é quase sempre o verbo ("ainda
+#: está aí?", ensaio do dono, 21/11/2026), e virava "de qual produto você está falando?".
+_DEMONSTRATIVE = {"esse", "essa", "este"}
 #: Palavras que não são produto: perguntas sobre o item em foco ("tem quantas
 #: fatias?", "ele tem glúten?") cabem; sobrou outra palavra, a fala nomeia outra
 #: coisa e a memória não a reescreve.
@@ -355,6 +372,15 @@ _FUNCTION = {
     "tamanho", "sabor", "recheio", "gluten", "lactose", "leite", "ovo", "ovos", "castanha", "castanhas",
     "acucar", "vegano", "vegana", "alergia", "cabe", "serve", "pessoas", "ainda", "ja", "so", "dar", "pode", "posso", "quero", "queria", "reservar", "separar", "ver", "saber", "contem", "leva",
 }
+
+
+_WHEN = {"hoje", "amanha", "depois", "sabado", "domingo", "segunda", "terca", "quarta", "quinta", "sexta", "cedo", "tarde"}
+_ELLIPTIC = _WHEN | {"vai", "ter", "tem", "teria", "ainda", "e", "ja", "pra", "para", "de", "manha", "noite", "a"}
+
+
+def elliptic_availability(tokens: list[str]) -> bool:
+    """"Amanhã vai ter?", "e hoje, tem?": pergunta de disponibilidade sem nomear o produto."""
+    return bool(tokens) and bool({"ter", "tem", "teria"} & set(tokens)) and all(t in _ELLIPTIC for t in tokens)
 
 
 def pronoun_reference(tokens: list[str]) -> str:
@@ -480,23 +506,58 @@ class Resolution:
     #: ``add_preview`` (o cliente pediu: a casa pergunta com os dados do sistema) e
     #: ``add_apply`` (o "sim" à pergunta) são executados pelo agente, sem modelo.
     request: dict = field(default_factory=dict)
+    #: A pergunta que continua no ar depois da fala, e volta no fim da resposta (#3597).
+    still_asks: str = ""
 
     @property
     def answers_without_model(self) -> bool:
         return self.outcome in {"ask", "handoff", "courtesy", "add_preview", "add_apply"}
 
 
-_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2}))?\b")
+_TIME_RE = re.compile(r"\b(\d{1,2})\s*(?:[:h]\s*(\d{2})?)?\b")
 
 
 def _slot_by_time(text: str, options: list[dict]) -> int:
-    """"14:30" escolhe o horário que começa às 14:30 (só quando um único bate)."""
+    """"14:30" ou "14h30" escolhe o horário que começa às 14h30 (só quando um único bate)."""
     match = _TIME_RE.search(str(text or ""))
     if not match:
         return 0
-    wanted = f"{int(match.group(1)):02d}:{match.group(2) or '00'}"
-    hits = [index for index, option in enumerate(options, 1) if str(option.get("name", "")).startswith(wanted)]
+    wanted = format_clock(f"{match.group(1)}:{match.group(2) or '00'}")
+    # O nome da opção é o rótulo da tela ("14h30 às 15h"): bate a primeira hora
+    # inteira, para "14h" não escolher "14h30 às 15h". As duas pontas passam pelo
+    # mesmo formatador, então a opção guardada como "14:30 às 15:00" também bate.
+    def starts_at(option: dict) -> str:
+        first = str(option.get("name", "")).split(" ")[0]
+        return format_clock(first, empty=first)
+
+    hits = [index for index, option in enumerate(options, 1) if wanted and starts_at(option) == wanted]
     return hits[0] if len(hits) == 1 else 0
+
+
+#: "ainda está aí?", "tá aí?", "alô?", "alguém aí?": o cliente confere se a conversa segue.
+_PRESENCE_CORE = {"ai", "aqui", "alo", "alguem"}
+_PRESENCE = _PRESENCE_CORE | {"ainda", "esta", "ta", "tah", "voce", "vc", "oi", "ola", "ei", "e", "moca", "tem", "ninguem"}
+
+
+def presence_check(tokens: list[str]) -> bool:
+    return bool(tokens) and bool(_PRESENCE_CORE & set(tokens)) and all(t in _PRESENCE for t in tokens)
+
+
+def _stem(word: str) -> str:
+    return word[:-1] if len(word) > 3 and word.endswith("s") else word
+
+
+#: Palavras de nome que não distinguem uma opção de outra.
+_GENERIC_NAME_WORDS = {"de", "do", "da", "com", "sem", "pao", "paes", "the"}
+
+
+def named_options(tokens: list[str], options: list[dict]) -> list[dict]:
+    """As opções da lista no ar cujo nome a fala cita ("as 2 baguettes" → Baguette de Tradition)."""
+    said = {_stem(t) for t in tokens if len(t) > 2 and t not in _GENERIC_NAME_WORDS}
+    return [
+        option for option in options
+        if said & {_stem(w) for w in words(option.get("name", "")) if len(w) > 2 and w not in _GENERIC_NAME_WORDS}
+    ]
 
 
 def _fill(template: str, **values) -> str:
@@ -508,6 +569,55 @@ def _fill(template: str, **values) -> str:
 
 def _options_text(options: list[dict]) -> str:
     return "; ".join(f"{item['n']}) {item.get('name') or item.get('ref')}" for item in options[:MAX_LISTED])
+
+
+def _either(options: list[dict]) -> str:
+    """“A” ou “B”; “A”, “B” ou “C”."""
+    names = [f"“{option.get('name') or option.get('ref')}”" for option in options[:MAX_LISTED]]
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} ou {names[-1]}"
+
+
+def each_question(groups: list[dict], *, copy=None) -> str:
+    """Uma pergunta por coisa pedida, na ordem do pedido (#3597)."""
+    if copy is None:
+        from .service import copy_message as copy
+
+    template = copy(ASK_WHICH_EACH_KEY) or ""
+    return "\n".join(
+        _fill(template, asked=str(group.get("asked") or ""), options=_either(list(group.get("options") or [])))
+        for group in groups
+    )
+
+
+def _choose_each(tokens: list[str], pending: dict, *, copy) -> Resolution | None:
+    """A resposta às escolhas no ar, todas ou só algumas ("o burger bun e o redondo").
+
+    Cada grupo vale pela opção que a fala cita pelo nome, uma só por grupo. O que foi escolhido
+    segue para a sacola; o que falta continua no ar e volta a ser perguntado (``still_asks``).
+    ``None``: a fala não escolhe nada, e segue como veio.
+    """
+    groups = list(pending.get("groups") or [])
+    chosen, remaining = [], []
+    for group in groups:
+        named = named_options(tokens, list(group.get("options") or []))
+        if len(named) == 1:
+            chosen.append((group, named[0]))
+        else:
+            remaining.append(group)
+    if not chosen:
+        return None
+    text = " e ".join(
+        f"{int(group['qty'])} {option.get('name', '')}" if group.get("qty") else str(option.get("name", ""))
+        for group, option in chosen
+    )
+    still = {**pending, "groups": remaining} if remaining else None
+    return Resolution(
+        outcome="resolved", reason="named_options", refs=tuple(option.get("ref", "") for _group, option in chosen),
+        text=text,
+        note=f"A fala escolhe {text} das perguntas no ar.",
+        memo={"pending": still},
+        still_asks=each_question(remaining, copy=copy) if remaining else "",
+    )
 
 
 def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
@@ -524,12 +634,54 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
     kind = pending.get("kind", "")
     answer = answer_kind(tokens)
 
+    # 0. A resposta da equipe que chegou fora da janela (WP-16): a primeira mensagem
+    # do cliente depois do aviso aprovado a recebe, uma vez só.
+    waiting = memory.get("answer_waiting") or {}
+    if waiting.get("reply"):
+        return Resolution(outcome="ask", reply=str(waiting["reply"]), reason="stored_answer",
+                          memo={"answer_delivered": str(waiting.get("id") or "")})
+
     # 1. Cortesia que reconhece o evento recente (dado do sistema, nunca inventado).
     event = courtesy_event(tokens)
     if event:
         return _courtesy(event, memory, facts, copy=copy)
 
     # 2. A resposta à pergunta que a casa deixou no ar.
+    options = list(pending.get("options") or [])
+    if presence_check(tokens):
+        # "ainda está aí?": a casa está, e a pergunta no ar continua (ensaio do dono, 21/11).
+        here = copy(STILL_HERE_KEY) or ""
+        if kind in {CHOOSE, ASK_SLOT} and options:
+            question = _fill(copy(ASK_WHICH_KEY), options=_options_text(options))
+            # A pergunta continua no ar: regravada, senão o turno de "ainda está aí?" a apagava.
+            return Resolution(outcome="ask", reply=" ".join(p for p in (here, question) if p), reason="still_here",
+                              memo={"pending": pending})
+        if kind == CHOOSE_EACH and pending.get("groups"):
+            question = each_question(list(pending["groups"]), copy=copy)
+            return Resolution(outcome="ask", reply="\n".join(p for p in (here, question) if p), reason="still_here",
+                              memo={"pending": pending})
+        if not kind:
+            return Resolution(outcome="ask", reply=copy(STILL_HERE_HELP_KEY), reason="still_here")
+    if kind == CHOOSE_EACH:
+        answered = _choose_each(tokens, pending, copy=copy)
+        if answered is not None:
+            return answered
+    choices = options if kind == CHOOSE else (listed if not kind else [])
+    if choices:
+        named = named_options(tokens, choices)
+        if len(named) == 1:
+            # "as 2 baguettes que pedi": a fala cita UMA das opções no ar pelo nome.
+            chosen = named[0]
+            qty = next((int(t) for t in tokens if t.isdigit() and len(t) <= 2), 0) or next(
+                (_NUMBER_WORDS[t] for t in tokens if t in _NUMBER_WORDS), 0)
+            name = chosen.get("name", "")
+            return Resolution(
+                outcome="resolved", reason="named_option", refs=(chosen.get("ref", ""),),
+                text=f"{qty} {name}" if qty else name,
+                note=f"\"{text.strip()}\" escolhe {name} da última lista.",
+                memo={"pending": None, "focus": {"ref": chosen.get("ref", ""), "name": name,
+                                                  **({"qty": qty} if qty else {})}},
+            )
     if kind == CHOOSE_ORDER:
         picked = selection(tokens, 2)
         wants_new = picked == 2 or "novo" in tokens
@@ -644,6 +796,14 @@ def resolve(text: str, memory: dict, facts: Facts, *, copy=None) -> Resolution:
     if qty_request is not None:
         return _quantity(text, qty_request, memory, facts, copy=copy)
 
+    # 4b. "Amanhã vai ter?", "e hoje, tem?": a disponibilidade do produto de que se falava.
+    if focus.get("name") and elliptic_availability(tokens):
+        return Resolution(
+            outcome="resolved", text=f"tem {focus['name']} {' '.join(t for t in tokens if t in _WHEN)}".strip(),
+            reason="elliptic_availability", refs=(focus.get("ref", ""),),
+            note=f"\"{text.strip()}\" pergunta se vai ter {focus['name']}.",
+        )
+
     # 5. "ele", "essas opções".
     reference = pronoun_reference(tokens)
     if reference == "plural" and len(listed) >= 2:
@@ -740,7 +900,7 @@ def _context_note(memory: dict) -> str:
     parts = []
     pending = memory.get("pending") or {}
     if pending.get("kind") == CONFIRM_ORDER:
-        parts.append("Há um resumo de pedido esperando a confirmação do cliente.")
+        parts.append("Há um resumo do pedido à espera da confirmação do cliente.")
     if memory.get("focus"):
         parts.append(f"Produto em foco: {memory['focus'].get('name', '')}.")
     if memory.get("listed"):
@@ -802,7 +962,8 @@ def next_state(
     está no ar); o resumo pendente sobrevive enquanto o orçamento for o mesmo.
     """
     state = {
-        key: value for key, value in (previous or {}).items() if key in {"listed", "focus", "order", "last_change", "parts"}
+        key: value for key, value in (previous or {}).items()
+        if key in {"listed", "focus", "order", "last_change", "parts", "closing"}
     }
     old_pending = (previous or {}).get("pending") or {}
     pending = old_pending if old_pending.get("kind") == CONFIRM_ORDER else None
@@ -813,6 +974,10 @@ def next_state(
             pending = memo["pending"]
         if memo.get("focus"):
             state["focus"] = memo["focus"]
+        if "closing" in memo:
+            # O fechamento do pedido na conversa (``order_closing``): o dia escolhido e a
+            # pergunta no ar. ``None`` encerra (pedido registrado, ou a sacola esvaziou).
+            state["closing"] = memo["closing"]
         if "parts" in memo:
             # As partes do último turno pelas intenções no plural e o que houve com cada
             # uma: a pergunta repetida ("e a minha pergunta?") responde a partir daqui.
@@ -847,7 +1012,7 @@ def next_state(
             pending = None
     if pending:
         state["pending"] = pending
-    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending", "parts")):
+    if not any(state.get(key) for key in ("listed", "focus", "order", "last_change", "pending", "parts", "closing")):
         return {}
     return {
         "v": VERSION,
@@ -970,26 +1135,20 @@ class TurnMemory:
     state: dict
     facts: Facts
 
-    def prompt_lines(self) -> str:
-        """O estado em prosa curta para o prompt do agente (o modelo lê, não decide)."""
-        lines = []
-        note = _context_note(self.state)
-        if note:
-            lines.append(note)
-        if self.facts.open_order:
-            lines.append(f"Pedido aberto do cliente: {self.facts.open_order.label} ({self.facts.open_order.status}).")
-        if self.facts.recent_order:
-            order = self.facts.recent_order
-            lines.append(
-                f"Pedido recente: {order.label}, {CLOSED_STATUS_LABEL.get(order.status, order.status)}. "
-                "Não aceita mais item: acréscimo é pedido novo."
-            )
-        return "\n".join(lines)
-
 
 def for_turn(conversation, *, now: datetime | None = None, channel_ref: str = "") -> TurnMemory:
+    from . import verification
+
     facts = load_facts(conversation, now=now, channel_ref=channel_ref)
     state = effective((conversation.flags or {}).get(FLAG_KEY), facts)
+    stored = verification.stored_view(conversation)
+    if stored:
+        # A equipe respondeu fora da janela (WP-16): esta mensagem recebe a resposta.
+        state = {**state, "answer_waiting": stored}
+    verifying = verification.memory_view(conversation)
+    if verifying:
+        # Vence pelo que acontece: aberta até a equipe responder, assumir ou o prazo passar.
+        state = {**state, "verifying": verifying}
     return TurnMemory(state=state, facts=facts)
 
 
@@ -1009,6 +1168,12 @@ def save_turn(conversation, memos: list[dict], *, previous: dict, open_order_ref
         return False
     state = next_state(previous, memos, now=now, fence=fence, open_order_refs=open_order_refs)
     flags = dict(current.flags or {})
+    for memo in memos:
+        if memo.get("answer_delivered"):
+            # Entregue neste turno, no mesmo fence: a resposta guardada não sai de novo.
+            from . import verification
+
+            flags = verification.deliver_stored(flags, memo["answer_delivered"])
     if state:
         flags[FLAG_KEY] = state
     else:
@@ -1016,13 +1181,22 @@ def save_turn(conversation, memos: list[dict], *, previous: dict, open_order_ref
     return bool(Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).update(flags=flags))
 
 
-def forget(conversation_id: int) -> None:
-    """A equipe devolveu a conversa: ela falou coisas que o sistema não viu. Zera."""
-    from shopman.shop.models import Conversation
+def after_team(facts: Facts, *, fence: int) -> dict:
+    """A memória com que a Concierge retoma a conversa que a equipe devolveu (OC-13).
 
-    current = Conversation.objects.select_for_update().filter(pk=conversation_id).first()
-    if current is None or FLAG_KEY not in (current.flags or {}):
-        return
-    flags = dict(current.flags or {})
-    flags.pop(FLAG_KEY, None)
-    Conversation.objects.filter(pk=conversation_id).update(flags=flags)
+    A equipe falou coisas que o sistema não vê (o ManyChat não entrega ao Shopman o que
+    ela escreve no Live Chat, D6): nada do diálogo de antes vale. Pergunta no ar, lista,
+    produto em foco, a última mudança, as partes e o fechamento em curso caem, para um
+    "sim" ou um "o segundo" nunca responderem a uma pergunta que a equipe já superou. Fica
+    só o que o domínio confirma agora: o pedido aberto do cliente, relido do Orderman,
+    vira o pedido em foco. Sacola, pedidos e avisos continuam lidos ao vivo a cada turno.
+    """
+    if facts.open_order is None:
+        return {}
+    return {
+        "v": VERSION,
+        "fence": fence,
+        "at": facts.now.isoformat(),
+        "valid_until": horizon(facts.now).isoformat(),
+        "order": {"ref": facts.open_order.ref, "open": True},
+    }

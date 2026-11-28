@@ -151,8 +151,8 @@ def test_feriado_vira_interrupcao_de_meia_noite_a_meia_noite_no_fuso_da_loja(fak
 
     assert len(fake.interruptions) == 1
     created = fake.interruptions[0]
-    assert created["start"] == "2026-12-25T00:00:00-03:00"
-    assert created["end"] == "2026-12-26T00:00:00-03:00"
+    assert created["start"] == "2026-12-25T00:00:00"
+    assert created["end"] == "2026-12-26T00:00:00"
     assert "Natal" in created["description"]
     record = IFoodInterruption.objects.get()
     assert record.state == IFoodInterruptionState.ACTIVE
@@ -271,12 +271,64 @@ def test_sem_resposta_do_ifood_a_directive_repete(fake):
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
-def test_grade_recusada_pelo_ifood_nao_repete(fake):
+def test_grade_recusada_pelo_ifood_nao_repete_e_avisa(fake):
+    from shopman.backstage.models import OperatorAlert
+
     _shop()
     fake.override[("PUT", f"{BASE}/opening-hours")] = _Resp(400, {"error": {"message": "overlap"}})
 
+    # Repetir não resolve: a Directive termina (sem exceção) e o Gestor fica sabendo.
+    IFoodMerchantSyncHandler().handle(message=Directive(topic=IFOOD_MERCHANT_SYNC, payload={}), ctx={})
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert "horário de funcionamento" in alert.message
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_horario_recusado_nao_impede_a_pausa_de_chegar_ao_ifood(fake):
+    """16/11/2026: o 403 do horário abortava a gravação antes da pausa do Gestor."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/opening-hours")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+
+    _switch(False, "1h")
+    result = ifood_merchant.sync_store(now=TUESDAY_10H)
+
+    (interruption,) = fake.interruptions
+    assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
+    assert result.created == 1 and result.failed == 1
+    # O 403 é o módulo de loja que o iFood ainda não liberou: aviso, sem e-mail.
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)
+    assert alert.severity == "warning"
+    assert "ainda não liberou o módulo de loja" in alert.message and "Portal do Parceiro" in alert.message
+    assert not OperatorAlert.objects.filter(type=ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_pausa_recusada_de_vez_avisa_que_o_ifood_pode_seguir_aberto(fake):
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/interruptions")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+    _switch(False, "1h")
+
     with pytest.raises(DirectiveTerminalError):
         IFoodMerchantSyncHandler().handle(message=Directive(topic=IFOOD_MERCHANT_SYNC, payload={}), ctx={})
+
+    directive = Directive(topic=IFOOD_MERCHANT_SYNC, payload={}, last_error="[terminal] iFood merchant: HTTP 403")
+    IFoodMerchantSyncHandler().on_terminal_failure(message=directive)
+
+    # Com o canal desligado aqui, o 403 ainda é aviso (sem e-mail), e diz para pausar pelo Portal.
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)
+    assert alert.severity == "warning"
+    assert "O iFood está desligado aqui: pause também pelo Portal." in alert.message
 
 
 # ── 2. Toggle do canal → iFood ────────────────────────────────────────────────
@@ -316,8 +368,8 @@ def test_desligar_por_1h_vira_interrupcao_com_o_fim_do_periodo(fake):
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert interruption["start"] == "2026-12-22T10:01:00-03:00"  # já começou: próximo minuto
-    assert interruption["end"] == "2026-12-22T11:00:00-03:00"
+    assert interruption["start"] == "2026-12-22T10:01:00"  # já começou: próximo minuto
+    assert interruption["end"] == "2026-12-22T11:00:00"
     assert interruption["description"] == ifood_merchant.CHANNEL_OFF_DESCRIPTION
 
 
@@ -328,12 +380,12 @@ def test_sem_prazo_vira_blocos_de_7_dias_renovados_pela_conferencia(fake):
     _switch(False, "open")
 
     ifood_merchant.sync_store(now=TUESDAY_10H)
-    assert [i["end"] for i in fake.interruptions] == ["2026-12-29T10:00:00-03:00"]
+    assert [i["end"] for i in fake.interruptions] == ["2026-12-29T10:00:00"]
 
     # A menos de um dia do fim, o bloco seguinte é pedido, emendado no fim do atual.
     ifood_merchant.sync_store(now=TUESDAY_10H + timedelta(days=6, hours=12))
     assert [(i["start"], i["end"]) for i in fake.interruptions][-1] == (
-        "2026-12-29T10:00:00-03:00", "2027-01-05T10:00:00-03:00",
+        "2026-12-29T10:00:00", "2027-01-05T10:00:00",
     )
     assert len(fake.interruptions) == 2
 
@@ -366,8 +418,8 @@ def test_feriado_dentro_do_desligamento_nao_sai_sobreposto(fake):
 
     spans = sorted((i["start"], i["end"]) for i in fake.interruptions)
     assert spans == [
-        ("2026-12-22T10:01:00-03:00", "2026-12-26T00:00:00-03:00"),  # o desligamento cobre o Natal
-        ("2027-01-01T00:00:00-03:00", "2027-01-02T00:00:00-03:00"),  # o Ano-novo segue do calendário
+        ("2026-12-22T10:01:00", "2026-12-26T00:00:00"),  # o desligamento cobre o Natal
+        ("2027-01-01T00:00:00", "2027-01-02T00:00:00"),  # o Ano-novo segue do calendário
     ]
 
 
@@ -382,7 +434,7 @@ def test_agendamento_vira_interrupcao_com_inicio_futuro(fake):
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert (interruption["start"], interruption["end"]) == ("2026-12-23T14:00:00-03:00", "2026-12-23T16:00:00-03:00")
+    assert (interruption["start"], interruption["end"]) == ("2026-12-23T14:00:00", "2026-12-23T16:00:00")
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -395,7 +447,7 @@ def test_ligar_por_hoje_com_o_canal_desligado_volta_a_fechar_no_fechamento(fake)
     ifood_merchant.sync_store(now=TUESDAY_10H)
 
     (interruption,) = fake.interruptions
-    assert interruption["start"] == "2026-12-22T18:00:00-03:00"
+    assert interruption["start"] == "2026-12-22T18:00:00"
 
 
 @override_settings(SHOPMAN_IFOOD=ON)
@@ -414,7 +466,7 @@ def test_loja_sem_grade_desligada_no_gestor_fecha_o_ifood_sem_gravar_horario(fak
 def test_desligar_retira_a_pausa_manual_antiga(fake):
     _shop()
     _ifood()
-    fake.interruptions.append({"id": "int-antiga", "start": "2026-12-22T09:30:00-03:00", "end": "2026-12-22T11:00:00-03:00"})
+    fake.interruptions.append({"id": "int-antiga", "start": "2026-12-22T09:30:00", "end": "2026-12-22T11:00:00"})
     IFoodInterruption.objects.create(
         kind="manual", merchant_id=MID, ifood_id="int-antiga", description="Pausa pelo gestor: x", reason="x",
         state=IFoodInterruptionState.ACTIVE, starts_at=datetime(2026, 12, 22, 9, 30, tzinfo=TZ),
@@ -435,7 +487,8 @@ _CLOSED_NO_POLLING = [{
     "available": False,
     "state": "ERROR",
     "validations": [
-        {"code": "is-connected", "state": "ERROR", "message": {"title": "Desconectado"}},
+        # Formato real (17/11/2026): ``id`` estável, ``code`` muda com o estado.
+        {"id": "is-connected", "code": "is.not.connected.config", "state": "ERROR", "message": {"title": "Desconectado"}},
         {"code": "opening-hours", "state": "OK", "message": {"title": "Dentro do horário"}},
     ],
 }]
@@ -506,6 +559,41 @@ def test_concordancia_limpa_a_divergencia_e_conferencia_pede_gravacao(fake):
     assert Directive.objects.filter(topic=IFOOD_MERCHANT_SYNC).exists()
 
 
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_status_negado_pelo_ifood_vira_aviso_e_nao_fica_so_no_log(fake):
+    """12–16/11/2026: a conferência da loja real deu 403 em silêncio por quatro dias."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    fake.override[("GET", f"{BASE}/status")] = _Resp(
+        403, {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+    )
+
+    assert ifood_merchant.check_store(now=TUESDAY_10H) is None
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_MODULE_PENDING)  # um só: dedupe
+    assert "a conferência da loja aberta não chega lá" in alert.message
+    assert alert.severity == "warning"
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_sem_o_403_o_erro_volta_a_ser_critico_com_o_canal_desligado(fake):
+    """Outro erro do iFood segue no alerta de sempre, crítico com o canal desligado (e-mail)."""
+    from shopman.backstage.models import OperatorAlert
+
+    _shop()
+    _ifood()
+    _switch(False, "1h")
+    fake.override[("GET", f"{BASE}/status")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+
+    ifood_merchant.check_store(now=TUESDAY_10H)
+
+    alert = OperatorAlert.objects.get(type=ifood_merchant.ALERT_SYNC_FAILED)
+    assert alert.severity == "critical"
+    assert not OperatorAlert.objects.filter(type=ifood_merchant.ALERT_MODULE_PENDING).exists()
+
+
 @override_settings(SHOPMAN_IFOOD=OFF)
 def test_conferencia_desligada_nao_chama_o_ifood(fake):
     _shop()
@@ -544,3 +632,80 @@ def test_api_desligada_diz_so_que_esta_desligada(client):
 
     assert body["enabled"] is False
     assert body["channel_off"] is False
+
+
+# ── O aviso fecha quando o fato volta a dar certo (#3036) ────────────────────
+
+
+_FORBIDDEN = {"error": {"code": "Forbidden", "message": "User is forbidden to access this resource"}}
+
+
+def _open(alert_type):
+    from shopman.backstage.models import OperatorAlert
+
+    return OperatorAlert.objects.filter(type=alert_type, resolved_at__isnull=True)
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_leitura_que_volta_fecha_o_aviso_do_modulo_pendente(fake):
+    _shop()
+    fake.override[("GET", f"{BASE}/status")] = _Resp(403, _FORBIDDEN)
+    ifood_merchant.check_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_MODULE_PENDING).count() == 1
+
+    del fake.override[("GET", f"{BASE}/status")]
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_MODULE_PENDING).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_leitura_que_volta_fecha_o_aviso_da_conferencia_cega(fake):
+    _shop()
+    _ifood()
+    _switch(False, "1h")
+    fake.override[("GET", f"{BASE}/status")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    ifood_merchant.check_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+
+    del fake.override[("GET", f"{BASE}/status")]
+    ifood_merchant.check_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_gravacao_que_volta_fecha_o_aviso_do_horario(fake):
+    _shop()
+    _ifood()
+    fake.override[("GET", f"{BASE}/opening-hours")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+
+    del fake.override[("GET", f"{BASE}/opening-hours")]
+    ifood_merchant.sync_store(now=TUESDAY_10H + timedelta(minutes=5))
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+@override_settings(SHOPMAN_IFOOD=ON)
+def test_a_pausa_que_chega_depois_fecha_so_o_aviso_dela(fake):
+    from shopman.shop.models import IFoodInterruption
+
+    _shop()
+    _ifood()
+    fake.override[("POST", f"{BASE}/interruptions")] = _Resp(400, {"error": {"code": "BadRequest", "message": "bad"}})
+    _switch(False, "1h")
+    ifood_merchant.sync_store(now=TUESDAY_10H)
+    assert _open(ifood_merchant.ALERT_SYNC_FAILED).count() == 1
+    record = IFoodInterruption.objects.get()
+
+    del fake.override[("POST", f"{BASE}/interruptions")]
+    ifood_merchant._create_remote(record, remote=[], now=TUESDAY_10H + timedelta(minutes=5), tz=TZ)
+
+    assert not _open(ifood_merchant.ALERT_SYNC_FAILED).exists()
+
+
+def test_o_marcador_da_pausa_fecha_o_numero():
+    assert ifood_merchant._pause_marker(12) == "ifood_store_sync_failed:pause:12:"
+    assert not ifood_merchant._pause_marker(123).startswith(ifood_merchant._pause_marker(12))

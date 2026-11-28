@@ -51,13 +51,6 @@ export interface OperatorAppIdentity {
    * verbo fique no componente e a gramática no app: "Instale {artigo} {rótulo}".
    */
   article: string;
-  /**
-   * A frase do convite de instalação — o que ESTE app passa a fazer da tela inicial.
-   * Os oito apps mostravam "Abra o caixa direto da tela inicial", copy do balcão, sob o
-   * título "Instale Shopman" (o componente lia uma chave que o manifesto não tem e caía
-   * no nome da marca). Como o benefício é de cada app, ele mora com a identidade.
-   */
-  install: string;
   /** App escuro por padrão (só a Cozinha): muda a tela de abertura, não a cor do app. */
   dark?: boolean;
 }
@@ -79,6 +72,14 @@ export function operatorAppIdentity(app: string): OperatorAppIdentity {
   const identity = OPERATOR_APPS[app as OperatorAppRef];
   if (!identity) throw new TypeError(`app de operador desconhecido: ${app}`);
   return identity;
+}
+
+/** O `ref` do tile da Central chama o Gestor de pedidos de `gestor`; os outros batem com a chave. */
+const TILE_REF_TO_APP: Record<string, OperatorAppRef> = { gestor: "orders" };
+
+/** O app de um tile da Central, ou `undefined` para o que não é app de operador (a Loja). */
+export function operatorAppForTile(ref: string): OperatorAppIdentity | undefined {
+  return OPERATOR_APPS[TILE_REF_TO_APP[ref] ?? (ref as OperatorAppRef)];
 }
 
 /** Os três PNGs que todo app de operador publica, iguais em todos — só o desenho muda. */

@@ -26,6 +26,10 @@ from shopman.shop.services import pos as shop_pos
 pytestmark = pytest.mark.django_db
 
 
+def ct_shift():
+    return ContentType.objects.get_for_model(Shift)
+
+
 @pytest.fixture
 def counter():
     Shop.objects.create(name="Loja", brand_name="Loja")
@@ -45,15 +49,18 @@ def counter():
 
 
 def _sell_on_account(counter, *, customer_ref: str, ref: str, qty: int = 1):
+    payload = {
+        "items": [{"sku": "PAO", "name": "Pão", "qty": qty, "unit_price_q": 1200}],
+        "customer_ref": customer_ref,
+        "payment_method": "account",
+        "client_request_id": ref,
+        "cash_shift_id": counter["shift"].pk,
+    }
+    review = shop_pos.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     return shop_pos.close_sale(
         channel_ref="pdv",
-        payload={
-            "items": [{"sku": "PAO", "name": "Pão", "qty": qty, "unit_price_q": 1200}],
-            "customer_ref": customer_ref,
-            "payment_method": "account",
-            "client_request_id": ref,
-            "cash_shift_id": counter["shift"].pk,
-        },
+        payload=payload,
         actor="pos:marina",
         operator_username="marina",
     )
@@ -110,14 +117,31 @@ def test_acerto_pela_api_em_dinheiro_e_em_pix(client, counter):
     assert response.status_code == 400
     assert "venda inteira" in response.json()["detail"]
 
-    # O resto por pix, atestado no balcão: nada na gaveta, saldo zera.
+    # O resto por pix: nada passa pela gaveta, então o gerente assina (beta
+    # 07/11). Sem a assinatura, a tela recebe o código e abre "Quem autoriza?".
     response = client.post(
         reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
         {"client_request_id": "test-house_account-115", "amount": "24,00", "method": "pix"},
         content_type="application/json",
     )
-    assert response.status_code == 200
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "manager_approval_required"
+    assert client.get(reverse("api-backstage-pos-accounts")).json()["accounts"][0]["balance_q"] == 2400
+
+    from shopman.doorman.models import PinCredential
+
+    gerente = get_user_model().objects.create_user(username="joyce", password="x", is_staff=True)
+    gerente.user_permissions.add(Permission.objects.get(content_type=ct_shift(), codename="adjust_shift"))
+    PinCredential.set_for(gerente, "4321")
+    response = client.post(
+        reverse("api-backstage-pos-account-settle", args=["CLI-ANA"]),
+        {"client_request_id": "test-house_account-116", "amount": "24,00", "method": "pix",
+         "manager_approval": {"username": "joyce", "pin": "4321"}},
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
     assert response.json()["remaining_q"] == 0
+    assert PaymentIntent.objects.get(ref=response.json()["intent_refs"][0]).gateway_data["approved_by"] == "joyce"
     assert Entry.objects.filter(kind=Entry.Kind.ACCOUNT_SETTLED).count() == 1
     assert PaymentIntent.objects.filter(method="account", status="authorized").count() == 0
     assert client.get(reverse("api-backstage-pos-accounts")).json()["accounts"] == []

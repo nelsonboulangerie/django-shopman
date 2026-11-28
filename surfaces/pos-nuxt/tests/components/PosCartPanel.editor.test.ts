@@ -270,6 +270,8 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
   });
 
   it("desconto em R$ com mais de uma unidade diz por unidade e na linha, no editor e no selo", async () => {
+    // A prévia é a REVISÃO do servidor com o desconto digitado: o painel pede
+    // (`previewDiscount`), diz "Calculando…" no mesmo lugar e repete a resposta.
     const cafe = item({ sku: "CAFE", name: "Café", price_q: 300, qty: 3, list_price_q: 300 });
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [item({ sku: "PAO", name: "Pão" }), cafe] }) });
     await open(wrapper);
@@ -277,13 +279,30 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
     const reais = wrapper.findAll("[data-pos-discount-panel] button").find((b) => b.text() === "Em R$");
     await reais!.trigger("click");
     await wrapper.find('[aria-label="Dígito 1"]').trigger("click");
-    expect(wrapper.find("[data-pos-discount-reach]").text()).toBe(`${formatBRL(100)} por unidade · ${formatBRL(300)} na linha`);
+    expect(wrapper.emitted("previewDiscount")?.at(-1)).toEqual(["L-CAFE", "fixed", 1]);
+    const reach = () => wrapper.find("[data-pos-discount-reach]");
+    expect(reach().text()).toBe("Calculando…");
+    expect(reach().attributes("aria-busy")).toBe("true");
+    await wrapper.setProps({
+      discountPreview: {
+        lineId: "L-CAFE", kind: "fixed", value: 1, status: "ready",
+        price: { list_price_q: 300, charged_price_q: 200, pricing_discount: null, manual_discount_discarded: false },
+      },
+    });
+    expect(reach().text()).toBe(`${formatBRL(100)} por unidade · ${formatBRL(300)} na linha`);
     // Em %: o valor na linha também.
     const pct = wrapper.findAll("[data-pos-discount-panel] button").find((b) => b.text() === "Em %");
     await pct!.trigger("click");
     await wrapper.find('[aria-label="Dígito 1"]').trigger("click");
     await wrapper.find('[aria-label="Dígito 0"]').trigger("click");
-    expect(wrapper.find("[data-pos-discount-reach]").text()).toBe(`10% · ${formatBRL(90)} na linha`);
+    expect(wrapper.emitted("previewDiscount")?.at(-1)).toEqual(["L-CAFE", "percent", 10]);
+    await wrapper.setProps({
+      discountPreview: {
+        lineId: "L-CAFE", kind: "percent", value: 10, status: "ready",
+        price: { list_price_q: 300, charged_price_q: 270, pricing_discount: null, manual_discount_discarded: false },
+      },
+    });
+    expect(reach().text()).toBe(`10% · ${formatBRL(90)} na linha`);
 
     const discounted = await mountSuspended(PosCartPanel, {
       props: props({
@@ -292,6 +311,41 @@ describe("PosCartPanel — a edição da linha é sempre no editor", () => {
     });
     const fact = discounted.find("[data-line-discount-fact]").text();
     expect(fact).toBe(`−${formatBRL(100)} por unidade · −${formatBRL(300)} na linha`);
+  });
+
+  it("o desconto que o motor descartaria se diz no editor, antes do Aplicar", async () => {
+    const tab = item({
+      sku: "TAB", name: "Tabatière", price_q: 600, qty: 2, list_price_q: 600, charged_price_q: 510,
+      pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+    });
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [tab] }) });
+    await open(wrapper, "Tabatière");
+    await wrapper.find("[data-pos-line-discount]").trigger("click");
+    await wrapper.find('[aria-label="Dígito 1"]').trigger("click");
+    await wrapper.find('[aria-label="Dígito 0"]').trigger("click");
+    await wrapper.setProps({
+      discountPreview: {
+        lineId: "L-TAB", kind: "percent", value: 10, status: "ready",
+        price: {
+          list_price_q: 600, charged_price_q: 510, manual_discount_discarded: true,
+          pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+        },
+      },
+    });
+    expect(wrapper.find("[data-pos-discount-reach]").text()).toBe('Não vale: "Semana do Pão" é maior');
+  });
+
+  it("linha com o preço a caminho: o total dela diz calculando, na largura do número", async () => {
+    const cafe = item({
+      sku: "CAFE", name: "Café", price_q: 300, qty: 3, list_price_q: 300, charged_price_q: 300,
+      discount: { type: "fixed", value: 1, reason: "cortesia" }, price_pending: true,
+    });
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [cafe] }) });
+    const pending = wrapper.find("[data-pos-line-total-pending]");
+    expect(pending.exists()).toBe(true);
+    expect(pending.text()).toBe("Calculando");
+    // O número de antes fica invisível, segurando a largura: nada pula.
+    expect(pending.element.parentElement?.querySelector(".invisible")?.textContent).toBe(formatBRL(900));
   });
 
   it("as teclas moram nos botões, não numa frase: Remover diz Del, Enviar F9, Transferir F10", async () => {

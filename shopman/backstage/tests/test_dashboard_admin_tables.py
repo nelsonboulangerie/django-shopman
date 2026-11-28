@@ -49,7 +49,7 @@ def test_dashboard_callback_populates_context(monkeypatch, db, django_user_model
         rating_low_count=0,
         recent_ratings=[],
     )
-    monkeypatch.setattr(dashboard, "build_dashboard", lambda: proj)
+    monkeypatch.setattr(dashboard, "build_dashboard", lambda user=None: proj)
     monkeypatch.setattr(dashboard, "_omotenashi_health", lambda: {"active_overrides": 2})
 
     request = RequestFactory().get("/admin/")
@@ -84,3 +84,14 @@ def test_dashboard_callback_populates_context(monkeypatch, db, django_user_model
     for gone in ("order_summary", "revenue", "production", "table_pedidos_pendentes",
                  "recent_orders", "chart_pedidos_status", "table_sugestao_producao"):
         assert gone not in context
+
+
+def test_mensagem_do_alerta_corta_na_palavra_com_reticencias():
+    """Beta test 05/11/2026, ADM-12: "O item pode faltar na separ" sem reticências."""
+    message = "Pedido sem estoque de 1× CRP (pausado). O item pode faltar na separação da manhã de amanhã cedo"
+    short = dashboard._short_message(message, width=60)
+    assert short.endswith("…")
+    assert len(short) <= 60
+    assert message.startswith(short[:-1])
+    assert message[len(short) - 1] == " "
+    assert dashboard._short_message("curta") == "curta"

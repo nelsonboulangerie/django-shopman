@@ -6,15 +6,17 @@
 // Um tempo por tela (laudo F08): esta lê UM dia, e o dia mora no cabeçalho, no
 // `OperatorPeriodPicker` do kit em modo de um dia (‹ › andam para o dia aberto
 // anterior/seguinte que o servidor informa). Os lotes no período (a janela de
-// análise) são a segunda aba (`?view=lots`, `ProductionLots`), e o cabeçalho dela
-// troca o dia pelo período; as abas abrem a linha de recortes (`ProductionViewNav`).
+// análise) são a segunda aba (`?view=lots`, `ProductionLots`); os dois tempos da
+// encomenda na Cozinha, a terceira (`?view=preorders`, `ProductionPreorders`). O
+// cabeçalho dessas troca o dia pelo período; as abas abrem a linha de recortes
+// (`ProductionViewNav`).
 //
 // O dia continua na URL (`?day=`, `useBiOverShort`): o "Copiar link desta leitura"
 // do ⋯ leva a mesma leitura. O endereço não aparece mais escrito na tela (F14).
 import type { TableColumn } from "#ui/types";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
-import type { BIOverShortRow, BIProductionReport, BIReading } from "~/types/bi";
+import type { BIOverShortRow, BIPreorderKitchenReport, BIProductionReport, BIReading } from "~/types/bi";
 import { formatInt, formatQty } from "~/presentation/bi";
 import {
   MADE_SOLD_SERIES,
@@ -51,6 +53,7 @@ import {
   todayIso,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
   report: day,
@@ -71,9 +74,12 @@ const { selection: lotsWindow, bounds, presets } = useBiWindow();
 // O frescor da aba aberta: o dia (over-short) ou os lotes (a leitura de produção, que
 // o `ProductionLots` busca; aqui só se lê o que ele já trouxe, pela mesma chave).
 const { data: lotsReading } = useNuxtData<BIReading<BIProductionReport>>("bi-production");
-const freshness = computed(() =>
-  view.value === "lots" ? { generated_at: lotsReading.value?.generated_at ?? null } : dayFreshness.value,
-);
+const { data: preordersReading } = useNuxtData<BIReading<BIPreorderKitchenReport>>("bi-preorder-kitchen");
+const freshness = computed(() => {
+  if (view.value === "lots") return { generated_at: lotsReading.value?.generated_at ?? null };
+  if (view.value === "preorders") return { generated_at: preordersReading.value?.generated_at ?? null };
+  return dayFreshness.value;
+});
 const yesterday = computed(() => {
   const [y, m, d] = today.split("-").map(Number);
   return new Date(Date.UTC(y!, (m ?? 1) - 1, (d ?? 1) - 1)).toISOString().slice(0, 10);
@@ -101,10 +107,9 @@ const readingDay = computed<PeriodSelection>({
 // de cortar. `ssrWidth` (do `isPhone` da dica do "Comparar com"): o servidor e a
 // primeira pintura concordam (sem erro de hidratação).
 const isPhone = useMediaQuery("(max-width: 767.98px)", { ssrWidth: 1280 });
-// A régua do celular da toolbar do kit (abaixo de `sm`).
-const isNarrow = useMediaQuery("(max-width: 639.98px)", { ssrWidth: 1280 });
 const title = computed(() => {
   if (view.value === "lots") return "Como foram os lotes no período?";
+  if (view.value === "preorders") return "Quanto a encomenda espera e leva na Cozinha?";
   return day.value ? overShortTitle(day.value.day, today) : "Sobrou ou faltou ontem?";
 });
 
@@ -210,7 +215,7 @@ const explainOpen = ref(false);
 const shareItems = useBiShareMenuItems();
 const pageMenuItems = computed(() => [
   ...shareItems.value,
-  ...(view.value === "lots" ? [] : [{
+  ...(view.value !== "day" ? [] : [{
     label: explainOpen.value ? "Esconder como é calculado" : "Como é calculado",
     icon: "i-lucide-circle-help",
     onSelect: () => {
@@ -287,7 +292,55 @@ const csv = computed(() => overShortCsv(filtered.value));
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular (abaixo de `md`), a linha do chão (`BiCompactBar`)
+         toma o lugar da barra de cima e da linha de recortes. O tempo da leitura (o dia,
+         ou o período dos lotes) fica na faixa logo abaixo; a troca de leitura e o
+         veredito descem para a navegação da tela (`#below`); comparar e coleção vão para
+         "Filtros", no ⋮. -->
+    <BiCompactBar
+      title="Produção"
+      :options="readingActions"
+      :active-filters="activeFilters"
+      :query="view === 'day' ? query : ''"
+      @clear="query = ''"
+    >
+      <template #primary>
+        <OperatorPeriodPicker
+          v-if="view !== 'day'"
+          v-model="lotsWindow"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <OperatorPeriodPicker
+          v-else-if="day"
+          v-model="readingDay"
+          compact
+          :today="today"
+          :max="yesterday"
+          :latest="yesterday"
+          back-label="Ir ao último dia"
+          :prev-day="day.previous_day || ''"
+          :next-day="day.next_day || ''"
+          align="start"
+          label="Dia da leitura"
+        />
+      </template>
+      <template v-if="view === 'day' && day" #filters>
+        <NuxtFormField label="Comparar com" data-bi-compare-phone>
+          <NuxtSelect :model-value="compare" :items="compareItems" class="w-full" @update:model-value="setCompare(String($event))" />
+        </NuxtFormField>
+        <NuxtFormField v-if="collectionItems.length > 1" label="Coleção">
+          <NuxtSelectMenu v-model="collection" :items="collectionItems" value-key="value" class="w-full" :search-input="{ autofocus: !touch, placeholder: 'Buscar coleção' }" />
+        </NuxtFormField>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader
       :title="title"
       :actions="readingActions"
@@ -303,7 +356,7 @@ const csv = computed(() => overShortCsv(filtered.value));
            comparar, coleção e o frescor moram no painel "Filtros". -->
       <template #filters-primary>
         <OperatorPeriodPicker
-          v-if="view === 'lots'"
+          v-if="view !== 'day'"
           v-model="lotsWindow"
           :presets="presets"
           custom
@@ -327,19 +380,19 @@ const csv = computed(() => overShortCsv(filtered.value));
           label="Dia da leitura"
           data-bi-reading-day
         />
-        <ProductionViewNav v-if="!isNarrow" />
+        <ProductionViewNav v-if="!isPhone" />
         <!-- O recorte de todo dia, um toque com a contagem (filtro rápido da suíte). -->
         <OperatorQuickFilters
-          v-if="!isNarrow && view === 'day' && day"
+          v-if="!isPhone && view === 'day' && day"
           v-model="verdict"
           :items="verdictItems"
           label="Recorte por veredito"
           data-bi-verdict-tabs
         />
       </template>
-      <!-- Celular: a troca de leitura não cabe ao lado do tempo e do "Filtros" (sumia
-           atrás da rolagem); ela desce para a navegação da tela, logo abaixo. -->
-      <template v-if="isNarrow" #below>
+      <!-- Celular (abaixo de `md`, a régua da linha do chão): a troca de leitura não cabe
+           ao lado do tempo; ela desce para a navegação da tela, logo abaixo. -->
+      <template v-if="isPhone" #below>
         <OperatorToolbar class="py-2" data-bi-production-nav-phone>
           <div class="flex min-w-0 flex-col gap-2">
             <ProductionViewNav />
@@ -369,7 +422,7 @@ const csv = computed(() => overShortCsv(filtered.value));
         </template>
       </template>
       <!-- Sem recorte (os lotes, ou o dia ainda sem leitura): o frescor fica na linha. -->
-      <template v-if="view === 'lots' || !day" #filters-end>
+      <template v-if="view !== 'day' || !day" #filters-end>
         <ClientOnly>
           <ReadFreshness inline class="ms-auto" :metadata="freshness" :failed="view === 'day' && Boolean(dayError)" />
         </ClientOnly>
@@ -461,7 +514,7 @@ const csv = computed(() => overShortCsv(filtered.value));
                   {{ outcomeText(row.original) }}
                 </p>
                 <p class="text-xs tnum text-muted lg:hidden">
-                  {{ row.original.soldout_at ? `acabou às ${row.original.soldout_at}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
+                  {{ row.original.soldout_at ? `acabou às ${formatClock(row.original.soldout_at)}` : "não acabou" }} · {{ historyText(row.original) }} · {{ versusTypicalText(row.original) }}
                 </p>
               </div>
             </template>
@@ -509,7 +562,8 @@ const csv = computed(() => overShortCsv(filtered.value));
           </template>
         </OperatorReadingCard>
       </template>
-      <ProductionLots v-else />
+      <ProductionLots v-else-if="view === 'lots'" />
+      <ProductionPreorders v-else />
       <MoreBelow />
     </main>
     <OperatorActionBar

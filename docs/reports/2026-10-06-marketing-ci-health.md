@@ -33,7 +33,7 @@ audit do kit foi pendurado ali. O efeito é medido e antigo:
 - [`R1-import-recipe-versions.md`](../coordination/ROUNDS/R1-import-recipe-versions.md)
   (02/10): *"o único vermelho era 'Marketing — cadeia completa' (node-forge, D-027,
   não obrigatório)"* em um PR que só reimportava comando de receita;
-- [`NIGHT-SHIFT-BRIEF-2026-09-30.md`](../plans/NIGHT-SHIFT-BRIEF-2026-09-30.md), F2:
+- [`NIGHT-SHIFT-BRIEF-2026-09-30.md`](../plans/completed/NIGHT-SHIFT-BRIEF-2026-09-30.md), F2:
   *"`brace-expansion` no audit do operator-kit faz o check 'Marketing — cadeia
   completa' reprovar em TODOS os PRs. Vermelho crônico que todos ignoram é pior que
   nenhum check"*;

@@ -48,6 +48,10 @@ WHATSAPP_EVENT_LABELS = {
     "preorder_reminder": "Lembrete da encomenda",
     "order_rescheduled": "Nova data da encomenda",
     "order_updated": "Encomenda atualizada",
+    # "Avisar o cliente" (WP-G07): o nome do gesto que o Caixa tocou.
+    "order_delayed": "Vai atrasar",
+    "order_item_missing": "Faltou um item",
+    "order_reschedule_needed": "Precisamos remarcar",
     "fiscal_note_ready": "Nota fiscal disponível",
     "payment_requested": "Pagamento solicitado",
     "payment_link_sent": "Link de pagamento enviado",
@@ -60,7 +64,7 @@ WHATSAPP_EVENT_LABELS = {
     "loyalty_earned": "Pontos de fidelidade",
     "stock_arrived": "Produto disponível",
     "purchase_request": "Pedido de compra ao fornecedor",
-    "production_ready": "Produto saiu do forno",
+    "production_ready": "Produto ficou pronto",
 }
 TRANSACTIONAL_WHATSAPP_EVENTS = tuple(
     event for event in WHATSAPP_EVENT_LABELS if event != EVENT
@@ -137,9 +141,9 @@ def verified_whatsapp_flow_binding(
                 "Ajustes › Plataformas antes de revisar este envio."
             ),
             field_errors={
-                "platforms.whatsapp": (
-                    "Escolha um fluxo aprovado e ativo em Ajustes › Plataformas.",
-                )
+                # A instrução já está no `detail`; repeti-la aqui fazia a prévia dizer
+                # a mesma coisa duas vezes (beta 05/11, ge:MKT-08).
+                "platforms.whatsapp": ("Sem fluxo aprovado.",)
             },
         )
     if not template.is_active:

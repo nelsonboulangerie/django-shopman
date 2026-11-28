@@ -19,7 +19,8 @@ def test_existing_ifood_visible_with_disabled_projection(monkeypatch):
     channel = board.catalog_channels[0]
     assert channel.projection_enabled is False
     assert 'Sem envio externo' in channel.diagnostic
-    assert channel.catalog_path == '/catalog'
+    # "Ver produtos" abre o Catálogo recortado no canal (beta 05/11, GES-09).
+    assert channel.catalog_path == f'/catalog?surface={channel.ref}'
     # O card de venda tem o MESMO toggle do feed (sem coleções nem rotação).
     assert channel.is_active is True
     assert channel.switch is not None and channel.switch.is_active is True

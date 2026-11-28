@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { Locator, Page, PlaywrightTestConfig, TestInfo } from "@playwright/test";
 
 import { selectedOperatorViewports, type OperatorVisualViewport } from "./matrix";
-import { OPERATOR_LABEL_FINDINGS, scanOperatorGeometry, type OperatorGeometryFinding } from "./scanner";
+import {
+  OPERATOR_LABEL_FINDINGS,
+  OPERATOR_OVERLAP_FINDINGS,
+  scanOperatorGeometry,
+  type OperatorGeometryFinding,
+} from "./scanner";
 
 const visualRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +116,33 @@ export async function captureOperatorEvidence(
 }
 
 /**
+ * Espera as animações finitas da tela terminarem antes de medir.
+ *
+ * O Modal do Nuxt UI entra com `scale-in` (200 ms, opacidade 0 → 1), e o gate de login
+ * vive dentro dele. O axe mede o contraste com a opacidade do momento: no WebKit ele
+ * chegou a rodar com o diálogo a ~94% e leu o latão do Entrar (#8b6b2e, 4,95:1 com o
+ * texto branco) como #92743a a 4,35:1 (fila do #2145, 06/11/2026). Medir no meio de uma
+ * entrada é medir uma cor que a tela não tem. Animação infinita (spinner, anel de
+ * timer) fica de fora: ela não termina e não é de entrada.
+ */
+export async function waitForAnimationsToSettle(page: Page) {
+  await page.evaluate(async () => {
+    const finite = document
+      .getAnimations()
+      .filter((animation) => {
+        const end = Number(animation.effect?.getComputedTiming().endTime);
+        // Só a que está rodando: pausada nunca resolve `finished` e prenderia o teste.
+        return animation.playState === "running" && Number.isFinite(end);
+      });
+    // `allSettled`: animação cancelada (o Vue desmontou o nó) também conta como acabada.
+    await Promise.allSettled(finite.map((animation) => animation.finished));
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    );
+  });
+}
+
+/**
  * Barreira comum entre "a página hidratou" e "a cena está pronta para ser
  * avaliada". O marcador pertence ao app e só muda para `ready` depois dos dados
  * que definem a cena; `subject` protege uma interação (por exemplo um diálogo)
@@ -142,6 +174,24 @@ export async function expectOperatorLabelsFit(page: Page, context = "") {
   if (findings.length) {
     throw new Error(
       `${context ? `${context}: ` : ""}rótulo que não cabe\n` +
+        findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
+    );
+  }
+}
+
+/**
+ * A trava da sobreposição (dono, 07/11/2026: "parece coisa de amador; não pode
+ * acontecer, nem nessa tela nem em nenhuma"). Nada visível se desenha por cima de
+ * outra coisa visível na mesma camada: controle sobre controle e texto solto (título,
+ * selo, hora, contagem) sobre controle ou sobre outro texto. Reprova com a lista.
+ * Camada empilhada de propósito se declara com `data-operator-overlap-allowed`.
+ */
+export async function expectNoOperatorOverlap(page: Page, context = "") {
+  await page.evaluate(() => document.fonts.ready);
+  const findings = await scanOperatorGeometry(page, { only: OPERATOR_OVERLAP_FINDINGS, contentOverlap: true });
+  if (findings.length) {
+    throw new Error(
+      `${context ? `${context}: ` : ""}peças sobrepostas\n` +
         findings.map((finding) => `${finding.kind} ${finding.selector}: ${finding.message}`).join("\n"),
     );
   }

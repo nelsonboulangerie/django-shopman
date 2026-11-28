@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Histórico — os pedidos que já saíram do quadro (concluídos, cancelados, devolvidos).
+// Histórico — os pedidos que já saíram do painel (concluídos, cancelados, devolvidos).
 //
 // Pedido do dono (03/10/2026): "acesso a um histórico dos pedidos concluídos e
 // cancelados, com filtro por data, status, forma de pagamento". O período e os
@@ -18,7 +18,10 @@ import {
   HISTORY_PRESETS,
   historyDimensions,
   historyQueryFromRoute,
+  offersWiderSearch,
   routeQueryFromHistory,
+  WIDER_SEARCH_LABEL,
+  widerSearch,
 } from "~/presentation/history";
 import { ORDERS_HISTORY_TRAIL } from "~/presentation/orderTrails";
 
@@ -32,8 +35,22 @@ const { history, pending, error, refresh, readMetadata } = useOrderHistory(
   historyQuery,
   today,
 );
+// O "hoje" é o da casa, dito pelo servidor: o relógio do dispositivo pode estar em
+// outro fuso, e a tela aberta desde ontem não pode seguir chamando ontem de hoje.
+// Quando o servidor vira o dia, a lista se refaz no período novo.
+watch(
+  () => history.value?.today,
+  (serverToday) => {
+    if (serverToday && serverToday !== today.value) today.value = serverToday;
+  },
+  { immediate: true },
+);
+const visibility = useDocumentVisibility();
+watch(visibility, (state) => {
+  if (state === "visible") void refresh();
+});
 
-// O detalhe do pedido volta para cá (e não para o quadro) com o mesmo recorte.
+// O detalhe do pedido volta para cá (e não para o painel) com o mesmo recorte.
 const historyLocation = useState<{
   path: string;
   query: Record<string, string>;
@@ -64,7 +81,8 @@ const headerActions = [
 const DEFAULT_PERIOD: PeriodSelection = { preset: "day", from: "", to: "" };
 function clearSku() {
   router.replace({
-    query: routeQueryFromHistory({ ...historyQuery.value, sku: "", page: 1 }),
+    // O eixo da data de venda chega junto com o produto (o link do B.I.) e sai com ele.
+    query: routeQueryFromHistory({ ...historyQuery.value, sku: "", basis: "", page: 1 }),
   });
 }
 const activeFilters = computed(() => [
@@ -127,6 +145,18 @@ watchDebounced(
   { debounce: 300 },
 );
 
+// Busca sem resultado num período curto: a tela diz onde procurou (no
+// `total_label`) e oferece ampliar para os últimos 28 dias (P1-21).
+const showWiderSearch = computed(() =>
+  Boolean(
+    history.value &&
+      offersWiderSearch(historyQuery.value, today.value, history.value.total),
+  ),
+);
+function searchWider() {
+  router.replace({ query: routeQueryFromHistory(widerSearch(historyQuery.value)) });
+}
+
 function goToPage(page: number) {
   router.replace({
     query: routeQueryFromHistory({ ...historyQuery.value, page }),
@@ -170,7 +200,7 @@ function openOrder(ref: string) {
     >
       <template #status>
         <span class="hidden op-micro text-muted-foreground lg:inline"
-          >Pedidos concluídos e cancelados</span
+          >Pedidos concluídos, cancelados e devolvidos</span
         >
       </template>
       <template #search>
@@ -247,14 +277,23 @@ function openOrder(ref: string) {
         what="o histórico"
         :error-description="history ? 'Exibindo a última lista carregada.' : ''"
         empty-icon="i-lucide-history"
-        empty-title="Nenhum pedido neste recorte."
-        :empty-description="history ? `${history.total_label}.` : ''"
+        :empty-title="history ? `${history.total_label}.` : 'Nenhum pedido neste recorte.'"
         pinned="order"
         view-key="orders-history"
-        caption="Pedidos concluídos e cancelados"
+        caption="Pedidos concluídos, cancelados e devolvidos"
         data-history-list
         @retry="refresh()"
       >
+        <template v-if="showWiderSearch" #empty-actions>
+          <NuxtButton
+            type="button"
+            :label="WIDER_SEARCH_LABEL"
+            icon="i-lucide-calendar-search"
+            color="primary"
+            data-history-wider-search
+            @click="searchWider()"
+          />
+        </template>
         <template #order-cell="{ row }">
           <div :data-history-row="row.original.ref">
             <span class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -280,7 +319,8 @@ function openOrder(ref: string) {
               />
             </span>
             <span class="block text-xs text-muted-foreground tabular-nums"
-              >{{ row.original.closed_display }} ·
+              data-history-closed
+              >{{ row.original.closed_label }} ·
               {{ row.original.channel_label }}</span
             >
           </div>
@@ -305,9 +345,23 @@ function openOrder(ref: string) {
           }}</span>
         </template>
         <template #total-cell="{ row }">
-          <span class="whitespace-nowrap font-semibold tabular-nums">{{
+          <span class="block whitespace-nowrap font-semibold tabular-nums">{{
             row.original.total_display
           }}</span>
+          <!-- O destino do dinheiro do cancelado e do devolvido, junto do valor (a
+               coluna Pagamento some no celular): estornado, a
+               estornar, nada cobrado. O que ainda não voltou ao cliente se destaca. -->
+          <span
+            v-if="row.original.money_outcome"
+            class="block min-w-28 text-xs"
+            :class="
+              row.original.money_outcome_pending
+                ? 'font-medium text-warning'
+                : 'text-muted-foreground'
+            "
+            data-history-money
+            >{{ row.original.money_outcome }}</span
+          >
         </template>
         <template v-if="history && (history.page > 1 || history.has_next)" #footer>
           <div class="flex flex-wrap items-center justify-between gap-3">

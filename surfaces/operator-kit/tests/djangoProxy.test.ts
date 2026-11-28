@@ -314,6 +314,7 @@ describe("BFF — intenção e precondição", () => {
       "idempotency-key": "same-intention",
       "if-match": '"revision-1"',
       "x-correlation-id": "trace-1",
+      "x-shopman-operator": "7",
       "x-operator-id": "other-user",
       authorization: "Bearer forged",
     };
@@ -321,7 +322,25 @@ describe("BFF — intenção e precondição", () => {
       "idempotency-key": "same-intention",
       "if-match": '"revision-1"',
       "x-correlation-id": "trace-1",
+      // Expectativa que só pode RECUSAR (409 `operator_changed`), nunca identidade.
+      "x-shopman-operator": "7",
     });
     expect(mutationHeaders(() => undefined)).toEqual({});
+  });
+});
+
+describe("isSessionCookieDeletion (F-17, #3170)", () => {
+  it("reconhece a apagada do Django e só a do cookie de sessão", async () => {
+    const { isSessionCookieDeletion, forwardsSessionCookie } = await import("../server/utils/operatorCookies");
+
+    expect(isSessionCookieDeletion('sessionid=""; expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Path=/')).toBe(true);
+    expect(isSessionCookieDeletion("sessionid=; Path=/")).toBe(true);
+    expect(isSessionCookieDeletion("sessionid=abc; Max-Age=0; Path=/")).toBe(true);
+    expect(isSessionCookieDeletion("sessionid=abc; Path=/; HttpOnly")).toBe(false);
+    expect(isSessionCookieDeletion('csrftoken=""; Max-Age=0; Path=/')).toBe(false);
+
+    expect(forwardsSessionCookie("sessionid=; Max-Age=0", "/api/v1/backstage/operator/logout")).toBe(true);
+    expect(forwardsSessionCookie("sessionid=; Max-Age=0", "/api/v1/backstage/orders/")).toBe(false);
+    expect(forwardsSessionCookie("sessionid=abc; Path=/", "/api/v1/backstage/orders/")).toBe(true);
   });
 });

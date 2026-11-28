@@ -1,5 +1,7 @@
+import { couponAppliedToast } from '~/utils/checkoutFlow'
 import { applyLineQty, applySkuQty, cartQtyForSku, isOptimisticLine, substituteSwapPlan } from '~/presentation/cart'
-import type { CartItemProjection, CartMutationResponse, CartProjection, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
+import { serverClockOffsetMs } from '~/presentation/deadline'
+import type { CartItemProjection, CartMutationResponse, CartProjection, CartTransferResponse, ProductMutationMeta, ProductOptionSelection, Action, SubstituteProjection } from '~/types/shopman'
 
 export interface CartIssue {
   title: string
@@ -13,6 +15,9 @@ export interface CartIssue {
   available_qty: number | null
   // Quanto a linha tinha antes do pedido recusado (null = linha nova).
   line_qty: number | null
+  // A linha que JÁ passou do teto (recusa do envio do pedido, #2687): o teto encolhe
+  // ESTA linha e o substituto entra no lugar do que falta. null no 409 da sacola.
+  line_id: string | null
   is_paused: boolean
   // Esgotado honesto e assinável: habilita o CTA "Me avise quando disponível" (WP-3).
   isNotifiable: boolean
@@ -74,11 +79,15 @@ function emptyCart (): CartProjection {
     subtotal_q: 0,
     subtotal_display: 'R$ 0,00',
     original_subtotal_q: 0,
-    original_subtotal_display: 'R$ 0,00',
     discount_total_q: 0,
     discount_total_display: 'R$ 0,00',
     has_discount: false,
     discount_lines: [],
+    lines_subtotal_q: 0,
+    lines_subtotal_display: 'R$ 0,00',
+    promo_savings_q: 0,
+    promo_savings_display: null,
+    order_discount_lines: [],
     group_savings_message: '',
     delivery_fee_q: null,
     delivery_fee_display: null,
@@ -92,11 +101,18 @@ function emptyCart (): CartProjection {
     coupon_code: null,
     coupon_discount_q: null,
     coupon_discount_display: null,
+    coupon_zero_reason: '',
+    coupon_missing_q: 0,
+    coupon_missing_display: null,
+    coupon_fulfillment_types: [],
     has_unavailable_items: false,
     has_awaiting_confirmation_items: false,
     has_ready_for_confirmation_items: false,
     unavailable_banner: '',
     awaiting_confirmation_notice: '',
+    reserved_until_iso: null,
+    reserved_until_display: null,
+    reservation_lapsed_display: null,
     minimum_order_progress: null,
     delivery_minimum_progress: null,
     free_delivery_progress: null,
@@ -108,7 +124,7 @@ function emptyCart (): CartProjection {
         label: 'Finalizar pedido',
         priority: 'primary',
         enabled: false,
-        reason: 'Carrinho vazio.',
+        reason: 'Sacola vazia.',
         href: '/finalizar',
         method: '',
         payload_schema: {},
@@ -196,6 +212,7 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
     requested_qty: numberOrNull(d.requested_qty),
     available_qty: numberOrNull(d.available_qty),
     line_qty: numberOrNull(d.line_qty),
+    line_id: typeof d.line_id === 'string' && d.line_id ? d.line_id : null,
     is_paused: !!d.is_paused,
     isNotifiable: Boolean(d.is_notifiable),
     isNotifySubscribed: Boolean(d.is_notify_subscribed),
@@ -244,6 +261,7 @@ export function useCartState () {
   const lastError = useState<string | null>('storefront-cart-error', () => null)
   const cartIssue = useState<CartIssue | null>('storefront-cart-issue', () => null)
   const rateLimitRecovery = useState<RateLimitRecovery | null>('storefront-cart-rate-limit', () => null)
+  const clockOffsetMs = useState<number>('storefront-cart-clock-offset', () => 0)
   const lastMutation = useState<CartMutationSnapshot | null>('storefront-cart-last-mutation', () => null)
   // Última projeção confirmada durante uma rajada. Serve apenas para desfazer a
   // UI otimista se até a reconciliação falhar; nunca é enviada ao servidor.
@@ -269,6 +287,15 @@ export function useCartState () {
   // pelo início da próxima mutação), e precisam sobreviver a fetches passivos.
   function setCartProjection (next: CartProjection) {
     cart.value = { ...next, summary_pending: false }
+  }
+
+  // Relógio do servidor (WP-L11): a diferença para o relógio do aparelho, medida
+  // na chegada da leitura da sacola, que traz a hora do servidor no envelope. A
+  // sacola abre relendo, então a régua é sempre de agora; a diferença não muda
+  // de um gesto para o outro.
+  function noteServerClock (serverNowIso: string | null | undefined) {
+    if (!import.meta.client || !serverNowIso) return
+    clockOffsetMs.value = serverClockOffsetMs(serverNowIso, Date.now())
   }
 
   // Caminho de mutação bem-sucedida: a verdade do servidor chegou e qualquer
@@ -314,11 +341,12 @@ export function useCartState () {
     // A época vale a do DISPARO: conferir só `queueDepth` na chegada deixava passar
     // a leitura que saiu antes de uma mutação que já drenou.
     const epochAtDispatch = mutationEpoch
-    const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/storefront/cart/'), {
+    const response = await $fetch<{ cart: CartProjection, server_now_iso?: string }>(apiPath('/api/v1/storefront/cart/'), {
       credentials: 'include'
     })
     // Reconciliação passiva (revert do otimista no catch, poll de holds): preserva
     // cartIssue para o banner de substitutos não sumir enquanto o cliente decide.
+    noteServerClock(response.server_now_iso)
     if (queueDepth === 0 && mutationEpoch === epochAtDispatch) setCartProjection(response.cart)
     return response.cart
   }
@@ -391,6 +419,9 @@ export function useCartState () {
         // (menu/PDP/sacola) e já comunica tudo — um toast sobreposto atrapalhava.
         cartIssue.value = issueFromPayload(data, meta)
         lastError.value = cartIssue.value.detail
+        // A recusa é a verdade mais nova que a loja tem (WP-L04): o produto e os
+        // cards abertos releem agora. Ao fechar o aviso, a página já está certa.
+        announceStoreChange('refusal')
       } else if (status === 429) {
         // Sem toast: o banner de rate-limit (com countdown) é a UI dedicada.
         const detail = String(data?.detail || 'Muitas tentativas. Aguarde um instante.')
@@ -405,24 +436,33 @@ export function useCartState () {
         lastError.value = String(data?.detail || 'Revise as escolhas deste item.')
       } else {
         // Erro genérico não tem UI própria → o toast é a única forma de avisar.
-        lastError.value = String(data?.detail || 'Não foi possível atualizar o carrinho.')
+        lastError.value = String(data?.detail || 'Não foi possível atualizar a sacola.')
         if (import.meta.client) useSonner.error(lastError.value)
       }
       throw error
     }
   }
 
+  function putSkuQty (meta: ProductMutationMeta, qty: number) {
+    return async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
+      method: 'PUT',
+      headers: await csrfHeaders(),
+      // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+      body: meta.date ? { qty, date: meta.date } : { qty },
+      credentials: 'include'
+    })
+  }
+
   async function setSkuQty (meta: ProductMutationMeta, qty: number): Promise<CartMutationResponse> {
-    return runQtyMutation(
-      { meta, qty },
-      current => applySkuQty(current, meta, qty),
-      async () => $fetch<CartMutationResponse>(apiPath(`/api/v1/cart/skus/${encodeURIComponent(meta.sku)}/`), {
-        method: 'PUT',
-        headers: await csrfHeaders(),
-        body: { qty },
-        credentials: 'include'
-      })
-    )
+    return runQtyMutation({ meta, qty }, current => applySkuQty(current, meta, qty), putSkuQty(meta, qty))
+  }
+
+  // O Adicionar tocado antes de a página hidratar, numa página que a cliente já deixou
+  // (#3171, `utils/earlyTap.ts`). Sem preço nem foto para a linha otimista: a sacola
+  // espera a verdade do servidor, que chega pela mesma fila das outras mudanças.
+  async function replayEarlyAdd (sku: string, name: string, qty: number): Promise<CartMutationResponse> {
+    const meta: ProductMutationMeta = { sku, name, price_q: 0, price_display: '', image_url: null }
+    return runQtyMutation({ meta, qty }, current => current, putSkuQty(meta, qty))
   }
 
   function putLineQty (meta: ProductMutationMeta, lineId: string, qty: number): Promise<CartMutationResponse> {
@@ -460,18 +500,39 @@ export function useCartState () {
       async () => $fetch<CartMutationResponse>(apiPath('/api/v1/cart/lines/'), {
         method: 'POST',
         headers: await csrfHeaders(),
-        body: { sku: meta.sku, qty, options: chosen },
+        // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+        body: meta.date ? { sku: meta.sku, qty, options: chosen, date: meta.date } : { sku: meta.sku, qty, options: chosen },
         credentials: 'include'
       }),
       { idempotent: false }
     )
   }
 
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // O "Trocar" do dia (OC-33 B1): a sacola INTEIRA passa para `date`, ou nada muda.
+  // Quem decide é o servidor, num comando só; aqui só se espera a fila de mudanças
+  // e se aceita a sacola que ele devolve. Recusa (400 dia que a casa não atende, 409
+  // item que não dá no dia) sobe para a tela, que a mostra no lugar da escolha.
+  async function changeCartDay (date: string, without: string[] = []): Promise<CartProjection> {
+    return enqueueMutation(async () => {
+      const response = await $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/day/'), {
+        method: 'PUT',
+        headers: await csrfHeaders(),
+        body: { date, without },
+        credentials: 'include'
+      })
+      setCartProjection(response.cart)
+      return response.cart
+    })
+  }
+
+  // `notice`: o cupom entrou no lugar de um desconto que já valia, e a resposta diz
+  // de qual (o maior ganha, os descontos não se somam).
   async function mutateCoupon (method: 'POST' | 'DELETE', body?: Record<string, unknown>) {
     beginMutation()
-    let response: { cart: CartProjection }
+    let response: { cart: CartProjection, notice?: string }
     try {
-      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection }>(apiPath('/api/v1/cart/coupon/'), {
+      response = await enqueueMutation(async () => retryWithBackoff(async () => $fetch<{ cart: CartProjection, notice?: string }>(apiPath('/api/v1/cart/coupon/'), {
         method,
         headers: await csrfHeaders(),
         body,
@@ -482,17 +543,23 @@ export function useCartState () {
       queueDepth -= 1
     }
     if (queueDepth === 0) applyServerCart(response.cart)
-    return response.cart
+    return response
   }
 
   async function applyCoupon (coupon_code: string) {
-    const nextCart = await mutateCoupon('POST', { code: coupon_code })
-    if (import.meta.client) useSonner.success('Cupom aplicado.')
+    const { cart: nextCart, notice } = await mutateCoupon('POST', { code: coupon_code })
+    // "Cupom aplicado" só quando o total caiu (beta SMS-04); com o desconto que o
+    // cupom substituiu, quando substituiu.
+    if (import.meta.client) {
+      const toast = couponAppliedToast(nextCart)
+      if (toast.kind === 'success') useSonner.success(notice || toast.message)
+      else useSonner.info(toast.message)
+    }
     return nextCart
   }
 
   async function removeCoupon () {
-    const nextCart = await mutateCoupon('DELETE')
+    const { cart: nextCart } = await mutateCoupon('DELETE')
     if (import.meta.client) useSonner('Cupom removido.')
     return nextCart
   }
@@ -518,6 +585,31 @@ export function useCartState () {
     return response.cart
   }
 
+  // A passagem da sacola entre a loja e a conversa (OC-16): "Trazer a sacola do
+  // WhatsApp". Sem otimista e sem repetir sozinha: quem decide
+  // o que chega é o servidor. A recusa (409) também traz a sacola como ficou.
+  async function runCartPassage (href: string, body: Record<string, unknown>): Promise<CartTransferResponse> {
+    beginMutation()
+    let response: CartTransferResponse
+    try {
+      response = await enqueueMutation(async () => $fetch<CartTransferResponse>(apiPath(href), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        body,
+        credentials: 'include'
+      }))
+    } catch (error) {
+      const data = asRecord((error as { data?: unknown })?.data)
+      const refusedCart = data.cart as CartProjection | undefined
+      if (refusedCart && queueDepth === 1) applyServerCart(refusedCart)
+      throw error
+    } finally {
+      queueDepth -= 1
+    }
+    if (queueDepth === 0) applyServerCart(response.cart)
+    return response
+  }
+
   function replay (mutation: CartMutationSnapshot, qty: number) {
     if (mutation.options) return addLineWithOptions(mutation.meta, qty, mutation.options)
     if (mutation.lineId) return putLineQty(mutation.meta, mutation.lineId, qty)
@@ -530,9 +622,36 @@ export function useCartState () {
     return replay(mutation, mutation.qty)
   }
 
+  // A linha que a recusa do envio mira, como a sacola a tem agora.
+  function shortLine (issue: CartIssue | null): CartItemProjection | null {
+    if (!issue?.line_id) return null
+    return cart.value.items.find(line => line.line_id === issue.line_id) ?? null
+  }
+
+  // Recusa de estoque no ENVIO do pedido (#2687): a folha de alternativas sobe no
+  // checkout com o corpo que a recusa trouxe (o mesmo do 409 da sacola). Não há
+  // mutação para refazer: o alvo das ações é a linha (`line_id`).
+  function raiseStockIssue (data: Record<string, unknown>) {
+    const d = asRecord(data)
+    lastMutation.value = null
+    cartIssue.value = issueFromPayload(d, {
+      sku: String(d.sku || ''),
+      name: String(d.name || ''),
+      price_q: 0,
+      price_display: '',
+      image_url: null
+    })
+  }
+
   async function acceptAvailableQty () {
-    const mutation = lastMutation.value
     const issue = cartIssue.value
+    if (issue?.line_id) {
+      // A linha passou do teto: "Levar N" a encolhe até o que dá.
+      const line = shortLine(issue)
+      if (!line || !issueAdvancesLine(issue)) return null
+      return setLineQty(line, issue.available_qty!)
+    }
+    const mutation = lastMutation.value
     if (!mutation || !issue || !issueAdvancesLine(issue)) return null
     // O teto do 409 é ABSOLUTO (até onde a linha vai). A inclusão com escolhas
     // SOMA na linha igual, então manda só a diferença.
@@ -551,8 +670,16 @@ export function useCartState () {
   // Reusa setSkuQty (otimista + fila + 409/429); no sucesso, applyServerCart
   // zera cartIssue e o banner some sozinho.
   async function addSubstitute (sub: SubstituteProjection) {
-    const plan = substituteSwapPlan(sub, cartIssue.value?.requested_qty ?? null)
+    const issue = cartIssue.value
+    const line = shortLine(issue)
+    // Linha que passou do teto (recusa do envio): ela fica com o que dá, ou sai, e o
+    // substituto entra no lugar só do que falta. Sem isto a linha seguia acima do
+    // teto e o próximo envio caía na mesma recusa.
+    const keep = Math.max(0, issue?.available_qty ?? 0)
+    const missing = line ? Math.max(1, (issue?.requested_qty ?? line.qty) - keep) : null
+    const plan = substituteSwapPlan(sub, line ? missing : (issue?.requested_qty ?? null))
     if (!plan) return null
+    if (line) await setLineQty(line, keep)
     const res = await setSkuQty(plan.meta, plan.qty)
     if (import.meta.client) useSonner.success(`Adicionamos ${sub.name} à sua sacola.`)
     return res
@@ -566,21 +693,27 @@ export function useCartState () {
     cartIssue,
     rateLimitRecovery,
     lastMutation,
+    clockOffsetMs,
     setFromServer,
     clearCart,
     refreshCart,
     settleCart,
+    runCartPassage,
     qtyForSku,
     isPending,
     setSkuQty,
+    replayEarlyAdd,
     setLineQty,
     addLineWithOptions,
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    changeCartDay,
     applyCoupon,
     removeCoupon,
     setLineNotes,
     retryLastMutation,
     acceptAvailableQty,
     addSubstitute,
+    raiseStockIssue,
     dismissCartIssue
   }
 }

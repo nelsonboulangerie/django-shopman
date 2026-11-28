@@ -1,6 +1,7 @@
 # ADR-034 — O pedido cita a versão de Termos e Privacidade que valia, numa cópia que não muda
 
-**Status:** Aceito em 2026-09-24
+**Status:** Aceito
+**Data:** 2026-09-24
 **Origem:** parte do PR #614 (Codex, 11–15/09/2026), que ficou em draft e conflitando. Esta
 ADR registra a parte que chegou ao `main`, **adaptada** às decisões tomadas depois dele. O
 rascunho `adr-029-public-legal-contract-and-data-lifecycle.md` do #614 não foi portado: metade

@@ -1,12 +1,14 @@
-// Quiosque de QC — read/write do fechamento de fornada (ADR-017 §9).
+// Quiosque de QC — read/write da finalização de fornada (ADR-017 §9).
 //   - useFetch da projection do quiosque (GET /api/v1/backstage/production/qc/);
-//   - poll calmo de 30s (o quiosque é quem ESCREVE o estado; o poll só traz
-//     fornadas fechadas por outras telas);
+//   - SSE primeiro (ADR-016, WP-F15): o canal da Produção avisa o lote que a
+//     Cozinha abriu ou outra tela fechou, e a tela refaz o GET canônico; o poll
+//     de 30 s fica de reserva, só enquanto o canal não está aberto;
 //   - finish com partição pela ordem do dia, quick-finish para fornada fora
 //     do plano. Shortage estruturado sobe para o modal, como no KDS.
 import type {
   ProductionQCResponse,
   ProductionShortageError,
+  QCKioskProjection,
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import {
@@ -24,6 +26,7 @@ import {
   type ProductionMutationBlock,
   type ProductionMutationMetadata,
 } from "~/composables/useProductionMutationGuard";
+import { useProductionLive } from "~/composables/useProductionLive";
 
 export interface QcActResult {
   ok: boolean;
@@ -33,7 +36,7 @@ export interface QcActResult {
 
 export function useQcKiosk(initialDate = "") {
   // "" = hoje (default do backend). Outra data serve à fornada esquecida de
-  // ontem — o fechamento aceita qualquer dia com ordem aberta.
+  // ontem — a finalização aceita qualquer dia com ordem aberta.
   const selectedDate = ref(initialDate);
 
   const { data, pending, error, refresh } = useFetch<ProductionQCResponse>(
@@ -48,10 +51,25 @@ export function useQcKiosk(initialDate = "") {
     },
   );
 
-  const kiosk = computed(() => data.value?.qc ?? null);
+  // Dado velho visível > painel em branco: o `useFetch` zera o dado quando a releitura
+  // falha (medido na pilha real com o Django parado, WP-F15), então o quiosque guarda a
+  // última leitura boa do dia que mostra, e a tela avisa que ela é velha. Trocar de dia
+  // a descarta. Sem nenhuma leitura boa, a tela mostra o erro com "Tentar de novo".
+  const lastGood = shallowRef<QCKioskProjection | null>(null);
+  watch(
+    () => data.value?.qc ?? null,
+    (next) => {
+      if (next) lastGood.value = next;
+    },
+    { immediate: true },
+  );
+  watch(selectedDate, () => {
+    lastGood.value = null;
+  });
+  const kiosk = computed(() => data.value?.qc ?? lastGood.value);
   const mutationGuard = useProductionMutationGuard(kiosk, refresh);
 
-  useAdaptivePoll(refresh, () => 30_000);
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () => 30_000);
 
   const submitting = ref(false);
   const attempts = new Map<string, string>();
@@ -99,6 +117,9 @@ export function useQcKiosk(initialDate = "") {
     yieldDeviationConfirmed = false,
     yieldDeviationReason = "",
     overrideProof = "",
+    // A confirmação do lote curto (decisão 1 do dono, 23/11/2026): a prova que a
+    // recusa de encomenda devolveu, na MESMA tentativa (mesma chave).
+    shortLotProof = "",
   ) =>
     post(`finish:${pk}`, (idempotencyKey, metadata) =>
       finishProductionWorkOrder(pk, {
@@ -114,6 +135,7 @@ export function useQcKiosk(initialDate = "") {
         idempotency_key: idempotencyKey,
         ...(force ? { reason: reason.trim() } : {}),
         ...(force && overrideProof ? { override_proof: overrideProof } : {}),
+        ...(shortLotProof ? { short_lot_proof: shortLotProof } : {}),
       }),
     );
 
@@ -215,6 +237,8 @@ export function useQcKiosk(initialDate = "") {
     pending,
     error,
     refresh,
+    realtime,
+    fallbackPollMs,
     submitting,
     finish,
     quickFinish,

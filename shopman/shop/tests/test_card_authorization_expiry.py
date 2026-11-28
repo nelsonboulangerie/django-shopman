@@ -199,6 +199,31 @@ class CardAuthorizationWithoutAcceptTests(TestCase):
         detail = build_operator_order(order, user=user)
         self.assertEqual(detail.card_authorization_expires_iso, expected)
 
+    def test_only_the_deadline_that_comes_first_is_shown(self) -> None:
+        """"Autorização vence em 6 dias" ao lado de "cancela sozinho em 15h27"
+        (beta 06/11): se o pedido cancela antes por falta de aceite, é esse
+        relógio que manda, e o prazo do cartão sai da tela."""
+        from shopman.backstage.projections.order_queue import _card_authorization_expires_iso
+
+        order = self._authorized_order()
+        intent = PaymentIntent.objects.get(ref=order.data["payment"]["intent_ref"])
+        authorization_ends = intent.authorized_at + timedelta(days=7)
+        sooner = (timezone.now() + timedelta(hours=15)).isoformat()
+        later = (authorization_ends + timedelta(hours=1)).isoformat()
+
+        self.assertEqual(
+            _card_authorization_expires_iso(order, "card", "authorized", acceptance_deadline=(sooner, "cancel")), "",
+        )
+        self.assertEqual(
+            _card_authorization_expires_iso(order, "card", "authorized", acceptance_deadline=(later, "cancel")),
+            authorization_ends.isoformat(),
+        )
+        # Prazo que aceita sozinho não cancela nada: o do cartão continua valendo.
+        self.assertEqual(
+            _card_authorization_expires_iso(order, "card", "authorized", acceptance_deadline=(sooner, "confirm")),
+            authorization_ends.isoformat(),
+        )
+
     # ── avisos com antecedência ──
 
     def test_a_stuck_order_gets_a_warning_with_the_deadline(self) -> None:

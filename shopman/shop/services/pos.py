@@ -9,6 +9,8 @@ from __future__ import annotations
 import copy
 import logging
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
@@ -30,8 +32,8 @@ from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
 from shopman.shop.services import account as account_service
 from shopman.shop.services import payment as payment_service
+from shopman.shop.services import phone_confirmation, weighed_sale
 from shopman.shop.services import sessions as session_service
-from shopman.shop.services import weighed_sale
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.pos_intent import (
     POS_AUTHORSHIP_META_KEY,
@@ -97,6 +99,10 @@ class PosSaleReview:
     #: ``house_account_over_limit`` para o gerente ver o saldo de hoje, o limite
     #: e quanto esta venda passa ANTES de assinar.
     house_account_limit: dict | None = None
+    #: Encomenda acima do plano da data (WP-E2, D-041): por linha, ``{sku, name,
+    #: requested_qty, planned_qty, unclaimed_qty, date}``. Vem junto do motivo
+    #: ``preorder_over_plan`` para o gerente ver os dois números antes de liberar.
+    preorder_over_plan: tuple[dict, ...] = ()
     warnings: tuple[dict, ...] = ()
     # OS DOIS ESCOPOS DO DESCONTO, separados.
     #
@@ -118,8 +124,9 @@ class PosSaleReview:
     delivery_fee_source: str = ""
     delivery_distance_km: float | None = None
     #: Frete grátis (ou abatido) pela loja: ``{reason, promotion_name,
-    #: threshold_q, base_fee_q}``, ou ``None``. ``reason`` é ``"promotion"`` ou
-    #: ``"threshold"``; ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
+    #: threshold_q, base_fee_q, group_name}``, ou ``None``. ``reason`` é
+    #: ``"promotion"``, ``"threshold"`` ou ``"group"`` (o frete grátis do grupo
+    #: ``group_name``); ``base_fee_q`` é a taxa sem a renúncia. O operador vê que o
     #: frete saiu grátis e por quê (P2-21).
     delivery_fee_waiver: dict | None = None
     #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
@@ -223,9 +230,9 @@ def _clean_tab_ref(value: str) -> str:
     if not raw:
         raise ValueError("Informe uma referência de comanda.")
     if len(raw) > _TAB_REF_MAX_LENGTH:
-        raise ValueError(f"Informe uma comanda com até {_TAB_REF_MAX_LENGTH} caracteres.")
+        raise ValueError(f"O nome da comanda vai até {_TAB_REF_MAX_LENGTH} letras.")
     if any(ch in _TAB_REF_DISALLOWED or ord(ch) < 32 for ch in raw):
-        raise ValueError("A referência da comanda não pode conter barras ou caracteres de URL.")
+        raise ValueError("O nome da comanda não leva / \\ ? # nem %.")
     return raw
 
 
@@ -330,14 +337,10 @@ def close_sale(
     payload: dict,
     actor: str,
     operator_username: str,
-    require_expected_total: bool = False,
 ) -> PosSaleResult:
     """Create and commit a POS sale from a parsed cart payload.
 
-    ``require_expected_total`` é o que a fronteira HTTP passa: a tela TEM de dizer
-    o total que mostrou (``expected_total_q``). Quem chama em Python (serviço,
-    teste) pode omitir, como já pode omitir ``intent_version``; mandando, vale a
-    mesma recusa. Ver ``_ensure_expected_total``.
+    Toda entrada, HTTP ou Python, precisa declarar o total revisado.
     """
     from shopman.shop.services import pos_edit_session
 
@@ -354,6 +357,13 @@ def close_sale(
     payload = _inherit_sales_mode(channel_ref, payload)
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
+    # A chave da loja (``Shop.pos_offline_sale_enabled``, desligada por padrão):
+    # desligada, a venda guardada sem conexão não entra, nem a do dispositivo
+    # velho. O reenvio de uma venda que já fechou segue devolvendo o pedido.
+    pos_offline_sale.refuse_when_disabled(
+        payload,
+        already_closed=lambda: _existing_sale_by_client_request_id(channel_ref=channel.ref, payload=payload) is not None,
+    )
     # A venda feita SEM CONEXÃO, dentro das travas e com hora plausível, é a venda
     # que o balcão COBROU (decisões C e D do dono, 10/10/2026): o payload passa a
     # ser o cobrado, linha pesada inclusive (pelo quilo que a tela usou), e o
@@ -384,15 +394,26 @@ def close_sale(
     # sem conexão fica de fora: nela vale o cobrado (decisão D, 10/10/2026).
     if open_tab is None and offline_at is None and not _payload_has_tab_identity(payload):
         _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
+    elif open_tab is not None and offline_at is None:
+        _stamp_tab_engine_prices(
+            payload, open_tab, channel=channel, config=config, operator_username=operator_username,
+        )
     _ensure_resolved_prices(payload)
-    _ensure_expected_total(payload, channel_ref=channel.ref, required=require_expected_total)
+    # O desconto manual é o do MOTOR (A3-1): a conferência do total da tela, o
+    # portão do gerente e a taxa de entrega leem o mesmo número que o selo do
+    # fechamento confere.
+    _stamp_engine_manual_discounts(
+        payload, channel=channel, config=config, operator_username=operator_username, session=open_tab,
+    )
+    _ensure_expected_total(payload, channel_ref=channel.ref)
     # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
     # desconto lá embaixo. Ver `build_session_ops`.
-    approver = validate_manager_approval(payload, operator_username=operator_username)
+    approver = validate_manager_approval(payload, operator_username=operator_username, channel_ref=channel.ref)
     approved_by = approver.get_username() if approver is not None else ""
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
     _require_order_mode_if_payment_link(payload)
+    _refuse_pay_at_pickup_other_day(payload)
     _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_delivery_fiscal_identity(payload, channel_ref=channel.ref)
@@ -455,7 +476,7 @@ def close_sale(
             shift = _require_open_shift(payload)
             if session is None:
                 if _payload_has_tab_identity(payload):
-                    raise ValueError("Abra um POS tab antes de finalizar.")
+                    raise ValueError("Abra a comanda antes de validar.")
                 session = _create_direct_checkout_session(
                     channel_ref=channel.ref,
                     payload=payload,
@@ -471,7 +492,7 @@ def close_sale(
                 if session.state != "open" or ("expected_revision" in payload and payload["expected_revision"] != pos_session_revision(session)):
                     if offline_at is None or session.state != "open":
                         raise PosIntentError(code="tab_revision_conflict", status=409,
-                            message="Esta comanda mudou. Confira a versão atual antes de finalizar.")
+                            message="Esta comanda mudou. Confira a versão atual antes de validar.")
                     # Venda sem conexão: fecha o que foi cobrado; o resto da
                     # comanda segue aberto (``reopen_tab_with_leftovers``).
                     tab_plan = pos_offline_sale.plan_open_tab(session, payload)
@@ -544,7 +565,7 @@ def close_sale(
         raise _as_error(result.order_ref, exc) from exc
 
 
-def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -> None:
+def _ensure_expected_total(payload: dict, *, channel_ref: str) -> None:
     """O total que a tela mostrou é o total que se cobra (D42, 02/10/2026).
 
     A tela manda ``expected_total_q`` (o total da revisão que o operador viu) e o
@@ -553,13 +574,11 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
     para cima OU para baixo, a venda é recusada antes de qualquer escrita: cobrar
     um número que o operador não conferiu com o cliente é cobrança surpresa, e
     cobrar a menos é dinheiro que a casa não vê sair. Molde: o ``total_changed``
-    do checkout da loja (``checkout._ensure_total_matches``), mesmo código e
-    mesmo contexto ``old_total_q``/``new_total_q``.
+    do checkout da loja (``CommitService.validate_expected_total``), mesmo
+    código e mesmo contexto ``old_total_q``/``new_total_q``.
 
-    Ausente na fronteira HTTP (``required``) é recusa, não "confie": antes do
-    go-live não há cliente antigo a preservar, e o único cliente do endpoint é o
-    PDV, que sempre manda. Ausente numa chamada Python é "sem total de tela":
-    segue a conta do servidor, como antes.
+    Ausente em qualquer fronteira é recusa, não "confie": antes do go-live não
+    há cliente antigo a preservar, e todo chamador confirma o mesmo total.
 
     A retentativa da MESMA venda (``client_request_id`` que já virou pedido) não
     passa por aqui: o pedido existe, e quem responde é ele. Um preço que mudou
@@ -570,11 +589,9 @@ def _ensure_expected_total(payload: dict, *, channel_ref: str, required: bool) -
         return
     expected = payload.get("expected_total_q")
     if expected is None:
-        if not required:
-            return
         raise PosIntentError(
             code="expected_total_required",
-            message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e finalize de novo.",
+            message="A venda chegou sem o total que a tela mostrou. Atualize o PDV e valide de novo.",
             field="expected_total_q",
             focus="payment",
             recovery="Atualize o PDV antes de reenviar a venda.",
@@ -600,7 +617,7 @@ def _total_changed(*, old_total_q: int, new_total_q: int) -> PosIntentError:
         ),
         field="expected_total_q",
         focus="payment",
-        recovery="Confira o total novo com o cliente e finalize de novo.",
+        recovery="Confira o total novo com o cliente e valide de novo.",
         context={"old_total_q": old_total_q, "new_total_q": new_total_q},
     )
 
@@ -852,31 +869,43 @@ def _commit_sale_session(
         charged_q = pos_offline_sale.charged_total_q(payload)
         server_q = pos_offline_sale.session_total_q(session)
         if server_q != charged_q:
+            # O cobrado se explica pelo catálogo da tabela da tela ou da hora da
+            # cobrança (histórico de preços)? Sem explicação, vale o cobrado do
+            # mesmo jeito (o dinheiro entrou), e a venda fica "a conferir".
+            references = [copy.deepcopy(session.items or [])]
+            for as_of in pos_offline_sale.catalog_instants(payload, priced_at=priced_at):
+                session = _price_at_catalog(session, channel=channel, config=config, ops=replay_ops, ctx=ctx, as_of=as_of)
+                references.append(copy.deepcopy(session.items or []))
+            pricing = pos_offline_sale.pricing_record(charged_q=charged_q, server_q=server_q, priced_at=priced_at)
+            pricing.update(pos_offline_sale.explain_charge(payload, references, operator_username=operator_username))
             session = _reprice_as_charged(
                 session, channel=channel, config=config, ops=replay_ops, ctx=ctx,
-                record={**offline, "pricing": pos_offline_sale.pricing_record(
-                    charged_q=charged_q, server_q=server_q, priced_at=priced_at,
-                )},
+                record={**offline, "pricing": pricing},
             )
             logger.info(
                 "pos_offline_charged_wins session=%s charged=%s server=%s",
                 session.session_key, charged_q, server_q,
             )
 
+    from shopman.orderman.services.commit import CommitAuthority, CommitSeal
+
     commit_ctx: dict = {"actor": actor}
-    if priced_at is None and payload.get("expected_total_q") is not None:
-        # O total que a tela mostrou é conferido contra as linhas que o MOTOR
-        # precificou, dentro do commit: divergiu, nada nasce e o operador vê o
-        # total novo (``total_changed``). Nunca mais o pagamento reescrito calado
-        # pelo ``_reconcile_order_payment_to_total`` (P0-1). A venda sem conexão
-        # fica de fora: nela vale o cobrado.
-        commit_ctx["expected_total_q"] = int(payload["expected_total_q"])
+    offline_charge = priced_at is not None
+    sealed_total_q = (
+        pos_offline_sale.charged_total_q(payload)
+        if offline_charge
+        else int(payload["expected_total_q"])
+    )
     result = session_service.commit_session(
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=_payload_client_request_id(payload) or session_service.new_idempotency_key(),
+        seal=CommitSeal(
+            expected_revision=session.rev,
+            expected_total_q=sealed_total_q,
+            authority=(CommitAuthority.OFFLINE_CHARGE if offline_charge else CommitAuthority.OPERATOR_REVIEWED),
+        ),
         ctx=commit_ctx,
-        channel_config=config.to_dict(),
     )
     # ⚠️ O carimbo da comanda e o marcador de trilha saíram daqui de propósito —
     # ver `close_sale`, que os chama DEPOIS de fechar a transação. Escrevê-los
@@ -906,16 +935,25 @@ def review_sale(
     _refuse_priceless_items(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
-        raise ValueError("Abra um POS tab antes de finalizar.")
+        raise ValueError("Abra a comanda antes de validar.")
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou.
     _stamp_list_prices_from_session(payload, session)
-    priced_lines: tuple[dict, ...] = ()
+    priced: dict[int, dict] = {}
     if session is None:
         # Sem comanda, o kernel ainda não precificou nada: a revisão pergunta ao
         # motor, para a tela mostrar o total que o fechamento vai cobrar (P0-1).
         priced = _stamp_engine_prices(payload, channel=channel, config=config, operator_username=operator_username)
-        priced_lines = _review_priced_lines(payload, priced)
+    else:
+        priced = _stamp_tab_engine_prices(
+            payload, session, channel=channel, config=config, operator_username=operator_username,
+        )
     _ensure_resolved_prices(payload)
+    # O desconto manual também é o do motor (A3-1): o total da revisão é o que o
+    # selo do fechamento confere, sem conta paralela do PDV.
+    with_manual = _stamp_engine_manual_discounts(
+        payload, channel=channel, config=config, operator_username=operator_username, session=session,
+    )
+    priced_lines = _review_priced_lines(payload, priced, with_manual)
 
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
@@ -1034,7 +1072,7 @@ def review_sale(
         warnings.append({
             "code": "payment_tenders_required",
             "field": "payment_tenders",
-            "message": "Adicione as linhas do pagamento misto antes de finalizar.",
+            "message": "Adicione as linhas do pagamento misto antes de validar.",
         })
     elif payment_method == "mixed" and total_q > 0 and tender_total_q < total_q:
         warnings.append({
@@ -1043,7 +1081,7 @@ def review_sale(
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
 
-    pix_warning = _pix_payment_policy_warning(
+    pix_warning = pix_payment_policy_warning(
         payload,
         total_q=total_q,
         payment_method=payment_method,
@@ -1053,8 +1091,9 @@ def review_sale(
         warnings.append(pix_warning)
 
     account_excess = _house_account_excess(payload, total_q=total_q)
+    over_plan = _payload_over_plan(payload, channel_ref=channel.ref)
     approval_reasons = _approval_reasons(
-        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess,
+        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess, over_plan=over_plan,
     )
 
     # Aviso não-bloqueante de disponibilidade: no balcão a venda vale mesmo sem
@@ -1088,15 +1127,45 @@ def review_sale(
         channel_ref=channel.ref,
         target_date=target_date,
     )
-    for (item, sku, _qty), decision in zip(checked, decisions, strict=True):
-        if decision.get("approved"):
-            continue
+    not_ready: list[tuple[str, str, Decimal]] = []
+    # Encomenda para data ainda sem lote planejado do item: não é falta, é pedido à
+    # Produção (WP-E3, D2). Só se pergunta pelo que não foi aprovado.
+    from shopman.shop.services import stock as stock_service
+
+    unplanned = stock_service.unplanned_on(
+        [sku for (_item, sku, _qty), decision in zip(checked, decisions, strict=True) if not decision.get("approved")],
+        target_date,
+    )
+    for (item, sku, qty), decision in zip(checked, decisions, strict=True):
         name = str(item.get("name") or sku)
+        if decision.get("approved"):
+            # Prometido, mas parte sai de lote: o operador combina a espera.
+            ready = decision.get("ready_qty")
+            if decision.get("orderable_ceiling") is not None and ready is not None and qty > ready:
+                not_ready.append((name, sku, qty - ready))
+            continue
+        # O `sku` deixa a tela marcar o item na conta (a ressalva é terciária: um
+        # sinal no item, não uma caixa a mais no Pagamento; dono, 03/11/2026).
+        shortfall = (
+            f"ainda sem lote planejado para {target_date.strftime('%d/%m')}. Vira pedido à Produção."
+            if sku in unplanned
+            else _availability_shortfall(decision, requested_qty=qty, target_date=target_date)
+        )
         warnings.append({
             "code": "item_low_stock",
             "field": "items",
-            "message": f"{name}: {_availability_shortfall(decision)}",
+            "sku": sku,
+            "message": f"{name}: {shortfall}",
         })
+    if not_ready:
+        started = _started_lot_qty([sku for _name, sku, _missing in not_ready], target_date)
+        for name, sku, missing in not_ready:
+            warnings.append({
+                "code": "item_not_ready",
+                "field": "items",
+                "sku": sku,
+                "message": f"{name}: {_lot_stage(started.get(sku, Decimal('0')), missing)}, não pronto",
+            })
 
     return PosSaleReview(
         intent_version=POS_SALE_INTENT_VERSION,
@@ -1128,6 +1197,7 @@ def review_sale(
         fiscal_tax_id_requested=bool(str(payload.get("fiscal_tax_id") or "").strip()),
         approval_reasons=tuple(approval_reasons),
         house_account_limit=account_excess.as_dict() if account_excess is not None else None,
+        preorder_over_plan=tuple(over_plan),
         warnings=tuple(warnings),
         delivery_fee_source=delivery.source,
         delivery_distance_km=delivery.distance_km,
@@ -1139,42 +1209,49 @@ def review_sale(
     )
 
 
-def _review_priced_lines(payload: dict, priced: dict[int, dict]) -> tuple[dict, ...]:
-    """As linhas da venda sem comanda como o motor as cobra, no formato da comanda.
+def _review_priced_lines(
+    payload: dict, priced: dict[int, dict], with_manual: dict[int, dict],
+) -> tuple[dict, ...]:
+    """As linhas da venda como o motor as cobra, no formato da linha da comanda.
 
-    O desconto MANUAL de linha fica fora da sonda (ver ``_stamp_engine_prices``),
-    então ele entra aqui pela mesma régua do kernel: um desconto por item, o maior
-    ganha, medido contra a etiqueta. Quando o manual vence, o automático sai da
-    linha (o selo é o do manual, que a tela já conhece); quando perde, a linha
-    cobra o automático e mostra o rótulo dele.
+    ``priced`` é a linha do motor sem os descontos manuais; ``with_manual``,
+    com eles (vazio quando a venda não tem desconto manual). Nenhuma das duas
+    é conta do PDV: quando o desconto manual vence a linha, o motor carimba ``_disc`` do tipo ``manual`` com o valor por unidade,
+    e é esse o preço que a linha cobra; quando perde, a linha cobra o automático
+    e mostra o rótulo dele. O desconto de PEDIDO não entra no preço da linha: a
+    tela o mostra à parte.
+
+    A revisão responde por todas as linhas, inclusive quando o último desconto
+    manual foi removido. O total e o preço da linha voltam juntos.
+
+    ``meta.manual_discount`` volta quando o motor decidiu o desconto pedido: é por
+    ele que o eco diz se o desconto do operador valeu ou foi descartado por um
+    automático maior (``manual_discount_discarded``).
     """
     lines: list[dict] = []
     for index, item in enumerate(payload.get("items") or []):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
         line_id = str(item.get("line_id") or "")
-        engine_line = priced.get(index)
+        engine_line = priced.get(index) or with_manual.get(index)
         if not line_id or not engine_line:
             continue
         meta = engine_line.get("meta") or {}
         charged_q = _int_q(engine_line.get("unit_price_q"))
         list_q = _int_q(meta.get("_list_q")) or charged_q
         disc = dict(meta.get("_disc") or {})
-        manual = _normalize_line_discount(item.get("discount"))
-        if manual:
-            # A MESMA conta de ``_payload_line_discounts_q`` / ``DiscountModifier._calc_manual``.
-            if manual["type"] == "fixed":
-                manual_q = min(int(round(manual["value"] * 100)), list_q)
-            else:
-                manual_q = min(int(round(list_q * manual["value"] / 100)), list_q)
-            if manual_q > list_q - charged_q:
-                charged_q = list_q - manual_q
-                disc = {}
-        lines.append({
-            "line_id": line_id,
-            "unit_price_q": charged_q,
-            "meta": {"_list_q": list_q, **({"_disc": disc} if disc else {})},
-        })
+        if disc.get("scope") == "order":
+            disc = {}
+        manual_meta = (with_manual.get(index) or {}).get("meta") or {}
+        manual_disc = manual_meta.get("_disc") or {}
+        if manual_disc.get("type") == "manual":
+            list_q = _int_q(manual_meta.get("_list_q")) or list_q
+            charged_q = list_q - _int_q(manual_disc.get("amount_q"))
+            disc = dict(manual_disc)
+        line_meta: dict = {"_list_q": list_q, **({"_disc": disc} if disc else {})}
+        if manual_meta.get("manual_discount"):
+            line_meta["manual_discount"] = dict(manual_meta["manual_discount"])
+        lines.append({"line_id": line_id, "unit_price_q": charged_q, "meta": line_meta})
     return tuple(lines)
 
 
@@ -1187,6 +1264,7 @@ def _waiver_review(delivery: DeliveryFeeResolution) -> dict | None:
         "promotion_name": waiver.promotion_name,
         "threshold_q": waiver.threshold_q,
         "base_fee_q": waiver.base_fee_q,
+        "group_name": waiver.group_name,
     }
 
 
@@ -1272,10 +1350,35 @@ def _qty_display(value) -> str:
     return (text or "0").replace(".", ",")
 
 
-def _availability_shortfall(decision: dict) -> str:
+def _started_lot_qty(skus: list[str], target_date) -> dict[str, Decimal]:
+    """Quanto dos lotes da data já foi aberto na Produção, por SKU (uma consulta)."""
+    from django.db.models import Sum
+    from shopman.craftsman.models import WorkOrder
+
+    rows = (
+        WorkOrder.objects.filter(
+            output_sku__in=skus, status=WorkOrder.Status.STARTED, target_date__lte=target_date,
+        )
+        .values("output_sku")
+        .annotate(total=Sum("quantity"))
+    )
+    return {row["output_sku"]: row["total"] or Decimal("0") for row in rows}
+
+
+def _lot_stage(started_qty: Decimal, missing: Decimal) -> str:
+    """Em que ponto da Produção está o que ainda falta ficar pronto.
+
+    Os nomes são as quantidades da Produção: *previsto* é lote já aberto,
+    *planejado* é lote que ainda não começou (dono, 28/10/2026). Se o aberto
+    não cobre o que falta, parte depende do que nem começou: planejado.
+    """
+    return "Previsto" if started_qty >= missing else "Planejado"
+
+
+def _availability_shortfall(decision: dict, *, requested_qty=None, target_date=None) -> str:
     """Por que este item não foi aprovado — na língua do balcão.
 
-    Quatro causas distintas saíam com a MESMA frase ("só N em estoque"), o que
+    Três causas distintas saíam com a MESMA frase ("só N em estoque"), o que
     mandava o operador conferir a gôndola quando o problema era o produto estar
     pausado ou fora do cardápio do PDV. E ``int(available_qty)`` truncava: meio
     quilo de queijo virava "só 0 em estoque" numa venda que estava correta.
@@ -1284,13 +1387,18 @@ def _availability_shortfall(decision: dict) -> str:
         return "pausado no cardápio do balcão. A venda vale; confira o cadastro."
     if decision.get("reason_code") == "not_in_listing":
         return "fora do cardápio do balcão. A venda vale; confira o cadastro."
-    if decision.get("is_planned"):
-        # Não é falta: o que cobre a data é produção ainda por fazer. Quem lê
-        # isto precisa combinar a espera com o cliente, não caçar unidade na
-        # prateleira. (Na tela de operador o objeto chama-se LOTE — decisão do
-        # dono, 22/09/2026 —, e "fornada" ficou só para a loja.)
-        return "ainda não está pronto: sai do lote planejado para a data."
     available = decision.get("available_qty") or 0
+    if target_date is not None and target_date > timezone.localdate():
+        # ENCOMENDA (#2559): o número é o PLANO da data, não o estoque, e a venda
+        # não é de balcão. Na encomenda PDV-261116-K16 a frase dizia "só 44 em
+        # estoque. A venda de balcão vale" para 200 baguetes pedidas contra 22
+        # planejadas. O que passa do plano fica registrado como demanda e a
+        # Produção recebe o aviso no fechamento (``stock.alert_demand_over_plan``).
+        asked = f"{_qty_display(requested_qty)} pedidas, " if requested_qty is not None else ""
+        return (
+            f"{asked}{_qty_display(available)} planejadas para {target_date.strftime('%d/%m')}. "
+            "O que passa do plano fica como encomenda sem fornada, e a Produção é avisada."
+        )
     return f"só {_qty_display(available)} em estoque. A venda de balcão vale; confira o estoque depois."
 
 
@@ -1747,23 +1855,61 @@ def open_pos_tab(
     operator_username: str,
 ) -> Session:
     """Open or load the current order for a POS tab (returns the open session)."""
+    return open_pos_tab_reporting(
+        channel_ref=channel_ref, tab_ref=tab_ref, actor=actor, operator_username=operator_username,
+    ).session
+
+
+@dataclass(frozen=True)
+class PosTabOpening:
+    """A comanda aberta e se FOI esta chamada que a abriu (``created``).
+
+    ``created`` é o que deixa o PDV devolver ao quadro a comanda que ele mesmo
+    abriu e deixou vazia (#2443). Comanda que já estava em uso (de outra estação,
+    ou de antes) não é dele para liberar.
+    """
+
+    session: Session
+    created: bool
+
+
+def _new_pos_tab_session_data(*, ref: str, tab_display: str, operator_username: str) -> dict:
+    """O dado de uma comanda que nasce agora.
+
+    ``pos_opened_by`` é QUEM ABRIU e não muda mais: ``pos_operator`` é quem
+    mexeu por último, e abrir a mesma comanda em outra estação o reescrevia (o
+    quadro não sabia de quem era a comanda vazia, beta de 05/11, PDV-19).
+    """
+    return {
+        "origin_channel": "pos",
+        "fulfillment_type": "pickup",
+        "tab_ref": ref,
+        "tab_display": tab_display,
+        "pos_operator": operator_username,
+        "pos_opened_by": operator_username,
+        "last_touched_at": timezone.now().isoformat(),
+    }
+
+
+def open_pos_tab_reporting(
+    *,
+    channel_ref: str,
+    tab_ref: str,
+    actor: str,
+    operator_username: str,
+) -> PosTabOpening:
+    """``open_pos_tab`` dizendo se a comanda nasceu nesta chamada."""
     channel, config = _channel_and_config(channel_ref)
     ref = normalize_tab_ref(tab_ref)
     tab_display = _ensure_pos_tab(ref, display=_tab_label_from_input(tab_ref, ref))
     session = _get_open_pos_tab_session(channel_ref=channel.ref, tab_ref=ref)
+    created = session is None
     if session is None:
         session = session_service.create_session(
             channel.ref,
             handle_type="pos_tab",
             handle_ref=ref,
-            data={
-                "origin_channel": "pos",
-                "fulfillment_type": "pickup",
-                "tab_ref": ref,
-                "tab_display": tab_display,
-                "pos_operator": operator_username,
-                "last_touched_at": timezone.now().isoformat(),
-            },
+            data=_new_pos_tab_session_data(ref=ref, tab_display=tab_display, operator_username=operator_username),
         )
     else:
         session_service.assign_handle(
@@ -1787,7 +1933,86 @@ def open_pos_tab(
         session.refresh_from_db()
 
     logger.info("pos_open_tab tab=%s session=%s operator=%s", ref, session.session_key, operator_username)
-    return session
+    return PosTabOpening(session=session, created=created)
+
+
+# Quantas vezes a reserva tenta a seguinte quando outra estação levou a livre no
+# mesmo instante. Cada volta perde para uma reserva que DEU certo: esgotar isto
+# pede uma fila de estações maior que o balcão de uma padaria.
+_NEXT_FREE_ATTEMPTS = 20
+
+
+def _next_free_numeric_tab_ref(channel_ref: str) -> str:
+    """A menor comanda numérica cadastrada sem conta aberta; sem nenhuma, a seguinte à maior.
+
+    A mesma regra que o quadro do PDV mostra no botão (``nextFreeNumericTabRef``),
+    agora respondida pelo servidor, que é quem vê todas as estações.
+    """
+    occupied = {
+        str((data or {}).get("tab_ref") or handle_ref or "").strip()
+        for handle_ref, data in Session.objects.filter(channel_ref=channel_ref, state="open")
+        .filter(Q(handle_type="pos_tab") | Q(data__has_key="tab_ref"))
+        .values_list("handle_ref", "data")
+    }
+    numbers = sorted(
+        {int(ref) for ref in pos_adapter.active_tab_refs() if is_numeric_tab_ref(ref)}
+        | {int(ref) for ref in occupied if is_numeric_tab_ref(ref)}
+    )
+    for number in numbers:
+        ref = str(number).zfill(MAX_NUMERIC_TAB_REF_DIGITS)
+        if ref not in occupied:
+            return ref
+    return str((numbers[-1] + 1) if numbers else 1).zfill(MAX_NUMERIC_TAB_REF_DIGITS)
+
+
+def reserve_next_free_pos_tab(*, channel_ref: str, operator_username: str, client_request_id: str = "") -> Session:
+    """A "Próxima livre" reservada no servidor, de forma atômica (#2443).
+
+    O quadro escolhia a livre no navegador e abria pelo número: duas estações
+    que tocavam juntas abriam a MESMA comanda, e a segunda só carregava a conta
+    da primeira. Aqui a reserva é a criação da conta, e a trava é a do banco (uma
+    conta aberta por comanda, ``ord_uniq_open_session_handle``): quem perde a
+    corrida leva a seguinte, nunca a mesma.
+
+    ``client_request_id``: a MESMA chamada repetida (a rede caiu antes da
+    resposta e o PDV tentou de novo) devolve a comanda que ela já reservou, em vez
+    de pôr mais uma em uso. A chave fica na conta (``pos.reservation_request_id``).
+    """
+    channel, _config = _channel_and_config(channel_ref)
+    request_id = str(client_request_id or "").strip()
+    if request_id:
+        already = Session.objects.filter(
+            channel_ref=channel.ref, state="open", data__pos__reservation_request_id=request_id,
+        ).first()
+        if already is not None:
+            return already
+    for _attempt in range(_NEXT_FREE_ATTEMPTS):
+        ref = _next_free_numeric_tab_ref(channel.ref)
+        tab_display = _ensure_pos_tab(ref)
+        try:
+            with transaction.atomic():
+                data = _new_pos_tab_session_data(
+                    ref=ref, tab_display=tab_display, operator_username=operator_username,
+                )
+                if request_id:
+                    data["pos"] = {"reservation_request_id": request_id}
+                session = session_service.create_session(
+                    channel.ref,
+                    handle_type="pos_tab",
+                    handle_ref=ref,
+                    data=data,
+                )
+        except IntegrityError:
+            # silêncio-deliberado: outra estação reservou esta no mesmo instante;
+            # a próxima volta lê o quadro de novo e leva a seguinte.
+            continue
+        logger.info("pos_reserve_next_free_tab tab=%s session=%s operator=%s", ref, session.session_key, operator_username)
+        return session
+    raise PosIntentError(
+        code="next_free_tab_contended",
+        message="Outras estações abriram comandas ao mesmo tempo. Toque de novo em Próxima livre.",
+        status=409,
+    )
 
 
 def save_pos_tab(
@@ -1823,6 +2048,7 @@ def save_pos_tab(
     fulfillment_type = _payload_fulfillment_type(payload)
     if payload.get("sales_mode") == "order" and not payload.get("items") and not payload.get("fulfillment_type"):
         fulfillment_type = ""
+    _stamp_discounts_left_to_the_save(payload)
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -1863,6 +2089,7 @@ def _save_edit_session(session, payload, *, channel, config, actor: str, operato
     """
     from shopman.shop.services import pos_edit_session
 
+    _stamp_discounts_left_to_the_save(payload)
     ops = _replace_session_ops(session, payload, operator_username)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
@@ -2048,6 +2275,22 @@ def set_pos_tab_seating(
     return session
 
 
+def _refuse_edit_session_move(session: Session, *, field: str) -> None:
+    """A comanda virtual da edição de encomenda não é origem nem destino de
+    transferência: o item dela é de uma encomenda já vendida, e só muda pelo
+    "Salvar alterações" (``order_edit``)."""
+    from shopman.shop.services import pos_edit_session
+
+    if pos_edit_session.is_edit_session(session):
+        raise PosIntentError(
+            code="edit_session_no_move",
+            message="Itens de uma encomenda em edição não se transferem. Termine a edição primeiro.",
+            field=field,
+            focus="cart",
+            status=409,
+        )
+
+
 def move_pos_tab_lines(
     *,
     channel_ref: str,
@@ -2089,6 +2332,7 @@ def move_pos_tab_lines(
             field="from_session_key",
             focus="cart",
         )
+    _refuse_edit_session_move(source, field="from_session_key")
 
     target_created = False
     if to_session_key:
@@ -2100,6 +2344,7 @@ def move_pos_tab_lines(
                 field="to_session_key",
                 focus="cart",
             )
+        _refuse_edit_session_move(target, field="to_session_key")
     elif to_tab_ref:
         try:
             ref = normalize_tab_ref(to_tab_ref)
@@ -2714,7 +2959,7 @@ def cancel_recent_order(
     if channel_ref is None:
         from django.conf import settings
 
-        channel_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+        channel_ref = settings.SHOPMAN_POS_CHANNEL_REF
     try:
         order = Order.objects.get(ref=order_ref)
     except Order.DoesNotExist as exc:
@@ -2805,6 +3050,28 @@ def reopen_recent_order_for_correction(
     data["pos_correction_reason"] = reason
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+
+
+def _price_at_catalog(
+    session: Session, *, channel: Channel, config: ChannelConfig, ops: list[dict], ctx: dict, as_of
+) -> Session:
+    """Reprecifica a sessão pelo catálogo de ``as_of`` (histórico), na hora da cobrança.
+
+    Só a conferência da venda sem conexão usa: é a referência que diz se o
+    cobrado se explica pela tabela que a tela tinha. A sessão volta a ser
+    regravada pelo cobrado logo depois (``_reprice_as_charged``).
+    """
+    from shopman.shop.handlers.pricing import CATALOG_AS_OF_CTX_KEY
+
+    replay = [{"op": "remove_line", "line_id": item["line_id"]} for item in (session.items or []) if item.get("line_id")]
+    replay.extend(op for op in ops if op.get("op") != "remove_line")
+    return session_service.modify_session(
+        session_key=session.session_key,
+        channel_ref=channel.ref,
+        ops=copy.deepcopy(replay),
+        ctx={**ctx, CATALOG_AS_OF_CTX_KEY: as_of},
+        channel_config=config.to_dict(),
+    )
 
 
 def _reprice_as_charged(
@@ -2955,6 +3222,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     from shopman.shop.services.pos_sales_mode import sales_mode
 
     ops.append({"op": "set_data", "path": "pos.sales_mode", "value": sales_mode(payload)})
+    # Comer aqui ou levar (#3193): vai com o bloco ``pos`` para o pedido, e a
+    # Cozinha lê daí o "Para levar" no ticket. Vazio na encomenda.
+    ops.append({"op": "set_data", "path": "pos.counter_service", "value": str(payload.get("counter_service") or "")})
     fulfillment_type = _payload_fulfillment_type(payload)
     ops.append({"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type})
     # Observações do pedido valem para QUALQUER recebimento (retirada incluída):
@@ -3138,7 +3408,54 @@ def _bare_username(value: str) -> str:
     return raw.split(":", 1)[1] if ":" in raw else raw
 
 
-def _verify_manager_pin(username: str, pin: str, *, operator_username: str = ""):
+#: O veredito do PIN de gerente já conferido FORA da transação, por
+#: (username, PIN). Ver ``manager_pin_checked_before_transaction``.
+_MANAGER_PIN_VERDICTS: ContextVar[dict | None] = ContextVar("manager_pin_verdicts", default=None)
+
+
+@contextmanager
+def manager_pin_checked_before_transaction(approval):
+    """Confere o PIN de gerente ANTES da transação, para a falha ficar gravada.
+
+    O ``PinCredential`` grava cada erro (e arma a trava) na mesma conexão de quem
+    pergunta. Quem pergunta de dentro de um ``atomic`` e recusa a operação
+    levantando, ou marcando rollback, desfaz junto o registro do erro: a sangria,
+    a devolução, o estorno na maquininha, o atendimento do troco e o cancelamento
+    de venda pediam o PIN dentro da mutação idempotente, e o contador do gerente
+    nunca passava de zero. Força bruta sem trava.
+
+    Esta porta confere o PIN uma vez, fora da transação, e guarda o veredito
+    para o ``validate_manager_override`` de dentro usar sem conferir de novo.
+    Uma tentativa conta uma vez, aprovada ou não. O crachá não tem contador
+    (ele não se adivinha), e passa direto.
+
+    ⚠️ Só cumpre o papel se entrar FORA de qualquer ``atomic`` que a recusa
+    desfaça. Escopos aninhados herdam o veredito do de fora e não conferem de
+    novo: o de dentro, sim, estaria na transação.
+    """
+    approval = approval if isinstance(approval, dict) else {}
+    username = str(approval.get("username") or "").strip()
+    pin = str(approval.get("pin") or "")
+    badge = str(approval.get("badge") or "").strip()
+    verdicts = dict(_MANAGER_PIN_VERDICTS.get() or {})
+    if username and pin and not badge and (username, pin) not in verdicts:
+        verdicts[(username, pin)] = _check_manager_pin(username, pin)
+    token = _MANAGER_PIN_VERDICTS.set(verdicts)
+    try:
+        yield
+    finally:
+        _MANAGER_PIN_VERDICTS.reset(token)
+
+
+def _verify_manager_pin(username: str, pin: str):
+    """O veredito já conferido fora da transação, ou a conferência agora."""
+    verdicts = _MANAGER_PIN_VERDICTS.get() or {}
+    if (username, pin) in verdicts:
+        return verdicts[(username, pin)]
+    return _check_manager_pin(username, pin)
+
+
+def _check_manager_pin(username: str, pin: str):
     """Resolve a manager by username and verify their override PIN.
 
     A short, rate-limited PIN challenge replaces account passwords in the sale
@@ -3146,13 +3463,14 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
     and the same ``cashman.adjust_shift`` permission the override gates
     require. Returns the authorizing user, or ``None`` if the challenge fails.
 
-    ⚠️ ``operator_username`` é o que faz da segunda assinatura uma SEGUNDA
-    pessoa. Antes bastava ter ``is_staff`` + ``adjust_shift``, e o gerente que
-    também opera o balcão (a Joyce do seed tem os dois) se autorizava: escolhia
-    o próprio nome em "Quem autoriza?", digitava o próprio PIN e a exceção saía
-    com quem faz e quem autoriza sendo a mesma pessoa. Isso não é aprovação, é
-    um passo a mais no mesmo ato — e era exatamente a fraude que o fluxo de
-    exceção do caixa existe para impedir.
+    ⚠️ O gerente que está operando ASSINA a própria exceção, com o PIN dele
+    (decisão do dono, 28/10/2026). Até então a autoassinatura era recusada para
+    a segunda assinatura ser uma segunda pessoa, e o resultado no balcão real
+    foi o oposto do controle: com uma gerente só no turno (a Joyce), a lista
+    "Quem autoriza?" chegava vazia e nenhuma exceção saía. O PIN pedido de novo
+    é a prova que importa: quem estiver usando a sessão dela não o tem. O
+    rastro continua inteiro: o livro grava ``operator`` e ``approved_by``, e a
+    auditoria lê quando os dois são a mesma pessoa (o log marca ``self_signed``).
     """
     from django.contrib.auth import get_user_model
     from shopman.doorman.models import PinCredential
@@ -3164,10 +3482,6 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
         return None
     if not user.has_perm("cashman.adjust_shift"):
         return None
-    operator = _bare_username(operator_username)
-    if operator and _bare_username(username) == operator:
-        logger.warning("pos_manager_self_approval_refused operator=%s", operator)
-        return None
     try:
         credential = user.pin_credential
     except PinCredential.DoesNotExist:
@@ -3175,7 +3489,7 @@ def _verify_manager_pin(username: str, pin: str, *, operator_username: str = "")
     return user if credential.verify(pin) else None
 
 
-def _verify_manager_badge(badge: str, *, operator_username: str = ""):
+def _verify_manager_badge(badge: str):
     """Resolve o gerente pelo CRACHÁ, com a mesma permissão que o PIN exige.
 
     A sangria e o pedido de troco são a hora em que o gerente mais aparece no
@@ -3195,12 +3509,8 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     projeto, com teste que trava). É a mesma escolha que o `_verify_manager_pin`
     aqui do lado já fazia, pelo mesmo motivo.
 
-    ⚠️ ``operator_username`` recusa a autoassinatura, exatamente como no PIN. O
-    gerente que também opera o balcão (a Joyce do seed tem ``operate_pos`` E
-    ``adjust_shift``) encostaria o próprio crachá e a exceção sairia com quem faz
-    e quem autoriza sendo a mesma pessoa — o que não é aprovação, é um passo a
-    mais no mesmo ato. Se o crachá ficasse de fora, ele seria a porta por onde a
-    fraude voltaria.
+    ⚠️ O gerente que está operando assina com o próprio crachá, como com o
+    próprio PIN (decisão do dono, 28/10/2026; ver ``_verify_manager_pin``).
     """
     from shopman.doorman.models import PinCredential
 
@@ -3209,14 +3519,10 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
         return None
     if not user.has_perm("cashman.adjust_shift"):
         return None
-    operator = _bare_username(operator_username)
-    if operator and _bare_username(user.get_username()) == operator:
-        logger.warning("pos_manager_self_approval_refused operator=%s via=badge", operator)
-        return None
     return user
 
 
-def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None) -> list[str]:
+def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None, over_plan=()) -> list[str]:
     """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
 
     Publicado na review para o diálogo de autorização dizer o que está sendo
@@ -3236,7 +3542,64 @@ def _approval_reasons(*, discount_q: int, threshold_q: int, account_excess=None)
     # conta que levaria o saldo acima dele não é recusada, é assinada.
     if account_excess is not None:
         reasons.append("house_account_over_limit")
+    # Encomenda acima da fornada planejada da data: bloqueia e só o gerente
+    # libera, vendo os dois números (D-041, WP-E2).
+    if over_plan:
+        reasons.append("preorder_over_plan")
     return reasons
+
+
+def _payload_over_plan(payload: dict, *, channel_ref: str | None) -> list[dict]:
+    """As linhas da encomenda que passam do plano da data (vazio no balcão de hoje).
+
+    O PDV não decide estoque: a régua é a de ``stock.over_plan_lines``, a mesma
+    leitura da reserva. Vale na review (para a tela travar o Validar e o gerente
+    ver os números) e no fechamento (para a trava não ser só enfeite de tela).
+    """
+    from shopman.shop.services import stock as stock_service
+
+    day = _payload_commitment_date(payload)
+    if day <= timezone.localdate():
+        return []
+    lines = []
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        sku = str(item.get("sku") or "")
+        qty = _line_qty(item)
+        if sku and qty and qty > 0:
+            lines.append((sku, item.get("name") or sku, qty))
+    return stock_service.over_plan_lines(lines, day, channel_ref=channel_ref)
+
+
+def over_plan_scope(lines) -> tuple[tuple[str, str, str, str, str], ...]:
+    """A forma canônica do que o gerente liberou: ``(data, sku, pedidas, planejadas, sem encomenda)``.
+
+    Ordenada e com as quantidades normalizadas, para o carimbo e a venda de
+    agora se compararem sem depender da ordem das linhas nem de ``200`` × ``200.0``.
+    """
+    canonical = []
+    for line in lines or ():
+        if not isinstance(line, dict):
+            continue
+        canonical.append((
+            str(line.get("date") or ""),
+            str(line.get("sku") or ""),
+            _scope_qty(line.get("requested_qty")),
+            _scope_qty(line.get("planned_qty")),
+            _scope_qty(line.get("unclaimed_qty")),
+        ))
+    return tuple(sorted(canonical))
+
+
+def _scope_qty(value) -> str:
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return ""
+    if not number.is_finite():
+        return ""
+    return format(number.normalize(), "f") if number != number.to_integral_value() else str(int(number))
 
 
 def _payload_account_charge_q(payload: dict, *, total_q: int) -> int:
@@ -3274,7 +3637,7 @@ def _house_account_excess(payload: dict, *, total_q: int):
     return house_account.over_limit(customer_ref, charge_q)
 
 
-def validate_manager_approval(payload: dict, *, operator_username: str):
+def validate_manager_approval(payload: dict, *, operator_username: str, channel_ref: str | None = None):
     """O desafio gerencial do desconto. Devolve o ``User`` que assinou, ou ``None``.
 
     Devolve, e não apenas valida, porque **quem assina a linha é o aprovador
@@ -3282,8 +3645,7 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     que o carimbo saía, lendo ``manager_approval.username`` sem nenhuma verificação.
 
     Delega ao ``validate_manager_override``, que é a versão madura do MESMO desafio:
-    aceita crachá **ou** usuário+PIN, recusa autoassinatura nas duas portas e devolve o
-    usuário verificado. Eram dois validadores para uma regra só, e o de desconto era o
+    aceita crachá **ou** usuário+PIN e devolve o usuário verificado. Eram dois validadores para uma regra só, e o de desconto era o
     atrasado — pedia PIN mesmo de quem estava com o crachá na mão.
 
     ``None`` quando não houve motivo para desafio: sem desafio não há assinatura, e é
@@ -3292,36 +3654,256 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
     account_excess = _house_account_excess(payload, total_q=_payload_total_q(payload))
-    reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess)
+    over_plan = _payload_over_plan(payload, channel_ref=channel_ref)
+    reasons = _approval_reasons(
+        discount_q=discount_q, threshold_q=threshold_q, account_excess=account_excess, over_plan=over_plan,
+    )
     if not reasons:
         return None
-    if reasons == ["house_account_over_limit"]:
-        recovery_invalid = "Revise o gerente e o PIN, ou receba parte da venda em outro meio de pagamento."
-    else:
-        recovery_invalid = "Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço."
-
-    # A copy viaja junto com a delegação. O desafio é o mesmo, mas o que o operador
-    # pode FAZER a respeito não é: no caixa ele chama o gerente; aqui ele também pode
-    # reduzir o desconto. Delegar sem levar o texto trocaria uma saída por um beco.
-    approver = validate_manager_override(
-        payload.get("manager_approval"),
+    # A assinatura vale para o RETRATO que o gerente viu (EXCELENCIA-PDV F1, #2558).
+    # Antes a tela guardava usuário e PIN no carrinho e os reenviava em todo
+    # fechamento; o servidor conferia só a credencial, e na venda PDV-261116-U44 a
+    # Joyce aprovou R$ 6,00 e o livro saiu "approved_by=joyce" com R$ 30,00. Agora
+    # o PIN é conferido UMA vez, no diálogo, e o que sai de lá é um carimbo
+    # assinado (``issue_sale_approval``) preso ao operador, à comanda e aos números
+    # que o diálogo mostrou. Aqui ele é resgatado uma vez só, e qualquer diferença
+    # entre o assinado e o que a venda tem agora é recusa.
+    approval = payload.get("manager_approval") if isinstance(payload.get("manager_approval"), dict) else {}
+    token = str(approval.get("token") or "").strip()
+    if not token:
+        raise PosIntentError(
+            code="manager_approval_required",
+            message=(
+                f"A encomenda passa do plano ({_over_plan_numbers(over_plan)}). Só o gerente libera."
+                if reasons == ["preorder_over_plan"]
+                else "Esta venda exige aprovação gerencial."
+            ),
+            field="manager_approval",
+            focus="approval",
+            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de validar.",
+        )
+    approver = _redeem_sale_approval(
+        token,
         operator_username=operator_username,
-        action="discount",
-        message="Esta venda exige aprovação gerencial.",
-        recovery_required=(
-            "Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar."
+        snapshot=SaleApprovalScope(
+            tab_ref=_payload_tab_ref(payload),
+            discount_q=discount_q if "discount_over_threshold" in reasons else 0,
+            account_over_q=account_excess.over_q if account_excess is not None else 0,
+            over_plan=over_plan_scope(over_plan),
         ),
-        recovery_invalid=recovery_invalid,
+        client_request_id=_payload_client_request_id(payload),
+        max_age_s=_sale_approval_max_age_s(payload),
     )
     logger.info(
-        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s",
+        "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s account_over_q=%s over_plan=%s",
         operator_username,
         approver.get_username(),
         discount_q,
         ",".join(reasons),
         account_excess.over_q if account_excess is not None else 0,
+        over_plan_scope(over_plan),
     )
     return approver
+
+
+#: O carimbo da aprovação de venda: assinado com a SECRET_KEY, com prazo curto.
+_SALE_APPROVAL_SALT = "shopman.pos.sale-approval"
+#: O diálogo do gerente sobe ANTES da maquininha e do "Recebi o Pix"; quinze
+#: minutos cobrem a cobrança mais lenta sem deixar o carimbo valendo pelo turno.
+SALE_APPROVAL_MAX_AGE_S = 15 * 60
+
+
+@dataclass(frozen=True)
+class SaleApprovalScope:
+    """O que o gerente viu no diálogo e assinou: a comanda e os números.
+
+    ``discount_q`` é o desconto manual (linha + venda) quando o desconto chamou o
+    gerente; ``account_over_q`` é quanto a conta na casa passa do limite quando
+    foi ela; ``over_plan`` são as linhas da encomenda acima do plano da data
+    (``over_plan_scope``), com os dois números que o gerente viu. Zero (ou vazio)
+    no gatilho que não houve.
+    """
+
+    tab_ref: str = ""
+    discount_q: int = 0
+    account_over_q: int = 0
+    over_plan: tuple[tuple[str, str, str, str, str], ...] = ()
+
+    @classmethod
+    def from_request(cls, raw) -> SaleApprovalScope:
+        raw = raw if isinstance(raw, dict) else {}
+        tab = str(raw.get("tab_ref") or "").strip()
+        return cls(
+            tab_ref=normalize_tab_ref(tab) if tab else "",
+            discount_q=max(0, _int_q(raw.get("discount_q"))),
+            account_over_q=max(0, _int_q(raw.get("account_over_q"))),
+            over_plan=over_plan_scope(raw.get("over_plan") if isinstance(raw.get("over_plan"), list) else ()),
+        )
+
+
+def _sale_approval_refused(recovery: str) -> PosIntentError:
+    return PosIntentError(
+        code="manager_approval_invalid",
+        message="A aprovação do gerente não vale para esta venda.",
+        field="manager_approval",
+        focus="approval",
+        recovery=recovery,
+    )
+
+
+def issue_sale_approval(approver, *, operator_username: str, scope: SaleApprovalScope) -> str:
+    """O carimbo que o diálogo do gerente devolve no lugar do PIN.
+
+    Só é emitido DEPOIS de ``validate_manager_override`` aprovar a credencial. Vale
+    para um operador, uma comanda (ou a venda de balcão sem comanda) e os números
+    que o diálogo mostrou; o ``nonce`` faz dele uso único (``_redeem_sale_approval``).
+    """
+    import secrets
+
+    from django.core import signing
+
+    return signing.dumps(
+        {
+            "u": approver.get_username(),
+            "o": _bare_username(operator_username),
+            "t": scope.tab_ref,
+            "d": int(scope.discount_q),
+            "a": int(scope.account_over_q),
+            "p": [list(line) for line in scope.over_plan],
+            "n": secrets.token_urlsafe(16),
+        },
+        salt=_SALE_APPROVAL_SALT,
+    )
+
+
+def _sale_approval_max_age_s(payload: dict) -> int:
+    """Quanto o carimbo vale nesta venda.
+
+    A venda que ficou na fila sem conexão foi assinada online, antes de a rede
+    cair, e chega ao servidor quando a fila sincroniza: vale a janela da própria
+    venda sem conexão (``pos_offline_sale.MAX_AGE``), que já é a régua de quanto
+    tempo uma cobrança na fila continua valendo. As demais, quinze minutos.
+    """
+    from shopman.shop.services import pos_offline_sale
+
+    if pos_offline_sale.pricing_instant(payload) is not None:
+        return int(pos_offline_sale.MAX_AGE.total_seconds())
+    return SALE_APPROVAL_MAX_AGE_S
+
+
+def _redeem_sale_approval(
+    token: str,
+    *,
+    operator_username: str,
+    snapshot: SaleApprovalScope,
+    client_request_id: str,
+    max_age_s: int = SALE_APPROVAL_MAX_AGE_S,
+):
+    """Confere o carimbo contra a venda de agora e o gasta. Devolve o gerente.
+
+    Uso único com uma exceção deliberada: a MESMA venda (mesmo
+    ``client_request_id``) pode reapresentá-lo. A fila sem conexão reenvia o
+    fechamento com a mesma chave, e uma recusa da maquininha devolve o operador ao
+    mesmo "Concluir"; nos dois casos é a mesma venda, com os mesmos números (que
+    continuam conferidos). Venda nova, com chave nova, pede o gerente de novo.
+    """
+    from django.contrib.auth import get_user_model
+    from django.core import signing
+    from django.core.cache import cache
+
+    try:
+        data = signing.loads(token, salt=_SALE_APPROVAL_SALT, max_age=max_age_s)
+    except signing.SignatureExpired as exc:
+        raise _sale_approval_refused("A aprovação do gerente expirou. Peça a aprovação de novo.") from exc
+    except signing.BadSignature as exc:
+        raise _sale_approval_refused("Peça a aprovação do gerente de novo.") from exc
+    if not isinstance(data, dict):
+        raise _sale_approval_refused("Peça a aprovação do gerente de novo.")
+
+    if str(data.get("o") or "") != _bare_username(operator_username):
+        raise _sale_approval_refused("A aprovação foi dada a outro operador. Peça a aprovação de novo.")
+    if str(data.get("t") or "") != snapshot.tab_ref:
+        raise _sale_approval_refused("A aprovação foi dada a outra comanda. Peça a aprovação de novo.")
+    signed_discount_q = int(data.get("d") or 0)
+    if signed_discount_q != snapshot.discount_q:
+        raise _sale_approval_refused(
+            f"O gerente aprovou desconto de R$ {format_money(signed_discount_q)} e a venda tem "
+            f"R$ {format_money(snapshot.discount_q)}. Peça a aprovação do novo valor."
+        )
+    signed_over_q = int(data.get("a") or 0)
+    if signed_over_q != snapshot.account_over_q:
+        raise _sale_approval_refused(
+            f"O gerente aprovou passar o limite da conta em R$ {format_money(signed_over_q)} e a venda passa "
+            f"R$ {format_money(snapshot.account_over_q)}. Peça a aprovação do novo valor."
+        )
+    signed_plan = tuple(tuple(str(part) for part in line) for line in (data.get("p") or ()) if isinstance(line, list))
+    if signed_plan != snapshot.over_plan:
+        raise _sale_approval_refused(_over_plan_recovery(signed_plan, snapshot.over_plan))
+
+    # O gerente continua podendo assinar AGORA: desligado ou sem a permissão
+    # depois do diálogo, o carimbo dele não vale mais.
+    user_model = get_user_model()
+    approver = user_model.objects.filter(username=str(data.get("u") or ""), is_active=True, is_staff=True).first()
+    if approver is None or not approver.has_perm("cashman.adjust_shift"):
+        raise _sale_approval_refused("Este gerente não pode mais autorizar. Peça a outro gerente.")
+
+    key = f"pos:sale-approval:{data.get('n')}"
+    owner = client_request_id or "-"
+    if not cache.add(key, owner, timeout=max_age_s + 60):
+        if not client_request_id or cache.get(key) != client_request_id:
+            raise _sale_approval_refused("Esta aprovação já foi usada em outra venda. Peça a aprovação de novo.")
+    return approver
+
+
+def _over_plan_numbers(lines) -> str:
+    """``Baguette: 200 pedidas, 22 planejadas para 17/11`` por linha acima do plano."""
+    from datetime import date as _date
+
+    parts = []
+    for line in lines or ():
+        try:
+            day = _date.fromisoformat(str(line.get("date") or "")).strftime("%d/%m")
+        except ValueError:
+            day = ""
+        planned, unclaimed = line.get("planned_qty"), line.get("unclaimed_qty")
+        # O segundo número só quando o próprio lote já tem parte prometida a outra
+        # encomenda: é contra o que sobra dele que se mede (nunca a vitrine de hoje).
+        extra = (
+            f" ({_qty_display(unclaimed)} ainda sem encomenda)"
+            if _scope_qty(unclaimed) != _scope_qty(planned)
+            else ""
+        )
+        parts.append(
+            f"{line.get('name') or line.get('sku')}: {_qty_display(line.get('requested_qty'))} pedidas, "
+            f"{_qty_display(planned)} planejadas{f' para {day}' if day else ''}{extra}"
+        )
+    return "; ".join(parts)
+
+
+def _over_plan_recovery(signed, current) -> str:
+    """Por que a liberação da encomenda acima do plano não vale mais, com os números."""
+    def numbers(lines) -> str:
+        return "; ".join(
+            f"{_qty_display(requested)} pedidas, {_qty_display(planned)} planejadas"
+            for _day, _sku, requested, planned, _free in lines
+        )
+
+    if not current:
+        return "A encomenda não passa mais do plano. Peça a aprovação de novo."
+    if not signed:
+        return f"A encomenda passa do plano ({numbers(current)}). Peça ao gerente para liberar."
+    return (
+        f"O gerente liberou {numbers(signed)} e a encomenda agora tem {numbers(current)}. "
+        "Peça a liberação de novo."
+    )
+
+
+#: A assinatura do gerente que não conferiu: o fato e o próximo passo (#2667).
+MANAGER_PIN_REFUSED = "O PIN não confere com o gerente escolhido. Digite de novo."
+MANAGER_BADGE_REFUSED = "Este crachá não é de um gerente. Passe o crachá de um gerente ou digite o PIN."
+#: O passo seguinte pela porta usada (as frases aprovadas na #2691).
+MANAGER_PIN_RECOVERY = "Confira o gerente e digite o PIN de novo."
+MANAGER_BADGE_RECOVERY = "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
 
 
 def validate_manager_override(
@@ -3331,7 +3913,7 @@ def validate_manager_override(
     action: str,
     message: str = "Esta operação exige aprovação gerencial.",
     recovery_required: str = "Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
-    recovery_invalid: str = "Revise o gerente e o PIN.",
+    recovery_invalid: str | None = None,
 ):
     """Gate an exceptional POS operation behind the manager PIN challenge.
 
@@ -3360,33 +3942,30 @@ def validate_manager_override(
             focus="approval",
             recovery=recovery_required,
         )
-    # As duas portas recebem quem OPERA, e pelo mesmo motivo: a segunda
-    # assinatura existe para haver duas pessoas. Passar o operador só no PIN
-    # deixaria o crachá como a porta por onde o gerente-que-opera continua se
-    # autorizando — e a porta nova seria a fraude de novo.
-    approver = (
-        _verify_manager_badge(badge, operator_username=operator_username)
-        if badge
-        else _verify_manager_pin(username, pin, operator_username=operator_username)
-    )
+    # O gerente que opera pode assinar, com o PIN ou o crachá dele (dono,
+    # 28/10/2026; ver `_verify_manager_pin`).
+    approver = _verify_manager_badge(badge) if badge else _verify_manager_pin(username, pin)
     if approver is None:
+        # O fato e o próximo passo, pela porta que o gerente usou (#2667): "Aprovação
+        # gerencial inválida." era jargão sem saída, e o Gestor mostra só esta frase.
         raise PosIntentError(
             code="manager_approval_invalid",
-            message="Aprovação gerencial inválida.",
+            message=MANAGER_BADGE_REFUSED if badge else MANAGER_PIN_REFUSED,
             field="manager_approval",
             focus="approval",
-            recovery=recovery_invalid,
+            recovery=recovery_invalid or (MANAGER_BADGE_RECOVERY if badge else MANAGER_PIN_RECOVERY),
         )
     # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
     # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
     # branco — justamente a informação pela qual ela existe. Mesmo erro que o
     # cancelamento tinha ao persistir a assinatura; este ficou no log e passou.
     logger.info(
-        "pos_manager_override action=%s operator=%s approved_by=%s via=%s",
+        "pos_manager_override action=%s operator=%s approved_by=%s via=%s self_signed=%s",
         action,
         operator_username,
         approver.get_username(),
         "badge" if badge else "pin",
+        _bare_username(operator_username) == approver.get_username(),
     )
     return approver
 
@@ -3451,6 +4030,34 @@ def _payload_fulfillment_type(payload: dict) -> str:
     if value == "delivery":
         return "delivery"
     return "pickup"
+
+
+def pay_at_pickup_other_day(payload: dict) -> bool:
+    """A encomenda de OUTRO dia veio para pagar na retirada, sem cobrança agora?"""
+    fulfillment_type = _payload_fulfillment_type(payload)
+    return (
+        fulfillment_type == "pickup"
+        and _payload_payment_collection(payload, fulfillment_type) == "on_delivery"
+        and _payload_commitment_date(payload) > timezone.localdate()
+    )
+
+
+def _refuse_pay_at_pickup_other_day(payload: dict) -> None:
+    """Encomenda de outro dia não fica "Na retirada" (D-041, decisão 3: "KISS").
+
+    Vale a regra de 28/08, "encomenda cobra antes". Na K16 os R$ 2.747,00 de 200
+    baguetes entraram sem cobrança, pela Caixa sozinha. A tela não oferece mais a
+    opção; aqui a recusa, para a regra não morar só na tela.
+    """
+    if not pay_at_pickup_other_day(payload):
+        return
+    raise PosIntentError(
+        code="pay_at_pickup_other_day",
+        message="Encomenda de outro dia cobra antes: não fica para pagar na retirada.",
+        field="payment_collection",
+        focus="payment",
+        recovery="Escolha a forma de pagamento e receba agora.",
+    )
 
 
 def _payload_payment_collection(payload: dict, fulfillment_type: str) -> str:
@@ -3523,7 +4130,7 @@ def _enforce_pix_payment_policy(payload: dict) -> None:
     )
 
 
-def _pix_payment_policy_warning(
+def pix_payment_policy_warning(
     payload: dict,
     *,
     total_q: int,
@@ -3621,37 +4228,21 @@ def _ensure_resolved_prices(payload: dict) -> None:
     if payload.get("items") and _payload_subtotal_q(payload) <= 0:
         raise PosIntentError(
             code="price_not_resolved",
-            message="Nao foi possivel resolver o preco dos itens do carrinho.",
+            message="Não foi possível calcular o preço dos itens da venda.",
             field="items",
             focus="search",
-            recovery="Reabra a comanda para o servidor reaplicar os precos de tabela.",
+            recovery="Reabra a comanda para o sistema reaplicar os preços de tabela.",
         )
 
 
 def _payload_discount_q(payload: dict) -> int:
-    order_discount_q = _payload_applied_order_discount_q(payload)
-    return order_discount_q + _payload_line_discounts_q(payload)
-
+    discounts = _engine_manual_discounts(payload)
+    return discounts["order_q"] + discounts["line_q"]
 
 
 def _payload_applied_order_discount_q(payload: dict) -> int:
-    """Preview the kernel's representable unit-price discount, keeping its ceiling."""
-    from shopman.shop.modifiers import _is_non_merchandise_line, _spread_order_discount
-
-    requested_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
-    if requested_q <= 0:
-        return 0
-    lines = []
-    for item in payload.get("items", []):
-        if _is_non_merchandise_line(item):
-            continue
-        qty = max(0, _line_qty(item))
-        if not qty:
-            continue
-        line_gain_q = _payload_line_discounts_q({"items": [item]})
-        unit_q = max(0, int(item.get("unit_price_q", 0)) - int(Decimal(line_gain_q) / Decimal(qty)))
-        lines.append({"qty": qty, "unit_price_q": unit_q, "line_total_q": monetary_mult(Decimal(qty), unit_q)})
-    return sum(amount for _line, _unit, amount in _spread_order_discount(lines, requested_q, at_least=False))
+    """O desconto de PEDIDO que o motor (``ManualDiscountModifier``) aplicou."""
+    return _engine_manual_discounts(payload)["order_q"]
 
 
 def _normalize_line_discount(raw) -> dict:
@@ -3685,7 +4276,7 @@ _PRICING_PROBE_LINE = "pricing-probe-"
 
 
 def _stamp_engine_prices(
-    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str,
+    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, pricing_policy: str = "",
 ) -> dict[int, dict]:
     """Venda SEM comanda: carimba no payload o preço que o MOTOR dá agora (P0-1).
 
@@ -3700,10 +4291,9 @@ def _stamp_engine_prices(
     ``modify_session`` numa sessão descartável (savepoint desfeito), com os
     mesmos ops do fechamento, e cada linha volta com o preço pós-desconto
     automático (``unit_price_q``) e a etiqueta (``list_price_q``), exatamente o
-    que a linha de uma comanda carrega. Os descontos MANUAIS ficam fora da
-    sonda de propósito: a conta deles continua com a revisão
-    (``_payload_line_discounts_q``/``_payload_applied_order_discount_q``), que os
-    mede contra estes preços, como faz com a comanda.
+    que a linha de uma comanda carrega. Os descontos MANUAIS ficam fora desta
+    sonda de propósito: ela carimba o preço ANTES deles (o subtotal da revisão),
+    e quem os aplica é ``_stamp_engine_manual_discounts``, com o mesmo motor.
 
     Recusa do Orderman na sonda não vira recusa aqui: o fechamento passa pelo
     mesmo caminho e recusa com a frase da regra; a revisão segue com o que tem.
@@ -3711,38 +4301,23 @@ def _stamp_engine_prices(
     Devolve a linha do motor por ÍNDICE do payload (vazio quando a sonda não
     precificou), para a revisão dizer à tela o que cada linha cobra e por quê.
     """
-    from shopman.orderman.exceptions import SessionError
-
     items = payload.get("items") or []
     stamped: dict[int, dict] = {}
     if not any(isinstance(item, dict) and not _is_delivery_fee_item(item) for item in items):
         return stamped
     probe = copy.deepcopy(payload)
     probe.pop("manual_discount", None)
+    _stamp_discounts_left_to_the_save(probe)
     for index, item in enumerate(probe.get("items") or []):
         if isinstance(item, dict):
             item.pop("discount", None)
             item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
-    priced: dict[str, dict] = {}
-    try:
-        with transaction.atomic():
-            session = _create_direct_checkout_session(
-                channel_ref=channel.ref, payload=probe, operator_username=operator_username,
-            )
-            session = session_service.modify_session(
-                session_key=session.session_key,
-                channel_ref=channel.ref,
-                ops=build_session_ops(probe, operator_username),
-                ctx={"actor": f"pos:{operator_username}"},
-                channel_config=config.to_dict(),
-            )
-            priced = {str(line.get("line_id") or ""): copy.deepcopy(line) for line in (session.items or [])}
-            raise _DiscardPricingProbe
-    except _DiscardPricingProbe:  # silêncio-deliberado: é o desfazer da sonda, não um erro
-        pass
-    except (OrderValidationError, OrderCommitError, SessionError):
-        logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
+    probed = _run_pricing_probe(
+        probe, channel=channel, config=config, operator_username=operator_username, pricing_policy=pricing_policy,
+    )
+    if probed is None:
         return stamped
+    priced = {str(line.get("line_id") or ""): line for line in probed[0]}
     for index, item in enumerate(items):
         if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
@@ -3756,6 +4331,129 @@ def _stamp_engine_prices(
         item["list_price_q"] = _int_q((line.get("meta") or {}).get("_list_q")) or price_q
         stamped[index] = line
     return stamped
+
+
+def _stamp_tab_engine_prices(
+    payload: dict, session, *, channel: Channel, config: ChannelConfig, operator_username: str,
+) -> dict[int, dict]:
+    """Comanda: o preço de cada linha é o do MOTOR, nunca o que o corpo declarou.
+
+    Duas contas dependem disso, e as duas erravam quando o preço vinha do navegador.
+
+    - O total da comanda (beta test de 05/11/2026, P0). O PDV manda a etiqueta
+      em ``unit_price_q``, e ``_stamp_list_prices_from_session`` só preenche o
+      que falta. Com promoção automática no ar (Semana do Pão −15%), a revisão
+      somava a etiqueta (R$ 18,00), o selo do fechamento conferia contra o motor
+      (R$ 15,30) e recusava com "O total mudou" em toda tentativa: a comanda não
+      fechava nunca.
+    - O portão do gerente. Ele mede o desconto de linha como ``subtotal - o que o
+      motor cobra`` (``_stamp_engine_manual_discounts``). Um corpo com R$ 4,00
+      num pão de R$ 12,00 em cortesia de 100% media R$ 4,00 de desconto, abaixo
+      do limite, e a venda saía de graça sem gerente (auditoria de 03/11/2026).
+
+    O remédio é o mesmo da venda sem comanda (``_stamp_engine_prices``), com a
+    política de preço da comanda: cada linha vale o preço do motor ANTES do
+    desconto manual (promoção, Xepa e grupo do cliente já aplicados). Quando a
+    comanda gravada já é este carrinho e nenhum manual venceu linha, o preço sai
+    da própria sessão, sem sonda (``_stamp_tab_prices_from_engine_lines``). A
+    venda feita sem conexão não passa por aqui: nela vale o cobrado (decisão D,
+    10/10/2026).
+    """
+    if session is None:
+        return {}
+    if _session_prices_payload(session, payload) and _stamp_tab_prices_from_engine_lines(payload, session):
+        # A revisão também restaura a linha quando o último desconto foi removido.
+        lines = {str(line.get("line_id") or ""): line for line in (session.items or [])}
+        return {
+            index: {
+                **copy.deepcopy(lines[str(item.get("line_id") or "")]),
+                "unit_price_q": item["unit_price_q"],
+            }
+            for index, item in enumerate(payload.get("items") or [])
+            if isinstance(item, dict) and not _is_delivery_fee_item(item)
+        }
+    return _stamp_engine_prices(
+        payload, channel=channel, config=config, operator_username=operator_username,
+        pricing_policy=getattr(session, "pricing_policy", "") or "",
+    )
+
+
+def _stamp_tab_prices_from_engine_lines(payload: dict, session) -> bool:
+    """O preço antes do desconto manual, lido da comanda que JÁ é este carrinho.
+
+    A última gravação passou pelo motor com estas linhas e estes descontos. Onde o
+    desconto manual não venceu a linha, o preço antes dele é a etiqueta menos o
+    desconto automático vencedor (``meta._disc``, de linha ou a fatia do fixo de
+    pedido), ou a própria etiqueta.
+    Onde o manual venceu, o automático que perdeu não fica gravado em lugar
+    nenhum: devolve ``False`` e quem responde é a sonda do motor.
+    """
+    lines = {str(line.get("line_id") or ""): line for line in (session.items or []) if isinstance(line, dict)}
+    prices: dict[int, int] = {}
+    for index, item in enumerate(payload.get("items") or []):
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
+            continue
+        line = lines.get(str(item.get("line_id") or ""))
+        if line is None:
+            return False
+        meta = line.get("meta") or {}
+        list_q = _int_q(meta.get("_list_q"))
+        if list_q <= 0:
+            return False
+        disc = meta.get("_disc") if isinstance(meta.get("_disc"), dict) else {}
+        if disc.get("type") == "manual":
+            return False
+        # A fatia do fixo de pedido (promoção ou cupom de valor fixo, ``scope``
+        # "order") também é preço do motor: o rateio já a tirou do unitário da
+        # linha, e a revisão só subtrai à parte o desconto MANUAL de pedido.
+        # Devolver a etiqueta aqui prometia o preço cheio e o selo do fechamento
+        # recusava com "O total mudou" (#3244). ``amount_q`` é por unidade nos dois.
+        prices[index] = max(0, list_q - _int_q(disc.get("amount_q")))
+    items = payload.get("items") or []
+    for index, price_q in prices.items():
+        items[index]["unit_price_q"] = price_q
+        items[index]["list_price_q"] = _int_q((lines[str(items[index].get("line_id"))].get("meta") or {}).get("_list_q"))
+    return True
+
+
+def _run_pricing_probe(
+    probe: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, pricing_policy: str = "",
+) -> tuple[list[dict], dict] | None:
+    """Passa ``probe`` pelo motor numa sessão descartável e devolve (linhas, pricing).
+
+    As mesmas operações do fechamento (``build_session_ops``), num savepoint que é
+    desfeito no fim. ``pricing_policy`` repete a da comanda quando ela não é a
+    padrão (a comanda da edição de encomenda cobra o vendido).
+
+    Recusa do Orderman na sonda não vira recusa aqui (``None``): o fechamento
+    passa pelo mesmo caminho e recusa com a frase da regra.
+    """
+    from shopman.orderman.exceptions import SessionError
+
+    probed: tuple[list[dict], dict] | None = None
+    try:
+        with transaction.atomic():
+            session = _create_direct_checkout_session(
+                channel_ref=channel.ref, payload=probe, operator_username=operator_username,
+            )
+            if pricing_policy and pricing_policy != session.pricing_policy:
+                Session.objects.filter(pk=session.pk).update(pricing_policy=pricing_policy)
+                session.pricing_policy = pricing_policy
+            session = session_service.modify_session(
+                session_key=session.session_key,
+                channel_ref=channel.ref,
+                ops=build_session_ops(probe, operator_username),
+                ctx={"actor": f"pos:{operator_username}"},
+                channel_config=config.to_dict(),
+            )
+            probed = (copy.deepcopy(session.items or []), copy.deepcopy(session.pricing or {}))
+            raise _DiscardPricingProbe
+    except _DiscardPricingProbe:  # silêncio-deliberado: é o desfazer da sonda, não um erro
+        pass
+    except (OrderValidationError, OrderCommitError, SessionError):
+        logger.info("pos_pricing_probe_refused channel=%s", channel.ref, exc_info=True)
+        return None
+    return probed
 
 
 def _stamp_list_prices_from_session(payload: dict, session) -> None:
@@ -3795,59 +4493,185 @@ def _stamp_list_prices_from_session(payload: dict, session) -> None:
 
 
 def _payload_line_discounts_q(payload: dict) -> int:
-    """Quanto os descontos manuais de LINHA tiram do subtotal — pela regra do kernel.
+    """Quanto os descontos manuais de LINHA tiram do subtotal, segundo o MOTOR.
 
-    A política é "maior desconto ganha, um por item" (``DiscountModifier``): o
-    manual da linha é medido contra o preço de ETIQUETA e só vale se for MAIOR
-    que o desconto automático que já venceu aquela linha; vencendo, ele
-    SUBSTITUI o automático, não se soma a ele.
-
-    Esta função media o mesmo número duas vezes errado. Contava o percentual
-    sobre o preço JÁ descontado (não sobre a etiqueta) e contava SEMPRE, mesmo
-    quando o kernel ia descartar o manual. O efeito na tela: uma cortesia de 10%
-    numa Tabatière que já levava "Semana do Pão −15%" prometia R$ 1,02 de
-    desconto que a venda não dava. Provado numa venda real (PDV-260826-V03): o
-    checkout exibiu total R$ 44,78 e TROCO R$ 25,22, o pedido selou R$ 45,80 e
-    registrou troco R$ 24,20 — o operador devolveria R$ 1,02 a mais do que a
-    gaveta contava, em toda venda com desconto de linha perdedor.
-
-    O subtotal da review é a soma dos ``unit_price_q`` (já pós-automático), então
-    o que este desconto ainda tira é só a DIFERENÇA entre o manual e o automático
-    que ele substitui — zero quando perde.
+    Não há conta aqui, e é de propósito (A3-1, laudo CORE-SOVEREIGNTY de
+    18/10/2026). Esta função já foi uma segunda implementação do "maior desconto
+    ganha" (``DiscountModifier``), e cada vez que as duas divergiam a venda
+    pagava: primeiro foi R$ 1,02 de troco a mais (PDV-260826-V03), depois o
+    arredondamento. O ``round`` do Python arredonda meio centavo para o PAR e o
+    motor arredonda para CIMA, então um item de R$ 12,05 com 10% de cortesia
+    revisava R$ 10,85, o motor cobrava R$ 10,84, e o selo do fechamento recusava
+    a venda em toda tentativa (2.375 de 25.000 combinações divergiam). Quem
+    decide o desconto é o motor, e esta leitura só devolve o que ele decidiu
+    (``_stamp_engine_manual_discounts``).
     """
-    total = 0
-    for item in payload.get("items", []):
-        line_discount = _normalize_line_discount(item.get("discount"))
-        if not line_discount:
+    return _engine_manual_discounts(payload)["line_q"]
+
+
+#: Os descontos MANUAIS da venda como o motor os aplicou: ``line_q`` (o que os
+#: descontos de linha tiraram do subtotal) e ``order_q`` (o desconto de pedido).
+#: Carimbado no payload por ``_stamp_engine_manual_discounts``, como a taxa de
+#: entrega e o canal, porque o payload é lido muitas vezes por request.
+_ENGINE_DISCOUNTS_KEY = "_engine_manual_discounts"
+
+_NO_MANUAL_DISCOUNT = {"line_q": 0, "order_q": 0}
+
+
+def _engine_manual_discounts(payload: dict) -> dict:
+    stamped = payload.get(_ENGINE_DISCOUNTS_KEY)
+    if isinstance(stamped, dict):
+        return stamped
+    if not _payload_has_manual_discount(payload):
+        return _NO_MANUAL_DISCOUNT
+    # Falha gritando: somar o desconto sem o motor é a conta paralela que o A3-1
+    # apagou, e devolver zero cobraria a mais em silêncio.
+    raise RuntimeError(
+        "Desconto manual sem o preço do motor: chame _stamp_engine_manual_discounts antes de somar a venda."
+    )
+
+
+def _payload_has_manual_discount(payload: dict) -> bool:
+    if _payload_manual_discount(payload):
+        return True
+    return any(
+        isinstance(item, dict) and not _is_delivery_fee_item(item) and _normalize_line_discount(item.get("discount"))
+        for item in payload.get("items") or []
+    )
+
+
+def _stamp_discounts_left_to_the_save(payload: dict) -> None:
+    """Gravar a comanda não pergunta o desconto ao motor: a própria gravação é o motor.
+
+    O ``modify_session`` da gravação (e o da sonda de preço) aplica os descontos
+    manuais nas linhas. O que o ``build_session_ops`` deriva do total
+    (pagamento, troco, taxa de entrega) é provisório ali e é refeito no
+    fechamento, que carimba o desconto do motor antes
+    (``_stamp_engine_manual_discounts``).
+    """
+    payload[_ENGINE_DISCOUNTS_KEY] = dict(_NO_MANUAL_DISCOUNT)
+
+
+def _stamp_engine_manual_discounts(
+    payload: dict, *, channel: Channel, config: ChannelConfig, operator_username: str, session=None,
+) -> dict[int, dict]:
+    """Carimba no payload os descontos manuais como o MOTOR os aplica (A3-1).
+
+    A revisão e o fechamento mostram e conferem o total do motor, não uma conta
+    do PDV. Sem desconto manual nada muda e nada é consultado. Com desconto:
+
+    - **Comanda que já é este carrinho** (``_session_prices_payload``): a última
+      gravação passou pelo motor com exatamente estas linhas e estes descontos, e
+      a resposta está na própria sessão. Nenhuma consulta a mais, e é o caso do
+      ``tabs/save/?review=1`` e do fechamento de comanda.
+    - **Fora disso** (venda sem comanda, carrinho diferente do gravado): a
+      mesma sonda descartável de ``_stamp_engine_prices``, agora com os
+      descontos manuais dentro.
+
+    A mercadoria que o motor cobra é a soma das linhas dele; o desconto de pedido
+    é o que o ``ManualDiscountModifier`` registrou; o de linha é o que sobra
+    entre o subtotal do payload e o que o motor cobra. Por construção,
+    ``subtotal - desconto + taxa`` é o total que o selo do fechamento confere.
+
+    Devolve a linha do motor por ÍNDICE do payload, para a revisão dizer à tela
+    o que cada linha cobra.
+    """
+    payload[_ENGINE_DISCOUNTS_KEY] = dict(_NO_MANUAL_DISCOUNT)
+    if not _payload_has_manual_discount(payload):
+        return {}
+    items = payload.get("items") or []
+    engine_by_index: dict[int, dict] = {}
+    if session is not None and _session_prices_payload(session, payload):
+        by_line_id = {str(line.get("line_id") or ""): line for line in (session.items or [])}
+        for index, item in enumerate(items):
+            if isinstance(item, dict) and not _is_delivery_fee_item(item):
+                line = by_line_id.get(str(item.get("line_id") or ""))
+                if line is not None:
+                    engine_by_index[index] = copy.deepcopy(line)
+        engine_items = session.items or []
+        engine_pricing = session.pricing or {}
+    else:
+        probe = copy.deepcopy(payload)
+        for index, item in enumerate(probe.get("items") or []):
+            if isinstance(item, dict):
+                item["line_id"] = f"{_PRICING_PROBE_LINE}{index}"
+        probed = _run_pricing_probe(
+            probe, channel=channel, config=config, operator_username=operator_username,
+            pricing_policy=getattr(session, "pricing_policy", "") or "",
+        )
+        if probed is None:
+            return {}
+        engine_items, engine_pricing = probed
+        by_line_id = {str(line.get("line_id") or ""): line for line in engine_items}
+        for index, item in enumerate(items):
+            line = by_line_id.get(f"{_PRICING_PROBE_LINE}{index}")
+            if isinstance(item, dict) and line is not None:
+                engine_by_index[index] = line
+    goods = [item for item in items if isinstance(item, dict) and not _is_delivery_fee_item(item)]
+    merchandise_q = sum(
+        _int_q(line.get("line_total_q"))
+        for line in engine_items
+        if isinstance(line, dict) and not _is_delivery_fee_item(line)
+    )
+    order_q = _int_q((engine_pricing.get("manual_discount") or {}).get("total_discount_q"))
+    line_q = _payload_subtotal_q({"items": goods}) - merchandise_q - order_q
+    payload[_ENGINE_DISCOUNTS_KEY] = {"line_q": line_q, "order_q": order_q}
+    # A taxa de entrega resolvida antes do carimbo mediu a mercadoria sem o
+    # desconto do motor (o frete grátis é por valor de compra): resolve de novo.
+    payload.pop(_DELIVERY_FEE_RESOLUTION_KEY, None)
+    return engine_by_index
+
+
+def _session_prices_payload(session, payload: dict) -> bool:
+    """A comanda gravada É este carrinho, nos campos que mudam o preço?
+
+    Mesmas linhas (identidade, produto, quantidade e desconto manual), o mesmo
+    desconto de pedido, o mesmo recebimento e o mesmo cliente. Qualquer
+    diferença manda a pergunta para a sonda: comparar a menos custaria uma
+    revisão errada; comparar a mais só custa uma sonda.
+    """
+
+    def _discount_key(raw) -> tuple | None:
+        discount = _normalize_line_discount(raw)
+        return (discount["type"], float(discount["value"])) if discount else None
+
+    session_lines = {}
+    for line in session.items or []:
+        if not isinstance(line, dict) or _is_delivery_fee_item(line):
             continue
-        try:
-            unit_price_q = int(item.get("unit_price_q", 0))
-        except (TypeError, ValueError):
+        meta = line.get("meta") or {}
+        session_lines[str(line.get("line_id") or "")] = (
+            str(line.get("sku") or ""),
+            Decimal(str(line.get("qty") or 0)),
+            _discount_key(meta.get("manual_discount")),
+        )
+    payload_lines = {}
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict) or _is_delivery_fee_item(item):
             continue
-        qty = _line_qty(item)
-        # Sem etiqueta declarada, a linha não tem desconto automático a bater:
-        # etiqueta e preço cobrado são o mesmo número.
-        list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
-        auto_per_unit = max(0, list_price_q - unit_price_q)
-        # ⚠️ A MESMA CONTA do kernel (``DiscountModifier._calc_manual``), e é por
-        # isso que ela é feita POR UNIDADE também no ``fixed``. Um centavo de
-        # diferença entre esta função e o kernel é troco a mais na mão do
-        # cliente com a gaveta contando outro número — foi o defeito do
-        # PDV-260826-V03 descrito acima.
-        if line_discount["type"] == "fixed":
-            manual_per_unit = min(int(round(line_discount["value"] * 100)), list_price_q)
-        else:
-            manual_per_unit = min(
-                int(round(list_price_q * line_discount["value"] / 100)),
-                list_price_q,
-            )
-        gain_per_unit = min(max(0, manual_per_unit - auto_per_unit), unit_price_q)
-        # Por unidade, e o total da linha pela conta do kernel: com quantidade
-        # fracionária (kg) o desconto é a diferença entre os dois totais
-        # arredondados, não ``ganho × qty`` — que dá fração de centavo.
-        line_qty = Decimal(max(0, qty))
-        total += monetary_mult(line_qty, unit_price_q) - monetary_mult(line_qty, unit_price_q - gain_per_unit)
-    return total
+        payload_lines[str(item.get("line_id") or "")] = (
+            str(item.get("sku") or ""),
+            Decimal(str(_line_qty(item))),
+            _discount_key(item.get("discount")),
+        )
+    if "" in payload_lines or payload_lines != session_lines:
+        return False
+    data = session.data or {}
+    session_order_q = _int_q((data.get("manual_discount") or {}).get("discount_q"))
+    if session_order_q != _int_q(_payload_manual_discount(payload).get("discount_q")):
+        return False
+    if str(data.get("fulfillment_type") or "") != _payload_fulfillment_type(payload):
+        return False
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    phone = str(payload.get("customer_phone") or "").strip()
+    ref = str(payload.get("customer_ref") or "").strip()
+    if phone and phone != str(customer.get("phone") or ""):
+        return False
+    if ref and ref != str(data.get("customer_ref") or ""):
+        return False
+    if not phone and not ref and data.get("customer_ref"):
+        return False
+    return True
 
 
 def _payload_manual_discount(payload: dict) -> dict:
@@ -4033,8 +4857,17 @@ def _compute_engine_delivery_fee(payload: dict) -> DeliveryFeeResolution:
             fee_q=0, source="blocked", distance_km=distance_km, blocked=True, out_of_area=True,
         )
 
-    source = "zone" if postal_code or neighborhood else "distance"
-    if distance_km is None and not (postal_code or neighborhood):
+    # A origem é a que DECIDIU a taxa, não a que o endereço tem (#3311). Antes, CEP
+    # ou bairro preenchidos davam "zone" sempre, e a tela dizia "Tabela do
+    # bairro/CEP" para a taxa que a faixa de distância calculou. Zona é a que
+    # casou; sem ela, a faixa (com distância) ou a taxa padrão da loja (sem).
+    from shopman.shop.services import promotions as promotion_service
+
+    if promotion_service.match_delivery_zone(postal_code, neighborhood) is not None:
+        source = "zone"
+    elif distance_km is not None:
+        source = "distance"
+    else:
         source = "default"
     waiver = _delivery_fee_waiver(base_fee_q, payload)
     return DeliveryFeeResolution(
@@ -4059,18 +4892,24 @@ def _delivery_fee_waiver(base_fee_q: int, payload: dict):
     nunca a reavaliava: a loja dava o frete e o balcão cobrava. Agora a renúncia
     é ``modifiers.resolve_delivery_fee_waiver``, a função que o
     ``DeliveryFeeModifier`` chama, com o canal da venda (escopo da promoção) e o
-    cliente identificado (grupo de clientes, aniversário).
+    cliente identificado (grupo de clientes, aniversário, frete grátis do grupo).
 
     A base é a mercadoria líquida do desconto: a mesma soma que o limiar sempre
     mediu no balcão.
     """
+    from shopman.guestman.models import PriceTier
+
     from shopman.shop.modifiers import resolve_delivery_fee_waiver
 
+    customer_ref = _payload_pricing_customer_ref(payload)
+    # Os grupos do cliente, para o frete grátis do grupo: uma consulta, só com cliente.
+    tier_refs = PriceTier.objects.filter(customers__ref=customer_ref).values_list("ref", flat=True)
     return resolve_delivery_fee_waiver(
         base_fee_q,
         merchandise_q=_payload_subtotal_q(payload) - _payload_discount_q(payload),
         channel_ref=str(payload.get(_PRICING_CHANNEL_KEY) or ""),
-        customer_ref=_payload_pricing_customer_ref(payload),
+        customer_ref=customer_ref,
+        price_tier_refs=list(tier_refs) if customer_ref else (),
     )
 
 
@@ -4147,6 +4986,12 @@ def discount_approval_threshold_q() -> int:
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
+def _fiscal_toggle_in_defaults(defaults) -> bool:
+    """A resposta de ``fiscal_toggle_enabled`` a partir do ``Shop.defaults`` já lido."""
+    pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
+    return bool((pos_cfg or {}).get("fiscal_toggle", False))
+
+
 def fiscal_toggle_enabled() -> bool:
     """A loja OFERECE emissão de NFC-e no balcão?
 
@@ -4165,9 +5010,7 @@ def fiscal_toggle_enabled() -> bool:
         from shopman.shop.models import Shop
 
         shop = Shop.load()
-        defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
-        pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
-        return bool((pos_cfg or {}).get("fiscal_toggle", False))
+        return _fiscal_toggle_in_defaults(getattr(shop, "defaults", None) if shop else None)
     # Irmão do teto de desconto logo acima, e pela mesma razão: cair para
     # `False` porque a leitura falhou faz o toggle "Nota fiscal" SUMIR do balcão
     # numa loja que oferece NFC-e — o operador não tem como pedir a nota e não
@@ -4598,10 +5441,10 @@ def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool 
             "note",
             shift=shift,
             operator=operator,
-            reason="Venda finalizada depois do fechamento do turno",
+            reason="Venda validada depois do fechamento do turno",
             payload={
                 "text": (
-                    f"Venda {order.ref} finalizada depois do fechamento do turno, "
+                    f"Venda {order.ref} validada depois do fechamento do turno, "
                     f"com R$ {format_money(int(cash_q))} em dinheiro sem linha no livro."
                 ),
                 "order_ref": order.ref,
@@ -4726,7 +5569,7 @@ def _require_open_shift(payload: dict):
     if shift is None or not shift.is_open:
         raise PosIntentError(
             code="cash_shift_required",
-            message="Abra o caixa antes de finalizar uma venda.",
+            message="Abra o caixa antes de validar uma venda.",
             field="cash_shift_id",
             focus="cash",
             status=409,
@@ -5195,6 +6038,7 @@ def resolve_or_create_customer(
         from shopman.shop.services.pos_receipt_identity import resolve_receipt_identity
 
         return resolve_receipt_identity(receipt_identity_action, operator_username=operator_username)
+    _refuse_invalid_customer_phone(phone)
     return _persist_customer_from_payload(
         {
             "customer_ref": ref,
@@ -5208,6 +6052,47 @@ def resolve_or_create_customer(
         },
         operator_username=operator_username,
     )
+
+
+def _refuse_invalid_customer_tax_id(tax_id: str) -> None:
+    """CPF/CNPJ com dígito errado não vira cadastro (beta test de 05/11/2026).
+
+    A venda já recusava (``parse_pos_sale_intent``), mas o "Cadastrar cliente"
+    gravava antes: o cadastro nascia com ``11111111111`` e a venda recusava
+    depois, com o lixo já no CRM. A recusa vem antes de qualquer escrita e antes
+    da conferência de duplicado.
+    """
+    if not tax_id:
+        return
+    from shopman.utils.documents import is_valid_tax_id
+
+    if not is_valid_tax_id(tax_id):
+        raise PosIntentError(
+            code="invalid_customer_tax_id",
+            message="CPF/CNPJ inválido: confira os dígitos.",
+            field="customer_tax_id",
+            focus="customer_tax_id",
+            recovery="Corrija o documento ou deixe o campo vazio.",
+        )
+
+
+def _refuse_invalid_customer_phone(raw_phone: str) -> None:
+    """WhatsApp que não é telefone não some calado do cadastro.
+
+    ``_normalize_phone("123")`` devolve vazio, e o cadastro nascia sem contato
+    nenhum, com o operador achando que tinha salvo o WhatsApp.
+    """
+    raw = str(raw_phone or "").strip()
+    if not raw or "@" in raw or not _digits(raw):
+        return
+    if not _normalize_phone(raw):
+        raise PosIntentError(
+            code="invalid_customer_phone",
+            message="WhatsApp inválido: digite o DDD e o número.",
+            field="customer_phone",
+            focus="customer_phone",
+            recovery="Corrija o número ou deixe o campo vazio.",
+        )
 
 
 def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> dict:
@@ -5277,6 +6162,7 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
 
     if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
+    _refuse_invalid_customer_tax_id(tax_id)
 
     try:
         from shopman.guestman.models import ContactPoint, Customer
@@ -5326,6 +6212,17 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                     "O cadastro selecionado não está disponível. Busque o cliente novamente.",
                 ) from exc
         created = customer is None
+        # O número é NOVO neste cadastro? Medido antes de qualquer escrita: só o
+        # telefone que o balcão grava agora pede confirmação ao titular (D4), e
+        # a venda seguinte com o mesmo número não pede de novo.
+        phone_is_new = bool(phone) and (
+            created
+            or not ContactPoint.objects.filter(
+                customer=customer,
+                type__in=(ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP),
+                value_normalized=phone,
+            ).exists()
+        )
         # A correção vale para o cadastro que o REF apontou — e para mais
         # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
         # contato reescreveria o contato de quem não estava em jogo.
@@ -5372,15 +6269,15 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 },
             )
         else:
-            if correct_phone:
-                # ⚠️ ORDEM IMPORTA. `Customer.save()` espelha o `phone` num
-                # ContactPoint `is_primary=True`, e o cadastro já tem um — dois
-                # principais do mesmo tipo violam `unique_primary_per_type`. Por
-                # isso o principal antigo é demovido ANTES; ele segue existindo,
-                # como histórico, e o novo nasce sozinho no posto.
-                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
-            if correct_email:
-                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
+            # Corrigir o contato no balcão é TROCAR (decisão da coordenação,
+            # A4-1): o valor antigo deixa de abrir a conta. A troca vai ANTES
+            # do merge dos campos, pelo Guestman, e o merge encontra o cache já
+            # no valor novo. Os pedidos antigos guardam o contato de cada um;
+            # o cadastro não precisa reter a chave para lembrar.
+            if correct_phone and phone and phone != customer.phone:
+                _replace_pos_contact(customer, "phone", phone)
+            if correct_email and fill_email and fill_email != customer.email:
+                _replace_pos_contact(customer, "email", fill_email)
             _merge_pos_customer_fields(
                 customer,
                 name=name,
@@ -5398,6 +6295,11 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             _ensure_contact_point(
                 ContactPoint, customer, ContactPoint.Type.PHONE, phone, promote=correct_phone,
             )
+            if phone_is_new:
+                # Digitado no balcão, o número ainda não é prova de nada: o
+                # titular confirma no WhatsApp ou com o código certo do SMS, e
+                # até lá ele não resolve para a conta.
+                phone_confirmation.request_on_commit(customer.ref, phone)
         if fill_email:
             _ensure_contact_point(
                 ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email, promote=correct_email,
@@ -5650,7 +6552,7 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # ⚠️ Dono SEM ROSTO — o cadastro que só tem o dado, sem nome de gente.
         # Ele nasce sozinho toda vez que alguém pede a nota no balcão (o
         # `_receipt_registration` cria sem nome nenhum) ou recebe o rótulo de
-        # espera "Cliente 0011". Quem decide isso é `_should_refresh_name`, a
+        # espera "Cliente 0011". Quem decide isso é `should_refresh_name`, a
         # MESMA régua que o resolve usa para saber se pode escrever um nome por
         # cima — duas definições de "sem nome" divergiriam no primeiro
         # "Cliente Doc 4477", que tem nome no campo e nenhum rosto atrás.
@@ -5658,7 +6560,7 @@ def _conflict_row(customer, sources: list[str]) -> dict:
         # A tela precisa saber porque a pergunta muda de natureza: "qual dos
         # dois você está atendendo?" não existe quando um dos dois não é
         # ninguém. Ali só há um cliente e um dado solto para entregar a ele.
-        "owner_unnamed": _should_refresh_name(customer),
+        "owner_unnamed": should_refresh_name(customer),
     }
 
 
@@ -5804,7 +6706,7 @@ def _merge_pos_customer_fields(
     first_name, last_name = split_full_name(name)
     updates: list[str] = []
 
-    if first_name and (correct_name or _should_refresh_name(customer)):
+    if first_name and (correct_name or should_refresh_name(customer)):
         customer.first_name = first_name
         updates.append("first_name")
         if correct_name or last_name:
@@ -5863,17 +6765,27 @@ def _merge_pos_customer_fields(
             ) from exc
 
 
-def _release_primary_contact(ContactPoint, customer, contact_type: str, value: str) -> None:
-    """Libera o posto de principal para o contato NOVO, na correção.
+def _replace_pos_contact(customer, field: str, value: str) -> None:
+    """Troca o telefone ou o e-mail principal na correção do balcão.
 
-    Só mexe quando há valor novo e ele é diferente do principal de hoje: sem
-    isso a função demoveria o próprio contato que está sendo confirmado.
+    O antigo SAI: o ``ContactPoint`` é apagado e a chave de login do mesmo valor
+    vai junto (``replace_primary_contact`` do Guestman). Deixá-lo como
+    secundário, "no histórico", mantinha o número que a operadora recicla
+    abrindo a conta por OTP. Se o valor novo já for de outro cadastro, a
+    recusa é a mesma recusa rica dos contatos, com o dono nomeado.
     """
-    if not value:
-        return
-    ContactPoint.objects.filter(
-        customer=customer, type=contact_type, is_primary=True,
-    ).exclude(value_normalized=value).update(is_primary=False)
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
+
+    contact_type = ContactPoint.Type.PHONE if field == "phone" else ContactPoint.Type.EMAIL
+    try:
+        with transaction.atomic():
+            identity_service.replace_primary_contact(customer, field=field, new_value=value)
+    except (identity_service.ContactPointOwnershipConflict, IntegrityError) as exc:
+        raise _pos_owner_conflict(
+            customer, _contact_owner(contact_type, value), _CONTACT_CONFLICT_SOURCE[contact_type],
+        ) from exc
+    setattr(customer, field, value)
 
 
 def _ensure_contact_point(
@@ -5882,9 +6794,9 @@ def _ensure_contact_point(
     """Garante o contato do cliente — e, na CORREÇÃO, promove-o a principal.
 
     ``promote`` só chega ligado quando o operador confirmou a troca na tela: o
-    novo número passa a ser o principal (o antigo fica no histórico, demovido
-    pelo ``set_as_primary``) e o cache do ``Customer`` acompanha. Sem isso o
-    cadastro teria dois telefones e continuaria mandando WhatsApp para o errado.
+    novo número passa a ser o principal e o cache do ``Customer`` acompanha. O
+    antigo já saiu antes, por ``_replace_pos_contact``: corrigir é trocar, e o
+    número velho não pode seguir abrindo a conta.
     """
     try:
         contact, created = ContactPoint.objects.get_or_create(
@@ -6314,7 +7226,7 @@ def _fallback_customer_name(*, phone: str, tax_id: str, email: str) -> tuple[str
     return "Cliente", "POS"
 
 
-def _should_refresh_name(customer) -> bool:
+def should_refresh_name(customer) -> bool:
     current = f"{customer.first_name} {customer.last_name}".strip().lower()
     return not current or current.startswith("cliente ") or current == "cliente"
 

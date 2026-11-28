@@ -262,15 +262,44 @@ def short_line(saved) -> str:
     return " - ".join(p for p in (street, _clean(saved.neighborhood)) if p)
 
 
-def pick_saved(saved_list: list, label: str):
-    """O endereço cadastrado escolhido: o padrão, ou o do rótulo dito pelo cliente."""
+def saved_tag(saved) -> str:
+    """A etiqueta que o cliente deu ao endereço ("Casa", "Mãe"), ou vazio quando não há.
+
+    "Outro" sem nome não é etiqueta: é o endereço que ninguém etiquetou, como o que
+    um pedido de entrega grava sozinho (#2775). Nesse caso quem fala é o endereço.
+    """
+    if _clean(saved.label) == "other":
+        return _clean(saved.label_custom)
+    return _clean(saved.display_label)
+
+
+def saved_name(saved) -> str:
+    """Como o endereço é chamado na conversa: a etiqueta, ou a própria rua."""
+    return saved_tag(saved) or short_line(saved)
+
+
+def matching_saved(saved_list: list, label: str) -> list:
+    """Os endereços cadastrados que respondem ao que o cliente disse.
+
+    A etiqueta só casa com o endereço que a tem; sem etiqueta, o endereço é
+    chamado pela rua. Mais de um resultado é pergunta ("qual?"), nunca escolha
+    no escuro.
+    """
     wanted = _fold(label)
     if wanted in _DEFAULT_WORDS:
-        return saved_list[0] if saved_list else None
-    for saved in saved_list:
-        if _fold(saved.display_label) == wanted:
-            return saved
-    matches = [saved for saved in saved_list if wanted in _fold(short_line(saved))]
+        return saved_list[:1]
+    by_tag = [saved for saved in saved_list if saved_tag(saved) and _fold(saved_tag(saved)) == wanted]
+    if by_tag:
+        return by_tag
+    by_line = [saved for saved in saved_list if _fold(short_line(saved)) == wanted]
+    if by_line:
+        return by_line
+    return [saved for saved in saved_list if wanted in _fold(short_line(saved))]
+
+
+def pick_saved(saved_list: list, label: str):
+    """O endereço cadastrado escolhido: o padrão, ou o único que responde ao que o cliente disse."""
+    matches = matching_saved(saved_list, label)
     return matches[0] if len(matches) == 1 else None
 
 
@@ -315,6 +344,9 @@ def saved_offer(saved_list: list) -> str:
 
 
 def saved_listing(saved_list: list) -> str:
-    """Os endereços do cliente pelo rótulo, quando ele pede para escolher."""
-    rows = "; ".join(f"{saved.display_label}: {short_line(saved)}" for saved in saved_list)
+    """Os endereços do cliente, quando ele pede para escolher: a etiqueta (se houver) e a rua."""
+    rows = "; ".join(
+        f"{saved_tag(saved)}: {short_line(saved)}" if saved_tag(saved) else short_line(saved)
+        for saved in saved_list
+    )
     return f"Seus endereços cadastrados: {rows}. Em qual entregamos?"

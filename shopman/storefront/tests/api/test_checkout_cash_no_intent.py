@@ -79,7 +79,7 @@ def test_delivery_cash_checkout_has_no_payment_intent(client, django_capture_on_
 
 
 def test_pickup_cash_checkout_has_no_payment_intent(client, django_capture_on_commit_callbacks):
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
     _seed_surface()
     authenticate_checkout(client)
@@ -89,7 +89,7 @@ def test_pickup_cash_checkout_has_no_payment_intent(client, django_capture_on_co
         django_capture_on_commit_callbacks,
         fulfillment_type="pickup",
         delivery_date=timezone.localdate().isoformat(),
-        delivery_time_slot=get_slots()[-1]["ref"],
+        delivery_time_slot=today_pickup_slot(),
         payment_method="cash",
     )
 

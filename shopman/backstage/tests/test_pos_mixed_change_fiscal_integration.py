@@ -23,6 +23,7 @@ from shopman.shop.directives import FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 POS_TRANSITIONS = {
     "new": ["accepted", "cancelled"],
@@ -41,7 +42,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -84,20 +85,23 @@ class MixedSaleWithChangeFiscalTests(TransactionTestCase):
         self.addCleanup(fiscal_pool.reset)
 
     def test_nfce_payment_is_the_settled_one_not_the_cash_handed_over(self) -> None:
+        payload = {
+            "items": [{"sku": "BOLO", "name": "Bolo", "qty": 1, "unit_price_q": 1300}],
+            "fulfillment_type": "pickup",
+            "payment_method": "mixed",
+            "payment_collection": "terminal",
+            "payment_tenders": [
+                {"method": "card", "amount_q": 1000, "collection": "terminal"},
+                {"method": "cash", "amount_q": 500, "collection": "terminal"},
+            ],
+            "cash_shift_id": self.shift.pk,
+            "client_request_id": "mixed-change-fiscal",
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         result = pos_service.close_sale(
             channel_ref="pdv",
-            payload={
-                "items": [{"sku": "BOLO", "name": "Bolo", "qty": 1, "unit_price_q": 1300}],
-                "fulfillment_type": "pickup",
-                "payment_method": "mixed",
-                "payment_collection": "terminal",
-                "payment_tenders": [
-                    {"method": "card", "amount_q": 1000, "collection": "terminal"},
-                    {"method": "cash", "amount_q": 500, "collection": "terminal"},
-                ],
-                "cash_shift_id": self.shift.pk,
-                "client_request_id": "mixed-change-fiscal",
-            },
+            payload=payload,
             actor="pos:alice",
             operator_username="alice",
         )

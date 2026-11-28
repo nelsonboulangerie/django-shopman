@@ -1,22 +1,33 @@
 import { toValue } from "vue";
 
 import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/presentation/events";
+import {
+  openResilientEventSource,
+  type ResilientEventSource,
+} from "../../../operator-kit/app/utils/resilientEventSource";
 
 export interface PosEventChannel {
   /** Rota SSE same-origin do BFF (`server/routes/sse/*`). */
   path: string;
   /** O evento nomeado que o django-eventstream empurra naquele canal. */
   event: string;
+  /** Outros eventos do MESMO canal, que mudam o que a tela tem e pedem a releitura
+   *  inteira (`refreshScopeForChannel` decide pelo nome). */
+  alsoEvents?: readonly string[];
 }
 
-/** Os canais que o balcão assina, e o evento nomeado de cada um. Dois streams
- *  porque são duas PERMISSÕES e dois assuntos — não porque a tela precise
- *  distinguir: os dois desembocam no mesmo refetch. */
+/** Os canais que o balcão assina, e o evento nomeado de cada um. Um stream por
+ *  assunto: cada um relê só o que muda com ele (`refreshScopeForChannel`). */
 export const POS_TERMINAL_CHANNELS: readonly PosEventChannel[] = [
   { path: "/sse/cash", event: "backstage-cash-update" },
   // A cozinha mexeu numa comanda deste balcão: o selo "Na cozinha" da linha
   // vira "Pronto" ou "Cancelado" sem ninguém apertar "Atualizar".
   { path: "/sse/tabs", event: "backstage-tabs-update" },
+  // O estoque do canal do PDV mexeu (outro balcão vendeu a última unidade, a
+  // lote entrou): o tile troca o selo "Esgotado" sem ninguém tocar. No mesmo canal,
+  // produto pausado e mutação do canal (`product-paused`, `listing-changed`) mudam
+  // QUEM está na grade, e a tela relê tudo (#2586).
+  { path: "/sse/stock", event: "stock-update", alsoEvents: ["product-paused", "listing-changed"] },
 ];
 
 /** O canal dos PEDIDOS (o mesmo do Gestor, `shop.manage_orders`): as Encomendas
@@ -28,25 +39,30 @@ export const POS_ORDER_CHANNELS: readonly PosEventChannel[] = [
 /**
  * Tempo real entre estações do PDV: SSE push + poll de fallback + wake.
  *
- * EventSource same-origin no BFF: /sse/cash (canal `backstage-cash-main`) e
- * /sse/tabs (canal `backstage-tabs-main`, a cozinha mexendo numa comanda). O canal anuncia o que OUTRA estação fez e esta
+ * EventSource same-origin no BFF: /sse/cash (canal `backstage-cash-main`),
+ * /sse/tabs (canal `backstage-tabs-main`, a cozinha mexendo numa comanda) e
+ * /sse/stock (canal `stock-<canal do PDV>`, o estoque da grade). O canal anuncia o que OUTRA estação fez e esta
  * precisa ver sem F5: pedido de troco (pedido/atendido/cancelado), devolução
  * pendente/entregue, turno aberto/fechado. Todo evento dispara o MESMO
  * `onPush` — o refetch da Projection do terminal, que é o fetch canônico onde
  * pendências, turno e comandas já vivem (ADR-016: o push é sinal, o fetch é a
  * verdade).
  *
- * `channels` troca os streams (padrão: cash + tabs). As Encomendas assinam o
+ * `channels` troca os streams (padrão: cash + tabs + stock). As Encomendas assinam o
  * canal dos pedidos (`POS_ORDER_CHANNELS`) com a mesma mecânica.
  *
  * Fallback: poll calmo (60s) só enquanto o SSE não está vivo — se o stream
- * conecta, o tick não refaz nada. Tablet que dormiu/voltou à aba refaz na hora
- * e tenta reconectar o stream (um 403 na conexão fecha o EventSource de vez;
- * sem esta retomada, a estação ficaria no poll para sempre).
+ * conecta, o tick não refaz nada. Cada stream se recria sozinho com backoff
+ * (`openResilientEventSource`): o 502 de todo deploy deixava o EventSource cru
+ * CLOSED e a estação no poll até alguém recarregar. Ao REABRIR, o canal refaz o
+ * fetch canônico (o que mudou enquanto o push esteve fora não chegou por ele).
+ * Tablet que dormiu/voltou à aba refaz na hora e tenta reconectar sem esperar
+ * o backoff.
  */
 export function usePosEvents(
-  /** `channel` diz qual stream avisou; sem ele (poll, volta à aba) é a releitura inteira. */
-  onPush: (channel?: PosEventChannel) => void,
+  /** `channel` diz qual stream avisou e `event`, qual aviso; sem eles (poll, volta à
+   *  aba, reconexão) é a releitura inteira. */
+  onPush: (channel?: PosEventChannel, event?: string) => void,
   opts?: { pollMs?: number; enabled?: () => boolean; channels?: readonly PosEventChannel[] },
 ) {
   /** O stream so conecta com a estacao identificada: no gate os canais sao
@@ -55,7 +71,11 @@ export function usePosEvents(
   const config = useRuntimeConfig();
   const realtime = ref<PosRealtimeState>("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
-  let sources: EventSource[] = [];
+  let sources: ResilientEventSource[] = [];
+  /** Quais canais estão de pé agora. Um stream vivo já tira a tela do poll; o
+   *  outro caindo não a devolve para lá, senão o canal saudável passaria a
+   *  refazer fetch de graça. */
+  const live = new Set<string>();
 
   const channels = opts?.channels ?? POS_TERMINAL_CHANNELS;
 
@@ -63,25 +83,30 @@ export function usePosEvents(
     if (!isEnabled() || sources.length) return;
     realtime.value = "connecting";
     for (const channel of channels) {
-      try {
-        const source = new EventSource(ssePath(channel.path, config.app.baseURL), { withCredentials: true });
-        // django-eventstream empurra eventos nomeados; qualquer um = refetch.
-        const onEvent = () => onPush(channel);
-        ["message", channel.event].forEach((name) => source.addEventListener(name, onEvent));
-        // Um stream vivo já tira a tela do poll; o outro caindo não a devolve
-        // para lá, senão o canal saudável passaria a refazer fetch de graça.
-        source.onopen = () => { realtime.value = "live"; };
-        source.onerror = () => { if (!sources.some((s) => s.readyState === EventSource.OPEN)) realtime.value = "polling"; };
-        sources.push(source);
-      } catch {
-        realtime.value = "polling";
-      }
+      sources.push(
+        openResilientEventSource({
+          url: ssePath(channel.path, config.app.baseURL),
+          // django-eventstream empurra eventos nomeados; qualquer um = refetch.
+          events: [channel.event, ...(channel.alsoEvents ?? [])],
+          onEvent: (event) => onPush(channel, event.type),
+          onOpen: (reconnected) => {
+            live.add(channel.path);
+            realtime.value = "live";
+            if (reconnected) onPush(channel);
+          },
+          onDown: () => {
+            live.delete(channel.path);
+            if (!live.size) realtime.value = "polling";
+          },
+        }),
+      );
     }
   }
 
   function closeSse() {
     sources.forEach((source) => source.close());
     sources = [];
+    live.clear();
     // Sem stream de pe, o tick de poll volta a ser o dono do refresh.
     realtime.value = "polling";
   }
@@ -93,12 +118,10 @@ export function usePosEvents(
     }
     if (document.visibilityState !== "visible") return;
     onPush();
-    // Stream fechado de vez (ex.: conexão recusada antes do login)? Tenta de
-    // novo — a sessão pode ter nascido desde então.
-    if (sources.length && sources.every((s) => s.readyState === EventSource.CLOSED)) {
-      closeSse();
-    }
-    connectSse();
+    // Stream esperando o backoff (ex.: recusado antes do login)? Tenta já: a
+    // sessão pode ter nascido desde então.
+    if (sources.length) sources.forEach((source) => source.reconnectNow());
+    else connectSse();
   };
 
   onMounted(() => {

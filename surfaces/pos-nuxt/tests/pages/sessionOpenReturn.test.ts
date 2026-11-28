@@ -31,6 +31,7 @@ mockNuxtImport("usePosCashSession", () => () => ({
   managerChallenge: ref(null),
   openCashShift,
   closeCashShift: vi.fn().mockResolvedValue(true),
+  offlineReviewSales: ref([]),
   registerCashMovement: vi.fn().mockResolvedValue(true),
   canOpenDrawer: ref(true),
   drawerUnavailableReason: ref(""),

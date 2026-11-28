@@ -37,6 +37,17 @@ Definida no Product (`shopman.offerman`), respeitada pelo Stockman:
 - `planned_ok` — aceita produção planejada
 - `demand_ok` — aceita holds sem estoque (demanda)
 
+### Validade e margem
+O saldo conta para uma data-alvo enquanto estiver válido nela. A validade tem duas fontes, e as duas valem juntas (a mais restritiva ganha):
+- **Lote datado** — `Batch.expiry_date`.
+- **Saldo sem lote** — validade implícita: dia de produção + `shelf_life_days` do produto. É o caso de toda fornada planejada (`Quant.target_date` preenchido) e do que está em produção.
+
+`expiry_margin_days` (parâmetro de `quants_eligible_for`, das leituras de disponibilidade e do `hold`) pede que o saldo ainda tenha N dias de validade DEPOIS da data-alvo, e alcança as duas fontes. A fornada planejada para a própria data-alvo sempre conta, com qualquer validade. Margem 0 (o default) é "válido na data basta".
+
+O "dia de produção" de um saldo físico é o do lote dele (`Batch.production_date`), quando o lote o declara; o `created_at` do saldo é só o dia em que ele entrou no estoque. Com margem, o saldo físico de um lote é julgado pela data de produção do lote, pela mesma régua da fornada planejada: o lote de sexta fechado na quinta à noite conta para sexta, e o lote de quinta não. A janela histórica sobre o `created_at` (sem margem) continua valendo para ele. Lote nomeado sem `Batch`, ou com `Batch` sem data de produção, não declara nada: a margem cai sobre o `created_at`. A consulta do escopo passa os lotes ao `filter_valid_quants(lots=...)`; a leitura em lote passa `lot_production_date` ao `is_valid_for_date`, sem consulta a mais.
+
+`availability_for_skus_on_dates` aceita `expiry_margin_days_by_date` para quem lê, numa varredura só, datas que pedem margens diferentes. O orquestrador usa isso para a regra da casa: sobra de hoje não lastreia encomenda (`shopman/shop/policies/promise_expiry_margin.py`).
+
 ## Modelos
 
 ### Position
@@ -119,6 +130,14 @@ Definida no Product (`shopman.offerman`), respeitada pelo Stockman:
 | `supplier` | CharField(200) | Fornecedor |
 | `notes` | TextField | Observações |
 
+**Lote, sem lote e o marcador de produção.** `Quant.batch` é uma referência textual, e três coisas diferentes moram nela:
+
+- vazio: saldo sem lote (o planejado, por exemplo);
+- o ref de um `Batch`: lote de verdade, com validade e grau de qualidade;
+- `"started"` num saldo com `target_date`: o MARCADOR do que já entrou em produção (`services.scope.STARTED_BATCH`, escrito pela ponte do Craftsman). Não é lote e não existe `Batch` com esse ref.
+
+O canal que lê com lista de graus (`allowed_quality_grade_refs`) só aceita lote de verdade com grau permitido: lote nomeado sem `Batch`, ou com `Batch` sem grau, fica de fora, na leitura, na reserva e na baixa. O marcador de produção passa como o saldo sem lote (`scope.is_in_production`), porque ainda não foi inspecionado; no fechamento, o `realize` só leva a reserva para o pão cujo grau a lista dela aceita.
+
 ### StockAlert
 
 | Campo | Tipo | Descrição |
@@ -177,6 +196,15 @@ move = stock.issue(
     user=usuario,
 )
 
+# Entrada num quant já localizado (espelho do issue; devolve o Move):
+# a devolução no mesmo saldo de onde a venda saiu, o lote versionado do QC
+move = stock.receive_into(
+    quantity=Decimal("2"),
+    quant=quant,
+    reason="Cancelamento antes do preparo",
+    kind=Move.Kind.RETURN,
+)
+
 # Ajuste de inventário (contagem física)
 move = stock.adjust(
     quant=quant,
@@ -211,6 +239,8 @@ hold = stock.release(hold_id, reason="Pedido cancelado")
 liberados = stock.release_expired()
 ```
 
+**Entrega antes de o lote fechar.** `fulfill` baixa do quant em que a reserva está, e ele pode ainda ser saldo de produção (planejado, ou `batch="started"`): o balcão entrega pão de um lote aberto, o operador aceita um pedido já pago. A baixa sai na hora, e a entrega segue o lote: quando a contribuição dele muda de saldo, a entrega muda junto, num par de `Move` que soma zero, no `kind` da entrega, e a reserva `fulfilled` passa a apontar para o saldo que a pagou. Quem faz isso é o `realize`, do saldo de produção para o lote, e `StockPlanning.carry_deliveries(from_quant, to_quant, limit=...)`, que a ponte do Craftsman chama no início do lote (do planejado para o que está em produção). **A conta da entrega é chaveada em `Move.metadata`**, nunca no `reason`: `{"delivery": {"hold_id": "hold:N", "entry": "fulfilled" | "carried_out" | "carried_in" | "returned"}}` (`services/holds.py::delivery_entry`; inventário em `docs/reference/data-schemas.md`). O que cada saldo ainda deve é o líquido dessa conta, por reserva, lido do ledger, sem contador; a frase do `Move` (`Entrega hold:N`, `Entrega hold:N segue com o lote`) é texto para gente e pode ser reescrita sem mudar o estoque. `Move` sem a chave não é entrega conhecida, tenha a frase que tiver. Resultado: lote de 10 com 4 já entregues fecha com `+10` de produção e `-4` de venda no lote, 6 para vender. As pernas `MAKE` não mudam, e a venda continua contada uma vez só. Entrega maior que o realizado abate até zerar o lote, e o resto continua devido ao saldo de produção: nunca vira saldo negativo; a ponte, em modo `fail_closed`, recusa o fechamento (#2724).
+
 ### Planejamento (StockPlanning)
 
 ```python
@@ -242,7 +272,12 @@ quant_fisico = stock.realize(
 )
 # → Transfere holds FIFO do planejado para o físico
 # → Emite sinal holds_materialized
+
+# Reassentar reservas entre saldos planejados irmãos (mesmo SKU e data)
+movidas = stock.settle_holds([quant_em_producao, quant_planejado])
 ```
+
+`realize` só materializa as reservas ancoradas no quant de onde o lote sai (mais a demanda sem saldo da data). Por isso, quando a QUANTIDADE do plano muda de quant (o lote entra em produção e vai para o quant `batch="started"`, um lote é cancelado, o plano encolhe), a reserva tem de mudar junto: é o que `settle_holds` faz. Os quants vêm na ordem em que são servidos (o lote aberto primeiro); as reservas ativas são percorridas na ordem de atendimento do `realize` (`metadata.priority`, depois FIFO) e cada uma vai, inteira, para o primeiro quant em que cabe. A que não cabe em nenhum fica onde está, sem lastro. Não muda quantidade, prazo nem estado. Quem chama é a ponte do Craftsman (`craftsman/contrib/stockman`), no início, no ajuste e no cancelamento do lote.
 
 ### Alertas
 

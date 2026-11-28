@@ -19,8 +19,15 @@ npm run dev
 - Node: `22`
 
 A Function em `functions/api/status.ts` consulta somente liveness pública e
-devolve capacidades compreensíveis pelo cliente. Ela nunca repassa JSON bruto,
-logs, nomes de infraestrutura ou evidências internas.
+devolve capacidades compreensíveis pelo cliente. A rota
+`/api/watchman-readiness`, também na borda do Cloudflare, consulta em paralelo as
+duas readiness do Django e só responde 200 quando ambas passam. Em falha responde
+503 e identifica
+`web_operator` ou `web_storefront`, sem repassar corpo, status bruto, logs, nomes
+de infraestrutura ou evidências internas. Essa composição mantém o contrato de
+um único monitor externo gratuito sem apagar qual serviço falhou. A resposta usa
+`Cache-Control: no-store`: cada observação do monitor mede as duas pernas naquele
+instante.
 
 ## Segurança do estado
 

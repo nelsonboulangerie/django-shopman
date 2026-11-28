@@ -137,14 +137,32 @@ _PURCHASE_REQUEST_FLOW_FIELDS = (
 # compatibilidade com flows já criados antes da padronização documentada.
 #: Evento-variante do ``order_dispatched`` com o link de rastreio do entregador.
 COURIER_DISPATCH_VARIANT = "order_dispatched_courier"
+#: Evento-variante do ``order_accepted`` quando o pedido é ENCOMENDA: o modelo
+#: ``pedido_encomenda_confirmada`` diz para quando ("confirmada para {{2}}").
+PREORDER_ACCEPTED_VARIANT = "order_accepted_preorder"
+#: Evento-variante do ``payment_requested`` quando a cobrança do cartão não passou
+#: depois do aceite e o cliente paga de novo (decisão do dono, 07/11/2026): o modelo
+#: ``pagamento_cartao_falhou`` diz o que houve, que nada foi cobrado e até quando.
+CARD_REPAYMENT_VARIANT = "payment_requested_card_repayment"
 
 _CUSTOMER = ("customer_name", "customer_name_greeting")
 _ORDER = ("order_ref_short",)
 _ORDER_BUTTON = ("order_ref", "order_ref_short")
 TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "order_received": (*_CUSTOMER, *_ORDER_BUTTON),
+    # A resposta da equipe que chegou fora da janela de 24 horas (WP-16, Concierge): o
+    # modelo não tem variável; a resposta sai na próxima mensagem do cliente.
+    "concierge_answer_ready": (),
+    # "Confirme que este número é seu" (D4, OC-08): o modelo `confirmar_numero` não
+    # tem variável; sem nome, porque o número pode ter sido digitado errado.
+    "phone_confirmation_requested": (),
     "order_received_outside_hours": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_accepted": (*_ORDER_BUTTON, "total", "order_total_display"),
+    # Variante do `order_accepted` na encomenda (`pedido_encomenda_confirmada`):
+    # `status_note` é a promessa sem ponto final ("retirada amanhã, a partir das 9h").
+    # Escolhida pelo adapter (`notification_manychat._preorder_accepted_variant`),
+    # nunca emitida como evento próprio.
+    PREORDER_ACCEPTED_VARIANT: (*_ORDER_BUTTON, "status_note", "total", "order_total_display"),
     "order_rejected": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "order_preparing": (*_ORDER_BUTTON, "status_note"),
     "order_ready_pickup": _ORDER_BUTTON,
@@ -160,8 +178,18 @@ TRANSACTIONAL_FLOW_FIELDS: dict[str, tuple[str, ...]] = {
     "preorder_reminder": (*_CUSTOMER, *_ORDER_BUTTON),
     "order_rescheduled": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "order_updated": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    # "Avisar o cliente" (WP-G07): `pedido_atrasado`, `pedido_item_em_falta`,
+    # `pedido_remarcar`. O nome é o {{1}}, o final do ref o {{2}}, a frase o {{3}}.
+    "order_delayed": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "order_item_missing": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
+    "order_reschedule_needed": (*_CUSTOMER, *_ORDER_BUTTON, "status_note"),
     "fiscal_note_ready": _ORDER_BUTTON,
     "payment_requested": (*_CUSTOMER, *_ORDER_BUTTON),
+    # Variante do `payment_requested` no novo pagamento depois da cobrança de cartão
+    # recusada (`pagamento_cartao_falhou`): `payment_deadline` é o prazo cru
+    # ("hoje às 18h30"). Escolhida pelo adapter
+    # (`notification_manychat._card_repayment_variant`), nunca emitida como evento.
+    CARD_REPAYMENT_VARIANT: (*_CUSTOMER, *_ORDER_BUTTON, "payment_deadline"),
     "payment_link_sent": (
         *_CUSTOMER,
         "order_ref",

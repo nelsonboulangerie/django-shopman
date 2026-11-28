@@ -379,6 +379,10 @@ def test_create_customer_refuses_invalid_fields_and_reused_intention(client, man
         ({"firstName": "Ana", "fiscalCpfNaNota": True}, "document"),
         ({"firstName": "Ana", "fiscalEmailReceipt": True}, "email"),
         ({"firstName": "Ana", "tags": ["vizinha", 7]}, "tags"),
+        ({"firstName": "Ana", "tags": ["[]"]}, "tags"),
+        ({"firstName": "Ana", "tags": ["{}"]}, "tags"),
+        ({"firstName": "Ana", "tags": [" [  ] "]}, "tags"),
+        ({"firstName": "Ana", "tags": ["{ \n }"]}, "tags"),
     ],
 )
 def test_create_customer_refuses_inconsistent_commercial_data(client, manager, shop, payload, field):
@@ -495,6 +499,44 @@ def test_address_other_requires_a_name(client, manager, people):
     assert response.status_code == 400
     assert response.json()["field"] == "labelCustom"
     assert not CustomerAddress.objects.exists()
+
+
+def test_address_without_label_is_edited_without_being_forced_to_get_a_name(client, manager, people):
+    """#2775: o endereço que o pedido de entrega grava nasce sem etiqueta ("Outro" sem nome).
+
+    A projeção manda a etiqueta vazia (a tela mostra o endereço, não "Outro") e editar
+    o complemento não obriga a inventar um nome. Quem ESCOLHE "Outro" ainda dá o nome.
+    """
+    address = CustomerAddress.objects.create(
+        customer=people["balcao"], label="other", label_custom="", formatted_address="Rua A, 1", is_default=True,
+    )
+    named = CustomerAddress.objects.create(
+        customer=people["balcao"], label="home", formatted_address="Rua B, 2",
+    )
+    client.force_login(manager)
+    detail = client.get(f"{LIST_URL}CLI-MARIA/").json()["customer"]
+    labels = {row["formatted_address"]: (row["label"], row["label_code"]) for row in detail["addresses"]}
+    assert labels == {"Rua A, 1": ("", "other"), "Rua B, 2": ("Casa", "home")}
+
+    edited = _patch(client, f"{LIST_URL}CLI-MARIA/addresses/{address.pk}/", {
+        "expectedRevision": address.updated_at.isoformat(),
+        "label": "other",
+        "labelCustom": "",
+        "formattedAddress": "Rua A, 1",
+        "complement": "Fundos",
+    })
+    assert edited.status_code == 200, edited.json()
+    address.refresh_from_db()
+    assert (address.label, address.label_custom, address.complement) == ("other", "", "Fundos")
+
+    became_other = _patch(client, f"{LIST_URL}CLI-MARIA/addresses/{named.pk}/", {
+        "expectedRevision": named.updated_at.isoformat(),
+        "label": "other",
+        "labelCustom": "",
+        "formattedAddress": "Rua B, 2",
+    })
+    assert became_other.status_code == 400
+    assert became_other.json()["field"] == "labelCustom"
 
 
 def test_address_edit_uses_its_own_revision(client, manager, people):
@@ -1019,3 +1061,11 @@ def test_bulk_customers_replays_with_the_same_intention(client, manager, people)
 
     assert first.status_code == replay.status_code == 200
     assert replay.json() == first.json()
+
+
+def test_customer_tags_accept_unicode_names_and_numeric_codes():
+    from shopman.backstage.services.customers import _tags
+
+    assert _tags(["Café", "お客様", "2026", "VIP-2", "🥐", "⭐", "!!!"]) == [
+        "Café", "お客様", "2026", "VIP-2", "🥐", "⭐", "!!!",
+    ]

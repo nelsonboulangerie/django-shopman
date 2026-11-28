@@ -7,74 +7,159 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def customer_by_ref(customer_ref: str):
+    from shopman.guestman.services import customer as customer_service
+
+    return customer_service.get(customer_ref)
+
+
 def customer_by_uuid(customer_uuid):
     from shopman.guestman.services import customer as customer_service
 
     return customer_service.get_by_uuid(customer_uuid)
 
 
-def customer_by_phone(phone: str):
-    from shopman.guestman.services import customer as customer_service
-
-    return customer_service.get_by_phone(phone)
-
-
-def set_missing_first_name(*, phone: str, name: str) -> None:
-    from django.db import transaction
-
-    from shopman.shop.services import account as account_service
-
-    hint = customer_by_phone(phone)
-    if hint is None:
-        return
-    with transaction.atomic():
-        try:
-            customer = account_service.lock_active_customer(customer_uuid=hint.uuid)
-        except account_service.AccountUnavailable:
-            return
-        # A leitura por telefone ocorreu antes da espera na trava. Revalidar a
-        # identidade atual impede que uma troca concorrente faça o nome entrar
-        # no cadastro antigo por um alvo reciclado.
-        current = customer_by_phone(phone)
-        if current is None or current.pk != customer.pk:
-            return
-        if not customer.first_name:
-            customer.first_name = name
-            customer.save(update_fields=["first_name", "updated_at"])
+IDENTITY_CONFLICT_DETAIL = (
+    "Este número aparece em mais de um cadastro e, por segurança, não entramos "
+    "por ele agora. Fale com a gente para resolver."
+)
 
 
-def update_customer_name(customer_ref: str, *, first_name: str, last_name: str):
-    from shopman.guestman.services import customer as customer_service
+class TrustedDeviceIdentityConflict(Exception):
+    """O número do dispositivo confiável não tem um dono só: a entrada é recusada."""
 
-    return customer_service.update(customer_ref, first_name=first_name, last_name=last_name)
+    detail = IDENTITY_CONFLICT_DETAIL
 
 
-def trusted_device_prefill(request) -> tuple[str, str]:
-    """Return (phone, first_name) from a trusted device cookie when valid."""
+def identity_by_customer_ref(customer_ref: str):
+    """Hydrate a session-safe Doorman identity through the configured resolver.
+
+    O resolver é o da setting (``DOORMAN["IDENTITY_RESOLVER_CLASS"]``), o mesmo
+    que o login usa: instanciar a classe do Guestman aqui ignorava a troca e
+    abria uma segunda porta de identidade. Falha de leitura fecha (``None``,
+    sem identidade) e grita no log, nunca em silêncio.
+    """
+    if not customer_ref:
+        return None
     try:
-        from shopman.doorman import TrustedDevice
-        from shopman.doorman.conf import doorman_settings
+        from shopman.doorman.conf import get_identity_resolver
 
-        raw_token = request.COOKIES.get(doorman_settings.DEVICE_TRUST_COOKIE_NAME)
-        if not raw_token:
-            return "", ""
-        device = TrustedDevice.verify_token(raw_token)
-        if not device:
-            return "", ""
-        customer = customer_by_uuid(device.customer_id)
-        if not customer:
-            return "", ""
-        return customer.phone or "", customer.first_name or ""
+        customer = customer_by_ref(customer_ref)
+        if customer is None:
+            return None
+        identity = get_identity_resolver().get(customer.uuid, purpose="session")
+        return identity if identity is not None and identity.is_active else None
     except Exception:
-        logger.debug("auth.trusted_device_prefill degraded; using fallback", exc_info=True)
-        return "", ""
+        logger.warning("auth.identity_by_customer_ref failed customer=%s", customer_ref, exc_info=True)
+        return None
 
 
-# Os BFFs Nuxt (loja e apps de operador) se identificam por este cabeçalho
-# (segredo compartilhado com o Nitro: `SHOPMAN_BFF_PROXY_SECRET` aqui,
-# `NUXT_DJANGO_PROXY_SECRET` lá). Sem ele, ninguém consegue pedir ao Django que
-# leia um salto a mais do X-Forwarded-For.
-BFF_PROXY_SECRET_HEADER = "X-Shopman-Proxy-Secret"
+# ── Número que muda de dono (D3, OC-07) ──────────────────────────────
+#
+# O número prova a posse do chip, nunca a pessoa: a operadora recicla. Três peças
+# moram aqui, a ponte entre a loja/Concierge e o Guestman (a superfície não fala
+# com o kernel direto): o frescor da prova do número, o "não sou eu" e o aviso de
+# que um número saiu de um cadastro.
+
+#: Acesso de número sem uso verificado há mais disto volta a pedir prova (D3b).
+#: "Uso verificado" é o que o Guestman registra ao confirmar o número
+#: (``ContactPoint.verified_at``): o código no número (login ou confirmação) o renova;
+#: a mensagem que só chega pelo canal, não.
+NUMBER_PROOF_MAX_AGE_DAYS = 365
+
+
+def number_proof_expired(*, phone: str, customer_ref: str = "", customer_uuid=None, now=None) -> bool:
+    """A prova do número NESTE cadastro existiu e venceu (mais de 12 meses, D3b).
+
+    "Uso verificado" é o que o Guestman registra ao confirmar o número
+    (``ContactPoint.verified_at``): o código no número (login ou confirmação) renova;
+    a mensagem que só passa pelo canal, não. Número sem prova nenhuma registrada não
+    "venceu": quem decide o contato nunca verificado é o OC-08 (D4).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Max
+    from django.utils import timezone
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services.identity import PHONE_FAMILY
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(phone or "")
+    if not normalized or not (customer_ref or customer_uuid):
+        return False
+    owner = {"customer__uuid": customer_uuid} if customer_uuid else {"customer__ref": customer_ref}
+    latest = ContactPoint.objects.filter(
+        **owner,
+        type__in=PHONE_FAMILY,
+        value_normalized=normalized,
+        is_verified=True,
+    ).aggregate(latest=Max("verified_at"))["latest"]
+    if latest is None:
+        return False
+    return latest < (now or timezone.now()) - timedelta(days=NUMBER_PROOF_MAX_AGE_DAYS)
+
+
+def release_number_not_me(*, customer_uuid, phone: str) -> list[str]:
+    """"Não sou eu / troquei de número" (D3d): o número sai do cadastro em que ele caiu.
+
+    Quem chama provou a posse de ``phone`` (está numa sessão aberta por ele) e diz que
+    a conta não é dela. O número deixa de ser desta conta: chaves de login, assinante
+    do WhatsApp e conversa se desligam (``contact_reassigned``). Só o número desta
+    conta sai; número de outro cadastro não é tocado. Devolve os refs que perderam o
+    número (vazio quando o número não era desta conta).
+    """
+    from django.db import transaction
+    from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(phone or "")
+    if not normalized or not customer_uuid:
+        return []
+    with transaction.atomic():
+        owns = ContactPoint.objects.filter(
+            customer__uuid=customer_uuid,
+            type__in=identity_service.PHONE_FAMILY,
+            value_normalized=normalized,
+        ).exists()
+        if not owns:
+            return []
+        return identity_service.release_reassigned_contact(
+            normalized, source=identity_service.SOURCE_CUSTOMER_NOT_ME,
+        )
+
+
+def release_reassigned_number(phone: str, *, source: str) -> list[str]:
+    """Porta de entrada do sinal de troca de dono vindo de um provedor (D3c).
+
+    Nenhum provedor está ligado ainda (aviso de troca de identidade da Meta, API de
+    reciclagem das operadoras): quem integrar um chama esta função com o número e o
+    próprio nome em ``source``. Ver a issue ficou-de-fora de OC-07.
+    """
+    from shopman.guestman.services import identity as identity_service
+
+    return identity_service.release_reassigned_contact(phone, source=source)
+
+
+def on_number_left(receiver) -> None:
+    """Registra ``receiver(customer_ref, phone)`` para quando um número sai de um cadastro.
+
+    É como a Concierge, que é superfície, escuta o ``contact_reassigned`` do Guestman
+    sem importar o kernel.
+    """
+    from shopman.guestman.signals import contact_reassigned
+
+    def _receiver(sender, customer_ref="", value="", **kwargs):
+        receiver(customer_ref, value)
+
+    contact_reassigned.connect(_receiver, weak=False, dispatch_uid=f"shop_number_left:{receiver.__module__}.{receiver.__qualname__}")
+
+
+def identify_manychat_subject(subject: str):
+    """Resolve/upsert a ManyChat subject through the opt-in Guestman bridge."""
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
+
+    return ManychatIdentityBridge().upsert_subscriber({"id": subject})
 
 
 def _is_trusted_bff(request) -> bool:
@@ -159,11 +244,66 @@ def client_ip(request) -> str:
     return resolved
 
 
-def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
+# Volume global de códigos na última hora acima do qual o operador é avisado.
+# Uma padaria não recebe 60 logins por hora: passar disso é ataque distribuído
+# (muitos IPs, cada um abaixo do teto) ou defeito em loop. O aviso não bloqueia
+# ninguém; ele chama alguém para olhar a conta do provedor.
+LOGIN_CODES_GLOBAL_ALERT_PER_HOUR = 60
+LOGIN_CODE_VOLUME_ALERT_TYPE = "login_code_volume"
+
+
+def _watch_global_code_volume() -> None:
+    """Avisa o operador quando o volume de códigos da última hora passa do limiar.
+
+    Nunca levanta: observabilidade não derruba o login do cliente. O aviso tem
+    texto estável, então o debounce do ``create_operator_alert`` segura um por
+    janela em vez de um por envio.
+    """
+    try:
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from shopman.doorman.models import VerificationCode
+
+        since = timezone.now() - timedelta(hours=1)
+        count = VerificationCode.objects.filter(created_at__gte=since).count()
+        if count <= LOGIN_CODES_GLOBAL_ALERT_PER_HOUR:
+            return
+        from shopman.shop.services.observability import create_operator_alert
+
+        # Crítico: é a TI quem age (conta do provedor, bloqueio na borda), e o
+        # crítico é o que chega por e-mail a ela. Um aviso por hora, no máximo.
+        create_operator_alert(
+            type=LOGIN_CODE_VOLUME_ALERT_TYPE,
+            severity="critical",
+            message=(
+                f"Mais de {LOGIN_CODES_GLOBAL_ALERT_PER_HOUR} códigos de entrada pedidos "
+                "na última hora. Confira na conta do provedor de SMS se é disparo "
+                "automático (SMS pumping)."
+            ),
+            debounce_minutes=60,
+            codes_last_hour=count,
+        )
+    except Exception:
+        logger.exception("login_code.global_volume_watch_failed")
+
+
+def _request_code_guarded(**kwargs):
     from shopman.doorman import get_auth_service
 
-    AuthService = get_auth_service()
-    return AuthService.request_code(
+    from shopman.shop.policies.login_code_ceiling import ip_code_ceiling_refusal
+
+    refusal = ip_code_ceiling_refusal(kwargs.get("ip_address"))
+    if refusal is not None:
+        return refusal
+    result = get_auth_service().request_code(**kwargs)
+    if getattr(result, "success", False):
+        _watch_global_code_volume()
+    return result
+
+
+def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
+    return _request_code_guarded(
         target_value=phone,
         purpose="login",
         delivery_method=delivery_method,
@@ -195,14 +335,11 @@ def request_contact_verification_code(
     grave: pedir o código para o número novo nasceria um cadastro-fantasma nele,
     e o número que o cliente quer adotar já apareceria como sendo de outra conta.
 
-    A finalidade `verify_contact` do Core não passa por `resolve_customer`: o
+    A finalidade `verify_contact` do Core não passa por `resolve_identity`: o
     `request_code` do doorman só normaliza, checa as portarias de rate limit e
     manda o código. Nenhum `Customer` é tocado. Foi medido.
     """
-    from shopman.doorman import get_auth_service
-
-    AuthService = get_auth_service()
-    return AuthService.request_code(
+    return _request_code_guarded(
         target_value=phone,
         purpose=CONTACT_VERIFICATION_PURPOSE,
         delivery_method=delivery_method,
@@ -220,10 +357,15 @@ class ContactVerifyResult:
         success: bool,
         error_code: str = "",
         attempts_remaining: int | None = None,
+        delivery_method: str = "",
     ):
         self.success = success
         self.error_code = error_code
         self.attempts_remaining = attempts_remaining
+        # O canal por onde o código SAIU de fato (o doorman regrava o
+        # `delivery_method` do código quando a cadeia cai para o seguinte).
+        # É a prova da posse, e é o que o contato carimba como origem.
+        self.delivery_method = delivery_method
 
 
 def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> ContactVerifyResult:
@@ -232,7 +374,7 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
     ⚠️ Não existe `AuthService.verify_contact()` no doorman, e isso NÃO é uma
     lacuna a preencher no Core. O único verify de serviço é o
     `verify_for_login`, que carrega justamente o que aqui faria estrago:
-    `resolve_customer` + auto-create. O que ele tem de reaproveitável — achar o
+    `resolve_identity` + auto-create. O que ele tem de reaproveitável — achar o
     código válido, conferir o HMAC, contar a tentativa, carimbar — já é API
     pública do MODELO (`VerificationCode.verify()` se descreve como "the
     canonical entry point for code verification"). Compor sobre ela é usar o
@@ -246,9 +388,10 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
     from shopman.doorman.conf import get_adapter
     from shopman.doorman.models import VerificationCode
 
-    target = get_adapter().normalize_login_target(phone)
-    if not target:
+    handle = get_adapter().login_handle(phone)
+    if handle.kind != "phone" or not handle.value:
         return ContactVerifyResult(success=False, error_code="invalid_target")
+    target = handle.value
 
     with transaction.atomic():
         code = (
@@ -277,8 +420,9 @@ def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> Contac
         # conferido não pode sobreviver para uma segunda tentativa, mesmo que a
         # troca seja recusada logo adiante por conflito.
         code.mark_verified(customer_uuid)
+        delivery_method = code.delivery_method
 
-    return ContactVerifyResult(success=True)
+    return ContactVerifyResult(success=True, delivery_method=delivery_method)
 
 
 def contact_verify_error_message(result: ContactVerifyResult) -> str:
@@ -305,9 +449,95 @@ def code_resend_cooldown_seconds() -> int:
     return max(0, int(doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS))
 
 
+def device_trust_period_display() -> str:
+    """O prazo da confiança do dispositivo, dito como o cliente fala ("6 meses").
+
+    Fonte única: ``DEVICE_TRUST_TTL_DAYS`` do doorman, que conta do ÚLTIMO uso.
+    A copy do login tinha "30 dias" escrito à mão e se descolou do prazo real
+    (180 dias) sem ninguém notar (beta 06/11, SMS-09).
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    days = int(doorman_settings.DEVICE_TRUST_TTL_DAYS)
+    if days % 365 == 0:
+        years = days // 365
+        return "1 ano" if years == 1 else f"{years} anos"
+    if days >= 60 and days % 30 == 0:
+        return f"{days // 30} meses"
+    return "1 dia" if days == 1 else f"{days} dias"
+
+
+def auth_error_code(auth_result) -> str | None:
+    """O código público do erro, quando a tela precisa de mais que o texto.
+
+    - Conflito de identidade: o código digitado estava CERTO, e o título
+      "Código não confere" mentia sobre ele (beta 05/11, LOJA-03).
+    - Código morto (venceu ou acabaram as tentativas): não há o que corrigir no
+      que foi digitado; a tela esconde a validade, limpa o campo e libera o
+      "Reenviar" (beta 06/11, SMS-07).
+    - Espera entre envios (G11): a tela volta ao passo do código, se ele ainda
+      vale, com o relógio do "Reenviar" no tempo do servidor (beta 06/11, SMS-08).
+    """
+    from shopman.doorman.error_codes import ErrorCode
+
+    error_code = getattr(auth_result, "error_code", None)
+    if error_code == ErrorCode.IDENTITY_CONFLICT:
+        return "identity_conflict"
+    if error_code in {ErrorCode.CODE_MAX_ATTEMPTS, ErrorCode.CODE_EXPIRED, ErrorCode.COOLDOWN}:
+        return str(error_code)
+    if (auth_result.error or "") in {
+        "Identity ownership is conflicting.",
+        "This handle belongs to another account.",
+    }:
+        return "identity_conflict"
+    return None
+
+
+def auth_error_body(detail: str, auth_result, *, field: str | None = None) -> dict:
+    """Corpo de erro do auth no dialeto da casa ``{detail, field, errors}``.
+
+    O conflito de identidade não aponta campo: o que foi digitado estava certo.
+    """
+    error_code = auth_error_code(auth_result)
+    body: dict = {
+        "detail": detail,
+        "field": None if error_code == "identity_conflict" else field,
+        "errors": {},
+    }
+    if error_code:
+        body["error_code"] = error_code
+    return body
+
+
+def code_cooldown_body(detail: str, auth_result, *, phone: str) -> dict:
+    """Recusa do G11 com o que a tela precisa para não deixar o cliente no escuro.
+
+    Os segundos que faltam (``retry_after_seconds``) e, se o código enviado há
+    pouco ainda vale, a validade e o canal dele: a tela volta ao passo do código
+    para o cliente digitar o que já chegou (beta 06/11, SMS-08).
+    """
+    body = auth_error_body(detail, auth_result)
+    body["phone"] = phone
+    body["retry_after_seconds"] = getattr(auth_result, "retry_after_seconds", None) or 0
+    body["code_expires_at"] = getattr(auth_result, "expires_at", None) or ""
+    return body
+
+
+def _seconds_phrase(seconds: int) -> str:
+    return "1 segundo" if seconds == 1 else f"{seconds} segundos"
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 
+    retry_after = getattr(auth_result, "retry_after_seconds", None)
+    if auth_result.error_code == ErrorCode.COOLDOWN and retry_after:
+        # Quanto falta, sempre: "aguarde" sem número deixava o cliente parado
+        # sem saber até quando (beta 06/11, SMS-08).
+        return (
+            "Já enviamos um código para este número. "
+            f"Você pode pedir outro em {_seconds_phrase(int(retry_after))}."
+        )
     error_map = {
         ErrorCode.RATE_LIMIT: "Muitas tentativas. Aguarde alguns minutos e tente novamente.",
         ErrorCode.COOLDOWN: "Aguarde antes de solicitar um novo código.",
@@ -324,24 +554,12 @@ def request_code_error_message(auth_result) -> str:
             "Não conseguimos enviar o código agora. Tente de novo em instantes "
             "ou entre pelo WhatsApp."
         ),
+        ErrorCode.IDENTITY_CONFLICT: IDENTITY_CONFLICT_DETAIL,
     }
     return error_map.get(
         auth_result.error_code,
         "Não foi possível enviar o código. Verifique o número e tente novamente.",
     )
-
-
-def request_code_partial_error_message(auth_result) -> str:
-    translations = {
-        "Too many attempts. Please wait a few minutes.": "Muitas tentativas. Aguarde alguns minutos.",
-        "Please wait before requesting a new code.": "Aguarde antes de solicitar um novo código.",
-        "Too many attempts from this location.": "Muitas tentativas deste local.",
-        "Too many incorrect codes for this target.": "Muitos códigos incorretos para este número.",
-        "Failed to send code.": "Falha ao enviar código.",
-        "Error sending code.": "Erro ao enviar código.",
-    }
-    raw = auth_result.error or ""
-    return translations.get(raw, raw) or "Erro ao enviar código."
 
 
 def verify_for_login(*, phone: str, code_input: str, request):
@@ -359,10 +577,20 @@ def verify_for_login(*, phone: str, code_input: str, request):
 
 
 def verify_error_message(auth_result) -> str:
+    from shopman.doorman.conf import doorman_settings
+    from shopman.doorman.error_codes import ErrorCode
+
+    if getattr(auth_result, "error_code", None) == ErrorCode.CODE_MAX_ATTEMPTS:
+        # O código morreu pelas tentativas erradas. Dizer "incorreto" (e depois
+        # "expirado") escondia a causa e não dizia o que fazer (beta 06/11, SMS-07).
+        tentativas = int(doorman_settings.ACCESS_CODE_MAX_ATTEMPTS)
+        return f"Você errou o código {tentativas} vezes, e ele deixou de valer. Peça um novo código."
     translations = {
         "Incorrect code.": "Código incorreto.",
-        "Code expired. Please request a new one.": "Código expirado. Solicite um novo.",
+        "Code expired. Please request a new one.": "Este código não vale mais. Peça um novo código.",
         "Account not found. Please contact support.": "Conta não encontrada.",
+        "Identity ownership is conflicting.": IDENTITY_CONFLICT_DETAIL,
+        "This handle belongs to another account.": IDENTITY_CONFLICT_DETAIL,
     }
     raw_error = auth_result.error or ""
     error_msg = translations.get(raw_error, raw_error) or "Código inválido."
@@ -375,7 +603,7 @@ def verify_error_message(auth_result) -> str:
 
 def confirmed_customer_name(auth_result) -> str:
     try:
-        customer = customer_by_uuid(auth_result.customer.uuid)
+        customer = customer_by_uuid(auth_result.customer.subject_id)
         return customer.first_name if customer else ""
     except Exception:
         logger.debug("auth.confirmed_customer_name degraded; using fallback", exc_info=True)
@@ -399,38 +627,62 @@ def safe_redirect_url(next_url: str | None, request) -> str:
 
 
 def trusted_device_login(request, *, phone: str):
-    """Authenticate request through trusted-device flow. Returns customer or None."""
-    customer_hint = customer_by_phone(phone)
-    if not customer_hint:
-        return None
+    """Entrar pelo dispositivo confiável. Devolve o cliente, ou None.
 
+    Quem diz de quem é o número é o porto de identidade do doorman
+    (``resolve_identity``), o mesmo que o login por código consulta. Uma
+    resolução paralela aqui seria a mesma decisão com dois donos: o
+    ``get_by_phone`` escolhe um dono por ordenação quando o número aparece em
+    dois cadastros, e o dispositivo confiável abriria a conta errada.
+
+    Conflito de dono falha FECHADO: ``TrustedDeviceIdentityConflict``, que a
+    superfície transforma em recusa com mensagem ao cliente. Nunca se escolhe
+    um dos donos.
+    """
     from django.contrib.auth import login
     from django.db import transaction
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
+    from shopman.doorman.conf import get_adapter
+    from shopman.doorman.protocols.identity import IdentityConflict
     from shopman.doorman.services.device_trust import DeviceTrustService
 
     from shopman.shop.services import account as account_service
     from shopman.shop.services.customer_sign_in import mark_method
 
+    adapter = get_adapter()
+    handle = adapter.login_handle(phone)
+    if handle.kind != "phone" or not handle.value:
+        return None
+    try:
+        identity_hint = adapter.resolve_identity(handle.kind, handle.value, purpose="login")
+    except IdentityConflict as exc:
+        raise TrustedDeviceIdentityConflict from exc
+    if identity_hint is None or not identity_hint.is_active:
+        return None
+
     with transaction.atomic():
         try:
-            customer = account_service.lock_active_customer(customer_uuid=customer_hint.uuid)
+            customer = account_service.lock_active_customer(customer_uuid=identity_hint.subject_id)
         except account_service.AccountUnavailable:
             # A exclusão pode vencer depois da leitura indicativa por telefone.
             # Login por dispositivo confiável é uma conveniência: nesse caso ele
             # simplesmente deixa de autenticar, sem transformar a corrida em 500.
             return None
+        # Com a linha travada, o número ainda é desta conta? A troca de número
+        # pode ter vencido entre a leitura e o lock, e um conflito que surgiu
+        # nesse meio também recusa.
+        try:
+            still_owner = adapter.login_target_belongs_to_customer(identity_hint, handle)
+        except IdentityConflict as exc:
+            raise TrustedDeviceIdentityConflict from exc
+        if not still_owner:
+            return None
         if not DeviceTrustService.check(request, "customer", customer.uuid):
             return None
 
-        customer_info = AuthCustomerInfo(
-            uuid=customer.uuid,
-            name=customer.name,
-            phone=customer.phone,
-            email=getattr(customer, "email", None) or None,
-            is_active=True,
-        )
+        customer_info = get_adapter().identity(customer.uuid, purpose="session")
+        if customer_info is None:
+            return None
         user, _ = get_or_create_user_for_customer(customer_info)
         # login() dá flush na sessão quando OUTRO usuário estava logado — a sacola
         # anônima tem que sobreviver à troca, como nos fluxos do Doorman.
@@ -477,7 +729,16 @@ def passkey_registration_options(request, *, customer) -> dict:
         # O `user_name` aparece no seletor do sistema operacional ("Passkey para …"), então
         # telefone é melhor que ref interna: é o que a pessoa reconhece como sendo ela.
         user_name=(getattr(customer, "phone", "") or getattr(customer, "ref", "")),
+        rp_name=_store_brand(),
     )
+
+
+def _store_brand() -> str:
+    """A marca da loja, que o sistema mostra na passkey ("Passkey para …")."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    return ((shop.brand_name or shop.name) if shop else "").strip()
 
 
 def passkey_register(request, *, customer, credential: dict, label: str = ""):
@@ -511,10 +772,10 @@ def passkey_login(request, *, credential: dict):
     """
     from django.contrib.auth import login
     from django.db import transaction
+    from shopman.doorman import get_or_create_user_for_customer
+    from shopman.doorman.conf import get_adapter
     from shopman.doorman.models import Passkey
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services import passkey as passkey_service
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
 
     from shopman.shop.services import account as account_service
     from shopman.shop.services.customer_sign_in import mark_method
@@ -546,13 +807,11 @@ def passkey_login(request, *, credential: dict):
 
             raise PasskeyError("Não reconhecemos esta chave. Entre pelo WhatsApp.")
 
-        customer_info = AuthCustomerInfo(
-            uuid=customer.uuid,
-            name=customer.name,
-            phone=customer.phone,
-            email=getattr(customer, "email", None) or None,
-            is_active=True,
-        )
+        customer_info = get_adapter().identity(customer.uuid, purpose="session")
+        if customer_info is None:
+            from shopman.doorman.services.passkey import PasskeyError
+
+            raise PasskeyError("Não reconhecemos esta identidade. Entre pelo WhatsApp.")
         user, _ = get_or_create_user_for_customer(customer_info)
         # A sacola anônima sobrevive à troca de sessão, como em todo login daqui.
         preserved = preserved_session_values(request.session) if hasattr(request, "session") else {}
@@ -610,4 +869,11 @@ def trust_device(*, response, customer_id, request) -> None:
 def revoke_current_device(*, request, response) -> None:
     from shopman.doorman.services.device_trust import DeviceTrustService
 
-    DeviceTrustService.revoke_device(request, response)
+    subject_id = getattr(getattr(request, "customer", None), "subject_id", None)
+    if subject_id is not None:
+        DeviceTrustService.revoke_device(
+            request,
+            response,
+            subject_type="customer",
+            subject_id=subject_id,
+        )

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { useAlertDismissals } from "../../../operator-kit/app/composables/useAlertDismissals";
 // Order board — the operator hub. Reads the two-zone queue projection + realtime
 // (SSE + 30s poll) via useOrdersBoard; renders Entrada / Preparo / Saída columns of
 // OrderCards; the gestures POST through the django proxy (CSRF handled there) and
@@ -23,9 +24,13 @@ import {
   nextOutRef,
   nextSort,
   oneTapDispatch,
+  paymentLabel,
   realtimeIndicator,
   resolveShortcut,
+  buildRidesLabel,
+  waitingBandText,
   rowsToCsv,
+  schedulePromise,
   SORT_OPTIONS,
   splitRef,
   statusTone,
@@ -34,14 +39,20 @@ import {
 } from "~/presentation/board";
 import { moneyInput } from "../../../operator-kit/app/presentation/custody";
 import type { OrderCardProjection } from "~/types/orders";
+import type { DeliveriesProjection, DeliveryRideProjection } from "~/generated/ordersContract";
 import { ORDERS_QUEUE_TRAIL } from "~/presentation/orderTrails";
+import type { ReasonOrderFacts } from "~/presentation/orderReason";
+import {
+  blockPillLabel,
+  blockedReasonLines,
+  lockedButtonRepeatsPill,
+} from "~/presentation/cardBlocks";
+import { boardStrip, type BoardStrip } from "~/presentation/boardStrip";
 import { provideOrderTicketPrinter } from "~/composables/useOrderTicketPrint";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import type { OperatorBulkItem } from "../../../operator-kit/app/presentation/bulkBar";
-import type { QuickFilterItem } from "../../../operator-kit/app/presentation/quickFilters";
 import type { ActiveFilters, FilterDimension } from "../../../operator-kit/app/types/filters";
 import type { OperatorSwipeAction } from "../../../operator-kit/app/components/OperatorSwipeRow.vue";
-import type { CancellationReason } from "~/composables/useOrdersBoard";
 import {
   BOARD_COLUMNS_QUERY,
   BOARD_ZONE_KEYS,
@@ -53,16 +64,36 @@ import {
   liveAge,
   queueGesture,
   queueItems,
+  queueCode,
   queueScopeCounts,
   type QueueScope,
   type QueueSort,
 } from "~/presentation/queue";
 import { queueColumnForKey } from "../../../operator-kit/app/presentation/queueColumns";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import {
+  acceptedIntoPreorders,
+  preorderFocusKey,
+  PROMISE_HASH,
+  type AcceptedPreorder,
+} from "~/presentation/preorderList";
+import { blockWaits, promiseRisk } from "~/presentation/orderPromise";
+import { CANCEL_HASH, notifyHash, type NoticePick } from "~/presentation/promiseResolution";
+import {
+  orderFocusKey,
+  orderFocusKeys,
+  promiseRiskAlert,
+} from "~/presentation/promiseAlert";
+import { focusTargetSelector } from "../../../operator-kit/app/presentation/nextFocus";
+import OrderPromiseExits from "~/components/OrderPromiseExits.vue";
+import OrderPromiseSuggestions from "~/components/OrderPromiseSuggestions.vue";
+import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation/screenState";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const {
   readMetadata,
   queue,
+  cancelReasons,
   zones,
   deviceAgent,
   preorders,
@@ -72,11 +103,11 @@ const {
   refresh,
   isBusy,
   actionError,
+  actionErrorField,
   clearActionError,
   confirm,
   advance,
   reject,
-  fetchCancellationReasons,
   settleCash,
   equipmentBack,
   courierBack,
@@ -94,6 +125,7 @@ const {
   soundOn,
   soundBlocked,
   attentionPending,
+  attentionRef,
   toggleSound,
   activateAttentionSound,
   acknowledgeAttention,
@@ -103,7 +135,7 @@ const { canManageOrders } = useGestorAccess();
 
 // A DANFE da sacola sai sozinha pelo servidor; o card imprime ou reimprime à mão.
 const danfePrint = useDanfePrint(deviceAgent, refresh);
-// A Via Pedido no ⋯ de cada pedido (cartão e Grade), pela impressora desta estação.
+// A Via Pedido no ⋯ de cada pedido (cartão e Fila), pela impressora desta estação.
 provideOrderTicketPrinter(deviceAgent);
 
 function handleSoundAction() {
@@ -130,10 +162,7 @@ const liveTone = computed(() =>
 const readClock = computed(() => {
   const at = readMetadata.value?.generated_at;
   return at
-    ? new Date(at).toLocaleTimeString("pt-BR", {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+    ? formatClock(new Date(at))
     : "";
 });
 
@@ -158,6 +187,22 @@ const {
 } = context;
 // O recorte vive na URL; seleção/posição/foco ficam só na sessão e pessoa atual.
 context.readLocation(route.query);
+// A corrida da casa na Saída (M3d, #2937): os pedidos de uma corrida de entregador da
+// casa viram UM cartão da corrida (forma E), com os gestos do balcão. Lê as corridas da
+// página Entregas sem o plano (que pergunta à central), e relê junto com a fila.
+const { data: houseDeliveries, refresh: refreshHouse } = useFetch<DeliveriesProjection>(
+  "/api/v1/backstage/deliveries/",
+  { key: "orders:board-house-rides", server: false, query: { plan: "0" } },
+);
+const houseRides = computed(() => (houseDeliveries.value?.rides ?? []).filter((ride) => ride.house));
+watch(queue, () => void refreshHouse());
+const { busy: houseBusy, run: houseGesture } = useHouseRideGestures(async () => {
+  await Promise.all([refreshHouse(), refresh()]);
+});
+// "Entregador voltou" confere dinheiro e maquininha na página Entregas, no detalhe da corrida.
+function houseBack(ride: DeliveryRideProjection) {
+  void navigateTo({ path: "/delivery", query: { ride: ride.key } });
+}
 watch(
   () => route.query,
   (params) => {
@@ -185,7 +230,7 @@ watch(
 );
 const queueViewport = ref<HTMLElement | null>(null);
 // Conferência das sacolas (P1-13): o leitor do posto Saída bipa o QR da Via
-// Pedido em qualquer ponto do quadro. Só avisa; a saída segue no cartão.
+// Pedido em qualquer ponto do painel. Só avisa; a saída segue no cartão.
 const volumeCheck = useVolumeCheck({
   enabled: () => !stationLocked.value,
   onChecked: () => refresh(),
@@ -241,6 +286,30 @@ watch(
 const negotiationCards = computed(
   () => (queue.value?.ifood_negotiation_orders ?? []) as OrderCardProjection[],
 );
+// As entregas que podem ir juntas numa corrida: com duas ou mais, o Painel leva à
+// página Entregas, onde as corridas se montam (F5).
+const rideCandidates = computed(() => queue.value?.ride_candidates ?? []);
+// O cartão Pronto de entrega chama o entregador ali mesmo (#2876, gesto 3 para 2): abre
+// o MESMO sheet das Entregas, com quem a casa sugere levar junto já marcado. Quem dá
+// para chamar agora e quantos aguardam vêm da contagem leve das Entregas (a do selo).
+const deliveriesWaiting = useDeliveriesWaiting();
+const courierCallRefs = computed(() => deliveriesWaiting.data.value?.call_refs ?? []);
+const courierCall = useOrderCourierCall({
+  onCalled: () => Promise.all([refresh(), deliveriesWaiting.refresh()]),
+});
+const courierSheet = courierCall.sheet;
+const cardBusy = (ref_: string) => isBusy(ref_) || courierCall.calling.value === ref_;
+// A faixa da Saída (decisão 4 = A do dono): "Aguardando entregador: 5 · Montar
+// corridas", abrindo a parte "A coletar"; leva às Entregas. Some sem ninguém aguardando.
+const waitingBand = computed(() => {
+  const count = deliveriesWaiting.data.value?.waiting;
+  if (count === undefined) return null;
+  if (count === null && rideCandidates.value.length < 2) return null;
+  const text = waitingBandText(count);
+  if (!text) return null;
+  const suggested = queue.value?.ride_suggestions ?? 0;
+  return { text, action: buildRidesLabel(suggested), suggested: suggested > 0 };
+});
 const allCards = computed<OrderCardProjection[]>(() =>
   zones.value.flatMap((z) => z.cards),
 );
@@ -249,6 +318,14 @@ const fulfillment_ = computed(() => fulfillmentCounts(allCards.value));
 const sortLabel = computed(
   () => SORT_OPTIONS.find((o) => o.key === sort.value)?.label ?? "Chegada",
 );
+const boardOrderHint = computed(() => {
+  const by: Record<string, string> = {
+    arrival: "Por chegada",
+    urgency: "Mais urgente primeiro",
+    recent: "Mais recentes primeiro",
+  };
+  return `${by[sort.value] ?? sortLabel.value}, em cada coluna`;
+});
 const sortMenuItems = computed(() =>
   (view.value === "queue" ? QUEUE_SORT_OPTIONS : SORT_OPTIONS).map(
     (option) => ({
@@ -270,18 +347,29 @@ const sortMenuItems = computed(() =>
 );
 
 function triaged(zone: ZoneView): OrderCardProjection[] {
-  return triageCards(zone.cards, {
+  const cards = triageCards(zone.cards, {
     query: query.value,
     channel: channel.value,
     sort: sort.value,
     fulfillment: fulfillment.value,
   });
+  return view.value === "board" ? inBoardScope(cards) : cards;
+}
+// Os recortes do Painel (D, prévia `gestor-d`): Todos · Precisa de você · Atrasados,
+// com a régua da Fila, em cada coluna. O Painel abre em Todos; a Fila tem o seu.
+const boardScope = ref<QueueScope>("all");
+function inBoardScope(cards: OrderCardProjection[]): OrderCardProjection[] {
+  if (boardScope.value === "all") return cards;
+  const keep = new Set(
+    queueItems(cards, nowMs.value, { scope: boardScope.value }).map((item) => item.card.ref),
+  );
+  return cards.filter((card) => keep.has(card.ref));
 }
 // flat rows for the dense table view, honouring the same triage + zone order.
 const tableRows = computed(() =>
   flattenZones(zones.value.map((z) => ({ ...z, cards: triaged(z) }))),
 );
-// A Lista (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
+// A Tabela (dono, 07/10/2026): linhas integradas num card branco; a linha principal tem
 // só o gesto do momento e o ⋯; o resto (detalhes e todas as ações) abre na própria
 // linha. A coluna de seleção fica sempre: marcar uma linha liga a barra de lote.
 // A seleção e a seta de abrir são da `OperatorTable`; Pedido é a chave (fixada) e
@@ -312,7 +400,7 @@ watch(
   },
 );
 const supervisionExpanded = ref<Record<string, boolean>>({});
-/** O gesto do momento numa linha da Lista: o primário (ou o travado, com o cadeado). */
+/** O gesto do momento numa linha da Tabela: o primário (ou o travado, com o cadeado). */
 function rowPrimary(card: OrderCardProjection) {
   return (
     cardAffordances(card).find(
@@ -324,6 +412,42 @@ function rowPrimary(card: OrderCardProjection) {
 function rowSecondary(card: OrderCardProjection) {
   const primary = rowPrimary(card);
   return cardAffordances(card).filter((aff) => aff.ref !== primary?.ref);
+}
+/** O bloqueio como estado, não como botão morto: quando o gesto travado da linha só
+ *  leva o nome do bloqueio ("Pix expirado", "Esperando o lote"), a célula mostra o selo
+ *  com esse nome (laudo, P1-16). Quem espera algo que anda sozinho não usa a cor de erro. */
+function rowBlock(card: OrderCardProjection) {
+  const primary = rowPrimary(card);
+  const repeats = lockedButtonRepeatsPill({
+    primary,
+    primaryLabel: primary?.label ?? "",
+    blockLabel: card.advance_block_label,
+    blockAnnounced: Boolean(card.advance_block_reason),
+  });
+  if (!repeats) return null;
+  const waits = blockWaits(card);
+  return {
+    label: blockPillLabel(card.advance_block_label),
+    color: waits ? ("neutral" as const) : ("error" as const),
+    icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
+  };
+}
+/** Por que o gesto do momento está travado, escrito na própria célula: o `title` não
+ *  existe no toque (sobra do WP-G06, #2710). */
+function rowPrimaryReason(card: OrderCardProjection): string {
+  const primary = rowPrimary(card);
+  return primary?.disabled ? String(primary.reason ?? "").trim() : "";
+}
+/** Por que os outros gestos da linha estão travados, escrito na linha aberta (WP-G06).
+ *  O motivo do gesto do momento já está na célula e não se repete. */
+function rowBlockedReasons(card: OrderCardProjection) {
+  const said = rowPrimaryReason(card);
+  return blockedReasonLines({
+    primary: null,
+    primaryLabel: "",
+    secondary: rowSecondary(card),
+    blockAnnounced: false,
+  }).filter((line) => line !== said);
 }
 // how many cards survive the current filters (for the "no results" affordance).
 const visibleCount = computed(() =>
@@ -372,7 +496,7 @@ function stopSelection() {
   selected.value = new Set();
 }
 const isSelected = (ref_: string) => selected.value.has(ref_);
-// A seleção da Lista é a mesma da barra de lote: a tabela marca, o Set guarda.
+// A seleção da Tabela é a mesma da barra de lote: a tabela marca, o Set guarda.
 const supervisionRowSelection = computed<Record<string, boolean>>({
   get: () => Object.fromEntries([...selected.value].map((ref_) => [ref_, true])),
   set: (next) => {
@@ -402,10 +526,10 @@ function toggleSelectAll() {
 const bulkScope = computed(() =>
   [
     fulfillment.value !== "all"
-      ? String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? "")
+      ? FULFILLMENT_LABELS[fulfillment.value] ?? ""
       : "",
     channel.value !== "all"
-      ? String(channelItems.value.find((item) => item.value === channel.value)?.label ?? "")
+      ? channelLabel(channel.value)
       : "",
   ]
     .filter(Boolean)
@@ -469,38 +593,26 @@ const { run: bulkAdvance, pending: bulkAdvancing } = usePendingAction(
   },
 );
 
-// ⋯ da fila: atualizar, Visto, seleção, exportar e imprimir (e, no posto Saída e no
-// celular, também ordenar, a visão e o som).
-const moreOpen = ref(false);
-function menuDo(fn: () => void, close = true) {
-  if (close) moreOpen.value = false;
-  fn();
-}
 // A régua da suíte (`useScreen` do kit): mesa no servidor e na hidratação, a largura
 // real depois. Decidir a árvore com `useMediaQuery` cru fazia o celular hidratar outra
 // árvore na carga direta: a Fila ficava no esqueleto para sempre.
 // Ela responde "mesa" até montar, então a barra do topo e a toolbar NÃO decidem por ela
 // (o celular desenhava a barra da mesa encavalada até hidratar): `phone-actions`,
 // `actions-from="md"` e as classes `max-lg:`/`md:` fazem isso pelo CSS. Daqui só o que
-// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg`, o
-// conteúdo do painel "Filtros" (aberto depois de montar) e o puxar para atualizar.
+// muda a árvore depois de montar: as colunas que viram abas, a Fila só do `lg` e o
+// puxar para atualizar.
 const screen = useScreen();
 // Celular (abaixo de md): as colunas viram abas.
 const isPhone = screen.belowMd;
 const hydrated = screen.ready;
-// A régua do kit para a barra do topo e a toolbar (abaixo de `sm`, README "Barra do
-// topo no celular" e "Toolbar no celular"): ali as ações da fila vão para o ⋯ da barra
-// e os recortes, a ordem e a visão para o painel "Filtros" do kit. Entre `sm` e `md`
-// segue o painel próprio da fila ("Filtros e ações da fila").
-const kitPhone = screen.belowSm;
 // Tablet em pé: três colunas de ~240 px cortavam selo e prazo do cartão. Abaixo do
-// lg, com mais de uma coluna aberta, o quadro usa as abas do celular.
+// lg, com mais de uma coluna aberta, o painel usa as abas do celular.
 const isNarrowTablet = computed(
   () => screen.belowLg.value && !screen.belowMd.value,
 );
 // A aba "Negociação" (só quando há): o pedido do iFood já fora das etapas com
 // negociação aberta. É ação pendente do gerente; a Fila do desktop o mostra, e no
-// quadro em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
+// painel em abas ele ficava sem lugar. A Saída do celular é do posto, não do gerente.
 const negotiationZone = computed(() =>
   queue.value ? negotiationZoneView(queue.value) : null,
 );
@@ -542,7 +654,9 @@ const phoneTabs = computed(() => {
         { key: "prep", title: "Em preparo" },
       ]
     : [
-        ...(isPhone.value ? zones.value : desktopZones.value),
+        // Em abas, as três etapas aparecem sempre: recolher é gesto das colunas, e a
+        // aba do Preparo não pode sumir do tablet porque ele abre recolhido na mesa.
+        ...zones.value,
         ...(negotiationZone.value ? [negotiationZone.value] : []),
       ].map((zone) => ({
         key: zone.key,
@@ -600,7 +714,7 @@ function onSwipe(card: OrderCardProjection, key: string) {
 }
 
 // ── colunas ajustáveis e recolhíveis, lembradas por posto (SUITE-UX §16) ──
-// O tablet do passe fica só com a Saída: é o mesmo quadro, com Entrada e Preparo
+// O tablet do passe fica só com a Saída: é o mesmo painel, com Entrada e Preparo
 // recolhidas numa faixa. Nenhuma ação muda; muda só o que cabe na tela.
 const boardLayout = useBoardLayout();
 // O sinal de canal decide se a segunda linha do cabeçalho existe. Montar sempre o
@@ -613,6 +727,22 @@ const hasChannelQueueSignal = computed(() =>
 const desktopZones = computed(() =>
   zones.value.filter((zone) => boardLayout.isOpen(zone.key)),
 );
+// As tiras das colunas recolhidas, presas à coluna aberta seguinte (ou, no fim, à
+// última): a ordem Entrada · Preparo · Saída não muda quando uma recolhe.
+const boardStrips = computed(() => {
+  const out: Record<string, { before: BoardStrip[]; after: BoardStrip[] }> = {};
+  let pending: BoardStrip[] = [];
+  let last = "";
+  for (const zone of zones.value) {
+    if (boardLayout.isOpen(zone.key)) {
+      out[zone.key] = { before: pending, after: [] };
+      pending = [];
+      last = zone.key;
+    } else pending.push(boardStrip(zone, triaged(zone), nowMs.value));
+  }
+  if (last && pending.length) out[last]!.after = pending;
+  return out;
+});
 const boardAsTabs = computed(
   () =>
     isPhone.value || (isNarrowTablet.value && desktopZones.value.length > 1),
@@ -641,11 +771,19 @@ const boardSplitterPersistenceKey = computed(
   () =>
     `orders-board:${boardLayout.station.value || "device"}:${desktopZones.value.map((zone) => zone.key).join("-")}`,
 );
+// Abriu ou recolheu uma coluna: a largura guardada no navegador para esse conjunto
+// sai antes de o Splitter montar, e as abertas voltam a dividir o espaço por igual.
+const boardSplitter = ref<{ reset: () => void } | null>(null);
+watch(
+  boardSplitterPersistenceKey,
+  () => boardSplitter.value?.reset(),
+  { flush: "pre" },
+);
 // O índice de estações da Cozinha (estação de Saída) e o posto de saída chegam com
-// `?columns=expedition`: o quadro abre só com a Saída, e a arrumação fica no posto.
+// `?columns=expedition`: o painel abre só com a Saída, e a arrumação fica no posto.
 // O parâmetro sai da URL depois de aplicado, para o operador poder abrir as outras.
 // O rail usa o mesmo parâmetro: "Pedidos" abre as três colunas (`?columns=all`) e
-// "Saída" abre o posto do passe, inclusive com o quadro já na tela.
+// "Saída" abre o posto do passe, inclusive com o painel já na tela.
 function applyColumnsQuery() {
   const wanted = route.query[BOARD_COLUMNS_QUERY];
   if (wanted !== "expedition" && wanted !== "all") return;
@@ -666,9 +804,10 @@ watch(
   },
 );
 // O posto de saída é tablet de toque: todo alvo do cartão sobe para 48 px.
-// A Fila "Precisa de você" (V4-G4) é a casa do desktop e do tablet deitado. O celular e
+// A Fila "Precisa de você" (V4-G4) segue no desktop e no tablet deitado; a casa é o
+// Painel. O celular e
 // o tablet em pé seguem com as colunas em abas, e o posto Saída com a Saída larga: lá a
-// escolha "Grade" vira a Lista. Antes de montar (SSR), vale a escolha guardada.
+// escolha "Fila" vira o Painel. Antes de montar (SSR), vale a escolha guardada.
 const queueAvailable = computed(
   () => !boardLayout.exitPost.value && !screen.belowLg.value,
 );
@@ -677,15 +816,20 @@ const view = computed(() =>
     ? "board"
     : viewMode.value,
 );
+// Três modos de ver o MESMO trabalho, só com ícone (dono, 14/11): Painel, a casa,
+// primeiro; depois Fila e Tabela. O nome fica escondido na tela (leitor de tela e
+// teste o acham) e aparece na dica: o NuxtTabs não repassa aria-label do item.
 const viewTabs = computed(() => [
+  { value: "board", icon: "i-lucide-columns-3", title: "Painel" },
   ...(queueAvailable.value
-    ? [{ value: "queue", label: "Grade", icon: "i-lucide-layout-grid" }]
+    ? [{ value: "queue", icon: "i-lucide-rows-3", title: "Fila" }]
     : []),
-  { value: "table", label: "Lista", icon: "i-lucide-list" },
+  { value: "table", icon: "i-lucide-table-2", title: "Tabela" },
 ]);
 function pickView(value: string | number) {
   const next = String(value);
-  if (next === "queue" || next === "table") viewMode.value = next;
+  if (next === "queue" || next === "board" || next === "table")
+    viewMode.value = next;
 }
 const exitPostView = computed(
   () => view.value === "board" && boardLayout.exitPost.value && !isPhone.value,
@@ -702,8 +846,8 @@ const compactHeader = computed(
     (exitPostView.value || (screen.belowXl.value && !isPhone.value)),
 );
 
-// O rail conta o que o quadro vê: pedidos novos em Pedidos e o que está na Saída, e
-// acende "Saída" quando o posto está só com ela. Fora do quadro, a contagem leve do rail.
+// O rail conta o que o painel vê: pedidos novos em Pedidos e o que está na Saída, e
+// acende "Saída" quando o posto está só com ela. Fora do painel, a contagem leve do rail.
 const rail = useGestorRail();
 watch(
   () => ({
@@ -722,26 +866,14 @@ onBeforeUnmount(() => {
   rail.value = { ...rail.value, onBoard: false, exitPost: false };
 });
 
-const EXIT_FILTERS = [
-  { key: "all", label: "Todos", icon: "lucide:check" },
-  { key: "pickup", label: "Retirada", icon: "lucide:store" },
-  { key: "delivery", label: "Entrega", icon: "lucide:bike" },
-] as const;
-const exitFilterTabs: QuickFilterItem[] = EXIT_FILTERS.map((option) => ({
-  key: option.key,
-  label: option.label,
-  icon: option.icon.replace("lucide:", "i-lucide-"),
-}));
-// A faixa de recortes do fluxo: na Saída, os três da expedição; no celular, a versão
-// curta; no resto, com as contagens.
-const fulfillmentFilterTabs = computed<QuickFilterItem[]>(() =>
-  exitPostView.value
-    ? exitFilterTabs
-    : isPhone.value
-      ? fulfillmentCompactTabs.value
-      : fulfillmentTabs.value,
-);
-const nowMs = useNowTick(() => queue.value?.intake[0]?.server_now_iso ?? "");
+// O nome do recebimento no recorte ativo ("Recebimento: Entrega") e no escopo da seleção.
+const FULFILLMENT_LABELS: Record<string, string> = { delivery: "Entrega", pickup: "Retirada" };
+const channelLabel = (ref: string) => channels.value.find((option) => option.ref === ref)?.label ?? ref;
+// O relógio do painel é o do servidor: ancora no `generated_at` da última leitura
+// boa. Ancorava no primeiro pedido novo, e sem pedido novo (a maior parte do dia) caía
+// no relógio do dispositivo: um tablet adiantado dava todo mundo por atrasado.
+const serverNow = computed(() => readMetadata.value?.generated_at ?? "");
+const nowMs = useNowTick(() => serverNow.value);
 function zoneNext(zone: ZoneView): string {
   return zone.key === "expedition" ? nextOutRef(triaged(zone)) : "";
 }
@@ -782,14 +914,21 @@ const shortcutHint = (key: string) =>
   String(BOARD_ZONE_KEYS.indexOf(key as (typeof BOARD_ZONE_KEYS)[number]) + 1);
 
 // ── a Fila "Precisa de você" (V4-G4) ────────────────────────────────────────
-// Os mesmos recortes do quadro (busca, canal, Entrega/Retirada), mais as encomendas
+// Os mesmos recortes do painel (busca, canal, Entrega/Retirada), mais as encomendas
 // que ainda pedem aceite. O foco começa no mais urgente; ↑/↓ andam, Enter faz o gesto.
 // A Fila também recebe o pedido em negociação no iFood, inclusive o já entregue (o
 // cliente reclama depois): ele espera uma resposta como qualquer outro (dono, 07/10).
+// O pedido que só espera o Pix ou o cartão (DEV-2026-091) sai da coluna Novos, mas a
+// Fila o recebe para a faixa "Aguardando pagamento" (o `QueueView` o tira da lista).
+const awaitingCards = computed<OrderCardProjection[]>(() => {
+  const intake = zones.value.find((zone) => zone.key === "intake");
+  return intake?.awaiting?.length ? triaged({ ...intake, cards: intake.awaiting }) : [];
+});
 const queueCards = computed<OrderCardProjection[]>(() => {
   const cards = [
     ...tableRows.value.map((row) => row.card),
     ...triagedPreorders.value.flatMap((group) => group.cards),
+    ...awaitingCards.value,
   ];
   const seen = new Set(cards.map((card) => card.ref));
   return [
@@ -806,7 +945,7 @@ const queueOrder = computed(() => {
   return scope.value === "attention" ? order.slice(0, QUEUE_FOCUS) : order;
 });
 // A trilha do anterior/próximo do pedido (fase 2, `OperatorRecordNav`): a ordem que
-// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Grade, todos
+// esta tela mostra, com o recorte (escopo, busca, canal, ordenação). Na Fila, todos
 // do escopo, não só os em foco: "3 de 18" conta o que o escopo tem.
 const { remember: rememberTrail } = useRecordTrail(ORDERS_QUEUE_TRAIL);
 const trailRefs = computed(() =>
@@ -842,37 +981,31 @@ const queueScopeTabs = computed(() =>
     count: scopeCounts.value[option.key],
   })),
 );
-const fulfillmentTabs = computed<QuickFilterItem[]>(() => [
-  {
-    key: "all",
-    label: "Todos",
-    icon: "i-lucide-layers-3",
-    count: allCards.value.length,
-  },
-  {
-    key: "delivery",
-    label: "Entrega",
-    icon: "i-lucide-bike",
-    count: fulfillment_.value.delivery,
-  },
-  {
-    key: "pickup",
-    label: "Retirada",
-    icon: "i-lucide-store",
-    count: fulfillment_.value.pickup,
-  },
-]);
-const fulfillmentCompactTabs = computed(() =>
-  fulfillmentTabs.value.map(({ icon: _icon, ...item }) => item),
+const boardScopeCounts = computed(() =>
+  queueScopeCounts(
+    zones.value.flatMap((zone) => zone.cards),
+    nowMs.value,
+  ),
 );
-const channelItems = computed(() => [
-  { value: "all", label: "Todos os canais", icon: "i-lucide-layers" },
-  ...channels.value.map((option) => ({
-    value: option.ref,
-    label: `${option.label} (${option.count})`,
-    icon: `i-lucide-${lucideIcon(allCards.value.find((card) => card.channel_ref === option.ref)?.channel_icon || "")}`,
+const boardScopeTabs = computed(() =>
+  (["all", "attention", "late"] as const).map((key) => ({
+    key,
+    label: QUEUE_SCOPES.find((option) => option.key === key)!.label,
+    count: boardScopeCounts.value[key],
   })),
-]);
+);
+function pickBoardScope(value: string | number) {
+  if (value === "attention" || value === "all" || value === "late")
+    boardScope.value = value;
+}
+// O que a Saída do sistema fez sozinho e ainda se desfaz: a faixa abaixo do cabeçalho.
+const systemUndoLines = computed(() =>
+  (queue.value?.awareness?.system_actions ?? []).filter(
+    (line) => Boolean(line.undo_action) && Date.parse(line.undo_until_iso) > nowMs.value,
+  ),
+);
+const boardDesk = computed(() => view.value === "board" && !boardAsTabs.value);
+const showSystemBand = computed(() => boardDesk.value && systemUndoLines.value.length > 0);
 function pickScope(value: string | number) {
   if (value === "attention" || value === "all" || value === "late")
     scope.value = value;
@@ -881,17 +1014,17 @@ function pickFulfillment(value: string | number) {
   if (value === "all" || value === "delivery" || value === "pickup")
     fulfillment.value = value;
 }
-// O painel de filtros único (fase 2, K4), na mesa: o recebimento e o canal como campos
-// de escolha única, e os favoritos da pessoa. As abas e o seletor de canal continuam à
-// vista como os recortes rápidos; o painel e eles mexem no mesmo estado.
+// O filtro único da suíte (dono, 04/11/2026): o recebimento e o canal como campos de
+// escolha única, e os favoritos da pessoa. É o ÚNICO lugar desses recortes, na mesa e no
+// celular: não há abas nem seletor de canal paralelos.
 const panelDimensions = computed<FilterDimension[]>(() => [
   {
     id: "fulfillment",
     label: "Recebimento",
     type: "single-select",
     options: [
-      { value: "delivery", label: "Entrega" },
-      { value: "pickup", label: "Retirada" },
+      { value: "delivery", label: "Entrega", count: fulfillment_.value.delivery },
+      { value: "pickup", label: "Retirada", count: fulfillment_.value.pickup },
     ],
   },
   {
@@ -938,7 +1071,7 @@ const phoneHeaderActions = computed(() => {
       onSelect: () => (selecting.value ? stopSelection() : startSelection()),
     },
     { label: "Exportar CSV", icon: "i-lucide-download", onSelect: () => exportCsv() },
-    { label: "Imprimir fila", icon: "i-lucide-printer", onSelect: () => printQueue() },
+    { label: "Imprimir pedidos", icon: "i-lucide-printer", onSelect: () => printQueue() },
   ];
 });
 // Os recortes ativos (chips removíveis abaixo da linha e o número no "Filtros").
@@ -946,14 +1079,14 @@ const activeFilters = computed(() => [
   ...(fulfillment.value !== "all"
     ? [{
         key: "fulfillment",
-        label: String(fulfillmentFilterTabs.value.find((tab) => tab.key === fulfillment.value)?.label ?? fulfillment.value),
+        label: `Recebimento: ${FULFILLMENT_LABELS[fulfillment.value] ?? fulfillment.value}`,
         remove: () => pickFulfillment("all"),
       }]
     : []),
   ...(channel.value !== "all"
     ? [{
         key: "channel",
-        label: `Canal: ${channelItems.value.find((item) => item.value === channel.value)?.label ?? channel.value}`,
+        label: `Canal: ${channelLabel(channel.value)}`,
         remove: () => (channel.value = "all"),
       }]
     : []),
@@ -1047,11 +1180,6 @@ function queueKey(e: KeyboardEvent): boolean {
 const searchInput = ref<{ focus: () => void } | null>(null);
 function onKeydown(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
-  // Esc fecha primeiro o drawer móvel; menus canônicos cuidam do próprio Escape.
-  if (e.key === "Escape" && moreOpen.value) {
-    moreOpen.value = false;
-    return;
-  }
   const el = e.target as HTMLElement | null;
   const typing =
     !!el &&
@@ -1061,7 +1189,7 @@ function onKeydown(e: KeyboardEvent) {
   const column =
     view.value === "board" ? queueColumnForKey(e.key, boardLayout.keys) : null;
   if (column) {
-    // Com um diálogo aberto a tecla é do diálogo, não do quadro atrás dele.
+    // Com um diálogo aberto a tecla é do diálogo, não do painel atrás dele.
     if (
       typing ||
       rejectRef.value ||
@@ -1121,31 +1249,28 @@ function onKeydown(e: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
-// reject dialog (needs a reason). For marketplace (iFood) orders the reason is a
-// coded pick from the provider's live list; other channels use free text.
+// reject dialog: o MESMO `OrderReasonDialog` do detalhe (beta 06/11: o painel tinha
+// um diálogo próprio, com texto livre). Uma lista de motivos em qualquer canal; no
+// iFood o diálogo esconde o que o iFood não oferece.
 const rejectRef = ref<string | null>(null);
-const rejectReason = ref("");
-const rejectReasons = ref<CancellationReason[]>([]);
-const rejectCode = ref("");
-const rejectDirty = computed(
-  () =>
-    rejectRef.value !== null &&
-    Boolean(rejectReason.value.trim() || rejectCode.value),
-);
+// O diálogo diz quando há motivo escolhido ou texto; ele mesmo pede confirmação ao
+// fechar, e a página guarda só a saída por rota e por recarga.
+const rejectDirty = ref(false);
 const confirmDiscard = useConfirm();
-async function closeReject() {
+// Recusar sem surpresa (WP-G06): ao abrir, o diálogo lê o detalhe do pedido para dizer
+// o que acontece com o dinheiro (o cartão não tem esse fato, e não ganha). A falha da
+// recusa fica guardada aqui e aparece DENTRO do diálogo: o aviso do cartão está atrás
+// dele.
+const rejectRead = useOrderReasonRead();
+const rejectError = ref("");
+const rejectErrorField = ref("");
+function closeReject() {
   if (rejectRef.value && isBusy(rejectRef.value)) return;
-  if (
-    rejectDirty.value &&
-    !(await confirmDiscard({
-      title: "Descartar o motivo digitado?",
-      description:
-        "O motivo que você escreveu se perde, e o pedido não é recusado.",
-      cancelLabel: "Continuar escrevendo",
-    }))
-  )
-    return;
   rejectRef.value = null;
+  rejectDirty.value = false;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  rejectRead.clear();
 }
 onBeforeRouteLeave(
   () =>
@@ -1153,9 +1278,9 @@ onBeforeRouteLeave(
     confirmDiscard({
       title: "Sair sem recusar o pedido?",
       description:
-        "O motivo que você escreveu se perde, e o pedido não é recusado.",
+        "O motivo que você escolheu se perde, e o pedido não é recusado.",
       confirmLabel: "Descartar e sair",
-      cancelLabel: "Continuar escrevendo",
+      cancelLabel: "Continuar escolhendo",
     }),
 );
 function beforeUnload(event: BeforeUnloadEvent) {
@@ -1165,62 +1290,35 @@ function beforeUnload(event: BeforeUnloadEvent) {
 }
 onMounted(() => window.addEventListener("beforeunload", beforeUnload));
 onBeforeUnmount(() => window.removeEventListener("beforeunload", beforeUnload));
-const rejectReasonsLoading = ref(false);
-const rejectReasonsError = ref("");
+// O pedido do diálogo: o cartão diz quem é na hora em que o diálogo abre; o detalhe,
+// quando chega, vale por cima (e continua valendo se o cartão sair do painel).
+const rejectOrder = computed<ReasonOrderFacts | null>(() => {
+  const ref_ = rejectRef.value;
+  if (!ref_) return null;
+  const card = allCards.value.find((c) => c.ref === ref_);
+  return { ...card, ...rejectRead.order.value, ref: ref_ };
+});
 const isMarketplaceReject = computed(
-  () =>
-    allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref ===
-    "ifood",
+  () => rejectOrder.value?.channel_ref === "ifood",
 );
-const canConfirmReject = computed(
-  () =>
-    !rejectReasonsLoading.value &&
-    !rejectReasonsError.value &&
-    (isMarketplaceReject.value
-      ? rejectReasons.value.some((r) => r.code === rejectCode.value)
-      : rejectReason.value.trim() !== ""),
-);
-async function openReject(ref_: string) {
+function openReject(ref_: string) {
   rejectRef.value = ref_;
-  rejectReason.value = "";
-  rejectCode.value = "";
-  rejectReasons.value = [];
-  await loadRejectReasons();
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  void rejectRead.read(ref_);
 }
-let rejectReasonsRequest = 0;
-async function loadRejectReasons() {
+async function confirmReject(payload: { reasonKey: string; internalNote: string }) {
   const ref_ = rejectRef.value;
-  if (!ref_) return;
-  const request = ++rejectReasonsRequest;
-  rejectReasonsLoading.value = true;
-  rejectReasonsError.value = "";
-  try {
-    const result = await fetchCancellationReasons(ref_);
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasons.value = result;
-  } catch {
-    if (request === rejectReasonsRequest && ref_ === rejectRef.value)
-      rejectReasonsError.value =
-        "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
-  } finally {
-    if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
+  if (!ref_ || isBusy(ref_)) return;
+  rejectError.value = "";
+  rejectErrorField.value = "";
+  if (await reject(ref_, payload)) {
+    closeReject();
+    return;
   }
-}
-
-function onRejectCodeChange() {
-  // Mirror the picked reason's text into the customer-facing reason.
-  const picked = rejectReasons.value.find((r) => r.code === rejectCode.value);
-  if (picked) rejectReason.value = picked.description;
-}
-async function confirmReject() {
-  const ref_ = rejectRef.value;
-  if (!ref_ || isBusy(ref_) || !canConfirmReject.value) return;
-  const ok = await reject(
-    ref_,
-    rejectReason.value.trim() || "Pedido recusado",
-    rejectCode.value,
-  );
-  if (ok) rejectRef.value = null;
+  // O diálogo continua aberto, com o motivo escolhido e a frase da falha.
+  rejectError.value = actionError(ref_);
+  rejectErrorField.value = actionErrorField(ref_);
 }
 
 // settle-cash dialog (needs an amount; and, when the courier took change from
@@ -1353,17 +1451,20 @@ function courierBackDifferent() {
   else navigateTo(`/${card.ref}`);
 }
 
+function onAdvanceAction(ref_: string) {
+  const card = allCards.value.find((c) => c.ref === ref_);
+  if (card?.next_status !== "dispatched") advance(ref_);
+  else {
+    const steps = oneTapDispatch(card, allCards.value);
+    if (steps) runDispatch(steps);
+    else dispatchRef.value = card.ref;
+  }
+}
+
 function onAction(ref_: string, action: AffordanceRef) {
   if (action === "confirm") confirm(ref_);
-  else if (action === "advance") {
-    const card = allCards.value.find((c) => c.ref === ref_);
-    if (card?.next_status !== "dispatched") advance(ref_);
-    else {
-      const steps = oneTapDispatch(card, allCards.value);
-      if (steps) runDispatch(steps);
-      else dispatchRef.value = card.ref;
-    }
-  } else if (action === "courier_back") courierBackRef.value = ref_;
+  else if (action === "advance") onAdvanceAction(ref_);
+  else if (action === "courier_back") courierBackRef.value = ref_;
   else if (action === "reject") openReject(ref_);
   else if (action === "settle_cash") openSettle(ref_);
   else if (action === "equipment_back") equipmentBack(ref_);
@@ -1372,6 +1473,28 @@ function onAction(ref_: string, action: AffordanceRef) {
   else if (action === "dismiss_courier_reminder")
     void dismissCourierReminder(ref_);
   else if (action === "ifood_accept_retry") retryIFoodAccept(ref_);
+  else if (action === "resolve_promise") openResolve(ref_);
+  else if (action === "call_courier") void courierCall.open(ref_);
+}
+
+// "Resolver" a promessa em risco (WP-G08): UM diálogo para o painel inteiro (cartão,
+// Fila e Tabela), aberto com o pedido que foi tocado. Ele lê as escolhas ao abrir; o
+// cartão não leva o contato do cliente. Tirar o item grava dali e a leitura do painel
+// se refaz; cancelar o pedido inteiro segue para o pedido, que abre o cancelar com
+// motivo e dinheiro (o MESMO diálogo do menu).
+const resolveRef = ref("");
+const resolveOpen = ref(false);
+function openResolve(ref_: string) {
+  resolveRef.value = ref_;
+  resolveOpen.value = true;
+}
+function cancelFromResolve(ref_: string) {
+  void navigateTo(`/${ref_}${CANCEL_HASH}`);
+}
+// "Avisar o cliente": o envio mora no detalhe do pedido, que abre o diálogo do G07 com
+// o aviso e os itens em risco marcados.
+function notifyFromResolve(ref_: string, pick: NoticePick) {
+  void navigateTo(`/${ref_}${notifyHash(pick)}`);
 }
 
 // O interruptor do canal na coluna da Fila (G09): o MESMO diálogo de Canais, com
@@ -1421,21 +1544,227 @@ function exportCsv() {
 function printQueue() {
   window.print();
 }
+// A linha do chão no celular (modelo de navegação, 31/10/2026): o ⋮ dela leva as MESMAS
+// ações do ⋯ do celular (som, atualizar, selecionar, exportar, imprimir).
+// O aviso não é só de pedido novo: toca para o pedido que acabou de ter algo a fazer, em
+// qualquer zona. A pílula diz qual é, com o mesmo status que o cartão mostra (a zona
+// mentia: um pedido já na rua aparecia como "pronto para sair"), e Ver leva à zona dele.
+const attention = computed(() => {
+  const zone = zones.value.find((z) => z.cards.some((c) => c.ref === attentionRef.value));
+  const card = zone?.cards.find((c) => c.ref === attentionRef.value);
+  return {
+    zone: zone?.key ?? "intake",
+    code: card ? queueCode(card) : "",
+    what: card?.status_label || "Pedido para tratar",
+  };
+});
+// Ver: abre a zona do pedido. Na Saída, fica nela se o pedido é da Saída ou do preparo;
+// senão sai do posto e abre Pedidos (o selo muda junto).
+function seeAttention() {
+  const zone = attention.value.zone;
+  if (phoneExitMode.value && zone !== "expedition" && zone !== "prep") phoneExitMode.value = false;
+  pickPhoneZone(zone);
+}
+// O X da pílula dispensa o aviso só nesta montagem (a regra do kit, `useAlertDismissals`):
+// o próximo pedido que pedir atenção traz a pílula de volta. Visto continua sendo o "eu vi,
+// pode parar de avisar".
+const notices = useAlertDismissals();
+
+// A encomenda recém-aceita (WP-G03): sai das colunas do dia e vai morar na lista
+// "Encomendas", abaixo da dobra. O aviso diz para onde ela foi e em que dia, e leva
+// até a linha. Sem ele, depois do aceite o painel dizia só "Nenhum pedido novo agora.".
+const acceptedPreorder = ref<AcceptedPreorder | null>(null);
+watch(queue, (after, before) => {
+  const [accepted] = acceptedIntoPreorders(before ?? null, after ?? null);
+  if (accepted) acceptedPreorder.value = accepted;
+  else if (
+    acceptedPreorder.value &&
+    !(after?.preorders ?? []).some((card) => card.ref === acceptedPreorder.value?.ref)
+  )
+    acceptedPreorder.value = null;
+});
+const { reveal: revealFocus } = useNextFocus();
+function showAcceptedPreorder() {
+  if (acceptedPreorder.value) revealFocus(preorderFocusKey(acceptedPreorder.value.ref));
+}
+// Promessa em risco (WP-G08): enquanto houver pedido cuja reserva perdeu o lastro, o
+// cabeçalho diz quantos são e leva ao primeiro. Conta o painel inteiro, sem os filtros
+// da tela: a encomenda de amanhã que perdeu o lote mora abaixo da dobra, e era ali que
+// ela ficava quieta (P0-1). Os de hoje primeiro; depois as encomendas, por data.
+const promiseAlert = computed(() =>
+  promiseRiskAlert(
+    [
+      ...zones.value.flatMap((zone) => zone.cards),
+      ...preorders.value.flatMap((group) => group.cards),
+    ],
+    { canOpen: canManageOrders.value },
+  ),
+);
+// O pedido como a tela o desenha agora: o cartão do quadro, a linha da Fila ou da
+// Tabela e, depois, a linha da lista de Encomendas. Só conta o que está de fato
+// desenhado: a forma que o CSS esconde nesta largura não é destino.
+function findOnScreen(ref_: string): HTMLElement | null {
+  for (const key of orderFocusKeys(ref_)) {
+    const drawn = [
+      ...document.querySelectorAll<HTMLElement>(focusTargetSelector(key)),
+    ].find((element) => element.getClientRects().length > 0);
+    if (drawn) return drawn;
+  }
+  return null;
+}
+// Um pedido só, com o "Resolver" aberto para a conta: o diálogo abre aqui mesmo. Sem
+// ele, abre o pedido, na faixa que tem as saídas. Vários: a tela vai até
+// o primeiro (o cartão, a linha da Fila ou a da lista de Encomendas). Se ele não está
+// à vista (um filtro o tirou da tela), o aviso abre o pedido: botão de aviso nunca
+// fica sem efeito.
+async function showPromiseRisk() {
+  const alert = promiseAlert.value;
+  if (!alert) return;
+  const open = () => navigateTo(`/${alert.firstRef}${PROMISE_HASH}`);
+  if (alert.opensResolver) return openResolve(alert.firstRef);
+  if (alert.opensOrder) return void open();
+  let target = findOnScreen(alert.firstRef);
+  const zone = zones.value.find((z) =>
+    z.cards.some((card) => card.ref === alert.firstRef),
+  );
+  if (!target && zone) {
+    // No celular e no tablet as etapas são abas: a do pedido abre antes.
+    if (phoneExitMode.value && zone.key !== "expedition" && zone.key !== "prep")
+      phoneExitMode.value = false;
+    pickPhoneZone(zone.key);
+    await nextTick();
+    target = findOnScreen(alert.firstRef);
+  }
+  if (target) revealFocus(target);
+  else if (canManageOrders.value) void open();
+}
+// Os avisos moram nas `alerts` do cabeçalho (o lugar declarado do kit): ficam fixos com
+// ele, fecham no X e não rolam com o conteúdo. O `id` leva os pedidos: outra encomenda
+// aceita, ou outro pedido em risco, é aviso novo, e o que foi fechado volta. A promessa
+// em risco vem primeiro: o cabeçalho mostra um aviso inteiro e resume o resto.
+const promiseScreenAlert = computed<OperatorScreenAlert | null>(() => {
+  const risk = promiseAlert.value;
+  if (!risk) return null;
+  return {
+    id: risk.id,
+    color: "error",
+    icon: "i-lucide-package-x",
+    title: risk.title,
+    description: risk.description,
+    action: { label: risk.actionLabel, onSelect: () => void showPromiseRisk() },
+  };
+});
+const screenAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alerts = promiseScreenAlert.value ? [promiseScreenAlert.value] : [];
+  if (acceptedPreorder.value)
+    alerts.push({
+      id: `preorder-accepted:${acceptedPreorder.value.ref}`,
+      color: "info",
+      icon: "i-lucide-calendar-check",
+      title: acceptedPreorder.value.message,
+      action: { label: "Ver em Encomendas", onSelect: showAcceptedPreorder },
+    });
+  return alerts;
+});
+// "Falha ao atualizar os pedidos" fecha e volta na próxima leitura que falhar: cada falha nova
+// (outro erro) é outra chave.
+const queueFailures = ref(0);
+watch(error, (now, before) => {
+  if (now && now !== before) queueFailures.value += 1;
+});
+// O ⋮ da linha do chão: as ações da fila e, em grupos próprios, Ordenar e Ver como (não
+// são filtro: ficam fora do painel). No celular a Fila não existe: Painel ou Tabela.
+const compactOptions = computed(() => [
+  phoneHeaderActions.value.map(({ priority: _p, ...item }) => item),
+  ...(phoneExitMode.value
+    ? []
+    : [
+        [
+          { type: "label" as const, label: "Ordenar" },
+          ...sortMenuItems.value,
+        ],
+        [
+          { type: "label" as const, label: "Ver como" },
+          ...(
+            [
+              { key: "board", label: "Painel", icon: "i-lucide-columns-3" },
+              { key: "table", label: "Tabela", icon: "i-lucide-table-2" },
+            ] as const
+          ).map((option) => ({
+            label: option.label,
+            icon: view.value === option.key ? "i-lucide-check" : option.icon,
+            onSelect: () => (viewMode.value = option.key),
+          })),
+        ],
+      ]),
+]);
+const compactTotal = computed(() => zones.value.reduce((n, z) => n + z.cards.length, 0));
+const compactFilterLabel = computed(() => activeFilters.value.map((f) => f.label).join(', '));
+function compactClear() {
+  query.value = "";
+  channel.value = "all";
+  fulfillment.value = "all";
+}
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
     <!-- Cabeçalho de UMA linha (UX-KIT-V2, prévia v4 `gestor-fila4.html`): título, ao vivo,
          busca e poucos controles (som, ordenar, visão, ⋯). Atualizar, exportar, imprimir,
          a seleção em lote e a última leitura útil moram no ⋯; Visto aparece aqui só
          enquanto há pedido novo esperando. No posto Saída (`gestor-colunas4.html`):
          "Visão: Saída", "Mostrar as 3 colunas" e o som; o resto no ⋯. -->
+    <OperatorCompactBar
+      title="Pedidos"
+      :tone="liveTone"
+      :time="readClock"
+      :conn-label="error ? 'Atualização falhou' : realtimeView.label"
+      :query="query"
+      search-button-label="Buscar por código, cliente ou item"
+      :filter-active="channel !== 'all' || fulfillment !== 'all'"
+      :filter-label="compactFilterLabel"
+      :summary="visibleCount + ' de ' + compactTotal + ' pedidos no painel.'"
+      :options="compactOptions"
+      @clear="compactClear"
+    >
+      <!-- O filtro único da suíte (dono, 04/11/2026): o ícone na linha, antes da busca, com
+           o número no canto, como o sino. Ordenar e Ver como moram no ⋮. -->
+      <template v-if="!phoneExitMode" #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          trigger="icon"
+          :chips="false"
+          surface="orders"
+          screen="queue"
+          data-queue-filters-compact
+        />
+      </template>
+    </OperatorCompactBar>
+    <!-- Sem conexão segue EXPLÍCITO (cor + texto), não só o chip do selo. Com a
+         leitura falhada o conteúdo já diz "Falha ao atualizar os pedidos"; aqui não repete. -->
+    <p v-if="liveTone === 'off' && !error" class="flex items-center gap-2 border-b border-default bg-error/10 px-3 py-2 text-sm text-error md:hidden" role="status" data-compact-offline>
+      <NuxtIcon name="i-lucide-wifi-off" class="size-4 shrink-0" /><span>Sem conexão.<template v-if="readClock"> Última leitura às {{ readClock }}.</template></span>
+    </p>
+    <!-- O aviso no polegar, sem empurrar a fila: qual pedido, o status do cartão dele, Ver
+         e Visto. Na Saída fica acima do "Entregar", a ação do momento ali. Sobe pela altura da
+         barra de baixo do shell (`--operator-quick-bar-inset`, do kit): nunca a cobre. -->
+    <div v-if="attentionPending && !exitPostView && notices.isOpen(`attention:${attentionRef}`)" :class="phoneExitMode ? 'bottom-[calc(var(--operator-quick-bar-inset,0px)+6rem)]' : 'bottom-[calc(var(--operator-quick-bar-inset,0px)+1rem)]'" class="fixed inset-x-3 z-40 md:hidden" role="status" data-attention-pill>
+      <div class="flex items-center gap-2 rounded-2xl bg-inverted py-1.5 pl-4 pr-1.5 text-inverted shadow-lg">
+        <NuxtIcon name="i-lucide-bell-ring" class="size-5 shrink-0" />
+        <p class="min-w-0 flex-1 leading-tight"><strong class="block truncate">{{ attention.code || attention.what }}</strong><span v-if="attention.code" class="block truncate text-xs opacity-80">{{ attention.what }}</span></p>
+        <NuxtButton label="Ver" color="neutral" variant="ghost" class="min-h-11 text-inverted" data-attention-see @click="seeAttention" />
+        <NuxtButton icon="i-lucide-check" label="Visto" color="neutral" variant="outline" class="min-h-11" data-attention-seen @click="acknowledgeAttention" />
+        <NuxtButton icon="i-lucide-x" color="neutral" variant="ghost" square class="size-11 justify-center text-inverted" aria-label="Fechar o aviso" data-attention-close @click="notices.close(`attention:${attentionRef}`)" />
+      </div>
+    </div>
     <OperatorPageHeader
-      :title="exitPostView ? 'Saída' : 'Pedidos'"
+      title="Pedidos"
+      :alerts="screenAlerts"
       :filters-wrap="false"
       :phone-actions="phoneHeaderActions"
       actions-from="md"
-      actions-label="Mais ações da fila"
+      actions-label="Mais ações dos pedidos"
       :active-filters="activeFilters"
     >
       <template #status>
@@ -1453,7 +1782,7 @@ function printQueue() {
         <OperatorSuiteSearch
           ref="searchInput"
           :model-value="query"
-          screen-label="filtrando o quadro"
+          screen-label="filtrando o painel"
           :placeholder="
             exitPostView
               ? 'Código ou cliente'
@@ -1469,7 +1798,7 @@ function printQueue() {
       <template #actions>
         <!-- a visão deste posto e o caminho de volta às três colunas -->
         <template
-          v-if="view === 'board' && !boardLayout.allOpen.value"
+          v-if="view === 'board' && boardAsTabs && !boardLayout.allOpen.value"
         >
           <NuxtButton
             icon="i-lucide-columns-3"
@@ -1481,6 +1810,25 @@ function printQueue() {
             @click="boardLayout.showAll()"
           />
         </template>
+        <!-- Juntar entregas numa corrida mora na página Entregas (F5): o atalho leva
+             para lá com quantas a casa sugere. Some com menos de duas. -->
+        <NuxtButton
+          v-if="rideCandidates.length >= 2 && !(view === 'board' && !boardAsTabs && boardLayout.isOpen('expedition'))"
+          to="/delivery"
+          icon="i-lucide-route"
+          :label="buildRidesLabel(queue?.ride_suggestions ?? 0)"
+          color="neutral"
+          variant="outline"
+          data-build-rides
+        />
+        <!-- Onde está a maquininha: some quando todas estão na loja (no Painel, mora na
+             linha de baixo). -->
+        <EquipmentOutMenu
+          v-if="!boardDesk"
+          :items="queue?.equipment_out ?? []"
+          :is-busy="isBusy"
+          @back="equipmentBack"
+        />
         <!-- O som de pedido novo e o "Visto" que o cala formam um grupo só: o Visto
              aparece enquanto há pedido novo tocando e, reconhecido, some, deixando o
              botão do som sozinho. No posto Saída o Visto fica no ⋯. O som tem os
@@ -1520,11 +1868,14 @@ function printQueue() {
             @click="acknowledgeAttention"
           />
         </NuxtFieldGroup>
-
         <template v-if="!compactHeader">
-          <!-- ordenar: na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
-               no quadro e na tabela, a ordem deles -->
-          <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'end' }">
+          <!-- ordenar (no Painel, mora no ⋮ e a ordem em vigor aparece na linha de baixo): na Fila, "Urgência ▾" (tempo contra a meta, chegada, mais recentes);
+               no painel e na tabela, a ordem deles -->
+          <NuxtDropdownMenu
+            v-if="!boardDesk"
+            :items="sortMenuItems"
+            :content="{ align: 'end' }"
+          >
             <NuxtButton
               icon="i-lucide-arrow-up-down"
               trailing-icon="i-lucide-chevron-down"
@@ -1538,10 +1889,9 @@ function printQueue() {
             />
           </NuxtDropdownMenu>
 
-          <!-- visão: dois segmentos genéricos, Grade G (os cartões da Fila) | Lista L (a
-               tabela densa, com seleção em lote), nomes que servem a qualquer tela com
-               muitos registros (dono, 07/10/2026). As três colunas (Entrada, Preparo,
-               Saída) moram no ⋯ e na tecla V, e o posto Saída abre nelas. -->
+          <!-- visão: Painel · Fila · Tabela, um controle só, só com ícone (dono,
+               14/11/2026). A Fila some abaixo do lg (não cabe); o dispositivo lembra a
+               escolha. -->
           <NuxtTabs
             :model-value="view"
             :items="viewTabs"
@@ -1550,12 +1900,18 @@ function printQueue() {
             aria-label="Visão do Gestor"
             data-view-switch
             @update:model-value="pickView"
-          />
-          <!-- Exibir (linhas e colunas) só existe com a Lista na tela. -->
+          >
+            <!-- o nome, só para o leitor de tela: o NuxtTabs não repassa aria-label do
+                 item, e o rótulo visível ocuparia espaço. -->
+            <template #trailing="{ item }"><span class="sr-only">{{ item.title }}</span></template>
+          </NuxtTabs>
+          <!-- Exibir (linhas e colunas) só existe com a Tabela na tela. -->
           <OperatorTableView v-if="view === 'table'" table-key="orders-queue" />
         </template>
-
-        <!-- ⋯ da fila (do tablet para cima; no celular ele mora no fim dos recortes). O posto
+      </template>
+      <template #more>
+        <!-- ⋮ da fila (do tablet para cima; no celular ele mora no fim dos recortes), no
+             canto do cabeçalho, depois do sino (`#more` do kit). O posto
              Saída (v4 `gestor-colunas`) não tem ⋯: a leitura se atualiza sozinha e o Visto
              é tocar a faixa da Entrada que pulsa. -->
         <BoardMenu
@@ -1572,6 +1928,7 @@ function printQueue() {
           :attention-pending="attentionPending"
           :selecting="selecting"
           :full="compactHeader"
+          :sort-in-menu="boardDesk"
           @refresh="refresh()"
           @acknowledge="acknowledgeAttention"
           @select="selecting ? stopSelection() : startSelection()"
@@ -1583,129 +1940,70 @@ function printQueue() {
         />
       </template>
 
-      <!-- recortes (v4): Todos, o eixo do fluxo (Entrega, Retirada) e o canal num
-           seletor só. O posto Saída usa a mesma faixa: o título já diz a visão. -->
-      <!-- A Saída no celular (v4 `cozinha-celular` (a)) não tem a linha de recortes: a
-           barra de cima, as duas abas e a lista. -->
-      <!-- Antes de montar (e enquanto a fila chega) a faixa existe: no celular o kit
-           desenha "Filtros" já no primeiro desenho, e na mesa a faixa não some e volta
-           quando os cartões chegam. -->
-      <template
-        v-if="
-          ((exitPostView && desktopZones.length) ||
-            ((allCards.length || pending || !hydrated) && !exitPostView) ||
-            isPhone) &&
-          !(isPhone && phoneExitMode)
-        "
-        #filters
-      >
-        <OperatorQuickFilters
-          :model-value="fulfillment"
-          :items="fulfillmentFilterTabs"
-          label="Tipo de entrega"
-          data-fulfillment-filters
-          @update:model-value="pickFulfillment(String($event))"
+      <!-- O filtro único da suíte (dono, 04/11/2026): na mesa, "Filtros (n)" no começo da
+           linha de baixo e os recortes ativos ao lado, cada um com ×. O recebimento e o
+           canal só existem aqui (nada de abas ou seletor repetindo o mesmo recorte); o
+           posto Saída usa o mesmo painel. Abaixo do `md` a linha do chão (acima) leva o
+           mesmo painel pelo ícone. -->
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="panelDimensions"
+          surface="orders"
+          screen="queue"
+          data-queue-filters
         />
-        <!-- Na Fila entre o `lg` e o `xl` a linha leva os recortes da fila, os de
-             entrega e o "Filtros": o canal fica só no painel (que tem a dimensão
-             "Canal" do `md` para cima), em vez de sair da tela na rolagem da faixa. -->
-        <NuxtSelect
-          v-if="channels.length"
-          v-model="channel"
-          :items="channelItems"
-          :class="view === 'queue' ? 'lg:max-xl:hidden' : ''"
-          aria-label="Canal"
-          data-channel-picker
-        />
-        <!-- celular do kit (abaixo de `sm`): no painel "Filtros", a ordem, a visão e o
-             frescor; as ações (atualizar, selecionar, exportar, imprimir, som) estão no
-             ⋯ da barra do topo. -->
-        <template v-if="kitPhone">
-          <NuxtFormField label="Ordenar">
-            <NuxtDropdownMenu :items="sortMenuItems" :content="{ align: 'start' }">
-              <NuxtButton
-                icon="i-lucide-arrow-up-down"
-                trailing-icon="i-lucide-chevron-down"
-                :label="view === 'queue' ? queueSortLabel : sortLabel"
-                color="neutral"
-                variant="outline"
-                data-board-sort
-              />
-            </NuxtDropdownMenu>
-          </NuxtFormField>
-          <NuxtFormField label="Ver como">
-            <NuxtTabs
-              :model-value="view"
-              :items="viewTabs"
-              :content="false"
-              variant="pill"
-              aria-label="Visão do Gestor"
-              data-view-switch
-              @update:model-value="pickView"
-            />
-          </NuxtFormField>
-          <ReadFreshness
-            inline
-            :metadata="readMetadata"
-            :failed="Boolean(error)"
-          />
-        </template>
-        <!-- celular entre `sm` e `md`: os controles do quadro num painel só ("Filtros"
-             da prévia v3), no começo da linha para nunca ficar fora da tela -->
-        <NuxtChip
-          v-if="isPhone && !kitPhone"
-          :show="attentionPending || (soundOn && soundBlocked)"
-          color="warning"
-          size="2xl"
-          inset
-        >
-          <NuxtButton
-            icon="i-lucide-sliders-horizontal"
-            label="Filtros"
-            color="neutral"
-            variant="outline"
-            aria-haspopup="dialog"
-            :aria-expanded="moreOpen"
-            data-board-more
-            @click="moreOpen = true"
-          />
-        </NuxtChip>
-      </template>
-      <!-- O painel de filtros único, do `md` para cima (abaixo, a fila segue com o
-           painel próprio dela, que também leva a ordem e a visão). -->
-      <template v-if="!exitPostView" #filter-panel>
-        <!-- Pelo CSS (o servidor desenha o celular e a mesa juntos até hidratar). -->
-        <div class="max-md:hidden">
-          <OperatorFilterPanel
-            v-model="panelFilters"
-            :dimensions="panelDimensions"
-            surface="orders"
-            screen="queue"
-            :chips="false"
-          />
-        </div>
       </template>
       <!-- na Fila (v4): "Precisa de você N · Todos N · ● Atrasados N", o recorte do que
-           muda o trabalho; no quadro e na tabela, "Todos" tira os recortes. É o primário
+           muda o trabalho; no painel e na tabela, "Todos" tira os recortes. É o primário
            da toolbar: no celular fica na linha, ao lado do "Filtros". -->
       <template
-        v-if="view === 'queue' && !(isPhone && phoneExitMode)"
+        v-if="(view === 'queue' && !(isPhone && phoneExitMode)) || boardDesk"
         #filters-primary
       >
-        <!-- A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o mesmo, e o
-             celular não desenha os escopos antes de montar. -->
+        <!-- Um controle só para os recortes (o da Fila e o do Painel, cada um com o seu
+             estado). A Fila só existe do `lg` para cima (`queueAvailable`): o CSS diz o
+             mesmo, e o celular não desenha os escopos antes de montar. -->
         <OperatorQuickFilters
-          class="max-lg:hidden"
-          :model-value="scope"
-          :items="queueScopeTabs"
-          label="Recortes da fila"
-          data-queue-scopes
-          @update:model-value="pickScope(String($event))"
+          :class="view === 'queue' ? 'max-lg:hidden' : undefined"
+          :model-value="view === 'queue' ? scope : boardScope"
+          :items="view === 'queue' ? queueScopeTabs : boardScopeTabs"
+          :label="view === 'queue' ? 'Recortes da fila' : 'Recortes do painel'"
+          :data-queue-scopes="view === 'queue' ? '' : undefined"
+          :data-board-scopes="view === 'queue' ? undefined : ''"
+          @update:model-value="
+            view === 'queue'
+              ? pickScope(String($event))
+              : pickBoardScope(String($event))
+          "
         />
       </template>
-      <template v-if="hasChannelQueueSignal" #feedback>
-        <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
-        <ChannelQueueSignal :attention="channelAttention" />
+      <!-- À direita da linha de baixo, no Painel: a ordem em vigor (trocar fica no ⋮) e
+           a maquininha na rua, que só aparece enquanto alguma está fora. -->
+      <template v-if="boardDesk" #filters-end>
+        <div class="flex items-center gap-2">
+          <EquipmentOutMenu
+            :items="queue?.equipment_out ?? []"
+            :is-busy="isBusy"
+            @back="equipmentBack"
+          />
+          <span class="op-micro text-muted-foreground" data-board-order-hint>
+            {{ boardOrderHint }}
+          </span>
+        </div>
+      </template>
+      <template v-if="hasChannelQueueSignal || showSystemBand" #feedback>
+        <div class="flex flex-col gap-2">
+          <!-- a loja no iFood: só o SINAL, e só quando muda o que entra na fila. -->
+          <ChannelQueueSignal v-if="hasChannelQueueSignal" :attention="channelAttention" />
+          <OrderSystemBand
+            v-if="showSystemBand"
+            :lines="systemUndoLines"
+            :busy="isBusy"
+            :server-now="serverNow || undefined"
+            @undo="(ref_) => onAction(ref_, 'undo_ready')"
+          />
+        </div>
       </template>
       <!-- Com o modo de seleção ligado, a barra de seleção toma o lugar da toolbar. -->
       <template v-if="selecting" #selection>
@@ -1720,60 +2018,28 @@ function printQueue() {
           @clear="stopSelection"
         />
       </template>
-    </OperatorPageHeader>
-
-    <!-- celular: o painel dos controles sobe do pé, ao alcance do polegar -->
-    <NuxtDrawer
-      v-if="isPhone && !kitPhone"
-      :open="moreOpen"
-      title="Filtros e ações da fila"
-      description="Ordenação, visão, atualização e ações auxiliares."
-      @update:open="(value) => (moreOpen = value)"
-    >
-      <template #body>
-        <BoardMenu
-          :metadata="readMetadata"
-          :failed="Boolean(error)"
-          :pending="pending"
-          :sort="sort"
-          :view-mode="view"
-          :queue-available="queueAvailable"
-          :sound-on="soundOn"
-          :sound-blocked="soundBlocked"
-          :attention-pending="attentionPending"
-          :selecting="selecting"
-          full
-          @refresh="refresh()"
-          @acknowledge="menuDo(acknowledgeAttention)"
-          @select="
-            menuDo(() => (selecting ? stopSelection() : startSelection()))
-          "
-          @sort="(key) => menuDo(() => pickSort(key))"
-          @view="(mode) => menuDo(() => (viewMode = mode))"
-          @sound="menuDo(handleSoundAction)"
-          @export="menuDo(exportCsv)"
-          @print="menuDo(printQueue)"
-        />
+      <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. O
+           traço da aba ativa assenta na borda da faixa, sem vão nem segunda linha (dono,
+           02/11/2026): a faixa não tem respiro embaixo, e a aba dentro da faixa não
+           desenha linha própria (tema do kit, `tabs` link). Mora no `#below`: é a última
+           barra do topo, e o aviso da tela vem depois dela (dono, 20/11/2026,
+           DEV-2026-063). Fora do cabeçalho ela ficava embaixo do aviso. -->
+      <template v-if="boardAsTabs && view === 'board' && zones.length" #below>
+        <OperatorToolbar class="items-end pt-2 pb-0" data-board-zone-bar>
+          <NuxtTabs
+            :model-value="phoneZone"
+            :items="phoneTabItems"
+            :content="false"
+            variant="link"
+            data-board-zone-tabs
+            @update:model-value="pickPhoneZone"
+          >
+            <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
+            <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
+          </NuxtTabs>
+        </OperatorToolbar>
       </template>
-    </NuxtDrawer>
-
-    <!-- celular: as colunas viram abas dentro da segunda faixa canônica do header. -->
-    <OperatorToolbar
-      v-if="boardAsTabs && view === 'board' && zones.length"
-      class="py-2"
-    >
-      <NuxtTabs
-        :model-value="phoneZone"
-        :items="phoneTabItems"
-        :content="false"
-        variant="link"
-        data-board-zone-tabs
-        @update:model-value="pickPhoneZone"
-      >
-        <template #default="{ item }"><span :class="item.iconOnlyOnPhone ? 'max-sm:sr-only' : undefined">{{ item.label }}</span></template>
-        <template #trailing="{ item }"><OperatorCountChip :count="item.count" /></template>
-      </NuxtTabs>
-    </OperatorToolbar>
+    </OperatorPageHeader>
 
 
     <section
@@ -1802,26 +2068,42 @@ function printQueue() {
         @dismiss-alarm="volumeCheck.dismissAlarm"
         @end="volumeCheck.end"
       />
+      <!-- O navegador só deixa tocar som depois do primeiro toque na tela, e qualquer toque
+           já liga (o kit escuta o primeiro gesto). O aviso não bloqueia a fila (dono,
+           14/11): fecha no X e volta enquanto o som seguir mudo. -->
+      <NuxtAlert
+        v-if="isPhone && soundOn && soundBlocked && notices.isOpen('sound-blocked')"
+        v-bind="notices.closeProps"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-volume-x"
+        title="Som dos pedidos desligado"
+        description="Toque na tela para ligar."
+        data-sound-blocked
+        @update:open="notices.onOpen('sound-blocked', $event)"
+      />
       <!-- A fila é lida só no cliente (`server: false`): o servidor e a hidratação
            desenham o esqueleto também, senão o cliente hidratava um nó que o servidor
            não mandou. -->
       <div
         v-if="(pending || !hydrated) && !zones.length"
         class="grid gap-3 md:grid-cols-2 lg:grid-cols-3"
-        aria-label="Carregando fila"
+        aria-label="Carregando pedidos"
       >
         <NuxtSkeleton v-for="i in 3" :key="i" class="h-40 w-full" />
       </div>
       <!-- `!stationLocked`: antes do PIN toda leitura volta 403 `station_locked`; quem
            fala nesse estado é a identificação que sobe por cima (app.vue). -->
       <NuxtAlert
-        v-else-if="error && !stationLocked"
+        v-else-if="error && !stationLocked && notices.isOpen(`queue-error:${queueFailures}`)"
+        v-bind="notices.closeProps"
         color="error"
         variant="subtle"
         icon="i-lucide-triangle-alert"
-        title="Falha ao atualizar a fila"
+        title="Falha ao atualizar os pedidos"
         description="Mantivemos a última leitura; atualize antes de confirmar ações."
         data-queue-error
+        @update:open="notices.onOpen(`queue-error:${queueFailures}`, $event)"
       />
 
       <template v-if="queue">
@@ -1873,37 +2155,56 @@ function printQueue() {
           @switch="(ref_) => (switchRef = ref_)"
         />
 
-        <!-- O quadro usa o Splitter oficial do kit no desktop. No celular, as tabs
+        <!-- O painel usa o Splitter oficial do kit no desktop. No celular, as tabs
              mantêm uma coluna por vez: nenhuma alça ou faixa paralela ao Nuxt UI. -->
         <template v-else-if="view === 'board'">
           <OperatorSplitter
             v-if="!boardAsTabs"
             id="orders-board-columns"
+            ref="boardSplitter"
             :persistence-key="boardSplitterPersistenceKey"
             :items="boardSplitterItems"
             class="min-h-full flex-1"
             handle-label="Ajustar largura das colunas"
+            quiet
             data-board-columns
             @layout="boardLayout.applySizes"
           >
             <template v-for="zone in desktopZones" :key="zone.key" #[zone.key]>
+              <!-- As colunas recolhidas ficam no lugar delas, como tira: as que vêm
+                   antes desta coluna aberta (e, na última, as que vêm depois). -->
+              <div class="flex h-full min-h-0 w-full min-w-0 gap-2.5 px-1">
+              <OrderBoardStrip
+                v-for="closed in boardStrips[zone.key]?.before ?? []"
+                :key="closed.key"
+                :strip="closed"
+                :shortcut="shortcutHint(closed.key)"
+                @open="boardLayout.open(closed.key)"
+              />
               <OrderBoardColumn
                 :zone="zone"
+                :courier-call-refs="courierCallRefs"
+                :waiting-band="waitingBand"
                 :cards="triaged(zone)"
                 :now-ms="nowMs"
                 :next-ref="zoneNext(zone)"
                 :phone="false"
                 :wide="wideColumn(zone.key)"
+                :two-up="desktopZones.length === 1 && !wideColumn(zone.key)"
                 :can-open="canManageOrders"
                 :selecting="selecting"
                 :can-collapse="boardLayout.canCollapse(zone.key)"
                 :shortcut="shortcutHint(zone.key)"
-                :is-busy="isBusy"
+                :is-busy="cardBusy"
                 :action-error="actionError"
                 :is-selected="isSelected"
                 :danfe-printing="danfePrint.isPrinting"
                 :swipe-actions="swipeActions"
                 :heading="!exitPostView"
+                :house-rides="houseRides"
+                :house-busy="houseBusy"
+                @house-gesture="houseGesture"
+                @house-back="houseBack"
                 @collapse="boardLayout.toggle(zone.key)"
                 @action="onAction"
                 @dismiss-error="clearActionError"
@@ -1916,6 +2217,14 @@ function printQueue() {
                 @volumes="declareVolumes"
                 @swipe="onSwipe"
               />
+              <OrderBoardStrip
+                v-for="closed in boardStrips[zone.key]?.after ?? []"
+                :key="closed.key"
+                :strip="closed"
+                :shortcut="shortcutHint(closed.key)"
+                @open="boardLayout.open(closed.key)"
+              />
+              </div>
             </template>
           </OperatorSplitter>
 
@@ -1924,6 +2233,8 @@ function printQueue() {
             v-else
             :key="zone.key"
             :zone="zone"
+            :courier-call-refs="courierCallRefs"
+            :waiting-band="waitingBand"
             :cards="triaged(zone)"
             :now-ms="nowMs"
             :next-ref="zoneNext(zone)"
@@ -1933,11 +2244,15 @@ function printQueue() {
             :selecting="selecting"
             :can-collapse="false"
             :shortcut="shortcutHint(zone.key)"
-            :is-busy="isBusy"
+            :is-busy="cardBusy"
             :action-error="actionError"
             :is-selected="isSelected"
             :danfe-printing="danfePrint.isPrinting"
             :swipe-actions="swipeActions"
+            :house-rides="houseRides"
+            :house-busy="houseBusy"
+            @house-gesture="houseGesture"
+            @house-back="houseBack"
             @action="onAction"
             @dismiss-error="clearActionError"
             @toggle-select="toggleSelect"
@@ -1951,7 +2266,7 @@ function printQueue() {
           />
         </template>
 
-        <!-- A Lista: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
+        <!-- A Tabela: a tabela da suíte (`OperatorTable`, compacta por padrão), com a
              linha que abre os detalhes e as outras ações. -->
         <OperatorTable
           v-else
@@ -1965,12 +2280,15 @@ function printQueue() {
           pinned="order"
           view-key="orders-queue"
           empty-icon="i-lucide-inbox"
-          empty-title="Nenhum pedido precisa de você agora."
-          caption="Lista dos pedidos em andamento"
+          empty-title="Nenhum pedido em andamento."
+          caption="Tabela dos pedidos em andamento"
           data-supervision-table
         >
           <template #order-cell="{ row }">
-            <div class="flex min-w-36 flex-col">
+            <div
+              class="flex min-w-36 flex-col"
+              :data-focus-target="orderFocusKey(row.original.card.ref)"
+            >
               <NuxtLink
                 v-if="canManageOrders"
                 :to="`/${row.original.card.ref}`"
@@ -1992,6 +2310,27 @@ function printQueue() {
                   row.original.card.customer_name || "Sem cliente"
                 }}</span>
               </span>
+              <!-- O combinado, com as palavras do cartão (WP-G01). -->
+              <NuxtBadge
+                v-if="schedulePromise(row.original.card)"
+                class="mt-1 max-w-full self-start"
+                :color="schedulePromise(row.original.card)!.color"
+                :icon="schedulePromise(row.original.card)!.icon"
+                :data-table-promise="schedulePromise(row.original.card)!.state"
+              >
+                <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+                <span class="whitespace-normal text-start">{{ schedulePromise(row.original.card)!.label }}</span>
+              </NuxtBadge>
+              <!-- A promessa em risco (WP-G08): o nome do estado; o item e as saídas
+                   moram na linha aberta. -->
+              <NuxtBadge
+                v-if="promiseRisk(row.original.card)"
+                class="mt-1 self-start"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="promiseRisk(row.original.card)!.label"
+                data-table-promise-risk
+              />
             </div>
           </template>
           <template #stage-cell="{ row }">
@@ -2022,7 +2361,7 @@ function printQueue() {
             <!-- O relógio vivo do kit (useNowTick), como a Grade: P1-8. -->
             <NuxtBadge
               :color="
-                liveAge(row.original.card, nowMs).tone === 'ok'
+                liveAge(row.original.card, nowMs).tone === 'neutral'
                   ? 'neutral'
                   : 'warning'
               "
@@ -2032,8 +2371,15 @@ function printQueue() {
           </template>
           <template #actions-cell="{ row }">
             <div class="flex min-w-max items-center justify-end gap-1.5">
+              <NuxtBadge
+                v-if="rowBlock(row.original.card)"
+                :color="rowBlock(row.original.card)!.color"
+                :icon="rowBlock(row.original.card)!.icon"
+                :label="rowBlock(row.original.card)!.label"
+                data-supervision-block
+              />
               <NuxtButton
-                v-if="rowPrimary(row.original.card)"
+                v-else-if="rowPrimary(row.original.card)"
                 :icon="
                   rowPrimary(row.original.card)!.disabled
                     ? 'i-lucide-lock'
@@ -2057,7 +2403,6 @@ function printQueue() {
                   isBusy(row.original.card.ref) ||
                   rowPrimary(row.original.card)!.disabled
                 "
-                :title="rowPrimary(row.original.card)!.reason || undefined"
                 data-supervision-primary
                 @click="
                   onAction(
@@ -2081,6 +2426,43 @@ function printQueue() {
                 @station-recall="
                   (pk) => recallStation(row.original.card.ref, pk)
                 "
+              />
+            </div>
+            <!-- Por que o gesto do momento está travado, escrito: o `title` não existe
+                 no toque. Quebra a linha, nunca corta. -->
+            <p
+              v-if="rowPrimaryReason(row.original.card)"
+              class="ms-auto mt-1 max-w-64 whitespace-normal text-end text-xs text-muted"
+              data-supervision-primary-reason
+            >
+              {{ rowPrimaryReason(row.original.card) }}
+            </p>
+            <!-- Pix ou link vencido nunca destrava sozinho: a frase diz o fato, e o botão
+                 que resolve vem junto, na própria célula (coordenação, 21/11/2026). -->
+            <div
+              v-if="row.original.card.payment_lapsed && canManageOrders"
+              class="mt-1.5 flex flex-wrap justify-end gap-1.5"
+            >
+              <NuxtButton
+                :to="`/${row.original.card.ref}#cancel-unpaid`"
+                icon="i-lucide-ban"
+                label="Cancelar pedido"
+                color="error"
+                variant="outline"
+                data-supervision-cancel-unpaid-cell
+              />
+              <!-- Abre a conversa direto, sem escrever o número na linha (#2434). -->
+              <NuxtButton
+                v-if="row.original.card.customer_whatsapp_url"
+                :to="row.original.card.customer_whatsapp_url"
+                external
+                target="_blank"
+                rel="noopener noreferrer"
+                icon="i-lucide-message-circle"
+                label="Chamar no WhatsApp"
+                color="neutral"
+                variant="outline"
+                data-supervision-call-customer-cell
               />
             </div>
             <NuxtAlert
@@ -2116,10 +2498,10 @@ function printQueue() {
                     · {{ row.original.card.delivery_address }}</template
                   >
                 </dd>
-                <template v-if="row.original.card.payment_method_label">
+                <template v-if="paymentLabel(row.original.card)">
                   <dt class="text-muted-foreground">Pagamento</dt>
                   <dd>
-                    {{ row.original.card.payment_method_label
+                    {{ paymentLabel(row.original.card)
                     }}<template v-if="row.original.card.change_label">
                       · {{ row.original.card.change_label }}</template
                     >
@@ -2133,33 +2515,116 @@ function printQueue() {
                   <dt class="text-muted-foreground">Atende</dt>
                   <dd>{{ row.original.card.assigned_operator }}</dd>
                 </template>
-                <template v-if="row.original.card.advance_block_reason">
+                <template
+                  v-if="
+                    row.original.card.advance_block_reason &&
+                    row.original.card.advance_block_reason !==
+                      rowPrimaryReason(row.original.card)
+                  "
+                >
                   <dt class="text-muted-foreground">Por que espera</dt>
                   <dd>{{ row.original.card.advance_block_reason }}</dd>
                 </template>
+                <template v-if="promiseRisk(row.original.card)">
+                  <dt class="font-medium text-error">
+                    {{ promiseRisk(row.original.card)!.label }}
+                  </dt>
+                  <dd data-supervision-promise-risk>
+                    <ul class="flex flex-col gap-1.5">
+                      <li
+                        v-for="item in promiseRisk(row.original.card)!.items"
+                        :key="item.key"
+                        class="flex flex-col"
+                      >
+                        <span class="font-medium">{{ item.label }}</span>
+                        <span class="text-muted-foreground">{{ item.detail }}</span>
+                        <OrderPromiseSuggestions
+                          v-if="item.suggestions.length"
+                          class="mt-1"
+                          :options="item.suggestions"
+                        />
+                      </li>
+                    </ul>
+                    <!-- O próximo passo, com as palavras do servidor. -->
+                    <p
+                      v-if="promiseRisk(row.original.card)!.nextStep"
+                      class="mt-2 font-medium"
+                      data-supervision-promise-next-step
+                    >
+                      {{ promiseRisk(row.original.card)!.nextStep }}
+                    </p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <OrderPromiseExits
+                        :exits="promiseRisk(row.original.card)!.exits"
+                        :code="splitRef(row.original.card.ref).code"
+                        @resolve="openResolve(row.original.card.ref)"
+                      />
+                    </div>
+                    <p
+                      v-for="reason in promiseRisk(row.original.card)!.blockedReasons"
+                      :key="reason"
+                      class="mt-1 text-xs text-muted"
+                    >
+                      {{ reason }}
+                    </p>
+                  </dd>
+                </template>
               </dl>
-              <div
-                class="flex flex-wrap content-start items-start justify-end gap-2"
-              >
-                <NuxtButton
-                  v-for="aff in rowSecondary(row.original.card)"
-                  :key="aff.ref"
-                  :icon="aff.icon.replace('lucide:', 'i-lucide-')"
-                  :label="aff.label"
-                  :color="aff.priority === 'danger' ? 'error' : 'neutral'"
-                  variant="outline"
-                  :disabled="isBusy(row.original.card.ref) || aff.disabled"
-                  :title="aff.reason || undefined"
-                  @click="onAction(row.original.card.ref, aff.ref)"
-                />
-                <NuxtButton
-                  v-if="canManageOrders"
-                  :to="`/${row.original.card.ref}`"
-                  icon="i-lucide-file-text"
-                  label="Abrir o pedido"
-                  color="neutral"
-                  variant="outline"
-                />
+              <div class="flex flex-col gap-2">
+                <div
+                  class="flex flex-wrap content-start items-start justify-end gap-2"
+                >
+                  <NuxtButton
+                    v-for="aff in rowSecondary(row.original.card)"
+                    :key="aff.ref"
+                    :icon="aff.icon.replace('lucide:', 'i-lucide-')"
+                    :label="aff.label"
+                    :color="aff.priority === 'danger' ? 'error' : 'neutral'"
+                    variant="outline"
+                    :disabled="isBusy(row.original.card.ref) || aff.disabled"
+                    @click="onAction(row.original.card.ref, aff.ref)"
+                  />
+                  <!-- Pix ou link vencido nunca destrava sozinho: a saída vem pronta,
+                       como no cartão (o detalhe abre o cancelar com o motivo marcado). -->
+                  <NuxtButton
+                    v-if="row.original.card.payment_lapsed && canManageOrders"
+                    :to="`/${row.original.card.ref}#cancel-unpaid`"
+                    icon="i-lucide-ban"
+                    label="Cancelar pedido"
+                    color="error"
+                    variant="outline"
+                    data-supervision-cancel-unpaid
+                  />
+                  <NuxtButton
+                    v-if="row.original.card.payment_lapsed && row.original.card.customer_whatsapp_url && canManageOrders"
+                    :to="row.original.card.customer_whatsapp_url"
+                    external
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    icon="i-lucide-message-circle"
+                    label="Chamar no WhatsApp"
+                    color="neutral"
+                    variant="outline"
+                    data-supervision-call-customer
+                  />
+                  <NuxtButton
+                    v-if="canManageOrders"
+                    :to="`/${row.original.card.ref}`"
+                    icon="i-lucide-file-text"
+                    label="Abrir o pedido"
+                    color="neutral"
+                    variant="outline"
+                  />
+                </div>
+                <!-- Por que o gesto está travado, escrito (o `title` não existe no toque). -->
+                <p
+                  v-for="line in rowBlockedReasons(row.original.card)"
+                  :key="line"
+                  class="text-end text-xs text-muted"
+                  data-supervision-blocked-reason
+                >
+                  {{ line }}
+                </p>
               </div>
             </div>
           </template>
@@ -2177,54 +2642,20 @@ function printQueue() {
           </template>
         </OperatorTable>
 
-        <!-- Encomendas: pedidos confirmados para datas futuras, fora das colunas
-             do dia. Agrupados pela data combinada; no dia, o despertador devolve
-             o pedido ao fluxo normal do board. -->
-        <section v-if="preordersCount" class="mt-6" data-preorders-section>
-          <div class="flex items-center gap-2 border-b pb-2">
-            <Icon
-              name="lucide:calendar-clock"
-              class="size-4 text-muted-foreground"
-            />
-            <h2 class="text-sm font-bold uppercase tracking-wide">Encomendas</h2>
-            <OperatorCountChip :count="preordersCount" />
-            <span
-              class="ms-auto hidden text-end text-xs text-muted-foreground sm:block"
-              >Confirmados para os próximos dias</span
-            >
-          </div>
-          <div class="mt-3 grid gap-4 lg:grid-cols-3">
-            <div
-              v-for="group in triagedPreorders"
-              :key="group.date"
-              class="flex min-w-0 flex-col gap-3"
-            >
-              <h3
-                class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-              >
-                {{ group.label }}
-              </h3>
-              <OrderCard
-                v-for="card in group.cards"
-                :key="card.ref"
-                :card="card"
-                :busy="isBusy(card.ref)"
-                :error="actionError(card.ref)"
-                :selected="isSelected(card.ref)"
-                :selecting="selecting"
-                :danfe-printing="danfePrint.isPrinting(card.ref)"
-                :can-open="canManageOrders"
-                @action="(action) => onAction(card.ref, action)"
-                @dismiss-error="clearActionError(card.ref)"
-                @toggle-select="toggleSelect(card.ref)"
-                @toggle-assign="onToggleAssign(card)"
-                @select-mode="startSelection(card.ref)"
-                @print-danfe="danfePrint.printDanfe(card.ref)"
-              />
-            </div>
-          </div>
-        </section>
+        <!-- Encomendas: os pedidos dos próximos dias, fora das colunas do dia, numa lista
+             simples (dono, 13/11/2026). No dia, o despertador devolve o pedido ao
+             fluxo normal do painel. -->
+        <OrderPreorderList
+          v-if="preordersCount"
+          :groups="triagedPreorders"
+          :count="preordersCount"
+          :highlight-ref="acceptedPreorder?.ref"
+          @resolve="openResolve"
+        />
       </template>
+      <!-- Tem mais abaixo: a lista de Encomendas fica depois do painel de altura cheia.
+           Contida, porque quem rola é esta seção, não a janela. -->
+      <MoreBelow v-if="preordersCount" contained />
     </section>
 
     <!-- A barra de seleção da suíte, abaixo do `lg`: na base (a da mesa toma o lugar
@@ -2248,92 +2679,41 @@ function printQueue() {
       data-exit-base-action
     />
 
-    <!-- reject dialog -->
-    <NuxtModal
+    <!-- reject dialog: o mesmo diálogo de motivo do detalhe do pedido. No painel ele
+         diz qual pedido é e lê o destino do dinheiro ao abrir. -->
+    <OrderReasonDialog
       :open="rejectRef != null"
-      :title="`Recusar pedido ${rejectRef ?? ''}`"
-      :description="
-        isMarketplaceReject
-          ? 'Escolha o motivo que o iFood exige. Ele é enviado ao iFood.'
-          : 'Informe o motivo. O cliente recebe o aviso com ele.'
-      "
+      mode="reject"
+      identify
+      :order="rejectOrder"
+      :money-effect="rejectRead.order.value?.cancel_money_effect ?? ''"
+      :money-read="rejectRead.state.value"
+      :error="rejectError"
+      :error-field="rejectErrorField"
+      :marketplace="isMarketplaceReject"
+      :cancel-reasons="cancelReasons"
+      :busy="Boolean(rejectRef && isBusy(rejectRef))"
+      @retry-money="rejectRef && rejectRead.read(rejectRef)"
+      @dirty-change="rejectDirty = $event"
       @update:open="
         (v) => {
           if (!v) closeReject();
         }
       "
-    >
-      <template #body>
-        <div class="grid gap-4">
-          <NuxtEmpty
-            v-if="rejectReasonsLoading"
-            loading
-            size="sm"
-            title="Carregando motivos do iFood…"
-          />
-          <NuxtAlert
-            v-else-if="rejectReasonsError"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="rejectReasonsError"
-            :actions="alertActions('error', [
-              {
-                label: 'Consultar novamente',
-                onClick: () => loadRejectReasons(),
-              },
-            ])"
-          />
-          <NuxtEmpty
-            v-else-if="isMarketplaceReject && !rejectReasons.length"
-            icon="i-lucide-circle-slash"
-            title="Nenhum motivo disponível"
-            description="O iFood não oferece motivos de cancelamento neste momento."
-          />
-          <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
-          <NuxtSelect
-            v-else-if="isMarketplaceReject"
-            v-model="rejectCode"
-            class="w-full"
-            :items="
-              rejectReasons.map((reason) => ({
-                label: reason.description,
-                value: reason.code,
-              }))
-            "
-            placeholder="Selecione o motivo…"
-            aria-label="Motivo do cancelamento (iFood)"
-            @update:model-value="onRejectCodeChange"
-          />
-          <!-- Other channels: free-text reason -->
-          <NuxtTextarea
-            v-else
-            v-model="rejectReason"
-            class="w-full"
-            :rows="3"
-            placeholder="Motivo da recusa…"
-            aria-label="Motivo da recusa"
-          />
-        </div>
-      </template>
-      <template #footer>
-        <NuxtButton
-          label="Voltar"
-          color="neutral"
-          variant="outline"
-          :disabled="Boolean(rejectRef && isBusy(rejectRef))"
-          @click="closeReject"
-        />
-        <NuxtButton
-          label="Recusar pedido"
-          color="error"
-          :disabled="
-            !canConfirmReject || Boolean(rejectRef && isBusy(rejectRef))
-          "
-          @click="confirmReject"
-        />
-      </template>
-    </NuxtModal>
+      @confirm="confirmReject"
+    />
+
+    <!-- "Resolver" a promessa em risco: um diálogo só para o cartão, a Fila e a Tabela -->
+    <OrderPromiseResolveDialog
+      :open="resolveOpen"
+      :order-ref="resolveRef"
+      :managers="queue?.awareness?.managers ?? []"
+      :viewer-name="queue?.awareness?.viewer_name ?? ''"
+      @update:open="(value: boolean) => (resolveOpen = value)"
+      @changed="refresh()"
+      @cancel="cancelFromResolve"
+      @notify="notifyFromResolve"
+    />
 
     <!-- o interruptor do canal (coluna da Fila): o mesmo diálogo de Canais -->
     <ChannelSwitchDialog
@@ -2348,6 +2728,19 @@ function printQueue() {
           if (!value) switchRef = null;
         }
       "
+    />
+
+    <!-- Chamar entregador do cartão Pronto: o MESMO sheet das Entregas e do detalhe (#2876). -->
+    <CourierCallSheet
+      v-bind="courierSheet"
+      @close="courierCall.closeSheet"
+      @confirm="courierCall.confirmSheet"
+      @alone="courierCall.confirmAlone"
+      @toggle="courierCall.toggleCompanion"
+      @change="courierCall.setChange"
+      @machine="courierCall.chooseMachine"
+      @carrier="courierCall.chooseCarrier"
+      @note="courierCall.setNote"
     />
 
     <!-- saída para entrega (só quando há o que perguntar) -->

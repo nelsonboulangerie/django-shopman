@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.utils.formatting import format_local
+
 logger = logging.getLogger(__name__)
 
 ESC = 0x1B
@@ -70,7 +72,7 @@ def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: 
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered("NELSON BOULANGERIE")
+    out += _store_heading()
     out += _centered(str(entry.get_kind_display()).upper())
     if reprint:
         # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
@@ -142,6 +144,20 @@ _TRANSLITERACAO = str.maketrans(
 )
 
 
+def _store_heading(shop_name: str = "") -> bytes:
+    """O nome da loja no topo do papel: o que veio, ou a marca da ``Shop``.
+
+    Nunca um nome escrito aqui. Sem loja cadastrada, o papel sai sem a linha.
+    """
+    name = (shop_name or "").strip()
+    if not name:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        name = ((shop.brand_name or shop.name) if shop else "").strip()
+    return _centered(name.upper()) if name else b""
+
+
 def _line(text: str) -> bytes:
     return text.translate(_TRANSLITERACAO).encode(ENCODING, "replace") + b"\n"
 
@@ -197,9 +213,8 @@ def _wrap(text: str, width: int) -> list[str]:
 
 
 def _local(quando) -> str:
-    from django.utils import timezone
 
-    return timezone.localtime(quando).strftime("%d/%m/%Y %H:%M")
+    return format_local(quando, "%d/%m/%Y {clock}")
 
 
 def _qr(data: str, *, module: int = 6) -> bytes:
@@ -333,7 +348,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     out += _centered("Recibo não fiscal")
     if reprint:
         # Sem esta marca, dois papéis idênticos circulam e a segunda via passa
@@ -417,6 +432,86 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
         out += _centered("COBRAR NA ENTREGA" if get_fulfillment_type(order) == "delivery" else "COBRAR NA RETIRADA")
     else:
         out += _centered("Obrigado pela preferência!")
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial
+    return bytes(out)
+
+
+
+def retention_receipt(receipt, *, verify_url: str = "", reprint: bool = False) -> bytes:
+    """Recibo do valor retido de uma encomenda não retirada (#3538).
+
+    ``receipt`` é o ``no_show.RetentionReceipt``: a leitura do que o gesto do
+    "Não retirado" gravou. Contador (24/11/2026, #2695): o valor retido é multa,
+    com recibo e sem NFC-e. Por isso o papel diz o que o valor é, de quem é a
+    loja (razão social e CNPJ) e que não é documento fiscal.
+
+    O QR leva à página do pedido, onde o mesmo recibo está escrito: o papel
+    aponta para o registro, como o comprovante de gaveta.
+    """
+    from shopman.utils.monetary import format_money
+
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _store_heading(receipt.store_name)
+    if receipt.legal_name:
+        for pedaco in _wrap(receipt.legal_name, COLUMNS):
+            out += _centered(pedaco)
+    if receipt.tax_id:
+        out += _centered(f"CNPJ {receipt.tax_id}")
+    out += _rule()
+    out += _centered(receipt.title)
+    if reprint:
+        out += _centered("*** 2a VIA ***")
+    out += _rule()
+
+    out += _pair(f"Pedido {receipt.order_ref}", _local(receipt.closed_at) if receipt.closed_at else "")
+    if receipt.customer_name:
+        out += _line(f"Cliente: {receipt.customer_name}"[:COLUMNS])
+    if receipt.commitment_day:
+        out += _line(f"Dia combinado: {receipt.commitment_day:%d/%m/%Y}")
+    out += _rule()
+
+    if receipt.lines:
+        out += _line("Ficou com a loja:")
+        for line in receipt.lines:
+            for pedaco in _wrap(line.name, COLUMNS):
+                out += _line(pedaco)
+            out += _pair(f"  Quantidade: {line.qty}", f"R$ {format_money(line.value_q)}")
+            # O cálculo à vista: quem confere não precisa saber a regra de cor.
+            out += _pair(
+                f"  {line.percent}% de R$ {format_money(line.value_q)}", f"R$ {format_money(line.retained_q)}"
+            )
+        out += _rule()
+
+    if receipt.mixed:
+        # Parte na conta da casa (#3151): a conta sai primeiro, depois o dinheiro.
+        out += _pair("Valor do pedido", f"R$ {format_money(receipt.paid_q)}")
+        if receipt.from_account_q:
+            out += _pair("Saiu da conta na loja", f"R$ {format_money(receipt.from_account_q)}")
+        out += _pair("Devolvido ao cliente", f"R$ {format_money(receipt.refund_q)}")
+        if receipt.debt_left_q:
+            out += _pair("Continua na conta na loja", f"R$ {format_money(receipt.debt_left_q)}")
+    else:
+        out += _pair("Pago", f"R$ {format_money(receipt.paid_q)}")
+        out += _pair("Devolvido ao cliente", f"R$ {format_money(receipt.refund_q)}")
+    out += _rule()
+    out += _line("")
+    out += _double(f"RETIDO R$ {format_money(receipt.retained_q)}")
+    out += _line("")
+    out += _rule()
+
+    for pedaco in _wrap(receipt.nature, COLUMNS):
+        out += _line(pedaco)
+    out += _centered("Não é documento fiscal.")
+
+    if verify_url:
+        out += _line("")
+        out += _centered("O mesmo recibo, na página do pedido:")
+        out += _qr(verify_url)
 
     out += bytes([ESC, ord("d"), 4])
     out += bytes([GS, ord("V"), 1])  # corte parcial
@@ -589,7 +684,7 @@ def order_ticket(
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     # "Ficha do pedido", nunca "comprovante": o papel que diz no rodapé que não
     # comprova pagamento não pode se apresentar como comprovante no topo.
     out += _centered("Ficha do pedido")
@@ -818,7 +913,7 @@ def _charge_at_the_door_lines(order, payment: dict) -> bytes:
 
     from shopman.backstage.presentation.status import payment_method_label
     from shopman.shop.services import order_composition
-    from shopman.shop.services.operator_orders import _change_for_q, change_out_suggested_q
+    from shopman.shop.services.operator_orders import change_for_q, change_out_suggested_q
 
     out = bytearray()
     out += _centered("COBRAR NA ENTREGA")
@@ -835,14 +930,14 @@ def _charge_at_the_door_lines(order, payment: dict) -> bytes:
             payment_method_label(str(tender.get("method") or "")),
             f"R$ {format_money(int(tender.get('amount_q') or 0))}",
         )
-    change_for_q = _change_for_q(order)
+    requested_change_q = change_for_q(order)
     # Quem decide se há troco é a LINHA em espécie, não o método do topo. No
     # pedido do marketplace o método do topo é `external` (o iFood é que
     # precifica e concilia) e a parcela em dinheiro só aparece na linha —
     # perguntar ao topo deixava a comanda do iFood sem "Troco para".
     if any(str(tender.get("method") or "").lower() in {"cash", "mixed"} for tender in a_receber):
-        if change_for_q:
-            out += _pair("Troco para", f"R$ {format_money(change_for_q)}")
+        if requested_change_q:
+            out += _pair("Troco para", f"R$ {format_money(requested_change_q)}")
             out += _pair("Levar de troco", f"R$ {format_money(change_out_suggested_q(order))}")
         else:
             out += _line("Troco: não informado; confirmar com cliente")
@@ -923,7 +1018,7 @@ def courier_ticket(order, *, shop_name: str = "", reprint: bool = False) -> byte
     out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(shop_name)
     # O nome da via no alto, e não só no rodapé de quem programou: duas pessoas
     # segurando papéis diferentes precisam saber qual é qual antes de comparar.
     out += _centered("Via do entregador (identificada)" if identificada else "Via do entregador (anônima)")
@@ -1067,7 +1162,7 @@ def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     out += bytes([ESC, ord("@")])
     out += bytes([ESC, ord("t"), CODE_PAGE])
 
-    out += _centered((doc.shop_name or "NELSON BOULANGERIE").upper())
+    out += _store_heading(doc.shop_name)
     if doc.shop_legal_name:
         out += _centered(doc.shop_legal_name)
     if doc.shop_cnpj:

@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import { fomoBadgeViews, fomoCoversLowStock } from '~/presentation/fomo'
 import { tileBadge } from '~/presentation/menu'
 import { hasOptionGroups } from '~/presentation/productOptions'
 import type { CatalogItemProjection, ProductMutationMeta } from '~/types/shopman'
 import { compactUnitWeightLabel, formatCount } from '~/utils/display'
+import { adjustmentLabel, quoteOriginalPriceDisplay, quotePriceDisplay } from '~/presentation/priceQuote'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { menuDayItemBadge } from '~/presentation/menuDay'
 
 const props = withDefaults(defineProps<{
   item: CatalogItemProjection
@@ -18,41 +22,70 @@ const props = withDefaults(defineProps<{
 })
 
 const { qtyForSku } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// No cardápio da variante B o card manda o dia escolhido com o Adicionar (OC-33 B1).
+const menuDay = injectMenuDay()
 const meta = computed<ProductMutationMeta>(() => ({
   sku: props.item.sku,
   name: props.item.name,
-  price_q: props.item.base_price_q,
-  price_display: props.item.price_display,
-  image_url: props.item.image_url
+  price_q: props.item.quote.final_unit_price_q,
+  price_display: quotePriceDisplay(props.item.quote),
+  image_url: props.item.image_url,
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  ...(menuDay?.date.value ? { date: menuDay.date.value } : {})
 }))
 const currentQty = computed(() => qtyForSku(props.item.sku))
 // Com escolhas, o "+" abre a folha e nunca vira pílula de quantidade; a contagem
 // da sacola (somando as linhas do SKU) aparece ao lado do preço.
 const withOptions = computed(() => hasOptionGroups(props.item.option_groups))
-const badge = computed(() => tileBadge(props.item))
+// Selos de urgência (#2807): fornada pronta há pouco, últimas N unidades, promoção
+// acabando. O de estoque com o número substitui o "Últimas unidades" genérico.
+const now = useMinuteClock()
+const fomo = computed(() => fomoBadgeViews(props.item.fomo_badges, now.value))
+const badge = computed(() => {
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // No dia escolhido a frase é a do dia, já escrita pelo servidor: nada desde a
+  // abertura, "A partir das 11h" depois; indisponível é a etiqueta da foto.
+  if (menuDay?.onDay.value) {
+    const label = menuDayItemBadge(props.item)
+    return label ? { label, variant: 'outline' as const } : null
+  }
+  const base = tileBadge(props.item)
+  return base && props.item.availability === 'low_stock' && fomoCoversLowStock(props.item.fomo_badges) ? null : base
+})
 </script>
 
 <template>
-  <article class="group/product-list relative flex min-w-0 items-stretch gap-3 py-3" data-product-list-item>
+  <!-- O texto tem piso de 10rem (ou a largura toda, se menor), que cresce com a fonte:
+       com a fonte do sistema a 200 % a foto ocupava a linha e espremia nome, preço e selos
+       até sumirem (X11, OC-30). Aí a foto desce para baixo do texto. -->
+  <article class="group/product-list relative flex min-w-0 flex-wrap items-stretch gap-3 py-3" data-product-list-item>
     <NuxtLink
       :to="`/produto/${encodeURIComponent(item.sku)}`"
       class="absolute inset-0 z-0 rounded-md"
       :aria-label="`Ver detalhes de ${item.name}`"
     />
 
-    <div class="min-w-0 flex-1 self-center">
+    <div class="min-w-[min(10rem,100%)] flex-1 basis-0 self-center">
       <h3 class="shop-item-title line-clamp-2">{{ item.name }}</h3>
       <p v-if="item.short_description" class="mt-2 line-clamp-2 shop-meta">
         {{ item.short_description }}
       </p>
-      <UiBadge v-if="!pending && badge && item.availability !== 'unavailable'" :variant="badge.variant" class="mt-2 font-normal">{{ badge.label }}</UiBadge>
+      <div v-if="!pending && item.availability !== 'unavailable' && (badge || fomo.length)" class="mt-2 flex flex-wrap gap-2" data-product-badges>
+        <UiBadge v-for="selo in fomo" :key="selo.type" :variant="selo.variant" class="font-normal" :data-fomo-badge="selo.type" data-decisive="availability">{{ selo.label }}</UiBadge>
+        <UiBadge v-if="badge" :variant="badge.variant" class="font-normal" data-decisive="availability">{{ badge.label }}</UiBadge>
+      </div>
       <DietaryWarningBadges v-if="!pending" :warnings="item.dietary_warnings" class="mt-2" />
+      <p v-if="!pending && item.is_notifiable" class="mt-2 shop-meta text-muted-foreground" data-stock-notify-recurrence>
+        Avisos recorrentes pelo WhatsApp
+      </p>
       <div v-if="pending" class="mt-2" aria-label="Confirmando preço e disponibilidade">
         <UiSkeleton class="h-5 w-24" />
       </div>
       <p v-else class="mt-2 flex flex-wrap items-baseline gap-x-2">
-        <span v-if="item.original_price_display" class="shop-meta">antes <span class="line-through">{{ item.original_price_display }}</span></span>
-        <span class="shop-price">{{ item.price_display }}</span>
+        <span v-if="quoteOriginalPriceDisplay(item.quote)" class="shop-meta" data-decisive="price">antes <span class="line-through">{{ quoteOriginalPriceDisplay(item.quote) }}</span></span>
+        <span class="shop-price" data-decisive="price">{{ quotePriceDisplay(item.quote) }}</span>
+        <span v-for="adjustment in item.quote.adjustments" :key="adjustment.code" class="min-w-0 max-w-full text-sm font-semibold text-promotion" :title="adjustmentLabel(adjustment)" data-product-promotion data-decisive="price">{{ adjustmentLabel(adjustment) }}</span>
         <span v-if="item.unit_weight_label" class="shop-meta">{{ compactUnitWeightLabel(item.unit_weight_label) }}</span>
         <span v-if="withOptions && currentQty" class="shop-meta" data-product-options-in-cart>{{ formatCount(currentQty, 'na sacola', 'na sacola') }}</span>
       </p>
@@ -96,7 +129,7 @@ const badge = computed(() => tileBadge(props.item))
         class="absolute z-10 flex justify-center"
         :class="framed ? 'shop-photo-control-top-sm' : 'inset-x-0 top-3'"
       >
-        <UiBadge class="max-w-full border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
+        <UiBadge class="max-w-full border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm" data-decisive="availability">Indisponível</UiBadge>
       </div>
       <!-- Notificável: pill "Me avise"/"Anotado" ocupa TODA a largura da foto (centrado),
            no rodapé — sem extravasar. -->

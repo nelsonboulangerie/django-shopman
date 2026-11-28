@@ -2,9 +2,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { effectScope, ref } from "vue";
 import { installNuxtGlobals } from "./support/composableEnv";
 import { useNotifications } from "../app/composables/useNotifications";
+import { useOperatorSession } from "../app/composables/useOperatorSession";
 
 const env = installNuxtGlobals();
-const session = ref<any>({ operator: { id: 1 } });
+// Uma sessão por teste, como um app por teste: a caixa é compartilhada por app
+// (`useSharedLive`) e a de um teste anterior continua ouvindo a sessão DELE.
+let session = ref<any>({ operator: { id: 1 } });
 const scopes: ReturnType<typeof effectScope>[] = [];
 function inboxForTest() {
   const scope = effectScope();
@@ -15,9 +18,9 @@ afterEach(() => { for (const scope of scopes.splice(0)) scope.stop(); });
 const notice = { pk: 42, title: "Pedido precisa de atenção", is_read: false };
 beforeEach(() => {
   env.reset();
-  session.value = { operator: { id: 1 } };
+  session = ref<any>({ operator: { id: 1 } });
   vi.stubGlobal("useNuxtData", () => ({ data: session }));
-  vi.stubGlobal("useUserNotifications", () => ({ realtime: ref("polling") }));
+  vi.stubGlobal("useUserNotifications", () => ({ realtime: ref("polling"), start: () => () => {} }));
 });
 
 it("keeps the last confirmed inbox when its refresh fails", async () => {
@@ -79,6 +82,8 @@ it("does not query a personal inbox before identification", async () => {
 });
 
 it("re-gates authentication loss without calling it an empty inbox", async () => {
+  // Alguém estava identificado nesta carga do app: o 401 é sessão que terminou.
+  useOperatorSession().markAuthenticated();
   const inbox = inboxForTest();
   env.fetchMock.mockRejectedValueOnce({ statusCode: 401 });
   await inbox.refresh();

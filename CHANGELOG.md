@@ -8,7 +8,47 @@ factual detalhado vive em [docs/status.md](docs/status.md); o corte da próxima
 release (v1 / go-live) está em
 [docs/plans/GO-LIVE-READINESS-PLAN.md](docs/plans/GO-LIVE-READINESS-PLAN.md).
 
-## [Unreleased] — marcos desde 0.1.0-alpha (abril → julho/2026)
+## [Unreleased] — marcos desde 0.1.0-alpha (abril → outubro/2026)
+
+Resumo por mês (julho a outubro) primeiro; os marcos temáticos até julho seguem depois.
+Contagens de commits e merges medidas no `git log` de 02/11/2026.
+
+### Outubro/2026 (~1.440 commits, ~950 merges)
+- **Laudo adversarial de 23/10** ([relatório](docs/reports/2026-10-23-laudo-adversarial-go-live.md)):
+  0 P0 de código, 19 P1 com prova. Onda 1 (T1 a T12) entregue: reserva no tempo certo,
+  retry fiscal honesto, formas de pagamento da NFC-e, estorno sem fantasma, escada de
+  identidade do cliente, superfície HTTP fechada, PDV e SSE resilientes, checkout da
+  loja à prova de borda, travas de migração, worker que se cura e runbooks.
+- Licença FSL-1.1-ALv2 (#1995); descritores de instância aplicados de forma atômica.
+- Suíte de operador: filtros rápidos, navegação anterior/próximo, gráficos de leitura,
+  casco de cadastro e infraestrutura de auditoria de UX no `operator-kit`; Central,
+  Gestor (colunas ajustáveis), KDS (Desfazer do Pronto) e PDV (Encomendas em etapas).
+- Marketing: campanhas por faixa de preço, governo de sugestões de IA, envio ao Google.
+- Concierge com regras da casa; preço por grupo com mensagem de economia no checkout.
+
+### Setembro/2026 (~2.000 commits, ~960 merges)
+- Marketing Nuxt (cockpit único): matriz de capacidades por provedor, entrega com
+  reconciliação, estados visuais completos.
+- Fiscal: DANFE composta do XML autorizado; despachar sem NFC-e autorizada avisa sem barrar.
+- PDV: reorganização da antesala do turno, contratos de balcão e modo de pedido, Dividir conta.
+- Produção/KDS: Timers como página, estação autônoma configurável no Admin, indicador de
+  capacidade no rail; PWA com kiosks controlados.
+- Craftsman: matemática de fórmula (porcentagem do padeiro); receitas com perfil de insumo.
+- B.I.: de-para com embeddings locais e LLM por modelo; Concierge com histórico enxuto.
+
+### Agosto/2026 (~770 commits, ~320 merges)
+- Estoque: o lote decide o que cada canal oferece; fornada planejada volta a ser promessa
+  com limite; zeragem de resíduo de processo pelo ledger.
+- Caixa e pagamento: aviso ao fechar o dia com caixa aberto, motivo de reembolso e de
+  movimento de caixa registrado, gerente opera e dono audita.
+- PDV: Recebimento como pergunta do pedido, abertura guiada, desconto de lote na linha,
+  diagnóstico de impressora e gaveta.
+- Doorman: passkey. Loyalty: pontos resgatados voltam ao cancelar. Compras: fusão de
+  fornecedores duplicados. B.I.: memória de lote e histórico externo (Yooga).
+
+### Julho/2026 (~490 commits, ~50 merges)
+- Cutover headless, hardening pré-alpha de 11/07 e demais marcos descritos nas seções
+  temáticas abaixo.
 
 ### Arquitetura
 - **Cutover headless completo**: os apps Django `storefront`/`backstage` deixaram de

@@ -10,6 +10,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.conf import settings
 from django.core.exceptions import ValidationError
 
 from shopman.shop.config import ChannelConfig
@@ -48,6 +49,11 @@ def _config(**kwargs) -> ChannelConfig:
     return c
 
 
+#: A régua da fila (#2730). Lê as reservas do pedido no banco; com pedido de
+#: mentira, o teste que afirma o que o commit faz com a cobrança diz a resposta.
+CHARGE_WAITS_FOR_THE_QUEUE = "shopman.shop.policies.waitlist_charge.charge_waits_for_the_queue"
+
+
 def _patch_config(cfg: ChannelConfig):
     """Patch ChannelConfig.for_channel to return cfg."""
     return patch("shopman.shop.lifecycle.ChannelConfig.for_channel", return_value=cfg)
@@ -73,6 +79,7 @@ class TestConfirmationConformance:
 
         order.transition_status.assert_called_with("accepted", actor="auto_confirm")
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     def test_immediate_waits_for_upfront_payment(self):
         """Digital payment cannot be auto-confirmed before capture."""
         from shopman.shop.lifecycle import dispatch
@@ -94,7 +101,8 @@ class TestConfirmationConformance:
 
         mock_init.assert_called_once_with(order)
         order.transition_status.assert_not_called()
-        mock_alert.assert_called_once_with(order, "payment_awaiting_confirmation")
+        # Sem dinheiro, nada a aceitar: o alerta nasce no pagamento (DEV-2026-091).
+        mock_alert.assert_not_called()
         mock_send.assert_called_once_with(order, "order_received")
 
     def test_manual_does_not_auto_confirm(self):
@@ -159,6 +167,7 @@ class TestPaymentConformance:
 
         mock_init.assert_not_called()
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     def test_at_commit_timing_initiates_on_commit(self):
         """payment.timing='at_commit' → payment.initiate called on commit."""
         from shopman.shop.lifecycle import dispatch
@@ -297,13 +306,15 @@ class TestStockConformance:
             "approved": True,
             "sku": "PAIN-AU-CHOCOLAT",
             "requested_qty": Decimal("2"),
-            "available_qty": Decimal("999"),
+            "available_qty": None,
+            "orderable_ceiling": None,
+            "is_tracked": False,
             "reason_code": None,
             "is_paused": False,
             "is_planned": False,
             "target_date": None,
             "failed_sku": None,
-            "source": "stock.untracked",
+            "source": "stock.promise_decision",
         }
 
         with _patch_config(cfg):
@@ -360,7 +371,7 @@ class TestStockConformance:
             {"stock": {"sells_nonconforming": True, "expiry_margin_days": 2}},
         )
         with _patch.object(ChannelConfig, "for_channel", return_value=cfg):
-            scope = stock_adapter.get_channel_scope("pos")
+            scope = stock_adapter.get_channel_scope(settings.SHOPMAN_POS_CHANNEL_REF)
 
         assert scope["sells_nonconforming"] is True
         assert scope["allowed_quality_grade_refs"] is None
@@ -587,6 +598,12 @@ class TestCascadeConformance:
 
 @pytest.mark.django_db
 class TestResolvedConfigValidation:
+    def test_for_channel_ref_requires_a_materialized_database_row(self):
+        from shopman.shop.config import InstanceConfigurationError
+
+        with pytest.raises(InstanceConfigurationError, match="not materialized in the database"):
+            ChannelConfig.for_channel("missing")
+
     def test_for_channel_rejects_invalid_channel_config(self):
         """Runtime config resolution fails early instead of silently no-oping."""
         from shopman.shop.models import Channel

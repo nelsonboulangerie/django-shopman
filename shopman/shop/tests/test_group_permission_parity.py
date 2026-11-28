@@ -44,6 +44,7 @@ GATE_FILES = [
     "shopman/backstage/admin_console/cash_receipt.py",
     "shopman/backstage/admin/navigation.py",
     "shopman/backstage/api/operations.py",
+    "shopman/backstage/api/operation_checklists.py",
     "shopman/backstage/api/ifood_store.py",
     "shopman/backstage/projections/production.py",
 ]
@@ -73,9 +74,19 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
     # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
     ("backstage.operate_purchase", {"Gerente"}),
+    # Abertura/rotina/fechamento operacional acontece no Gestor; a gerente pode
+    # executar e fazer a segunda conferência sem entrar no Admin.
+    ("backstage.perform_operation_task", {"Caixa", "Cozinha", "Gerente"}),
+    ("backstage.supervise_operation_task", {"Gerente"}),
     # api/purchase.py::PURCHASE_COUNT_PERMISSIONS (stock count = audit, same
     # ruler as cashman.audit_shift: it belongs to Dono, never to Gerente)
     ("backstage.audit_stock", {"Dono"}),
+    # payman.contrib.admin_unfold.PaymentIntentAdmin (refund_row, refund_detail):
+    # estornar é dinheiro, mesma régua do audit_shift. Do Dono, nunca do Gerente.
+    ("payman.refund_paymentintent", {"Dono"}),
+    # permissions.can_view_bi (o app do B.I., o tile da Central): só do Dono
+    # (dono, 21/11/2026). Gerente fora, e a trava é test_gerente_sem_permissao_financeira.
+    ("backstage.view_bi", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
     # api/operations.py::OrderCancelView.ADVANCED_PERMISSION — cancelar depois de
@@ -117,6 +128,15 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("shop.edit_production_suggested", {"Gerente"}),
     ("shop.view_production_unsold", {"Gerente"}),
     ("shop.edit_production_unsold", {"Gerente"}),
+    # projections/production.py::can_void (Cancelar lote). Decisão do dono,
+    # 05/11/2026: produção aberta impede selar o dia, e Gerente e Dono resolvem
+    # dali cancelando o lote. Sem o grant, o lote de 4.200 do beta ficava preso:
+    # só o superusuário cancelava. A Cozinha segue sem ele.
+    ("backstage.void_production", {"Gerente", "Dono"}),
+    # Fechar um lote com falta de insumo (decisão 3 do dono, D-042, WP-F11): a Gerente
+    # e o Dono, escolhidos da lista, cada um com o próprio PIN. A Cozinha segue sem ele:
+    # ela lê a falta e chama quem assina.
+    ("backstage.override_production_shortage", {"Gerente", "Dono"}),
 ]
 
 # ---------------------------------------------------------------------------
@@ -140,8 +160,6 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
     # High-risk production actions were split out before D1.  Their gates fail
     # closed until the business chooses which role receives each grant.
     "backstage.quick_finish_production": ("D1 pending: quick finish requires an explicit high-risk grant."),
-    "backstage.override_production_shortage": ("D1 pending: shortage override requires an explicit high-risk grant."),
-    "backstage.void_production": ("D1 pending: work-order reversal requires an explicit high-risk grant."),
     "backstage.reveal_production_blind_map": ("D1 pending: revealing blind weighing codes requires an explicit grant."),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.

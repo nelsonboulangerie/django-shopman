@@ -8,12 +8,16 @@ Orderman via ``shopman.shop.services.sessions``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 from django.db import transaction
+from django.utils import timezone
 from shopman.orderman.exceptions import ValidationError as OrderingValidationError
-from shopman.orderman.models import Session
+from shopman.orderman.services.commit import CommitAuthority, CommitSeal, CommitService
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
@@ -40,26 +44,35 @@ class CheckoutDomainError:
     http_status: int
 
 
+@dataclass(frozen=True)
+class _PreparedCheckout:
+    session: object
+    refusal: Exception | None = None
+
+
 def process(
     session_key: str,
     channel_ref: str,
     data: dict,
     *,
     idempotency_key: str,
+    expected_total_q: int,
+    expected_revision: int,
     ctx: dict | None = None,
-    expected_total_q: int | None = None,
     expected_grand_total_q: int | None = None,
-    expected_revision: int | None = None,
+    effect_guard: Callable[[], None] | None = None,
 ) -> CheckoutResult:
-    """Convert checkout data to session operations and commit."""
-    customer = data.get("customer") or {}
-    phone = customer.get("phone") if isinstance(customer, dict) else ""
-    if phone:
-        sessions.assign_phone_handle(
-            session_key=session_key,
-            channel_ref=channel_ref,
-            phone=phone,
-        )
+    """Convert checkout data to session operations and commit.
+
+    ``effect_guard`` roda na MESMA transação do commit do pedido, antes dele
+    (ver ``process_ops``); os efeitos pós-commit (Pix, conveniências) ficam fora.
+    """
+    completed = CommitService.completed_response(session_key, channel_ref, idempotency_key)
+    if completed is not None:
+        result = _checkout_result(completed)
+        pending = recover_post_commit_side_effects(result.order_ref)
+        return replace(result, convenience_pending=tuple(pending or ()))
+
     result = process_ops(
         session_key=session_key,
         channel_ref=channel_ref,
@@ -69,123 +82,148 @@ def process(
         expected_total_q=expected_total_q,
         expected_grand_total_q=expected_grand_total_q,
         expected_revision=expected_revision,
+        effect_guard=effect_guard,
     )
     pending = _apply_post_commit_side_effects(data, channel_ref, order_ref=result.order_ref)
     return replace(result, convenience_pending=tuple(pending or ()))
 
 
-@transaction.atomic
 def process_ops(
     *,
     session_key: str,
     channel_ref: str,
     ops: list[dict],
     idempotency_key: str,
+    expected_total_q: int,
+    expected_revision: int,
     ctx: dict | None = None,
-    expected_total_q: int | None = None,
     expected_grand_total_q: int | None = None,
-    expected_revision: int | None = None,
+    effect_guard: Callable[[], None] | None = None,
 ) -> CheckoutResult:
-    """Apply already-built session operations and commit."""
-    locked = Session.objects.select_for_update().get(session_key=session_key, channel_ref=channel_ref)
-    if expected_revision is not None and locked.state == "open" and locked.rev != expected_revision:
-        raise OrderingValidationError(code="revision_changed", message="Sua sacola mudou. Confira os itens e confirme novamente.", context={"revision": locked.rev})
+    """Reprice one reviewed revision, then seal that exact resulting revision.
+
+    ``effect_guard`` é a reconferência de quem manda o comando, feita no instante
+    do efeito: abre a transação que contém o commit do Orderman, roda antes dele e
+    recusa levantando exceção, e então nenhum pedido nasce. A Concierge passa a
+    trava da posse da conversa (#2625); o site não passa nada e segue como sempre.
+    Com a guarda, uma recusa do commit desfaz também a marca ``failed`` da chave de
+    idempotência, o que equivale à chave ausente: a mesma chave pode tentar de novo.
+    """
+    completed = CommitService.completed_response(session_key, channel_ref, idempotency_key)
+    if completed is not None:
+        return _checkout_result(completed)
+
     ctx = dict(ctx or {})
-    if expected_total_q is not None:
-        ctx["expected_total_q"] = int(expected_total_q)
+    ctx["checkout_finalize"] = True
     channel = Channel.objects.get(ref=channel_ref)
     resolved_config = ChannelConfig.for_channel(channel).to_dict()
 
-    # Modificação, comparação e commit usam a mesma Session bloqueada. Os callbacks
-    # de lifecycle continuam em on_commit, fora desta transação local.
-    if ops:
-        sessions.modify_session(
-            session_key=session_key,
-            channel_ref=channel_ref,
-            ops=ops,
-            ctx=ctx,
-            channel_config=resolved_config,
-        )
-
-    # O total que o cliente VIU é o total cobrado. A repricing final (preço de
-    # catálogo, cupom expirado) pode ter mudado o valor — commitar um total
-    # diferente do exibido, sem confirmação, é cobrança surpresa. Quando o cliente
-    # NÃO manda ``expected_total_q``, cobrar o preço recalculado (catálogo atual) é
-    # deliberado (defesa contra total obsoleto/adulterado); a garantia de que a
-    # baseline sempre chega é da superfície (o app manda o total exibido).
-    if expected_total_q is not None:
-        _ensure_total_matches(session_key, channel_ref, int(expected_total_q))
-
-    if expected_grand_total_q is not None:
-        from shopman.orderman.exceptions import ValidationError
-
-        from shopman.shop.projections.cart import build_cart
-        total = build_cart(session_key, channel_ref).grand_total_q
-        if total != expected_grand_total_q:
-            raise ValidationError(code="total_changed", message="O total completo mudou. Confira uma nova revisão.",
-                context={"old_total_q": expected_grand_total_q, "new_total_q": total})
-
-    # A trava de homologação usa o estado AUTORITATIVO depois de todos os
-    # modifiers: itens reprecificados, desconto/fidelidade e taxa de entrega.
-    # Ela mora antes do commit para que um POST direto não consiga criar Order,
-    # adotar holds ou disparar qualquer efeito de pagamento.
-    locked.refresh_from_db(fields=["data"])
-    payment = (locked.data or {}).get("payment") or {}
-    if str(payment.get("method") or "").strip().lower() == "pix":
-        from shopman.shop.projections.cart import build_cart
-        from shopman.shop.services.pix_policy import PixPaymentPolicyError, enforce_pix_test_amount_limit
-
-        try:
-            enforce_pix_test_amount_limit(build_cart(session_key, channel_ref).grand_total_q)
-        except PixPaymentPolicyError as exc:
-            raise OrderingValidationError(
-                code=exc.code,
-                message=exc.message,
-                context=exc.context,
-            ) from exc
-
-    commit = sessions.commit_session(
+    prepared = _prepare_checkout_atomic(
         session_key=session_key,
         channel_ref=channel_ref,
-        idempotency_key=idempotency_key,
+        ops=ops,
         ctx=ctx,
         channel_config=resolved_config,
+        expected_revision=expected_revision,
+        expected_total_q=expected_total_q,
+        expected_grand_total_q=expected_grand_total_q,
     )
+    if prepared.refusal is not None:
+        raise prepared.refusal
+    repriced = prepared.session
+
+    with transaction.atomic() if effect_guard is not None else nullcontext():
+        if effect_guard is not None:
+            effect_guard()
+        commit = sessions.commit_session(
+            session_key=session_key,
+            channel_ref=channel_ref,
+            idempotency_key=idempotency_key,
+            seal=CommitSeal(
+                expected_revision=repriced.rev,
+                expected_total_q=expected_total_q,
+                authority=CommitAuthority.REVIEWED,
+            ),
+            ctx=ctx,
+        )
 
     logger.info("checkout.process: order %s committed for channel %s", commit.order_ref, channel_ref)
+    return _checkout_result(commit)
+
+
+@transaction.atomic
+def _prepare_checkout_atomic(
+    *,
+    session_key: str,
+    channel_ref: str,
+    ops: list[dict],
+    ctx: dict,
+    channel_config: dict,
+    expected_revision: int,
+    expected_total_q: int,
+    expected_grand_total_q: int | None,
+) -> _PreparedCheckout:
+    """Persist canonical repricing before the separate seal step."""
+    repriced = sessions.modify_session(
+        session_key=session_key,
+        channel_ref=channel_ref,
+        ops=ops,
+        ctx=ctx,
+        channel_config=channel_config,
+        expected_revision=expected_revision,
+    )
+
+    try:
+        # A decisão de total permanece canônica no Orderman. A exceção só sai
+        # depois do commit deste bloco, preservando preço, revisão e identidade.
+        CommitService.validate_expected_total(repriced, expected_total_q)
+
+        from shopman.shop.projections.cart import build_cart
+
+        cart = None
+        if expected_grand_total_q is not None:
+            from shopman.orderman.exceptions import ValidationError
+
+            cart = build_cart(session_key, channel_ref)
+            if cart.grand_total_q != expected_grand_total_q:
+                raise ValidationError(
+                    code="total_changed",
+                    message="O total completo mudou. Confira uma nova revisão.",
+                    context={
+                        "old_total_q": expected_grand_total_q,
+                        "new_total_q": cart.grand_total_q,
+                    },
+                )
+
+        payment = (repriced.data or {}).get("payment") or {}
+        if str(payment.get("method") or "").strip().lower() == "pix":
+            from shopman.shop.services.pix_policy import (
+                PixPaymentPolicyError,
+                enforce_pix_test_amount_limit,
+            )
+
+            cart = cart or build_cart(session_key, channel_ref)
+            try:
+                enforce_pix_test_amount_limit(cart.grand_total_q)
+            except PixPaymentPolicyError as exc:
+                raise OrderingValidationError(
+                    code=exc.code,
+                    message=exc.message,
+                    context=exc.context,
+                ) from exc
+
+    except OrderingValidationError as exc:
+        return _PreparedCheckout(repriced, exc)
+
+    return _PreparedCheckout(repriced)
+
+
+def _checkout_result(commit) -> CheckoutResult:
     return CheckoutResult(
         order_ref=commit.order_ref,
         status=commit.status,
         total_q=commit.total_q,
         items_count=commit.items_count,
-    )
-
-
-def _session_total_q(session_key: str, channel_ref: str) -> int | None:
-    """Soma das linhas da sessão (o total cobrado), ou ``None`` se a sessão sumiu."""
-    from shopman.orderman.models import Session
-
-    session = Session.objects.filter(session_key=session_key, channel_ref=channel_ref).first()
-    if session is None:
-        return None
-    return sum(int(item.get("line_total_q") or 0) for item in (session.items or []))
-
-
-def _ensure_total_matches(session_key: str, channel_ref: str, expected_total_q: int) -> None:
-    from shopman.orderman.exceptions import ValidationError as OrderingValidationError
-    from shopman.utils.monetary import format_money
-
-    current_total_q = _session_total_q(session_key, channel_ref)
-    if current_total_q is None or current_total_q == expected_total_q:
-        return
-    raise OrderingValidationError(
-        code="total_changed",
-        message=(
-            f"O total do pedido mudou para R$ {format_money(current_total_q)} "
-            "(preço ou cupom atualizado). Confira e confirme novamente."
-        ),
-        # Estruturado para a tela reexibir o novo total (não só o texto).
-        context={"new_total_q": current_total_q, "old_total_q": int(expected_total_q)},
     )
 
 
@@ -203,9 +241,11 @@ def map_checkout_error(exc: Exception) -> dict[str, str] | None:
         address_codes = {"delivery_zone_not_covered", "delivery_zone_unverified"}
         field = "delivery_address" if exc.code in address_codes else "checkout"
         # A trava da nota de entrega diz QUAL campo consertar (CPF ou endereço).
+        from shopman.shop.policies.order_date_before_batch import ORDER_DATE_BEFORE_BATCH
         from shopman.shop.services.delivery_fiscal_identity import REFUSAL_CODES
 
-        if exc.code in REFUSAL_CODES:
+        context_field_codes = {"payment_method_missing", "house_account_not_allowed", ORDER_DATE_BEFORE_BATCH}
+        if exc.code in REFUSAL_CODES or exc.code in context_field_codes:
             field = str((exc.context or {}).get("field") or field)
         return {field: exc.message}
     if isinstance(exc, DjangoValidationError):
@@ -231,6 +271,94 @@ def map_order_error(exc: Exception) -> CheckoutDomainError | None:
         context=getattr(exc, "context", {}),
         http_status=http_status,
     )
+
+
+@dataclass(frozen=True)
+class RefusedCart:
+    """Onde está a sacola que o envio não conseguiu selar.
+
+    ``sent_order_ref``: a sacola já virou pedido (outra aba a enviou primeiro).
+    ``gone``: a sacola não existe mais como sacola: foi encerrada (outro dispositivo
+    da mesma pessoa enviou um pedido), apagada pela limpeza ou ficou sem item.
+    Nenhum dos dois: a sacola segue viva, e a recusa é dela mesmo.
+    """
+
+    sent_order_ref: str = ""
+    gone: bool = False
+
+
+def refused_cart(session_key: str, channel_ref: str) -> RefusedCart:
+    """Lê o estado ATUAL da sacola depois de uma recusa do envio.
+
+    A recusa do Core diz o que ele viu no instante dele ("sessão abandonada",
+    "revisão mudou"); a loja precisa dizer ao cliente o que aconteceu com a
+    sacola dele, e isso só o estado de agora responde. A sacola enviada por outra
+    aba, por exemplo, chega aqui como ``revision_changed`` (a outra aba gravou as
+    escolhas dela antes de selar), e "confira os itens" seria pedir conferência de
+    uma sacola que já é pedido.
+    """
+    from shopman.orderman.models import Order, Session
+
+    from shopman.shop.projections.cart import build_cart
+
+    if not session_key:
+        return RefusedCart(gone=True)
+    state = (
+        Session.objects.filter(session_key=session_key, channel_ref=channel_ref)
+        .values_list("state", flat=True)
+        .first()
+    )
+    if state == "committed":
+        order_ref = (
+            Order.objects.filter(session_key=session_key, channel_ref=channel_ref)
+            .order_by("-pk")
+            .values_list("ref", flat=True)
+            .first()
+        )
+        return RefusedCart(sent_order_ref=order_ref) if order_ref else RefusedCart(gone=True)
+    if state == "open" and not build_cart(session_key, channel_ref).is_empty:
+        return RefusedCart()
+    return RefusedCart(gone=True)
+
+
+#: Por quanto tempo o pedido que ESTE navegador enviou ainda responde por "este
+#: pedido" quando outra aba dele tenta enviar a sacola que já saiu. Duas abas da
+#: mesma sacola são um acontecimento de minutos (a segunda aba recarrega sozinha
+#: quando a primeira termina; o que sobra é a revisão que ficou aberta). Trinta
+#: minutos é o prazo padrão da reserva da sacola (``stock.hold_ttl_minutes``):
+#: uma revisão mais velha que isso já tinha perdido as reservas, e depois dele
+#: "este pedido" deixaria de ser inequívoco (o pedido de meia hora atrás não é o
+#: desta revisão, é outro).
+RECENTLY_SENT_WINDOW = timedelta(minutes=30)
+
+
+def recently_sent_order_ref(request, channel_ref: str, *, now: datetime | None = None) -> str:
+    """O pedido que este navegador acabou de enviar neste canal, ou ``""``.
+
+    O envio que dá certo dá ao navegador o acesso ao pedido
+    (``customer_orders.grant_order_access``) e tira a chave da sacola da sessão.
+    A outra aba do mesmo navegador, com a revisão ainda aberta, chega depois sem
+    sacola nenhuma; o pedido dela é o mais novo entre os que este navegador
+    recebeu, neste canal, dentro de ``RECENTLY_SENT_WINDOW``, e da mesma pessoa
+    que está logada. Outro navegador não tem a concessão e não recebe nada.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.customer_orders import ORDER_ACCESS_SESSION_KEY, customer_can_access_order
+
+    session = getattr(request, "session", None)
+    refs = [str(ref) for ref in ((session.get(ORDER_ACCESS_SESSION_KEY) if session is not None else None) or []) if ref]
+    if not refs:
+        return ""
+    since = (now or timezone.now()) - RECENTLY_SENT_WINDOW
+    order = (
+        Order.objects.filter(ref__in=refs, channel_ref=channel_ref, created_at__gte=since)
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+    if order is None or not customer_can_access_order(getattr(request, "customer", None), order):
+        return ""
+    return order.ref
 
 
 def _fill_missing_first_name(customer_obj, name: str) -> None:
@@ -378,7 +506,8 @@ def persist_new_address(intent) -> None:
     address_service.add_address(
         customer_ref=customer_obj.ref,
         label=label.get("key", "other"),
-        label_custom=label.get("custom", "Entrega"),
+        # Sem etiqueta escolhida, nasce sem etiqueta (#2775): o endereço fala.
+        label_custom=label.get("custom", ""),
         formatted_address=intent.delivery_address,
         place_id=structured.get("place_id") or None,
         components=components,
@@ -433,8 +562,8 @@ def save_defaults(intent, *, order_ref: str, enabled: bool) -> None:
 def _post_commit_intent(data: dict, channel_ref: str) -> SimpleNamespace:
     """Lightweight intent built from checkout data for the post-commit side effects.
 
-    Shop never imports the storefront ``CheckoutIntent`` (dependency rule); the side
-    effects only read attributes, so a namespace from ``data`` is enough.
+    The side effects only read attributes, so a namespace from ``data`` is
+    enough: Shop never imports a storefront type (dependency rule).
     """
     customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
     payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
@@ -458,22 +587,31 @@ def recover_convenience_effect(message) -> None:
 
     from shopman.shop.services.remote_mutations import run_idempotent_mutation
     def execute():
-        order = Order.objects.select_for_update().get(ref=message.payload["order_ref"])
-        intent = _post_commit_intent(order.data or {}, order.channel_ref)
+        order = Order.objects.get(ref=message.payload["order_ref"])
+        sealed_data = (order.snapshot or {}).get("data") or {}
+        intent = _post_commit_intent(sealed_data, order.channel_ref)
         effect = message.payload["effect"]
         if intent.customer_phone:
             from shopman.guestman.services import customer as customers
             from shopman.orderman.exceptions import DirectiveTransientError
-            if effect != "customer" and customers.get_by_phone(intent.customer_phone) is None:
+            if effect == "session_takeover":
+                sessions.finalize_phone_handle(
+                    session_key=order.session_key,
+                    channel_ref=order.channel_ref,
+                    phone=intent.customer_phone,
+                    superseded_session_keys=tuple(message.payload.get("superseded_session_keys") or ()),
+                    expected_customer_ref=str(message.payload.get("expected_customer_ref") or ""),
+                )
+            elif effect != "customer" and customers.get_by_phone(intent.customer_phone) is None:
                 raise DirectiveTransientError("Customer linkage pending; dependent convenience effect deferred")
-            if effect == "customer":
+            elif effect == "customer":
                 ensure_customer(intent, order_ref=order.ref)
                 if customers.get_by_phone(intent.customer_phone) is None:
                     raise DirectiveTransientError("Customer linkage pending")
             elif effect == "address":
                 persist_new_address(intent)
             elif effect == "defaults":
-                save_defaults(intent, order_ref=order.ref, enabled=bool((order.data or {}).get("save_as_default", True)))
+                save_defaults(intent, order_ref=order.ref, enabled=bool(sealed_data.get("save_as_default", True)))
             else:
                 raise ValueError("Invalid convenience effect")
         Directive.objects.filter(pk=message.pk).update(status="done", last_error="", error_code="")
@@ -489,14 +627,31 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
     if not _post_commit_intent(data, channel_ref).customer_phone:
         return []
     pending = []
-    for effect in ("customer", "address", "defaults"):
-        key = f"checkout:{order_ref}:{effect}:v1"
-        message = directives.create_persistently_deduped(
-            directives.CHECKOUT_CONVENIENCE, payload={"order_ref": order_ref, "effect": effect},
-            dedupe_key=key, receipt_scope="checkout:convenience:queued",
+    effects = ("session_takeover", "customer", "address", "defaults")
+    keys = {effect: f"checkout:{order_ref}:{effect}:v1" for effect in effects}
+    # As quatro conveniências numa leitura só (eram quatro consultas por checkout).
+    queued = {
+        message.dedupe_key: message
+        for message in Directive.objects.filter(
+            topic=directives.CHECKOUT_CONVENIENCE,
+            dedupe_key__in=keys.values(),
         )
-        if message is None:
-            message = Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE, dedupe_key=key).first()
+    }
+    for effect in effects:
+        key = keys[effect]
+        message = queued.get(key)
+        if message is None and effect != "session_takeover":
+            message = directives.create_persistently_deduped(
+                directives.CHECKOUT_CONVENIENCE,
+                payload={"order_ref": order_ref, "effect": effect},
+                dedupe_key=key,
+                receipt_scope="checkout:convenience:queued",
+            )
+            if message is None:
+                message = Directive.objects.filter(
+                    topic=directives.CHECKOUT_CONVENIENCE,
+                    dedupe_key=key,
+                ).first()
         if message is None or message.status == "done":
             continue
         try:
@@ -510,6 +665,86 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
                     "normal."
                 ), order_ref=order_ref, dedupe_key=key)
     return pending
+
+
+def recover_post_commit_side_effects(order_ref: str) -> list[str]:
+    """Recreate missing convenience directives from the sealed order snapshot."""
+    from shopman.orderman.models import Order
+
+    order = Order.objects.get(ref=order_ref)
+    sealed_data = (order.snapshot or {}).get("data") or {}
+    return _apply_post_commit_side_effects(
+        sealed_data,
+        order.channel_ref,
+        order_ref=order.ref,
+    )
+
+
+def queue_post_commit_effects(order) -> None:
+    """Seal checkout effects and the exact prior-cart cut with the Order."""
+    from django.db import models
+    from shopman.orderman.models import Session
+
+    data = (order.snapshot or {}).get("data") or {}
+    intent = _post_commit_intent(data, order.channel_ref)
+    if not intent.customer_phone:
+        return
+    from shopman.shop import directives
+
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    customer_ref = str(data.get("customer_ref") or customer.get("ref") or "")
+    target = Session.objects.filter(
+        channel_ref=order.channel_ref,
+        session_key=order.session_key,
+    ).values("handle_ref").first()
+    effects: list[tuple[str, dict]] = []
+    # A troca de dono só existe quando há sacola anterior a encerrar. Sem
+    # nenhuma, o efeito só carimbaria o telefone numa sessão já fechada, que
+    # ninguém lê por telefone (os leitores filtram ``state="open"``): era uma
+    # Directive, dupla idempotência e quatro SAVEPOINTs por checkout para nada.
+    if target is not None and not target["handle_ref"]:
+        same_owner = models.Q(handle_type="phone", handle_ref=intent.customer_phone)
+        if customer_ref:
+            same_owner |= models.Q(data__customer__ref=customer_ref)
+        superseded = list(
+            Session.objects.filter(channel_ref=order.channel_ref, state="open")
+            .filter(same_owner)
+            .exclude(session_key=order.session_key)
+            .order_by("pk")
+            .values_list("session_key", flat=True)
+        )
+        if superseded:
+            effects.append(
+                (
+                    "session_takeover",
+                    {
+                        "superseded_session_keys": superseded,
+                        "expected_customer_ref": customer_ref,
+                    },
+                )
+            )
+    effects.extend((effect, {}) for effect in ("customer", "address", "defaults"))
+    for effect, extra_payload in effects:
+        directives.create_persistently_deduped(
+            directives.CHECKOUT_CONVENIENCE,
+            payload={"order_ref": order.ref, "effect": effect, **extra_payload},
+            dedupe_key=f"checkout:{order.ref}:{effect}:v1",
+            receipt_scope="checkout:convenience:queued",
+        )
+
+
+def recover_committed_checkout(
+    *, session_key: str, channel_ref: str, idempotency_key: str
+) -> CheckoutResult | None:
+    """Recover the canonical inner receipt before a surface inspects the cart."""
+    if not session_key:
+        return None
+    completed = CommitService.completed_response(session_key, channel_ref, idempotency_key)
+    if completed is None:
+        return None
+    result = _checkout_result(completed)
+    pending = recover_post_commit_side_effects(result.order_ref)
+    return replace(result, convenience_pending=tuple(pending or ()))
 
 
 
@@ -543,34 +778,22 @@ def recover_checkout_response(*, browser_session: str, principal: str, key: str 
     return None
 
 
-def order_has_payment_error(order_ref: str) -> bool:
-    from shopman.orderman.models import Order
+def checkout_attempt_in_flight(*, browser_session: str, principal: str, key: str) -> bool:
+    """Esta tentativa ainda pode virar pedido?
 
-    order = Order.objects.get(ref=order_ref)
-    return bool((order.data or {}).get("payment", {}).get("error"))
+    Sim só quando o servidor a recebeu e ela não terminou (``in_progress``).
+    Tentativa que nunca chegou, ou que falhou, não vira pedido sozinha: o
+    cliente pode reenviar com a mesma chave sem esperar o teto da conferência
+    (beta SMS-17).
+    """
+    from shopman.orderman.models import IdempotencyKey
 
+    from shopman.shop.services.remote_mutations import fingerprint
 
-def get_open_cart_session(*, session_key: str, channel_ref: str):
-    from shopman.orderman.models import Session
-
-    return Session.objects.get(
-        session_key=session_key,
-        channel_ref=channel_ref,
-        state="open",
-    )
-
-
-def simulate_ifood_order(cart_session):
-    from shopman.shop.services import ifood_ingest
-    from shopman.shop.services.ifood_simulation import session_to_ifood_payload
-
-    payload = session_to_ifood_payload(cart_session)
-    return ifood_ingest.ingest(payload)
-
-
-def close_cart_session(cart_session) -> None:
-    cart_session.state = "closed"
-    cart_session.save(update_fields=["state", "updated_at"])
+    if not key:
+        return False
+    prefix = f"co:{fingerprint([browser_session, principal])[:32]}:"
+    return IdempotencyKey.objects.filter(scope__startswith=prefix, key=key, status="in_progress").exists()
 
 
 def _build_ops_from_data(data: dict) -> list[dict]:

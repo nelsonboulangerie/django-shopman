@@ -30,12 +30,14 @@ def with_screen_total(payload: dict, channel_ref: str | None = None) -> dict:
     try:
         normalized = pos_service._inherit_sales_mode(ref, dict(payload))
         normalized = parse_pos_sale_intent(normalized, for_commit=True).payload
-        channel, _config = pos_service._channel_and_config(ref)
+        channel, config = pos_service._channel_and_config(ref)
         weighed_sale.apply_to_payload(normalized, channel=channel)
-        pos_service._stamp_list_prices_from_session(
-            normalized, pos_service._payload_open_tab_session(channel_ref=channel.ref, payload=normalized),
-        )
+        tab = pos_service._payload_open_tab_session(channel_ref=channel.ref, payload=normalized)
+        pos_service._stamp_list_prices_from_session(normalized, tab)
         pos_service._ensure_resolved_prices(normalized)
+        pos_service._stamp_engine_manual_discounts(
+            normalized, channel=channel, config=config, operator_username="", session=tab,
+        )
         total_q = pos_service._payload_total_q(normalized)
     except Exception:
         total_q = 0

@@ -35,13 +35,9 @@ O caminho de um turno:
 5. **Composição** (``compose``): uma mensagem, as partes na ordem do cliente, uma pergunta
    só no fim. As regras da casa (``house_rules``) passam sobre o resultado em ``service``.
 
-Liberação (OBS0310-R, 03/10/2026): valem para quem a Concierge JÁ atende. Em ``assist``,
-a coorte atendida é a lista fechada da connection (``allowed_subjects``, hoje o dono), e
-quem está fora dela só é observado; então ligar as intenções para a coorte é ligar para
-quem conversa com ela, sem tocar em env nem no spec do app. A chave
-``SHOPMAN_CONCIERGE["intents_plural"]`` (``CONCIERGE_INTENTS_PLURAL``) fica como
-interruptor: ``cohort`` (padrão: a coorte atendida), ``off`` (emergência: desliga para
-todos), ``subjects`` (só quem está em ``intents_subjects``, dentro da coorte) ou ``all``.
+É o único caminho do turno (WP-08, 19/11/2026): o laço do agente com ferramentas saiu,
+e a triagem não chama modelo (ficam a regra local e o Jev). Sem conexão de IA, a leitura
+segue pela regra local e pelos executores da casa.
 """
 
 from __future__ import annotations
@@ -52,8 +48,6 @@ import re
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
-
-from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +106,28 @@ TEAM_TOPICS = {
 #: Copy da casa (registro ``OmotenashiCopy``, editável no Admin).
 TEAM_COPY_KEY = "CONCIERGE_PARTS_TEAM"
 ORDER_WITH_TEAM_COPY_KEY = "CONCIERGE_PARTS_ORDER_WITH_TEAM"
+CART_NO_BATCH_COPY_KEY = "CONCIERGE_CART_NO_BATCH_ON_DAY"
+CART_NEXT_BATCH_COPY_KEY = "CONCIERGE_CART_NEXT_BATCH"
 NOT_FOUND_COPY_KEY = "CONCIERGE_PARTS_NOT_FOUND"
+CART_UPDATED_COPY_KEY = "CONCIERGE_CART_UPDATED"
+CART_REMOVED_COPY_KEY = "CONCIERGE_CART_REMOVED"
+CART_ASK_QTY_COPY_KEY = "CONCIERGE_CART_ASK_QTY"
+CART_UNAVAILABLE_COPY_KEY = "CONCIERGE_CART_UNAVAILABLE"
+#: O próximo passo depois de mostrar a sacola: o cliente sabe o que pode fazer (conferência, 21/11/2026).
+CART_NEXT_COPY_KEY = "CONCIERGE_CART_NEXT"
+#: "as 2 baguettes que pedi" com sacola aberta: é a sacola de agora, não um pedido antigo.
+CART_NOW_COPY_KEY = "CONCIERGE_CART_NOW"
+#: A reclamação ouvida: a casa leva à equipe pelo "vou verificar" e NÃO se cala (ensaio, 21/11/2026).
+COMPLAINT_HEARD_COPY_KEY = "CONCIERGE_COMPLAINT_HEARD"
+#: O que o cliente citou não está no cardápio de hoje: diz isso e mostra o que há (ensaio, 21/11/2026).
+NOT_IN_MENU_COPY_KEY = "CONCIERGE_NOT_IN_MENU"
+ALTERNATIVES_COPY_KEY = "CONCIERGE_ALTERNATIVES"
+#: Quantas alternativas a casa oferece no lugar do indisponível (uma frase de WhatsApp, não um cardápio).
+MAX_ALTERNATIVES = 3
+DELIVERY_FEE_COPY_KEY = "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS"
 UNCLEAR_COPY_KEY = "CONCIERGE_PARTS_UNCLEAR"
+#: ``Conversation.flags`` guarda que a casa já disse "não entendi" (no máximo uma vez).
+UNCLEAR_FLAG = "unclear_asked"
 OFFER_TEAM_COPY_KEY = "CONCIERGE_PARTS_OFFER_TEAM"
 #: Pergunta repetida (OBS0310-R): a abertura da resposta de novo, e o pedido de repetir
 #: quando a casa não acha o que ficou sem resposta.
@@ -126,12 +140,13 @@ COPY_KEYS = (TEAM_COPY_KEY, ORDER_WITH_TEAM_COPY_KEY, NOT_FOUND_COPY_KEY, UNCLEA
 JEV_CERTAIN = 0.8
 JEV_PRESENT = 0.5
 MULTIPLE_PARTS = "multiple_parts"
+#: A confiança do Jev na escolha da intenção (``choice.confidence``), junto das notas.
+JEV_CONFIDENCE = "jev_confidence"
 MULTIPLE_PARTS_DESCRIPTION = (
     "duas ou mais coisas diferentes, por exemplo uma pergunta e um pedido, ou perguntas sobre assuntos "
     "diferentes (cumprimento e agradecimento não contam)"
 )
 
-DEFAULT_MODEL = "claude-haiku-4-5"
 READ_TIMEOUT_S = 4.0
 MAX_ACTS = 6
 MAX_QTY = 99
@@ -143,47 +158,6 @@ def _fold(text: str) -> str:
         char for char in unicodedata.normalize("NFKD", str(text or "").casefold())
         if not unicodedata.combining(char)
     )
-
-
-# ── Chave de liberação ────────────────────────────────────────────────
-
-
-def _config() -> dict:
-    return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
-
-
-#: Os valores da chave. ``cohort`` é o padrão: sem env nenhuma, vale para a coorte atendida.
-OFF, COHORT, SUBJECTS, ALL = "off", "cohort", "subjects", "all"
-MODES = (OFF, COHORT, SUBJECTS, ALL)
-
-
-def mode() -> str:
-    """O valor da chave; valor desconhecido desliga (falha fechada, com aviso no log)."""
-    current = str(_config().get("intents_plural") or COHORT).strip().casefold()
-    if current not in MODES:
-        logger.warning("concierge.intents.unknown_mode value=%s", current[:20])
-        return OFF
-    return current
-
-
-def enabled_for(binding) -> bool:
-    """Intenções no plural para esta conversa?
-
-    Só para quem a Concierge atende agora: modo ``assist`` e o cliente na coorte da
-    connection (``service.is_allowed``). Fora dela nada muda, qualquer que seja a chave.
-    ``off`` desliga para todos; ``subjects`` estreita a coorte para ``intents_subjects``.
-    """
-    from . import service
-
-    current = mode()
-    if current == OFF or binding is None:
-        return False
-    if service.operation_mode() != "assist" or not service.is_allowed(binding):
-        return False
-    if current == SUBJECTS:
-        allowed = {str(value).strip() for value in _config().get("intents_subjects") or () if str(value).strip()}
-        return str(binding.subject or "").strip() in allowed
-    return True
 
 
 # ── Atos ──────────────────────────────────────────────────────────────
@@ -366,7 +340,12 @@ def gate(text: str, *, rules_intent: str, rules_source: str, jev_scores: dict | 
         present = {ref for p, ref in ranked if p >= JEV_PRESENT}
         if len(present) >= 2 and frozenset(present) not in COMPATIBLE:
             return GateDecision(False, "jev_two_intents")
-        if top_p >= JEV_CERTAIN or top == rules_intent or (rules_intent in present):
+        confidence = scores.get(JEV_CONFIDENCE)
+        if confidence is not None and confidence < JEV_PRESENT and top != rules_intent:
+            # O próprio Jev diz que não tem certeza da escolha, e a regra local não confirma.
+            return GateDecision(False, "jev_unsure")
+        sure = top_p >= JEV_CERTAIN or (confidence is not None and confidence >= JEV_CERTAIN)
+        if sure or top == rules_intent or (rules_intent in present):
             return GateDecision(True, "jev_certain", rules_intent if rules_intent in present else top)
         return GateDecision(False, "jev_unsure")
     if rules_source == "rules" and rules_intent in TRIAGE_INTENT_ACTS:
@@ -424,21 +403,40 @@ def build_request(text: str, *, memory_note: str = "", model: str = "") -> dict:
     if memory_note:
         content = f"Estado da conversa (da casa, não do cliente):\n{memory_note}\n\n{content}"
     return {
-        "model": model or str(_config().get("intents_model") or DEFAULT_MODEL),
+        "model": model or _model(),
         "max_tokens": 600,
+        # A leitura é classificação curta: sem raciocínio. A DeepSeek raciocina por padrão
+        # (api-docs.deepseek.com/guides/thinking_mode) e gastava o teto antes do JSON: 11
+        # quedas por max_tokens e p95 de 2,66 s no placar do WP-09 (#2909).
+        "thinking": {"type": "disabled"},
         "system": [{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": content}],
         "output_config": {"format": {"type": "json_schema", "schema": ACTS_SCHEMA}},
     }
 
 
-def build_client():
-    import anthropic
+def _model() -> str:
+    """O modelo da rota de IA ``intents`` (o Haiku, semeado na migração)."""
+    from shopman.shop import ai
 
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    if not api_key:
+    return ai.resolve("intents").model
+
+
+def _ai_ready() -> bool:
+    from shopman.shop import ai
+
+    return ai.is_configured("intents")
+
+
+def build_client():
+    """O cliente da conexão de IA do propósito ``intents``, ou None sem conexão."""
+    from shopman.shop import ai
+
+    try:
+        client, _model_name = ai.anthropic_client("intents", timeout=READ_TIMEOUT_S, max_retries=0)
+    except ai.AINotConfigured:
         return None
-    return anthropic.Anthropic(api_key=api_key, timeout=READ_TIMEOUT_S, max_retries=0)
+    return client
 
 
 def parse_acts(raw: str, text: str) -> list[Act]:
@@ -466,18 +464,93 @@ def parse_acts(raw: str, text: str) -> list[Act]:
     return acts
 
 
+#: As marcas que o redator (``observation_privacy``) deixa no lugar do que apagou.
+_PLACEHOLDER_RE = re.compile(r"\[[^\[\]]*omitid[oa][^\[\]]*\]|\[(?:email|phone)\]|\[REDACTED\]")
+
+
+#: Um caractere da mesma frase: ponto só no meio de palavra (CPF, e-mail, "r.").
+_CLAUSE = r"(?:[^.;!?\n]|\.(?=\S))"
+#: A marca no fim do trecho vai até a vírgula ou a pontuação, como o próprio redator.
+_CLAUSE_END = r"(?:[^,.;!?\n]|\.(?=\S))+"
+
+
+def _literal(piece: str) -> str:
+    return r"\s+".join(re.escape(word) for word in piece.split())
+
+
+def original_span(span: str, original: str) -> str:
+    """O trecho do texto ORIGINAL que corresponde ao trecho redigido que a leitura devolveu.
+
+    A leitura só vê o texto redigido; o executor trabalha sobre o original, que não sai
+    da casa (WP-03). Cada marca do redator vira "algum texto" entre os pedaços literais;
+    sem casar, vale a fala inteira, como a regra local de equipe já faz.
+    """
+    if not _PLACEHOLDER_RE.search(span):
+        return span
+    pieces = [piece.strip() for piece in _PLACEHOLDER_RE.split(span)]
+    parts: list[str] = []
+    for index, piece in enumerate(pieces):
+        if index:
+            # A marca cobre um trecho dentro da mesma frase: no fim, até a pontuação.
+            last = index == len(pieces) - 1
+            parts.append(_CLAUSE_END if last and not piece else _CLAUSE + "+?")
+        if piece:
+            parts.append(_literal(piece))
+    match = re.search("".join(parts), original, re.IGNORECASE | re.DOTALL)
+    if match is None:
+        return original.strip()[:300]
+    return " ".join(match.group(0).split())[:300]
+
+
+def reading_note(memory) -> str:
+    """O estado da conversa para a leitura: sem número de pedido e sem nome (WP-03).
+
+    A leitura só separa partes; o rótulo do pedido (número, dia, faixa) não a ajuda e
+    é dado que não sai.
+    """
+    from .dialogue import CLOSED_STATUS_LABEL, _context_note
+
+    lines = []
+    note = _context_note(memory.state)
+    if note:
+        lines.append(note)
+    if memory.facts.open_order:
+        lines.append(f"O cliente tem um pedido em aberto ({memory.facts.open_order.status}).")
+    if memory.facts.recent_order:
+        order = memory.facts.recent_order
+        status = CLOSED_STATUS_LABEL.get(order.status, order.status)
+        lines.append(f"Um pedido do cliente fechou há pouco ({status}): acréscimo vira outro pedido.")
+    return "\n".join(lines)
+
+
 def read_with_model(text: str, *, memory_note: str = "", client=None) -> tuple[list[Act], float, str]:
-    """(atos, ms, erro). Erro não vazio: quem chama usa a divisão local."""
+    """(atos, ms, erro). Erro não vazio: quem chama usa a divisão local.
+
+    O texto e a nota saem REDIGIDOS (``redact_observation_text``, com os nomes conhecidos
+    do turno): a frase pública de /privacidade diz que nome, documento, contato,
+    endereço, pagamento, alergia e doença escritos na mensagem não vão ao leitor de IA.
+    Os trechos que voltam são levados de volta ao texto original (``original_span``).
+    """
+    from .observation_privacy import redact_observation_text
+
     client = client if client is not None else build_client()
     if client is None:
         return [], 0.0, "no_client"
+    redacted = redact_observation_text(text).text
+    note = redact_observation_text(memory_note).text if memory_note else ""
     started = time.perf_counter()
     try:
-        response = client.messages.create(**build_request(text, memory_note=memory_note))
+        response = client.messages.create(**build_request(redacted, memory_note=note))
     except Exception as exc:  # rede, cota, chave, tempo: vale a divisão local
         logger.warning("concierge.intents.read_failed exception_type=%s", type(exc).__name__)
+        from .reading_health import record_read
+
+        record_read(ok=False)
         return [], (time.perf_counter() - started) * 1000, type(exc).__name__
     elapsed = (time.perf_counter() - started) * 1000
+    from .reading_health import record_read
+
+    record_read(ok=True)  # o provedor respondeu: a leitura tem modelo
     if getattr(response, "stop_reason", "") in {"refusal", "max_tokens"}:
         return [], elapsed, str(response.stop_reason)
     raw = "".join(
@@ -485,10 +558,14 @@ def read_with_model(text: str, *, memory_note: str = "", client=None) -> tuple[l
         if getattr(block, "type", "") == "text"
     )
     try:
-        acts = parse_acts(raw, text)
+        acts = parse_acts(raw, redacted)
     except (ValueError, json.JSONDecodeError):
         logger.warning("concierge.intents.read_unreadable")
         return [], elapsed, "unreadable"
+    for act in acts:
+        act.span = original_span(act.span, text)
+        if _PLACEHOLDER_RE.search(act.product):
+            act.product = ""
     return acts, elapsed, ""
 
 
@@ -528,7 +605,14 @@ def plan(
         from .small_talk import strip_small_talk
 
         courtesy = [act for act in local_acts(text) if act.act in COURTESY]
-        acts = [*courtesy, Act(decided.intent, span=strip_small_talk(text) or text.strip(), qty=_qty(text))]
+        span = strip_small_talk(text) or text.strip()
+        # O mesmo refino da divisão local: "quero cancelar meu pedido" é cancelamento, e
+        # "faz um preço melhor" é pedido de exceção (R7), mesmo que a intenção seja pedido.
+        refined = _act_for_text(_fold(span), decided.intent).act
+        if refined == CANCEL:
+            # A nota do cancelamento cita a fala como o cliente escreveu (a fala é uma parte só).
+            span = text.strip()[:300]
+        acts = [*courtesy, Act(refined, span=span, qty=_qty(text))]
         found = Plan(acts=acts, source="gate", reason=decided.reason, jev=dict(jev_scores or {}))
         found.acts = _with_rules(found.acts, text, rules_intent)
         return found
@@ -578,8 +662,15 @@ class PartReply:
     #: A pergunta desta parte é a que fica no fim da resposta: a confirmação que só o
     #: "sim" aplica (o cancelamento, o acréscimo a pedido já feito).
     keeps_question: bool = False
+    #: A parte não tinha fato e foi perguntada à equipe ("vou verificar").
+    verifying: bool = False
     memo: dict = field(default_factory=dict)
     tool_events: list[dict] = field(default_factory=list)
+    #: Mensagens próprias que seguem a resposta (o código Pix da consulta, para copiar).
+    extra_replies: list[str] = field(default_factory=list)
+    #: A escolha que esta parte pede à sacola (``{asked, qty, options}``): com duas ou mais no
+    #: turno, viram uma pergunta só, uma linha por coisa pedida (#3597).
+    choice: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -592,6 +683,13 @@ class Execution:
     team_offers: list[str] = field(default_factory=list)
     #: A pergunta de alergia foi respondida pelo aviso da casa (a triagem guarda).
     allergy_answered_by: str = ""
+    #: "Vou verificar" (WP-05): as partes de consulta sem fato que vão para a equipe
+    #: (``[{text, product}]``, redigidas), o prazo que a casa pode prometer e a frase dele.
+    verify: list[dict] = field(default_factory=list)
+    verify_promise: dict = field(default_factory=dict)
+    verify_note: str = ""
+    #: O turno disse "não entendi" (a casa diz no máximo uma vez por conversa).
+    unclear: bool = False
 
     @property
     def to_team(self) -> bool:
@@ -630,6 +728,802 @@ def _search_text(act: Act) -> str:
     return act.product or strip_small_talk(act.span) or act.span
 
 
+#: As palavras de "tem?" e "quanto custa?": presença e preço, que a linha do cardápio já
+#: responde. O que sobra na pergunta além delas e do nome do produto é um atributo
+#: ("é doce?", "é grande?"), e atributo só sai da ficha do produto.
+_PLAIN_PRODUCT_WORDS = frozenset({
+    "ainda", "custa", "custam", "disponivel", "disponiveis", "fica", "hoje", "preco", "precos",
+    "quanto", "quantos", "sai", "temos", "tem", "tinha", "valor", "vende", "vendem", "voces",
+    "amanha", "agora", "unidade", "unidades",
+    # "mas a baguete de tradição, não tem?": o "mas" e o "não" perguntam presença, não atributo.
+    "mas", "nao", "sim", "entao",
+    # "Ainda há disponível pão de forma artesanal, 1 pacote?" (observação, 18/11): a embalagem
+    # é quanto se leva, não atributo do produto.
+    "pacote", "pacotes",
+})
+#: "Ele é doce?" sem o produto resolvido: de quem se fala a busca não sabe.
+#: Sem "esta": sem acento é o verbo ("está disponível?", "ainda está aí?"), não "esta aqui".
+_REFERENT_WORDS = frozenset({"ele", "ela", "eles", "elas", "esse", "essa", "esses", "essas", "este", "isso"})
+SHEET_ITEMS = 3
+
+
+_DELIVERY_WORDS = frozenset({"entrega", "entregas", "entregar", "delivery", "frete"})
+_FEE_WORDS = frozenset({"taxa", "frete", "quanto", "custa", "custo", "valor", "preco", "cobram", "cobra"})
+
+
+def _asks_delivery_fee(span: str) -> bool:
+    """"Quanto custa a entrega?", "qual a taxa de entrega?", "quanto é o frete?"."""
+    words = set(re.findall(r"[a-z0-9]+", _fold(span)))
+    return bool(words & _DELIVERY_WORDS) and bool(words & _FEE_WORDS)
+
+
+def _delivers(channel_ref: str) -> bool:
+    """O canal faz entrega (a mesma régua da pergunta frequente de entrega)."""
+    from shopman.shop.projections.channel_state import channel_capabilities
+
+    try:
+        return "delivery" in channel_capabilities(channel_ref).fulfillment_types
+    except Exception:
+        logger.warning("concierge.intents.channel_capabilities_failed channel=%s", channel_ref, exc_info=True)
+        return False
+
+
+def _points_back(span: str) -> bool:
+    """A fala aponta para um produto dito antes ("ele é doce?", "essa tem recheio?")."""
+    return bool(set(re.findall(r"[a-z0-9]+", _fold(span))) & _REFERENT_WORDS)
+
+
+def _referent(conversation, *, channel_ref: str) -> str:
+    """O nome do produto de que a conversa falava há pouco: o em foco, ou o único listado."""
+    from . import dialogue
+
+    if conversation is None:
+        return ""
+    state = dialogue.for_turn(conversation, channel_ref=channel_ref).state
+    focus = state.get("focus") or {}
+    if focus.get("name"):
+        return str(focus["name"])
+    listed = list(state.get("listed") or [])
+    return str(listed[0].get("name") or "") if len(listed) == 1 else ""
+
+
+def _own_source(act: Act, result: dict) -> dict:
+    """Cada parte com a sua fonte, nunca o texto vizinho.
+
+    Produto (e pedido) pelo cardápio; a casa (horário, entrega, como funciona) pelas
+    perguntas frequentes. Quando a busca achou as duas coisas, a outra sai: "quanto custa o
+    pain perdu?" recebia o preço, o texto do glúten e o do cancelamento (20/11/2026).
+    """
+    if not result.get("ok") or not result.get("found"):
+        return result
+    if act.act in {PRODUCT, ORDER} and result.get("items") and result.get("answers"):
+        return {**result, "answers": [], "links": []}
+    if act.act in {HOURS, HOUSE} and result.get("answers"):
+        # A pergunta da casa recebe a resposta que melhor casou, só ela: "quanto custa a
+        # entrega?" levava junto o texto de acompanhar pedido, que também diz "entrega".
+        return {**result, "answers": result["answers"][:1], "items": [], "count": 0,
+                "available_count": 0, "truncated": False}
+    return result
+
+
+def _sheet_reply(act: Act, result: dict) -> str | None:
+    """A pergunta sobre um atributo do produto, respondida pela ficha dele.
+
+    ``None``: não é pergunta de atributo (presença, preço): vale a linha do cardápio.
+    ``""``: é, e nenhuma ficha achada fala daquilo (ou não se sabe de que produto): sem
+    fato, a casa verifica. Texto: o nome, a seção, a descrição e o preço de cada produto
+    cuja ficha fala do atributo, sem a Concierge concluir nada por conta própria ("O
+    pain perdu é doce ou salgado?" mostra a seção Doces e o caramelo salgado da ficha).
+    """
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+    from .small_talk import strip_small_talk
+
+    if not result.get("ok") or not result.get("found") or result.get("overview"):
+        return None
+    items = list(result.get("items") or [])
+    named = {word_stem(word) for word in tools_module._public_search_terms(act.product)}
+    for item in items:
+        named.update(word_stem(word) for word in tools_module._public_search_terms(item.get("name") or ""))
+    asked = [
+        word for word in tools_module._public_search_terms(strip_small_talk(act.span) or act.span)
+        if word not in _PLAIN_PRODUCT_WORDS
+    ]
+    attributes = {word_stem(word) for word in asked if word_stem(word) not in named and word not in _REFERENT_WORDS}
+    if not attributes:
+        return None
+    span_words = set(re.findall(r"[a-z0-9]+", _fold(act.span)))
+    names_product = bool(act.product) or any(
+        set(re.findall(r"[a-z0-9]+", _fold(item.get("name") or ""))) <= span_words for item in items
+    )
+    if not names_product and span_words & _REFERENT_WORDS:
+        return ""
+    rows = []
+    for item in items:
+        sheet = _fold(" ".join(str(item.get(key) or "") for key in ("name", "collection", "description")))
+        if attributes & {word_stem(word) for word in re.findall(r"[a-z0-9]+", sheet)} and item.get("description"):
+            section = f" ({tools_module._display_text(item['collection'])})" if item.get("collection") else ""
+            description = tools_module._display_text(item["description"]).rstrip(".")
+            rows.append(f"{tools_module._display_name(item['name'])}{section}: {description}. {item['price']}.")
+        if len(rows) == SHEET_ITEMS:
+            break
+    return "\n".join(rows)
+
+
+#: "tira", "retira": a mudança é tirar o item (quantidade 0).
+_REMOVE_WORDS = frozenset({"tira", "tirar", "tire", "retira", "retirar", "remove", "remover", "exclui", "excluir"})
+_ORDER_FILLER = frozenset({
+    "quero", "queria", "vou", "querer", "manda", "mande", "coloca", "coloque", "poe", "bota", "pode", "por", "favor",
+    "me", "mais", "um", "uma", "uns", "umas", "o", "a", "os", "as", "de", "do", "da", "dos", "das", "e", "pra", "para",
+    "na", "no", "sacola", "carrinho", "entao", "ai", "tambem", "so", "tira", "tirar", "tire", "retira", "retirar",
+    "remove", "remover", "exclui", "excluir", "isso", "esse", "essa",
+})
+#: O dia e o recebimento dito junto com o pedido ("para retirar amanhã às 16h"): não são
+#: produto, e quem os lê é o fechamento (``order_closing.prefill``).
+_FULFILLMENT_WORDS = frozenset({
+    "hoje", "amanha", "depois", "retirada", "buscar", "busco", "busca", "pegar", "pego", "passo", "la", "loja",
+    "balcao", "entrega", "entregar", "horario", "hora", "horas", "manha", "tarde", "noite", "eu", "vou", "ir",
+})
+
+
+def _cart_authorized(conversation) -> bool:
+    return bool(getattr(conversation, "_cart_authority", False) or getattr(conversation, "_commercial_authority", False))
+
+
+def _order_qty(act: Act) -> tuple[int, bool]:
+    """(quantidade, relativa) da parte: o que a leitura deu, ou o número da fala."""
+    from . import dialogue
+
+    tokens = dialogue.words(act.span)
+    relative = "mais" in tokens
+    if act.qty:
+        return int(act.qty), relative
+    for token in tokens:
+        if token.isdigit() and len(token) <= 3:
+            return int(token), relative
+        if token in dialogue._NUMBER_WORDS:
+            return dialogue._NUMBER_WORDS[token], relative
+    return 0, relative
+
+
+def _cart_qty(context_fn, sku: str) -> int:
+    from . import tools as tools_module
+
+    cart = tools_module.execute("view_cart", {}, context_fn(""))
+    line = next((line for line in cart.get("lines", []) if line.get("sku") == sku), None)
+    return int(line.get("qty") or 0) if line else 0
+
+
+#: Palavras que todo item da padaria pode citar: casar SÓ por elas não é achar o que o cliente
+#: pediu ("pão de ensaio A" casava Baguette e Croque pelo "pão"; ensaio do dono, 21/11/2026).
+_GENERIC_PRODUCT_WORDS = frozenset({
+    "pao", "paes", "paozinho", "doce", "doces", "salgado", "salgados", "produto", "produtos", "item", "itens",
+    "quais", "qual", "vende", "vendem", "tipo", "tipos", "sabor", "sabores", "hoje", "agora", "ainda", "algum", "alguma",
+})
+
+
+def _weak_match(act: Act, conversation, items: list[dict]) -> bool:
+    """Nenhum item achado cita uma palavra DISTINTIVA do que o cliente pediu: casou só pelo genérico."""
+    from shopman.storefront.presentation.public_information import word_stem
+
+    from . import tools as tools_module
+
+    wanted = act.product or _cited(act, conversation)
+    distinctive = {
+        word_stem(word) for word in tools_module._public_search_terms(wanted)
+        if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
+    }
+    if not distinctive or not items:
+        return False
+    for item in items:
+        said = _fold(" ".join([
+            *(str(item.get(key) or "") for key in ("name", "description", "collection")),
+            *(item.get("keywords") or ()),
+        ]))
+        for word in {word_stem(w) for w in re.findall(r"[a-z0-9]+", said) if len(w) >= 3}:
+            # "franceses" é "francês": basta um prefixo comum de quatro letras ou mais.
+            if any(d == word or (min(len(d), len(word)) >= 4 and (d.startswith(word) or word.startswith(d)))
+                   for d in distinctive):
+                return False
+    return True
+
+
+#: O que diz o gesto de pedir, não o produto ("acrescenta 2 pães no meu pedido").
+_ORDER_WORDS = frozenset({
+    "acrescenta", "acrescentar", "acrescente", "adiciona", "adicionar", "adicione", "pedido", "pedi", "pedir",
+    "meu", "minha", "nos", "num", "numa", "separa", "separar", "reserva", "reservar", "encomenda", "encomendar",
+})
+
+
+_CITE_LEADING = _ORDER_FILLER | {"tem", "temos", "teria", "voce", "voces", "vc", "vcs", "ainda", "hoje", "ai"}
+
+
+def _cited(act: Act, conversation) -> str:
+    """O que o cliente pediu, nas palavras DELE (com acento), sem o "quero 2" do começo.
+
+    A leitura local devolve o trecho dobrado ("quero 2 pao de ensaio a"); a citação ao
+    cliente sai da fala original, caractere a caractere, e perde só o que abre o pedido.
+    """
+    from .turn_outcome import current_customer_text
+
+    original = current_customer_text(conversation) if conversation is not None else ""
+    folded_chars = [_fold(ch) or " " for ch in original]
+    folded = "".join(ch[:1] for ch in folded_chars)
+    target = _fold(act.product or act.span).strip()
+    start = folded.find(target) if target else -1
+    piece = original[start:start + len(target)] if start >= 0 else (act.product or act.span)
+    words = piece.split()
+    while words and (_fold(words[0]).strip("?!.,") in _CITE_LEADING or words[0].isdigit()
+                     or _fold(words[0]) in dialogue_number_words()):
+        words.pop(0)
+    return " ".join(words).strip(" ?!.,") or (act.product or act.span)
+
+
+# ── Duas coisas numa pergunta, e o nome como o cliente fala ──────────
+#
+# "Ainda tem pão champagne e folhado de maçã?" (dono, 24/11/2026): a casa respondeu
+# "Não encontrei “pão champagne e folhado de maçã”". Duas coisas pedidas têm cada uma a
+# sua resposta, e "champagne" é o "campagne" do cardápio dito como se fala.
+
+#: O quanto uma palavra fora do cardápio precisa parecer com uma do cardápio para ser ela.
+SPELLING_CUTOFF = 0.85
+_ASKED_SEPARATOR = re.compile(r"\s*[,;+/]\s*|\s+(?:e|ou)\s+", re.IGNORECASE)
+
+
+def _menu_words(channel_ref: str) -> list[str]:
+    """Os nomes do cardápio do canal e as palavras-chave de cada produto (vazio quando o
+    cardápio não abre).
+
+    A palavra-chave é como o cliente chama o produto por outro nome (dono, 24/11/2026:
+    "Folhado de maçã se refere claramente ao Chausson"), e o erro de escrita se corrige
+    contra ela como contra o nome.
+    """
+    from shopman.storefront.presentation.catalog import build_catalog
+
+    try:
+        catalog = build_catalog(channel_ref=channel_ref)
+    except Exception:
+        logger.warning("concierge.intents.menu_words_failed channel=%s", channel_ref, exc_info=True)
+        return []
+    names = [str(item.name or "") for item in catalog.items]
+    keywords = [str(tag).replace("-", " ") for item in catalog.items for tag in (item.tags or ())]
+    return names + sorted(set(keywords) - set(names))
+
+
+def _item_words(item: dict) -> set[str]:
+    """As palavras que dizem o que o item é, o nome e as palavras-chave dele, como se ouvem:
+    "baguete" é a "Baguette", "pão" é o "Pain" (``tools.heard``)."""
+    from . import tools as tools_module
+
+    said = _fold(" ".join([item.get("name") or "", *(item.get("keywords") or ())]))
+    return {tools_module.heard(word) for word in re.findall(r"[a-z0-9]+", said)}
+
+
+def _distinctive(text: str) -> set[str]:
+    """As palavras do pedido que distinguem produto, como se OUVEM (``tools.heard``)."""
+    from . import tools as tools_module
+
+    generic = {tools_module.heard(word) for word in _GENERIC_PRODUCT_WORDS}
+    return {
+        tools_module.heard(word) for word in tools_module._public_search_terms(text)
+        if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER and word not in _ORDER_WORDS
+        and word not in _CITE_LEADING and tools_module.heard(word) not in generic  # "pain" é o "pão"
+    }
+
+
+def _named_by(items: list[dict], words: list[str]) -> list[dict]:
+    """Os itens que levam no nome ou nas palavras-chave uma das palavras (a corrigida é o
+    que o cliente pediu)."""
+    from . import tools as tools_module
+
+    wanted = {tools_module.heard(_fold(word)) for word in words}
+    return [item for item in items if wanted & _item_words(item)]
+
+
+def _holding_all(items: list[dict], asked: str) -> list[dict]:
+    """Os itens que levam TODAS as palavras que distinguem o pedido, no nome ou nas
+    palavras-chave ("folhado de maçã": o Chausson, não o Folhado de Frango nem o Croissant).
+
+    Vazio quando nenhum leva todas, ou quando o pedido não tem palavra que distingue.
+    """
+    wanted = _distinctive(asked)
+    return [item for item in items if wanted <= _item_words(item)] if wanted else []
+
+
+#: Palavras que distinguem por uma característica, em famílias: duas da mesma família se
+#: contradizem ("oval" não é "redondo", "grande" não é "mini").
+_ATTRIBUTE_FAMILIES = (
+    frozenset({"oval", "redondo", "redonda", "comprido", "comprida", "quadrado", "quadrada", "bola", "trancado", "trancada"}),
+    frozenset({"mini", "pequeno", "pequena", "grande", "medio", "media"}),
+)
+
+
+def _by_attribute(items: list[dict], asked: str) -> tuple[list[dict], dict | None]:
+    """O que a característica pedida faz com os itens ("1 campagne oval", coordenação, 24/11/2026).
+
+    Devolve (itens sem os que a contradizem, o único que não é variante ou ``None``). "oval" tira
+    o Campagne Redondo, que o contradiz; dos que sobram, o Pain de Campagne é o único sem outra
+    palavra que distinga (o de passas e a baguete são variantes), e é ele. Sem característica
+    pedida de nenhuma família, nada muda.
+    """
+    from . import tools as tools_module
+
+    said = set(re.findall(r"[a-z0-9]+", _fold(asked)))
+    families = [(word, family) for word in said for family in _ATTRIBUTE_FAMILIES if word in family]
+    if not families:
+        return items, None
+    kept = []
+    for item in items:
+        words = set(re.findall(r"[a-z0-9]+", _fold(" ".join([item.get("name") or "", *(item.get("keywords") or ())]))))
+        if any((family & words) - {word} for word, family in families):
+            continue  # a característica do item contradiz a pedida
+        kept.append(item)
+    attributes = {tools_module.heard(word) for word, _family in families}
+    base = _distinctive(asked) - attributes
+    plain = [
+        item for item in kept
+        if base and base <= _item_words(item) and not (_distinctive(item.get("name") or "") - base - attributes)
+    ]
+    return kept, (plain[0] if len(plain) == 1 else None)
+
+
+def asked_pieces(asked: str, menu_names: list[str]) -> list[str]:
+    """As coisas pedidas, uma por pedaço ("pão champagne e folhado de maçã" são duas).
+
+    Só separa quando cada pedaço tem palavra que distingue produto e nenhum nome do
+    cardápio leva o conjunto ("Romeu e Julieta" é um item só).
+    """
+    folded = _fold(asked)
+    for name in menu_names:
+        joined = _fold(name)
+        if _ASKED_SEPARATOR.search(joined) and joined in folded:
+            return [asked]
+    wanted = _distinctive(spelled_as_menu(asked, menu_names)[0])
+    if len(wanted) > 1 and any(wanted <= _item_words({"name": name}) for name in menu_names):
+        # "pão de champanhe e passas" é UM produto, o Campagne Passas & Castanhas: um nome do
+        # cardápio leva todas as palavras pedidas (observação do ar, 19/11/2026).
+        return [asked]
+    pieces = [piece.strip(" ?!.") for piece in _ASKED_SEPARATOR.split(asked) if piece.strip(" ?!.")]
+    if len(pieces) < 2 or not all(_distinctive(piece) for piece in pieces):
+        return [asked]
+    return pieces
+
+
+#: Quanto a palavra mais perto tem que passar da segunda para ser ela ("coelinho" é o
+#: "coelhinho", 0,94, e não o "coelho", 0,86).
+SPELLING_MARGIN = 0.05
+
+
+def _closest_word(folded: str, vocabulary: list[str]) -> str:
+    """A palavra do cardápio que ``folded`` parece, ou ``""`` se nenhuma (ou duas, empatadas).
+
+    Palavras que soam igual contam como uma ("campanha" e "campagne"). Primeiro o mesmo som;
+    sem ele, a semelhança das letras ou do som, de ``SPELLING_CUTOFF`` para cima, e a mais
+    perto só vale se passar da segunda por ``SPELLING_MARGIN``.
+    """
+    import difflib
+
+    from . import tools as tools_module
+
+    heard = tools_module.sound_key(folded)
+    same = sorted(word for word in vocabulary if tools_module.sound_key(word) == heard)
+    if same:
+        return same[0]
+    best: dict[str, tuple[float, str]] = {}
+    for word in vocabulary:
+        key = tools_module.sound_key(word)
+        score = max(
+            difflib.SequenceMatcher(None, folded, word).ratio(),
+            difflib.SequenceMatcher(None, heard, key).ratio(),
+        )
+        if score >= SPELLING_CUTOFF and score > best.get(key, (0.0, ""))[0]:
+            best[key] = (score, word)
+    ranked = sorted(best.values(), reverse=True)
+    if not ranked or (len(ranked) > 1 and ranked[0][0] - ranked[1][0] < SPELLING_MARGIN):
+        return ""
+    return ranked[0][1]
+
+
+def spelled_as_menu(text: str, menu_names: list[str]) -> tuple[str, list[str]]:
+    """O texto com cada palavra fora do cardápio trocada pela única do cardápio que ela parece.
+
+    Devolve (texto, palavras corrigidas). Duas palavras do cardápio igualmente perto: nada
+    se troca (a busca segue como veio). Só palavra que distingue produto, de cinco letras
+    ou mais: "pão" e "de" nunca viram outra coisa.
+    """
+
+    from shopman.storefront.presentation.public_information import word_stem
+
+
+    vocabulary = sorted({
+        word for name in menu_names for word in re.findall(r"[a-z0-9]+", _fold(name)) if len(word) >= 5
+    })
+    stems = {word_stem(word) for word in vocabulary}
+    corrected: list[str] = []
+    words = []
+    for word in text.split():
+        folded = _fold(word).strip("?!.,;:")
+        if (
+            len(folded) >= 5 and folded.isalpha() and word_stem(folded) not in stems
+            and folded not in _GENERIC_PRODUCT_WORDS and folded not in _ORDER_FILLER
+        ):
+            match = _closest_word(folded, vocabulary)
+            if match:
+                corrected.append(match)
+                words.append(match)
+                continue
+        words.append(word)
+    return (" ".join(words), corrected) if corrected else (text, [])
+
+
+def dialogue_number_words() -> frozenset:
+    from . import dialogue
+
+    return frozenset(dialogue._NUMBER_WORDS)
+
+
+#: O Jev escolhe o SKU sozinho só com confiança alta; abaixo, a casa pergunta "qual deles?".
+SKU_CHOICE_MIN_CONFIDENCE = 0.85
+SKU_CHOICE_QUESTION = "sku"
+SKU_CHOICE_INSTRUCTIONS = (
+    "Um cliente de padaria pediu um produto pelo WhatsApp. Qual destes produtos do cardápio é o que ele "
+    "pediu? Escolha 'other' se nenhum for claramente o pedido, ou se mais de um servir igualmente."
+)
+SKU_CHOICE_OTHER = "Nenhum destes com certeza: o cliente precisa dizer qual."
+
+
+def _jev_picks_sku(act: Act, items: list[dict], *, conversation) -> dict | None:
+    """O Jev decide entre os candidatos da busca ("quero 2 baguettes": Tradition ou Jambon-Beurre?).
+
+    Decisor tipado (``choice`` com ``other``, no padrão do ``JevMatcher`` do B.I.): só nome e
+    descrição dos candidatos e a fala do cliente, redigida, pela porta (freio e medidor). Devolve
+    o item só com confiança de pelo menos ``SKU_CHOICE_MIN_CONFIDENCE``; com dúvida, ``other``,
+    erro ou sem Jev, ``None``, e a casa pergunta "qual deles?". Abaixo da confiança não há LLM de
+    reserva: a pergunta ao cliente custa zero e não erra; um modelo de texto seria um chute sobre
+    outro chute.
+    """
+    import time
+
+    from shopman.shop import ai
+
+    from .intent_benchmark import parse_jev_choice
+    from .observation_privacy import redact_observation_text
+
+    candidates = items[:dialogue_max_listed()]
+    keyed = {f"p{n}": item for n, item in enumerate(candidates, 1)}
+    criteria = {key: " ".join(part for part in (item.get("name", ""), item.get("description", "")) if part)[:200]
+                for key, item in keyed.items()}
+    criteria["other"] = SKU_CHOICE_OTHER
+    try:
+        url, api_key, model = ai.jev_endpoint(customer_text=True)
+    except ai.AINotConfigured:
+        return None
+    body = {
+        "model": model,
+        "state": {"customer_message": redact_observation_text(act.span or act.product).text},
+        "questions": {SKU_CHOICE_QUESTION: {"type": "choice", "instructions": SKU_CHOICE_INSTRUCTIONS,
+                                            "criteria": criteria}},
+    }
+    meter = getattr(conversation, "_meter", None)
+    started = time.perf_counter()
+    try:
+        import requests
+
+        response = ai.jev_post(requests.Session(), url, api_key, body, timeout=3.0, model=model)
+        if response.status_code >= 400:
+            return None
+        payload = response.json()
+        probabilities, confidence = parse_jev_choice(payload, question=SKU_CHOICE_QUESTION)
+    except Exception:  # noqa: BLE001 — o decisor que cai nunca escolhe: a casa pergunta
+        logger.warning("concierge.sku_choice.failed", exc_info=True)
+        return None
+    finally:
+        if meter is not None:
+            meter.add_time("sku_choice", (time.perf_counter() - started) * 1000)
+    if meter is not None:
+        usage = payload.get("usage") or {}
+        meter.add_call("sku_choice", model, {"input_tokens": usage.get("input_tokens", usage.get("prompt_tokens", 0))},
+                       provider="typesafe")
+    choice = max(probabilities, key=probabilities.get) if probabilities else "other"
+    if choice not in keyed or (confidence or 0.0) < SKU_CHOICE_MIN_CONFIDENCE:
+        return None
+    return keyed[choice]
+
+
+def dialogue_max_listed() -> int:
+    from . import dialogue
+
+    return dialogue.MAX_LISTED
+
+
+def _alternatives(sku: str, *, context, qty: int = 1) -> list[dict]:
+    """O que a casa oferece no lugar de um indisponível, pelo mecanismo da Loja.
+
+    ``shop/services/substitutes.find`` é o ponto único de substitutos (o mesmo do aviso de
+    estoque da Loja): parecido pelo Offerman, dentro da fronteira da casa, disponível. Cada
+    candidato é conferido no cardápio DESTE canal (``tools._catalog_item``): preço e "dá
+    para pedir" saem de lá, e o que não está à venda aqui não é oferecido. Falhou: nada
+    (oferecer sem lastro seria pior que não oferecer).
+    """
+    from decimal import Decimal
+
+    from shopman.shop.services import substitutes
+
+    from . import tools as tools_module
+
+    ctx = context("")
+    try:
+        found = substitutes.find(
+            sku, qty=Decimal(max(1, int(qty or 1))), channel=tools_module._catalog_channel_ref(ctx.channel_ref),
+            limit=MAX_ALTERNATIVES * 2,
+        )
+    except Exception:
+        logger.warning("concierge.alternatives_failed sku=%s", sku, exc_info=True)
+        return []
+    offered: list[dict] = []
+    for candidate in found:
+        item = tools_module._catalog_item(ctx, str(candidate.get("sku") or ""))
+        if item is None or item.sku == sku or not item.can_add_to_cart:
+            continue
+        offered.append(tools_module._item_payload(item))
+        if len(offered) >= MAX_ALTERNATIVES:
+            break
+    return offered
+
+
+def _offer_alternatives(text: str, sku: str, *, context, copy, qty: int = 1) -> tuple[str, dict, bool]:
+    """A frase do indisponível seguida das alternativas, e a memória que deixa o cliente escolher.
+
+    ``(texto, memo, pergunta_no_ar)``. Sem alternativa: a frase como veio, sem memória.
+    """
+    from . import dialogue
+
+    offered = _alternatives(sku, context=context, qty=qty)
+    template = copy(ALTERNATIVES_COPY_KEY) or ""
+    if not offered or not template:
+        return text, {}, False
+    names = [f"{item['name']} ({item['price']})" for item in offered]
+    options = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " ou " + names[-1]
+    found = {"ok": True, "found": True, "items": offered}
+    memo = dialogue.memo_of("search_storefront", {}, found) or {}
+    if len(offered) == 1:
+        memo["focus"] = {"ref": offered[0]["sku"], "name": offered[0]["name"]}
+    return "\n".join(part for part in (text, _fill(template, options=options)) if part), memo, True
+
+
+@dataclass(frozen=True)
+class CartItemReading:
+    """O produto que a parte de pedido cita, achado no cardápio do canal.
+
+    ``items`` com um só é o produto; com mais de um, a escolha fica com o cliente. ``found`` é a
+    busca inteira (a memória da lista oferecida sai dela).
+    """
+
+    items: list
+    found: dict
+    removing: bool
+
+
+def read_cart_item(act: Act, *, conversation, context, pick=None) -> CartItemReading | None:
+    """O produto da parte de pedido, pela MESMA busca da sacola na conversa (WP-12).
+
+    ``None``: nada do cardápio é o que o cliente citou. ``pick(items)`` desempata quando a busca
+    devolve mais de um (no turno, o Jev); sem ``pick``, nenhum modelo é chamado e o empate
+    fica com o cliente. Ler não é agir: a autoridade de compra é do turno, não daqui.
+    """
+    from . import dialogue, order_closing
+    from . import tools as tools_module
+
+    tokens = dialogue.words(act.span)
+    # "retirar" é tirar da sacola só sem dia, hora nem "para retirar" (WP-14, cartão 1).
+    removing = bool(set(tokens) & _REMOVE_WORDS) and not order_closing.fulfillment_cue(act.span)
+    query = act.product or " ".join(
+        t for t in tokens
+        if t not in _ORDER_FILLER and t not in _FULFILLMENT_WORDS and not any(ch.isdigit() for ch in t)
+        and t not in dialogue._NUMBER_WORDS
+    )
+    if not query.strip():
+        return None
+    names = _menu_words(tools_module._catalog_channel_ref(context("").channel_ref))
+    query, corrected = spelled_as_menu(query, names)
+    if corrected:
+        # "dois croassant", "um ciabata": o nome como o cliente escreve é o do cardápio.
+        act = Act(act.act, span=spelled_as_menu(act.span, names)[0], product=query if act.product else "",
+                  qty=act.qty)
+    found = tools_module.execute("search_storefront", {}, context(query))
+    items = list(found.get("items") or []) if found.get("ok") and not found.get("overview") else []
+    if corrected:
+        named = _named_by(items, corrected)
+        items = named or items
+    if len(_distinctive(query)) == 1 and items:
+        # Uma palavra que distingue: valem os itens que a levam no nome ou nas palavras-chave.
+        # "4 pães ( chalá" é a Challah, não o Pão Francês que só casou pelo "pão".
+        items = _holding_all(items, query) or items
+    if items:
+        # "campagne oval": "oval" tira quem o contradiz (o Redondo) e, se só um não é variante,
+        # é ele (o Pain de Campagne), sem pergunta.
+        items, plain = _by_attribute(items, query)
+        if plain is not None and not _holding_all(items, query):
+            items = [plain]
+    if len(_distinctive(query)) > 1 and items:
+        # Duas palavras que distinguem: vale o item que leva as duas, no nome ou nas palavras-
+        # chave ("folhados de maca" é o Chausson aux Pommes). Nenhum leva as duas: só fica quem
+        # leva uma delas no NOME. A palavra-chave sozinha não basta: "pão italiano grande" não é
+        # a Ciabatta só porque ela tem "italiano" nas palavras-chave.
+        items = _holding_all(items, query) or [
+            item for item in items if _distinctive(query) & _item_words({"name": item.get("name")})
+        ]
+    if not items:
+        return None
+    if _weak_match(act, conversation, items):
+        return None  # nada do cardápio é o que o cliente citou: a parte segue para a busca, que diz
+    exact = [i for i in items if _fold(i.get("name", "")) == _fold(query)]
+    if exact:
+        items = exact[:1]
+    if len(items) > 1 and pick is not None:
+        chosen = pick(items)
+        if chosen is not None:
+            items = [chosen]
+    return CartItemReading(items=items, found=found, removing=removing)
+
+
+def _cart_change(act: Act, *, conversation, context, copy):
+    """A sacola na conversa (WP-12): põe, troca e tira pelo ``set_item`` que já existe.
+
+    ``None``: não é com a sacola (sem autoridade de compra, ou o produto não foi achado), e
+    a parte segue para a resposta de hoje. A quantidade é ABSOLUTA, calculada pela casa
+    ("mais 2" = o que há na sacola + 2); preço e total vêm do serviço da loja, nunca do texto.
+    """
+    from . import dialogue
+    from . import tools as tools_module
+
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    reading = read_cart_item(act, conversation=conversation, context=context,
+                             pick=lambda items: _jev_picks_sku(act, items, conversation=conversation))
+    if reading is None:
+        return None
+    items, found, removing = reading.items, reading.found, reading.removing
+    if len(items) > 1:
+        listed = dialogue.memo_of("search_storefront", {}, found) or {}
+        options = [{"n": n, "ref": i.get("sku", ""), "name": i.get("name", "")} for n, i in enumerate(items[:dialogue.MAX_LISTED], 1)]
+        text = _fill(copy(dialogue.ASK_WHICH_KEY) or "", options=dialogue._options_text(options))
+        qty, _relative = _order_qty(act)
+        asked = _cited(act, conversation).strip(" ?!.,;:")
+        return PartReply(act, text=text, memo=listed, keeps_question=True,
+                         choice={"asked": asked, "qty": qty, "options": options})
+    item = items[0]
+    name, sku = item.get("name", ""), item.get("sku", "")
+    qty, relative = _order_qty(act)
+    on_day = tools_module.cart_day(context(act.span)) if not removing else None
+    if on_day is not None and not tools_module.orderable_on_cart_date(context(act.span), item, qty or 1):
+        # A sacola é para outro dia, e nesse dia não há fornada (WP-14): diz o dia, nunca o
+        # "Indisponível" seco de hoje, e oferece a próxima fornada quando a casa sabe qual é.
+        from shopman.shop.policies.order_date_before_batch import batch_day_phrase
+
+        text = _fill(copy(CART_NO_BATCH_COPY_KEY) or "", item=name, day=batch_day_phrase(on_day))
+        following = tools_module.next_batch_day(context(act.span), sku, qty or 1, on_day)
+        if following is not None:
+            text = " ".join((text, _fill(copy(CART_NEXT_BATCH_COPY_KEY) or "", day=batch_day_phrase(following))))
+        return PartReply(act, text=text, memo={"focus": {"ref": sku, "name": name}})
+    if not removing and not tools_module.orderable_on_cart_date(context(act.span), item, qty or 1):
+        # Para o cliente é só "Indisponível" (regra da casa), e no lugar, o que a casa tem
+        # (dono, 21/11/2026: "a Concierge DEVE fazer uso" das alternativas da Loja).
+        text, memo, asks = _offer_alternatives(
+            _fill(copy(CART_UNAVAILABLE_COPY_KEY) or "", item=name), sku, context=context, copy=copy, qty=qty or 1,
+        )
+        return PartReply(act, text=text, memo=memo, keeps_question=asks)
+    if removing:
+        target = 0
+    elif not qty:
+        return PartReply(act, text=_fill(copy(CART_ASK_QTY_COPY_KEY) or "", item=name), keeps_question=True,
+                         memo={"focus": {"ref": sku, "name": name}})
+    else:
+        target = _cart_qty(context, sku) + qty if relative else qty
+    result = tools_module.execute("set_item", {"sku": sku, "qty": target}, context(act.span))
+    events = [{"name": "set_item", "input": {"sku": sku, "qty": target}, "ok": result.get("ok", True)}]
+    if not result.get("ok"):
+        return PartReply(act, text=tools_module.render_result("set_item", result), tool_events=events)
+    lead = _fill(copy(CART_REMOVED_COPY_KEY if removing else CART_UPDATED_COPY_KEY) or "", item=name)
+    following = copy(CART_NEXT_COPY_KEY) if result.get("lines") else ""
+    text = "\n".join(part for part in (lead, tools_module.render_result("set_item", result), following) if part)
+    memo = dialogue.memo_of("set_item", {"sku": sku, "qty": target}, result) or {}
+    return PartReply(act, text=text, memo=memo, tool_events=events)
+
+
+def _cart_correction(conversation, resolution, *, memory, memos, binding, channel_ref: str):
+    """"Não, era o outro" logo depois de uma mudança na sacola (WP-12): desfaz e aplica.
+
+    Só quando a memória resolveu a correção (``reason == "correction"``) e a última mudança
+    da sacola foi o item em foco: tira esse item e põe o outro com a mesma quantidade, pelo
+    ``set_item``. Sem autoridade de compra, ou sem mudança a desfazer, ``None``.
+    """
+    from . import dialogue
+    from . import tools as tools_module
+    from .metrics import LAYER_CONTEXT
+    from .service import copy_message as copy
+    from .tools import ToolContext
+    from .turn_outcome import TurnOutcome
+
+    if resolution.reason != "correction" or not resolution.refs or not _cart_authorized(conversation):
+        return None
+    focus = memory.state.get("focus") or {}
+    change = memory.state.get("last_change") or {}
+    if not change.get("ref") or change.get("ref") != focus.get("ref") or not change.get("qty"):
+        return None
+    new_ref, qty = resolution.refs[0], int(change["qty"])
+    ctx = ToolContext(
+        conversation=conversation, channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""), account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""), customer_text=resolution.text,
+    )
+    removed = tools_module.execute("set_item", {"sku": change["ref"], "qty": 0}, ctx)
+    if not removed.get("ok"):
+        return TurnOutcome(reply_text=tools_module.render_result("set_item", removed), layer=LAYER_CONTEXT, memory=memory, memory_memos=memos)
+    added = tools_module.execute("set_item", {"sku": new_ref, "qty": qty}, ctx)
+    if not added.get("ok"):
+        return TurnOutcome(reply_text=tools_module.render_result("set_item", added), layer=LAYER_CONTEXT, memory=memory, memory_memos=memos)
+    lead = (copy(CART_UPDATED_COPY_KEY) or "").strip()
+    memo = dialogue.memo_of("set_item", {"sku": new_ref, "qty": qty}, added) or {}
+    return TurnOutcome(
+        reply_text="\n".join(part for part in (lead, tools_module.render_result("set_item", added)) if part),
+        layer=LAYER_CONTEXT, memory=memory, memory_memos=[*memos, memo] if memo else memos,
+    )
+
+
+def build_faq_client():
+    """``(cliente, modelo)`` da conversa (propósito ``concierge``), ou ``(None, "")``.
+
+    Sem conexão, sem chave, sem liberação para mensagem de cliente ou com o freio fechado
+    (``ai.AINotConfigured`` e suas filhas): ``(None, "")``, e vale a FAQ direta.
+    """
+    from shopman.shop import ai
+
+    try:
+        return ai.anthropic_client("concierge", timeout=READ_TIMEOUT_S * 2, max_retries=0)
+    except ai.AINotConfigured:
+        return None, ""
+
+
+def _faq_by_model(act: Act, *, conversation, channel_ref: str):
+    """A resposta da pergunta da casa pela IA a partir das FAQs, já verificada (#2935).
+
+    ``None``: vale a FAQ direta (sem modelo, freio, falha do provedor, ou a resposta
+    inventou algo, que o verificador do placar pega). ``Answer`` com ``refs`` vazias: a IA
+    disse que nenhuma FAQ cobre, e a casa verifica.
+    """
+    from . import faq_answer
+    from .faq_eval import live_faq
+
+    faqs = live_faq(channel_ref)
+    if not faqs:
+        return None
+    client, model = build_faq_client()
+    if client is None:
+        return None
+    meter = getattr(conversation, "_meter", None)
+    if meter is not None:
+        client = meter.wrap(client, "faq")
+    answer = faq_answer.answer_with_model(act.span, faqs=faqs, client=client, model=model)
+    if answer.error:
+        return None
+    invented = faq_answer.inventions(answer, faqs)
+    if invented:
+        logger.warning("concierge.faq_answer.held reasons=%s", ",".join(i.split(":")[0] for i in invented))
+        return None
+    if not answer.refs and answer.text.strip():
+        return None
+    if faq_answer.held_by_jev(answer, faqs):
+        # O Jev reprovou o texto da IA: vale o texto das FAQs que ela citou, como estão
+        # (a FAQ direta perdia o assunto, placar de produção de 21/11/2026).
+        logger.warning("concierge.faq_answer.held reasons=jev_unsupported")
+        verbatim = faq_answer.cited_verbatim(answer, faqs)
+        return verbatim if verbatim.refs else None
+    return answer
+
+
 def _cancellation():
     """O cancelamento conforme a etapa (#1445, ``concierge/cancellation.py``).
 
@@ -657,6 +1551,85 @@ def _self_cancel(conversation, act: Act) -> str:
         return ""
 
 
+#: As partes em que "manda outro Pix", "o Pix venceu" ou "quero pagar com cartão" aparecem:
+#: a consulta de pedido, a reclamação de pagamento, o "quero pagar com…" que a regra local
+#: lê como pedido e a parte que não se encaixou (OC-12).
+REPAY_ACTS = frozenset({STATUS, COMPLAINT, ORDER, UNKNOWN})
+
+
+def _repayment(conversation, act: Act, *, context) -> PartReply | None:
+    """Pagar de novo ou de outra forma pela conversa (OC-12, ``tools.repay_order``).
+
+    ``None`` quando a fala não pede pagamento, quando a conversa não tem a autoridade de
+    pagar (a de sacola, ``tools.PAYMENT_TOOLS``; sem ela, vale a consulta de sempre) ou
+    quando não há pedido do cliente. Fora da consulta, a Nice só fica com a parte quando
+    ela é sobre um pedido que ainda pede pagamento: o pedido com produto ("quero 2
+    croissants e pago com Pix") é da sacola, e a reclamação de pagamento só fica com ela se
+    resolver (a cobrança de pé, refeita ou trocada); recusada, segue para a equipe.
+    """
+    from . import tools as tools_module
+
+    if act.act not in REPAY_ACTS or conversation is None or not _cart_authorized(conversation):
+        return None
+    if act.act == ORDER and act.product:
+        return None
+    method = tools_module.payment_request(act.span)
+    if method is None:
+        return None
+    result = tools_module.execute("repay_order", {"method": method}, context(act.span))
+    if not result.get("ok") or not result.get("order_ref"):
+        return None
+    if act.act == COMPLAINT and not result.get("payable"):
+        return None
+    if act.act in {ORDER, UNKNOWN} and not result.get("orders"):
+        return None
+    return PartReply(
+        act, text=tools_module.render_result("repay_order", result),
+        tool_events=[{"name": "repay_order", "input": {"method": method}, "ok": True, "order_found": True}],
+        # O código novo (ou o mesmo, ainda de pé), sozinho na mensagem seguinte (OC-05).
+        extra_replies=tools_module.copy_texts(result),
+        self_served=act.act != STATUS,
+    )
+
+
+def _repeat_expired_order(conversation, text: str, *, binding, channel_ref: str, memory):
+    """Remontar na sacola o pedido que venceu sem pagamento (``tools.repeat_order``).
+
+    ``None`` quando a fala não pede (nem responde "sim" à oferta), quando a conversa não
+    tem a autoridade de sacola, ou quando não há pedido vencido do cliente para remontar.
+    """
+    from . import tools as tools_module
+    from .metrics import LAYER_INTENTS
+    from .service import copy_message
+    from .tools import ToolContext
+    from .turn_outcome import TurnOutcome
+
+    if conversation is None or not _cart_authorized(conversation):
+        return None
+    if not tools_module.asks_to_repeat(text, offered=lambda: tools_module.repeat_was_offered(conversation)):
+        return None
+    ctx = ToolContext(
+        conversation=conversation,
+        channel_ref=channel_ref,
+        provider=str(getattr(binding, "provider", "") or ""),
+        account=str(getattr(binding, "account", "") or ""),
+        transport_channel=str(getattr(binding, "transport_channel", "") or ""),
+        connection_key=str(getattr(binding, "connection_key", "") or ""),
+        customer_text=text,
+    )
+    result = tools_module.execute("repeat_order", {}, ctx)
+    if not result.get("ok") or not result.get("order_ref"):
+        return None
+    reply = tools_module.render_result("repeat_order", result)
+    if result.get("cart"):
+        reply = "\n".join(part for part in (reply, copy_message(CART_NEXT_COPY_KEY)) if part)
+    return TurnOutcome(
+        reply_text=reply, layer=LAYER_INTENTS, memory=memory,
+        tool_events=[{"name": "repeat_order", "input": {}, "ok": True, "order_found": True},
+                     *([{"name": "set_item", "ok": True}] if result.get("cart") else [])],
+    )
+
+
 def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=None) -> Execution:
     """Cada ato pelo executor determinístico que já existe. Sem modelo, sem laço."""
     from . import allergens, house_rules
@@ -667,19 +1640,8 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
     if copy is None:
         from .service import copy_message as copy
     catalog_ref = tools_module._catalog_channel_ref(channel_ref)
-    # Cancelamento que o cliente poderia fazer pelo site: a Concierge pergunta (não é equipe).
-    self_cancel = {
-        id(act): text for act in plan_.acts if act.act == CANCEL
-        for text in (_self_cancel(conversation, act),) if text
-    }
-    run = Execution(team=[act for act in plan_.team_acts if id(act) not in self_cancel])
-    offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
-    run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
-    team_in_turn = bool(run.team)
-    texts = " ".join(act.span for act in plan_.acts)
-    run.salutation = opening_salutation(texts) if any(a.act == GREET for a in plan_.acts) else ""
 
-    def context(text: str) -> ToolContext:
+    def context(text: str, *, spoken: str = "") -> ToolContext:
         return ToolContext(
             conversation=conversation,
             channel_ref=channel_ref,
@@ -688,21 +1650,188 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
             transport_channel=str(getattr(binding, "transport_channel", "") or ""),
             connection_key=str(getattr(binding, "connection_key", "") or ""),
             customer_text=text,
+            spoken_text=spoken,
         )
 
-    def search(act: Act) -> PartReply:
+    # Cancelamento que o cliente poderia fazer pelo site: a Concierge pergunta (não é equipe).
+    self_cancel = {
+        id(act): text for act in plan_.acts if act.act == CANCEL
+        for text in (_self_cancel(conversation, act),) if text
+    }
+    # Pagar de novo ou de outra forma (OC-12): o que a página do pedido oferece, a Nice faz.
+    self_repay = {
+        id(act): reply for act in plan_.acts
+        for reply in (_repayment(conversation, act, context=context),) if reply is not None
+    }
+    from . import verification
+
+    # Reclamação, sozinha, não cala a conversa (dono, 21/11/2026: "garanta sempre a questão
+    # de atribuição da conversa"): vai à equipe pelo "vou verificar" (cartão no sino, com
+    # prazo) e a Concierge segue. Com pessoa pedida, alergia, cancelamento fora do
+    # autoatendimento ou encomenda especial no turno, a equipe assume, como antes.
+    # Com pedido ou negociação no mesmo turno vale a decisão anterior do dono ("com
+    # reclamação no turno, nada muda a sacola"): a equipe assume, como antes.
+    complaint_by_verify = verification.can_verify(conversation) and not any(
+        act.act != COMPLAINT and id(act) not in self_cancel for act in plan_.team_acts
+    ) and not any(act.act in {ALLERGY, ORDER, NEGOTIATION} for act in plan_.acts)
+    run = Execution(team=[
+        act for act in plan_.team_acts
+        if id(act) not in self_cancel and id(act) not in self_repay
+        and not (complaint_by_verify and act.act == COMPLAINT)
+    ])
+    offer = (copy(OFFER_TEAM_COPY_KEY) or "").strip()
+    run.team_offers = [text for text in (offer, (copy(allergens.TEAM_OFFER_COPY_KEY) or "").strip()) if text]
+    team_in_turn = bool(run.team)
+    # Pedido de desconto ou "o dono autorizou" no mesmo turno: a sacola não muda (WP-12).
+    negotiating = any(act.act == NEGOTIATION for act in plan_.acts)
+    texts = " ".join(act.span for act in plan_.acts)
+    if any(a.act == GREET for a in plan_.acts):
+        # O cumprimento sai da fala do cliente: o trecho das partes já vem sem ele.
+        from .turn_outcome import current_customer_text
+
+        run.salutation = opening_salutation(texts) or (
+            opening_salutation(current_customer_text(conversation)) if conversation is not None else ""
+        )
+
+    verifiable = verification.can_verify(conversation) and not team_in_turn
+    unclear_before = bool((getattr(conversation, "flags", None) or {}).get(UNCLEAR_FLAG))
+
+    names: list[str] | None = None
+
+    def menu() -> list[str]:
+        nonlocal names
+        if names is None:
+            names = _menu_words(catalog_ref)
+        return names
+
+    def search(act: Act, *, consult: bool = False, piece: bool = False) -> PartReply:
         from . import dialogue
 
+        if consult and act.act == PRODUCT and not act.product and _points_back(act.span):
+            # "ele é doce?" (coordenação, 20/11/2026): o "ele" é o produto citado há pouco
+            # na conversa (o em foco, ou o único da última resposta), e a ficha dele responde.
+            # Sem nenhum, nem a equipe saberia de quem é: pergunta ao cliente.
+            referent = _referent(conversation, channel_ref=channel_ref)
+            if not referent:
+                return PartReply(act, text=copy(dialogue.ASK_PRODUCT_KEY) or "", keeps_question=True)
+            act = Act(act.act, span=act.span, product=referent, qty=act.qty)
+
+        uncovered_by_faq = False
+        if consult and act.act in {HOURS, HOUSE}:
+            # A pergunta da casa: a IA compõe a partir das FAQs publicadas, citando as que
+            # usou (dono, 21/11/2026, #2935). Sem modelo, freio fechado ou invenção: a FAQ direta.
+            composed = _faq_by_model(act, conversation=conversation, channel_ref=channel_ref)
+            if composed is not None and composed.refs:
+                faq_reply = PartReply(
+                    act, text=composed.text,
+                    memo={"tool": "faq_answer", "refs": composed.refs},
+                    tool_events=[{"name": "faq_answer", "input": {}, "ok": True}],
+                )
+                if composed.uncovered.strip() and verifiable:
+                    # A parte que nenhuma FAQ cobre vai à equipe ("vou verificar").
+                    faq_reply.verifying = True
+                    run.verify.append({"text": _clip(composed.uncovered), "product": ""})
+                return faq_reply
+            # A IA disse que nenhuma FAQ cobre: a casa verifica, sem colar FAQ vizinha.
+            uncovered_by_faq = composed is not None
+
+        asked = act
+        corrected: list[str] = []
+        if act.act in {PRODUCT, ORDER} and not uncovered_by_faq:
+            # "pão champagne": o cliente fala como ouve; o cardápio diz "campagne".
+            span, corrected = spelled_as_menu(act.span, menu())
+            if corrected:
+                product = spelled_as_menu(act.product, menu())[0] if act.product else ""
+                act = Act(act.act, span=span, product=product, qty=act.qty)
         query = _search_text(act)
-        result = tools_module.execute("search_storefront", {}, context(query))
+        if corrected:
+            # Só as palavras que distinguem produto: "pão" casava todo pão da seção, e a lista
+            # cortada em três deixava de fora um dos Campagne. O "pão" da fala ainda desempata
+            # na busca (``spoken``): é o "Pain" do Pain de Campagne.
+            query = " ".join(
+                word for word in tools_module._public_search_terms(query)
+                if word not in _GENERIC_PRODUCT_WORDS and word not in _ORDER_FILLER
+                and word not in _ORDER_WORDS and word not in _CITE_LEADING
+            ) or query
+        result = _own_source(act, tools_module.execute("search_storefront", {}, context(query, spoken=asked.span if corrected else "")))
+        if corrected and result.get("items") and not result.get("overview"):
+            # A palavra corrigida é o que o cliente pediu: só os itens que a levam no nome
+            # (a busca por "pão campagne" trazia também os pães sem relação).
+            named = _named_by(result["items"], corrected)
+            if named:
+                result = {**result, "items": named, "count": len(named)}
+        if uncovered_by_faq:
+            result = {**result, "found": False}
+        searched = (
+            act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found")
+            and result.get("items") and not result.get("overview")
+        )
+        holding = _holding_all(list(result.get("items") or []), act.product or act.span) if searched else []
+        if searched and not holding:
+            # "tem campagne oval?": "oval" tira quem o contradiz e, se só um não é variante, é ele.
+            kept, plain = _by_attribute(list(result["items"]), act.product or act.span)
+            holding = [plain] if plain is not None else []
+            if kept and len(kept) < len(result["items"]):
+                result = {**result, "items": kept, "count": len(kept)}
+        if holding and len(_distinctive(act.product or act.span)) > 1:
+            # Duas palavras que distinguem, e só alguns itens levam as duas no nome ou nas
+            # palavras-chave: são eles. "folhado de maçã" é o Chausson aux Pommes (keywords
+            # "folhado", "maca"), não o Croissant nem o Folhado de Frango, que levam só uma.
+            result = {**result, "items": holding, "count": len(holding)}
+        partial = piece and searched and not holding and bool(_distinctive(act.product or act.span))
+        not_in_menu = not partial and (
+            act.act in {PRODUCT, ORDER} and result.get("ok") and result.get("found") and not result.get("overview")
+            and _weak_match(act, conversation, list(result.get("items") or []))
+        )
+        if partial:
+            # Uma das coisas pedidas, e nenhum item é ela ("folhado de maçã" com só o de frango):
+            # a casa diz que não tem e mostra o que há de perto, sem fingir que achou.
+            result = {**result, "code": "not_in_menu"}
+        elif not_in_menu:
+            # O que o cliente citou não está no cardápio de hoje: no lugar de "qual deles?" com
+            # itens sem relação, o cardápio do que há (o mesmo de "o que tem disponível?").
+            overview = tools_module.execute("search_storefront", {}, context("o que tem disponível"))
+            result = {**overview, "code": "not_in_menu"} if overview.get("overview") else {**result, "found": False}
+
         reply = PartReply(act, tool_events=[{"name": "search_storefront", "input": {}, "ok": result.get("ok", True)}])
+        sheet = (
+            _sheet_reply(act, result)
+            if consult and act.act == PRODUCT and result.get("code") != "not_in_menu" else None
+        )
+        # O que a resposta cita: o produto ("Sobre “croissant”"), ou, quando a pergunta é
+        # sobre um atributo dele, a pergunta inteira ("Sobre “o croissant é grande”"):
+        # citar só o produto diria que a casa não sabe nada do croissant.
+        cited = act.product or act.span
+        if sheet == "":
+            # Pergunta sobre o produto que a ficha não responde: sem fato.
+            result = {**result, "found": False}
+            cited = act.span.strip().rstrip("?!. ")
         if result.get("ok") and result.get("found"):
-            reply.text = tools_module.render_result("search_storefront", result)
+            reply.text = sheet or tools_module.render_result("search_storefront", result)
             reply.memo = dialogue.memo_of("search_storefront", {}, result) or {}
+            items = result.get("items") or []
+            if result.get("code") == "not_in_menu":
+                # Nada do cardápio casa com o que o cliente citou: nada de "qual deles?" com
+                # itens sem relação. Diz que não achou e mostra o que há hoje.
+                lead = _fill(copy(NOT_IN_MENU_COPY_KEY) or "", part=_clip(_cited(asked, conversation)))
+                reply.text = "\n".join(part for part in (lead, reply.text) if part)
+            elif consult and not sheet and len(items) == 1 and not items[0].get("can_order"):
+                # "tem croissant?" e não tem: no lugar, o que a casa tem (as alternativas da Loja).
+                reply.text, memo, asks = _offer_alternatives(
+                    reply.text, items[0].get("sku", ""), context=context, copy=copy, qty=act.qty or 1,
+                )
+                if asks:
+                    reply.memo, reply.keeps_question = memo, True
+        elif consult and verifiable and verification.question_text(act):
+            # Sem fato numa consulta: a casa não inventa e não larga o cliente. Diz que
+            # não tem aqui, pergunta à equipe e, no fim da resposta, promete o prazo.
+            reply.text = _fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited))
+            reply.verifying = True
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
         else:
             # Sem fato, a casa não inventa: diz que não tem e oferece a equipe.
             reply.text = " ".join(
-                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(act.product or act.span)), offer) if part
+                part for part in (_fill(copy(NOT_FOUND_COPY_KEY) or "", part=_clip(cited)), offer) if part
             )
             reply.memo = {"tool": "search_storefront", "found": False}
         return reply
@@ -713,13 +1842,55 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
         if id(act) in self_cancel:
             run.replies.append(PartReply(act, text=self_cancel[id(act)], self_served=True, keeps_question=True))
             continue
+        if id(act) in self_repay:
+            run.replies.append(self_repay[id(act)])
+            continue
+        if act.act == COMPLAINT and complaint_by_verify:
+            reply = PartReply(act, text=copy(COMPLAINT_HEARD_COPY_KEY) or "", verifying=True)
+            cart = tools_module.execute("view_cart", {}, context("")) if _cart_authorized(conversation) else {}
+            if cart.get("lines"):
+                # "não posso acrescentar mais coisas?": a sacola de agora segue aberta, e diz.
+                reply.text = "\n".join(part for part in (
+                    reply.text, copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart),
+                    copy(CART_NEXT_COPY_KEY),
+                ) if part)
+            run.replies.append(reply)
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
+            continue
         if act.act in TEAM_ACTS or act.act in OTHER_DESK_ACTS:
             topic = TEAM_TOPICS.get(act.act, "isso")
             run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=topic)))
             continue
+        if act.act in {HOURS, HOUSE} and _asks_delivery_fee(act.span) and _delivers(channel_ref):
+            # Preço da entrega: depende do endereço, e a frase diz isso sem o "Sim." da
+            # pergunta frequente, que responde a "vocês fazem entrega?" (20/11/2026).
+            text = (copy(DELIVERY_FEE_COPY_KEY) or "").strip()
+            if text:
+                run.replies.append(PartReply(act, text=text, keeps_question=True))
+                continue
+        if act.act == PRODUCT:
+            pieces = asked_pieces(_cited(act, conversation), menu())
+            if len(pieces) > 1:
+                # Duas coisas numa pergunta: cada uma com a sua resposta, nunca um nome só.
+                run.replies.extend(
+                    search(Act(PRODUCT, span=piece, product=piece), consult=True, piece=True) for piece in pieces
+                )
+                continue
         if act.act in {PRODUCT, HOURS, HOUSE}:
-            run.replies.append(search(act))
+            run.replies.append(search(act, consult=True))
             continue
+        if act.act == ORDER and not team_in_turn:
+            pieces = asked_pieces(act.product or act.span, menu())
+            if len(pieces) > 1:
+                # "uma baguete e um ciabata": cada coisa vai à sacola por si (a leitura às vezes
+                # junta as duas num nome só, como no ar em 24/11/2026).
+                for piece in pieces:
+                    one = Act(ORDER, span=piece, product="", qty=0)
+                    changed = None if negotiating else _cart_change(
+                        one, conversation=conversation, context=context, copy=copy,
+                    )
+                    run.replies.append(changed if changed is not None else search(one, piece=True))
+                continue
         if act.act == ORDER:
             if team_in_turn:
                 # A equipe vai assumir: nada de pedido pela metade feito pelo robô.
@@ -730,13 +1901,35 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 if added is not None:
                     run.replies.append(added)
                     continue
+            if not negotiating:
+                changed = _cart_change(act, conversation=conversation, context=context, copy=copy)
+                if changed is not None:
+                    run.replies.append(changed)
+                    continue
             run.replies.append(search(act))
             continue
         if act.act == STATUS:
+            cart = (
+                tools_module.execute("view_cart", {}, context(""))
+                if conversation is not None and _cart_authorized(conversation) else {}
+            )
+            if cart.get("lines"):
+                # Com sacola aberta, "o que pedi" é a sacola de agora (ensaio do dono, 21/11/2026:
+                # "as 2 baguettes que pedi" trouxe um pedido de 17/11 com o total vazio).
+                text = "\n".join(part for part in (
+                    copy(CART_NOW_COPY_KEY), tools_module.render_result("view_cart", cart), copy(CART_NEXT_COPY_KEY),
+                ) if part)
+                run.replies.append(PartReply(
+                    act, text=text, tool_events=[{"name": "view_cart", "input": {}, "ok": True}],
+                ))
+                continue
             result = tools_module.execute("order_status", {}, context(act.span))
             run.replies.append(PartReply(
                 act, text=tools_module.render_result("order_status", result),
-                tool_events=[{"name": "order_status", "input": {}, "ok": result.get("ok", True)}],
+                tool_events=[{"name": "order_status", "input": {}, "ok": result.get("ok", True),
+                              "order_found": bool(result.get("orders"))}],
+                # "Manda o Pix de novo": o código, sozinho na mensagem seguinte (OC-05).
+                extra_replies=tools_module.copy_texts(result),
             ))
             continue
         if act.act == ALLERGY:
@@ -773,10 +1966,72 @@ def execute(plan_: Plan, *, conversation, channel_ref: str, binding=None, copy=N
                 _rule, fixed = house_rules.fixed_reply_for("desconto", copy=copy)
             run.replies.append(PartReply(act, text=fixed))
             continue
+        if plan_.source in {"gate", "local"} and verifiable and verification.question_text(act):
+            # Sem modelo (sem chave, freio, falha do provedor) e a leitura local não
+            # entendeu (dono, 19/11/2026): nada de "diga de outro jeito". A casa pergunta à
+            # equipe, como no "vou verificar", e o prazo fecha a resposta.
+            run.replies.append(PartReply(act, text="", verifying=True))
+            run.verify.append({"text": verification.question_text(act), "product": act.product[:80]})
+            continue
+        if unclear_before:
+            # "Não entendi" já foi dito nesta conversa: a segunda vez é com a equipe.
+            run.team.append(Act(HUMAN, span=act.span))
+            run.replies.append(PartReply(act, text=_fill(copy(TEAM_COPY_KEY) or "", topic=f"“{_clip(act.span)}”")))
+            continue
+        run.unclear = True
         run.replies.append(PartReply(act, text=_fill(copy(UNCLEAR_COPY_KEY) or "", part=_clip(act.span))))
     if run.allergy_team and not run.team:
         run.team = [Act(ALLERGY)]
+    if run.verify and run.to_team:
+        # A equipe assume a conversa neste turno e vê todas as partes no cartão dela:
+        # não há verificação à parte, e a frase de cada parte já diz que não tem aqui.
+        run.verify = []
+        for reply in run.replies:
+            reply.verifying = False
+    elif run.verify:
+        run.verify_promise = verification.promise_for(conversation)
+        open_now = verification.current(conversation) is not None
+        run.verify_note = verification.promise_text(run.verify_promise, joined=open_now)
+        if run.verify_promise.get("kind") == verification.NO_PROMISE:
+            # Fora da janela de 24 horas, nada volta pela conversa: nenhum cartão abre, e
+            # a parte fica sem resposta na memória (a pergunta repetida a busca de novo).
+            run.verify = []
+            for reply in run.replies:
+                if reply.verifying:
+                    reply.verifying = False
+                    reply.memo = {"found": False}
+                    if reply.act.act == COMPLAINT:
+                        # Sem cartão, "já levei à equipe" seria falso: a equipe assume, como antes.
+                        run.team.append(reply.act)
+                        reply.text = _fill(copy(TEAM_COPY_KEY) or "", topic=TEAM_TOPICS[COMPLAINT])
+    _join_choices(run, copy=copy)
     return run
+
+
+def _join_choices(run: Execution, *, copy) -> None:
+    """Duas ou mais escolhas da sacola no mesmo turno viram uma pergunta só (#3597).
+
+    "1 brioche e 1 campagne oval": cada coisa pedida ganha a sua linha, na ordem do pedido
+    ("Para “brioche”: A ou B?"), no lugar da primeira; a memória guarda todas (``CHOOSE_EACH``),
+    e o cliente responde as duas de uma vez ou uma por vez. Antes, só a última chegava.
+    """
+    from django.utils import timezone
+
+    from . import dialogue
+
+    asking = [reply for reply in run.replies if reply.choice]
+    if len(asking) < 2:
+        return
+    groups = [reply.choice for reply in asking]
+    joined = PartReply(
+        asking[0].act, text=dialogue.each_question(groups, copy=copy), keeps_question=True,
+        memo={"pending": {"kind": dialogue.CHOOSE_EACH, "groups": groups,
+                          "day": timezone.localdate().isoformat()}},
+        tool_events=[event for reply in asking for event in reply.tool_events],
+    )
+    first = run.replies.index(asking[0])
+    run.replies = [reply for reply in run.replies if not reply.choice]
+    run.replies.insert(first, joined)
 
 
 #: "acrescenta 2 croissants no meu pedido", "coloca mais um pão no pedido M63".
@@ -825,6 +2080,21 @@ def _add_to_order(act: Act, *, conversation, search, run: Execution) -> PartRepl
     return reply
 
 
+def _same_block(text: str, block: str) -> bool:
+    """A mesma frase, ou uma que só acrescenta a oferta à outra ("Sobre “bagel”, não tenho
+    essa informação aqui." e a mesma com "Se quiser, chamo alguém"): sai uma vez só.
+
+    Ensaio do dono (21/11/2026): duas partes sobre o mesmo produto, uma lida como pergunta e
+    outra como pedido, repetiam a frase na mesma resposta.
+    """
+    a, b = text.strip(), block.strip()
+    if a == b:
+        return True
+    shorter, longer = sorted((a, b), key=len)
+    # Só frase inteira: um "Sim." curto no começo de outra resposta não é repetição.
+    return len(shorter) >= 30 and shorter.endswith((".", "?", "!")) and longer.startswith(shorter)
+
+
 def compose(run: Execution) -> str:
     """Uma mensagem: as partes na ordem do cliente e uma pergunta só.
 
@@ -837,14 +2107,19 @@ def compose(run: Execution) -> str:
     kept = ""
     for reply in run.replies:
         text = (reply.text or "").strip()
-        if run.to_team:
+        if run.to_team or run.verify_note:
+            # Com a equipe chamada, ou com o "vou verificar" no fim da mesma resposta, a
+            # oferta "chamo alguém da equipe" contradiz o que a casa já fez (ensaio, 21/11).
             for offer in run.team_offers:
                 text = text.replace(offer, "").strip()
         if reply.keeps_question and text:
             kept = text  # a confirmação que espera resposta vai para o fim
             continue
-        if text and text not in blocks:
+        if text and not any(_same_block(text, block) for block in blocks):
             blocks.append(text)
+    if run.verify_note:
+        # O prazo do "vou verificar" fecha as respostas (antes da confirmação no ar).
+        blocks.append(run.verify_note)
     if kept:
         blocks.append(kept)
         last_question = len(blocks) - 1
@@ -927,32 +2202,77 @@ def team_triage(run: Execution, decision):
 
 
 def run(conversation, *, binding, decision, client=None):
-    """Um turno inteiro pelas intenções no plural. Devolve o ``AgentOutcome`` do turno.
+    """Um turno inteiro pelas intenções no plural. Devolve o ``TurnOutcome`` do turno.
 
-    A ordem de quem responde primeiro é a do agente: memória da conversa ("sim", "o
+    A ordem de quem responde primeiro: memória da conversa ("sim", "o
     segundo"), cortesia sozinha, e então as partes. A conversa vai para a equipe sem
     resposta só quando TODAS as partes são da equipe; com parte simples junto, a resposta
     leva as dúvidas respondidas e diz que a equipe foi chamada (decisão do dono).
     """
     from . import dialogue, small_talk, triage
-    from .agent import AgentOutcome, _current_customer_text
-    from .agent import _config as agent_config
     from .metrics import LAYER_CONTEXT, LAYER_COURTESY
+    from .service import config
+    from .turn_outcome import TurnOutcome, current_customer_text
 
-    channel_ref = str(conversation.channel_ref or agent_config().get("channel_ref") or "")
-    customer_text = _current_customer_text(conversation)
+    channel_ref = str(conversation.channel_ref or config().get("channel_ref") or "")
+    if channel_ref:
+        from shopman.shop.services.channel_switch import is_channel_active
+
+        if not is_channel_active(channel_ref):
+            # Canal desligado no Gestor: a Concierge segue respondendo, mas não concede
+            # desconto nem fecha pedido. O commit recusaria de qualquer jeito; aqui a
+            # conversa não chega a prometer.
+            conversation._channel_off = True
+            conversation._commercial_authority = False
+    customer_text = current_customer_text(conversation)
     memory = dialogue.for_turn(conversation, channel_ref=channel_ref)
 
-    # O "sim"/"não" à pergunta de cancelamento (#1445): antes de tudo, como no agente.
+    # O "sim"/"não" à pergunta de cancelamento (#1445): antes de tudo.
     # Qualquer outra fala desfaz a pergunta.
+    if getattr(decision, "escalated_by", "") == "allergy_offer_accepted":
+        # O "sim" à oferta da equipe para alergia grave (dono, 03/10/2026): a equipe, agora,
+        # com a triagem do turno no cartão. Antes da memória, que leria o "sim" como outra coisa.
+        from .metrics import LAYER_TEAM
+
+        return TurnOutcome(reply_text="", handoff=True, handoff_reason=decision.reason_line(),
+                           team_triage=decision, layer=LAYER_TEAM, memory=memory)
     cancel_turn = _cancellation().resolve_pending(conversation, customer_text)
     if cancel_turn is not None:
-        from .agent import CANCEL_HANDOFF_REASON
         from .metrics import LAYER_HOUSE_RULE
+        from .turn_outcome import CANCEL_HANDOFF_REASON
 
         if cancel_turn.code == "refused":
-            return AgentOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
-        return AgentOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+            return TurnOutcome(reply_text="", handoff=True, handoff_reason=CANCEL_HANDOFF_REASON, memory=memory)
+        return TurnOutcome(reply_text=cancel_turn.text, layer=LAYER_HOUSE_RULE, memory=memory)
+    # "Monta de novo" (ou o "sim" à oferta) depois do prazo de pagar vencido (OC-12, variante
+    # "oferecer"): a recompra da loja na sacola da conversa, antes da leitura em partes.
+    repeated = _repeat_expired_order(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                     memory=memory)
+    if repeated is not None:
+        return repeated
+
+    # Alterar o pedido já feito (OC-11): o código que confirma a prévia, a resposta à pergunta
+    # do que mudar, ou o pedido de alteração ("troca o horário do pedido", "tira o croissant
+    # do pedido", "troca o endereço"), pelo mesmo serviço do balcão (``order_amendment``).
+    from . import order_amendment
+
+    amend_turn = order_amendment.handle(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                        memory=memory, decision=decision)
+    if amend_turn is not None:
+        return amend_turn
+
+    # "E aí?" com uma pergunta à equipe em espera ("vou verificar", WP-05): a resposta é
+    # o estado da espera, sem cartão novo e sem buscar de novo.
+    verifying = memory.state.get("verifying")
+    if verifying:
+        from . import verification
+        from .metrics import LAYER_CONTEXT as _LAYER_CONTEXT
+
+        if verification.asks_for_news(customer_text):
+            waiting = TurnOutcome(reply_text=verification.waiting_reply(verifying), layer=_LAYER_CONTEXT,
+                                   memory=memory)
+            waiting.verification = {"waiting": True}
+            return waiting
 
     # Pergunta repetida (decisão da coordenação, 03/10/2026): "você não respondeu",
     # "e a minha pergunta?" sem outra pergunta junto. A Concierge responde as partes
@@ -961,15 +2281,27 @@ def run(conversation, *, binding, decision, client=None):
         return _answer_again(conversation, binding=binding, decision=decision, memory=memory,
                              channel_ref=channel_ref, client=client)
 
+    # Fechar o pedido na conversa (WP-13): a resposta à pergunta do fechamento que está
+    # no ar, a confirmação com o código, ou o "pode fechar" com sacola.
+    from . import order_closing
+
+    closing_turn = order_closing.handle(conversation, customer_text, binding=binding, channel_ref=channel_ref,
+                                        memory=memory)
+    if closing_turn is not None:
+        return closing_turn
+
     resolution = dialogue.resolve(customer_text, memory.state, memory.facts)
     memos = [resolution.memo] if resolution.memo else []
-    from .agent import addition_outcome
+    from .turn_outcome import addition_outcome
 
     addition = addition_outcome(conversation, resolution, memory=memory, memos=memos)
     if addition is not None:
         return addition
+    corrected = _cart_correction(conversation, resolution, memory=memory, memos=memos, binding=binding, channel_ref=channel_ref)
+    if corrected is not None:
+        return corrected
     if resolution.answers_without_model:
-        return AgentOutcome(
+        return TurnOutcome(
             reply_text=resolution.reply,
             handoff=resolution.outcome == "handoff",
             handoff_reason=resolution.handoff_reason,
@@ -977,26 +2309,35 @@ def run(conversation, *, binding, decision, client=None):
             memory=memory,
             memory_memos=memos,
         )
-    text = resolution.text or customer_text
+    text = resolution.text or getattr(conversation, "_closing_after_parts", None) or customer_text
     courtesy = small_talk.small_talk_kind(text)
     if courtesy:
-        from shopman.shop.models import ConversationMessage
-
-        from .prompt import _shop
+        from shopman.shop.models import ConversationMessage, Shop
 
         first = not conversation.messages.filter(kind=ConversationMessage.Kind.REPLY).exists()
-        return AgentOutcome(
+        return TurnOutcome(
             reply_text=small_talk.reply_for(
-                text, kind=courtesy, shop_name=(getattr(_shop(), "name", "") or "").strip(), is_first_turn=first
+                text, kind=courtesy, shop_name=(getattr(Shop.load(), "name", "") or "").strip(), is_first_turn=first
             ),
             layer=LAYER_COURTESY,
             memory=memory,
             memory_memos=memos,
         )
+    fixed = _house_fixed_reply(conversation, text, channel_ref=channel_ref, memory=memory, memos=memos,
+                               team_decided=getattr(decision, "escalates", False))
+    if fixed is not None:
+        return fixed
+    # A alergia sobre a fala inteira só quando ela é uma parte só; com outras partes junto,
+    # a alergia é uma das partes (``execute``), e as outras também recebem resposta.
+    allergy = _allergy_outcome(conversation, text, channel_ref=channel_ref) if len(split_local(text)) < 2 else None
+    if allergy is not None:
+        allergy.memory = memory
+        allergy.memory_memos = memos
+        return allergy
 
     rules_intent, rules_source = triage.classify_rules(text)
     meter = getattr(conversation, "_meter", None)
-    has_key = bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+    has_key = _ai_ready()
     reader = client
     if meter is not None and (client is not None or has_key):
         reader = meter.wrap(client, "intents", factory=build_client)
@@ -1006,7 +2347,7 @@ def run(conversation, *, binding, decision, client=None):
         rules_intent=rules_intent,
         rules_source=rules_source,
         jev_scores=getattr(decision, "jev_scores", None),
-        memory_note=memory.prompt_lines(),
+        memory_note=reading_note(memory),
         client=reader,
         use_model=reader is not None or has_key,
     )
@@ -1016,10 +2357,117 @@ def run(conversation, *, binding, decision, client=None):
         needed = CANCEL if decision.escalated_by == "cancel_order" else decision.intent
         if needed in TEAM_ACTS | OTHER_DESK_ACTS | {ALLERGY} and needed not in {act.act for act in found.acts}:
             found.acts.append(Act(needed, span=text.strip()[:300]))
+    # O dia, o recebimento e o horário ditos JUNTO com o pedido (WP-14, cartão 1): aplicados
+    # antes da sacola, que passa a medir a fornada da data. A parte que só dizia o
+    # recebimento ("eu vou aí buscar às 16h") fica atendida, nunca vira "vou verificar".
+    prefilled = {}
+    if any(act.act == ORDER for act in found.acts) and _cart_authorized(conversation):
+        prefilled = order_closing.prefill(conversation, text, binding=binding, channel_ref=channel_ref)
+        if prefilled:
+            found.acts = [act for act in found.acts if not (act.act == HOURS and _only_fulfillment(act.span))]
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)
     if meter is not None:
         meter.add_time("intents", (time.perf_counter() - started) * 1000)
-    return _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    outcome = _outcome(found, executed, decision=decision, memory=memory, memos=memos, text=text)
+    if resolution.still_asks and outcome.reply_text:
+        # Uma das escolhas no ar foi respondida: a que falta volta no fim (#3597).
+        outcome.reply_text = "\n\n".join((outcome.reply_text, resolution.still_asks))
+    from .service import copy_message
+
+    note = order_closing.noted(prefilled, copy=copy_message)
+    if note and outcome.reply_text:
+        outcome.reply_text = "\n".join((note, outcome.reply_text))
+    # Troca de assunto no meio do fechamento: a pergunta que estava no ar volta no fim.
+    return order_closing.resume(conversation, outcome, binding=binding, channel_ref=channel_ref, memory=memory)
+
+
+def _only_fulfillment(span: str) -> bool:
+    """A parte só diz como e quando recebe ("eu vou aí buscar às 16h"), sem perguntar nada."""
+    from . import order_closing
+
+    folded = _fold(span)
+    # "entendeu?", "ok?", "certo?" no fim cobram atenção, não perguntam nada.
+    plain = re.sub(r"\b(?:entendeu|entendesse|ok|certo|ta|beleza|combinado|pode ser)\s*\?+", "", folded)
+    asks = "?" in plain or re.search(r"\b(?:abre|abrem|fecha|fecham|funciona|funcionam|que horas)\b", folded)
+    return order_closing.fulfillment_cue(span) and not asks
+
+
+def _house_fixed_reply(conversation, text: str, *, channel_ref: str, memory, memos, team_decided=False):
+    """As regras de entrada com frase fixa sobre a mensagem inteira (R7, R8), antes das partes.
+
+    Pedido de desconto (R7, dono, 03/10/2026): até o teto da casa a Concierge concede pelo
+    mesmo cupom do site, e o valor é do sistema; quando não dá (teto 0, sem autoridade,
+    cupom recusado), a frase fixa. "Você é um robô?" (R8): a frase de assistente da casa.
+    Sem modelo nem busca. ``None`` quando a mensagem não é nenhuma das duas.
+    """
+    from shopman.shop.models import Shop
+
+    from . import discount, house_rules
+    from .metrics import LAYER_HOUSE_RULE
+    from .turn_outcome import TurnOutcome
+
+    rule, fixed = house_rules.fixed_reply_for(text, shop_name=(getattr(Shop.load(), "name", "") or "").strip())
+    if rule == "R7":
+        granted = discount.handle_request(conversation=conversation, channel_ref=channel_ref, customer_text=text)
+        if granted.text:
+            return TurnOutcome(reply_text=granted.text, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    if rule == "R8" and team_decided:
+        # A triagem já mandou o turno à equipe (alergia junto, pedido de atendimento): a
+        # frase de assistente não cala a parte da equipe; as partes seguem.
+        return None
+    if fixed:
+        return TurnOutcome(reply_text=fixed, layer=LAYER_HOUSE_RULE, memory=memory, memory_memos=memos)
+    return None
+
+
+def _earlier_customer_text(conversation) -> str:
+    """A fala do cliente antes deste turno (a que recebeu "a que é a alergia?")."""
+    from shopman.shop.models import ConversationMessage
+
+    inbound_ids = tuple(getattr(conversation, "_inbound_ids", ()) or ())
+    return (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND)
+        .exclude(pk__in=inbound_ids)
+        .exclude(text="")
+        .order_by("-pk")
+        .values_list("text", flat=True)
+        .first()
+        or ""
+    )
+
+
+def _allergy_outcome(conversation, customer_text: str, *, channel_ref: str):
+    """Alergia (dono, 03/10/2026, ``allergens.py``): a resposta sai das fontes, sem modelo.
+
+    Nada aqui pode ser parafraseado em "sem leite": a resposta é o aviso da casa, os
+    alérgenos declarados do produto citado e a oferta da equipe; ou a pergunta "a quê?",
+    e a resposta a ela ("a ovo") lida junto com a fala de antes. O que a Concierge não
+    pode responder vai para a equipe. ``None`` quando a fala não é de alergia.
+    """
+    from . import allergens
+    from . import tools as tools_module
+    from .turn_outcome import TurnOutcome
+
+    stamp = (conversation.flags or {}).get("triage") or {}
+    inbound_ids = set(getattr(conversation, "_inbound_ids", ()) or ())
+    # Só vale a triagem DESTE turno: a de um turno anterior não diz nada desta fala.
+    this_turn = bool(inbound_ids & set(stamp.get("message_ids") or ()))
+    answered_by = (stamp.get("answered_by") or "") if this_turn else ""
+    catalog_ref = tools_module._catalog_channel_ref(channel_ref)
+    if answered_by not in allergens.ANSWERED_BY:
+        answered_by = allergens.decision(customer_text, channel_ref=catalog_ref)
+    if not answered_by:
+        return None
+    if answered_by == allergens.ASK_WHICH:
+        reply = allergens.ask_which(customer_text)
+    else:
+        text = customer_text
+        if answered_by == allergens.NOTICE_AFTER_ASK:
+            text = f"{_earlier_customer_text(conversation)}\n{customer_text}"
+        reply = allergens.reply_for(text, channel_ref=catalog_ref) if answered_by != allergens.TEAM else ""
+    if reply:
+        return TurnOutcome(reply_text=reply)
+    return TurnOutcome(reply_text="", handoff=True, handoff_reason="alergia")
 
 
 def _parts_memo(run_: Execution) -> dict:
@@ -1033,6 +2481,8 @@ def _parts_memo(run_: Execution) -> dict:
             state = "team"
         elif reply.suspended:
             state = "suspended"
+        elif reply.verifying:
+            state = "verifying"
         elif act.act == UNKNOWN or reply.memo.get("found") is False:
             state = "unanswered"
         else:
@@ -1043,12 +2493,12 @@ def _parts_memo(run_: Execution) -> dict:
 
 
 def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text: str, lead: str = ""):
-    """O ``AgentOutcome`` de um turno lido em partes (normal ou pergunta repetida)."""
+    """O ``TurnOutcome`` de um turno lido em partes (normal ou pergunta repetida)."""
     from . import triage
-    from .agent import AgentOutcome
     from .metrics import LAYER_INTENTS, LAYER_TEAM
+    from .turn_outcome import TurnOutcome
 
-    outcome = AgentOutcome(
+    outcome = TurnOutcome(
         reply_text="",
         layer=LAYER_INTENTS,
         tool_events=executed.tool_events,
@@ -1056,6 +2506,10 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
         memory_memos=[*memos, *executed.memos, _parts_memo(executed)],
         intents=found.as_dict(),
     )
+    outcome.unclear = executed.unclear and not executed.to_team
+    if executed.verify_note and not executed.to_team:
+        # "Vou verificar": o turno grava a pergunta e o cartão da equipe (``service.run_turn``).
+        outcome.verification = {"requests": list(executed.verify), "promise": dict(executed.verify_promise)}
     if executed.allergy_answered_by and not executed.to_team:
         # O próximo "sim" à oferta da equipe para alergia grave lê isto (``triage``).
         outcome.triage_update = triage.Triage(
@@ -1082,6 +2536,9 @@ def _outcome(found: Plan, executed: Execution, *, decision, memory, memos, text:
             return outcome
     body = compose(executed)
     outcome.reply_text = f"{lead}\n{body}" if lead and body else body
+    outcome.extra_replies = list(dict.fromkeys(
+        text for reply in executed.replies if not reply.suspended for text in reply.extra_replies
+    ))
     return outcome
 
 
@@ -1092,7 +2549,8 @@ def _pending_parts(memory) -> list[Act]:
     devolve. Sem partes na memória (a última resposta não foi pelas partes), vazio.
     """
     rows = [row for row in (memory.state.get("parts") or []) if isinstance(row, dict)
-            and row.get("act") in ACT_NAMES and row.get("state") != "team" and row.get("act") not in COURTESY]
+            and row.get("act") in ACT_NAMES and row.get("state") not in {"team", "verifying"}
+            and row.get("act") not in COURTESY]
     pending = [row for row in rows if row.get("state") != "answered"] or rows
     return [Act(row["act"], span=str(row.get("span") or ""), product=str(row.get("product") or ""),
                 qty=int(row.get("qty") or 0)) for row in pending]
@@ -1125,9 +2583,9 @@ def _earlier_question(conversation) -> str:
 def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, client=None):
     """A pergunta repetida: responde de novo o que ficou pendente, com um pedido de desculpa."""
     from . import triage
-    from .agent import AgentOutcome
     from .metrics import LAYER_INTENTS
     from .service import copy_message as copy
+    from .turn_outcome import TurnOutcome
 
     acts = _pending_parts(memory)
     text = ""
@@ -1136,11 +2594,11 @@ def _answer_again(conversation, *, binding, decision, memory, channel_ref: str, 
     else:
         text = _earlier_question(conversation)
         if not text:
-            return AgentOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
+            return TurnOutcome(reply_text=copy(REPEAT_ASK_COPY_KEY), layer=LAYER_INTENTS, memory=memory,
                                 intents={"acts": [], "source": "memory", "reason": "asked_again_nothing"})
         rules_intent, rules_source = triage.classify_rules(text)
-        has_key = bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
-        found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=memory.prompt_lines(),
+        has_key = _ai_ready()
+        found = plan(text, rules_intent=rules_intent, rules_source=rules_source, memory_note=reading_note(memory),
                      client=client, use_model=client is not None or has_key)
         found.reason = f"asked_again:{found.reason}"
     executed = execute(found, conversation=conversation, channel_ref=channel_ref, binding=binding)

@@ -46,6 +46,8 @@ interface RecentSale {
 const props = defineProps<{
   open: boolean;
   pos: POSProjection | null;
+  /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
+  operatorName?: string;
 }>();
 // `cancelled` sobe para a tela de venda limpar o vestígio da mesma venda
 // (tela de resultado, chip de PIX pendente) e recarregar a Projection.
@@ -102,7 +104,7 @@ async function printDanfe(sale: RecentSale) {
   try {
     const response = await $fetch<{ payload_b64: string; title: string }>(
       apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/danfe-escpos/`),
-      { credentials: "include" },
+      { method: "POST", credentials: "include" },
     );
     const outcome = await agent.print(response.payload_b64, response.title);
     if (outcome.status === "printed") toast.success(`DANFE de ${sale.order_ref} na impressora.`);
@@ -140,7 +142,7 @@ async function printReceipt(sale: RecentSale) {
   try {
     const response = await $fetch<{ payload_b64: string; title: string }>(
       apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(sale.order_ref)}/receipt-escpos/`),
-      { credentials: "include" },
+      { method: "POST", credentials: "include" },
     );
     const outcome = await agent.print(response.payload_b64, response.title);
     if (outcome.status === "printed") {
@@ -276,15 +278,30 @@ function messageOf(error: unknown): string {
 const saleCorrection = computed(() => props.pos?.checkout?.capabilities?.sale_correction ?? null);
 const cancelDialogOpen = ref(false);
 const cancelTargetRef = ref("");
+// O valor que o gerente assina, lido da linha que a Caixa tocou (P1-6).
+const cancelTargetTotal = ref("");
 const cancelReason = ref("");
 const cancelBusy = ref(false);
 const cancelError = ref("");
 
 function openCancel(sale: RecentSale) {
   cancelTargetRef.value = sale.order_ref;
+  cancelTargetTotal.value = `R$ ${sale.total_display}`;
   cancelReason.value = "";
   cancelError.value = "";
   cancelDialogOpen.value = true;
+}
+
+// O cancelamento é mutação de dinheiro e o servidor exige `client_request_id`
+// (sem ele, 422 "Identifique a tentativa…", beta 07/11). A MESMA tentativa
+// (pedido + motivo) reusa a chave: o PIN errado que se corrige e o clique duplo
+// não viram dois cancelamentos; mudar o pedido ou o motivo é tentativa nova.
+// Mesmo contrato do cancelamento da tela de resultado (`usePosSale`).
+let cancelAttempt: { orderRef: string; reason: string; id: string } | null = null;
+
+function newClientRequestId(): string {
+  const random = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `pos:${random}`;
 }
 
 async function submitCancel(aprovacao: Record<string, string>) {
@@ -294,15 +311,20 @@ async function submitCancel(aprovacao: Record<string, string>) {
   cancelError.value = "";
   try {
     const reason = cancelReason.value.trim();
+    if (!cancelAttempt || cancelAttempt.orderRef !== orderRef || cancelAttempt.reason !== reason) {
+      cancelAttempt = { orderRef, reason, id: newClientRequestId() };
+    }
     await $fetch(apiPath("/api/v1/backstage/pos/sale/recent/cancel/"), {
       method: "POST",
       credentials: "include",
       body: {
         order_ref: orderRef,
         manager_approval: aprovacao,
+        client_request_id: cancelAttempt.id,
         ...(reason ? { reason } : {}),
       },
     });
+    cancelAttempt = null;
     cancelDialogOpen.value = false;
     cancelTargetRef.value = "";
     cancelReason.value = "";
@@ -322,9 +344,12 @@ async function submitCancel(aprovacao: Record<string, string>) {
 }
 
 // O chip fala o MESMO rótulo da tela de resultado quando o servidor manda o
-// estado canônico; sem ele, o rótulo pronto do servidor.
+// estado canônico; sem ele, o rótulo pronto do servidor. A venda cancelada sem
+// nota (`not_issued`) também usa o rótulo do servidor: só ele sabe se o Pix
+// chegou a confirmar ("... antes do pagamento"), a mesma frase do Gestor.
 function fiscalChipLabel(sale: RecentSale): string {
-  return sale.fiscal_state ? fiscalStateLabel(sale.fiscal_state) : sale.fiscal_label;
+  if (!sale.fiscal_state || sale.fiscal_state === "not_issued") return sale.fiscal_label;
+  return fiscalStateLabel(sale.fiscal_state);
 }
 function fiscalChipStatus(sale: RecentSale): string {
   if (!sale.fiscal_state) return sale.fiscal_status;
@@ -336,6 +361,7 @@ function fiscalChipClass(status: string): string {
   if (status === "failed") return "bg-destructive/10 text-destructive border-destructive/30";
   if (status === "cancelled") return "bg-muted text-muted-foreground border-border";
   if (status === "not_requested") return "bg-muted text-muted-foreground border-border";
+  if (status === "not_issued") return "bg-muted text-muted-foreground border-border";
   // Encomenda: a nota está marcada para a saída — não há nada a fazer agora.
   if (status === "awaiting_pickup" || status === "awaiting_delivery") return "bg-muted text-muted-foreground border-border";
   return "bg-warning/10 text-warning-foreground border-warning/30";
@@ -343,19 +369,26 @@ function fiscalChipClass(status: string): string {
 </script>
 
 <template>
-  <UiSheet :open="open" @update:open="(v) => emit('update:open', v)">
-    <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg" :title="undefined">
-      <div class="flex items-center justify-between border-b border-border px-5 py-4">
-        <div>
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Balcão</p>
-          <h2 class="text-lg font-semibold text-foreground">Últimas vendas</h2>
-        </div>
-        <UiButton type="button" variant="outline" size="sm" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
-          <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
-        </UiButton>
-      </div>
+  <!-- A gaveta é o `NuxtSlideover`, da mesma família do `OperatorManagerAuth`:
+       com a gaveta antiga (`UiSheet`, overlay em z-50) as duas autorizações de
+       gerente abertas daqui (cancelar, emitir a nota) nasciam POR BAIXO dela,
+       escuras e sem clique (achado no alpha, 29/10/2026). -->
+  <NuxtSlideover
+    :open="open"
+    title="Últimas vendas"
+    description="Vendas do balcão nas últimas 24 horas, e encomendas retiradas ou entregues."
+    :ui="{ content: 'sm:max-w-lg' }"
+    data-recent-sales-sheet
+    @update:open="(v) => emit('update:open', v)"
+  >
+    <template #actions>
+      <NuxtButton type="button" color="neutral" variant="outline" size="md" aria-label="Atualizar as últimas vendas" :disabled="loading" @click="load">
+        <Icon name="lucide:refresh-cw" class="size-4" :class="loading ? 'animate-spin' : ''" />
+      </NuxtButton>
+    </template>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+    <template #body>
+      <div>
         <p v-if="!loading && !sales.length" class="py-8 text-center text-sm text-muted-foreground">
           Nenhuma venda nas últimas 24 horas, nem encomenda retirada ou entregue.
         </p>
@@ -397,37 +430,37 @@ function fiscalChipClass(status: string): string {
               <!-- Recibo não fiscal: qualquer venda reimprime, a qualquer hora.
                    Só aparece onde há agente; a bobina é o único transporte da
                    reimpressão (o diálogo do navegador só existe na venda viva). -->
-              <UiButton
+              <NuxtButton
                 v-if="canPrintOnAgent"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="printReceipt(sale)"
               >
                 <Icon name="lucide:printer" class="size-3.5" />
                 Recibo
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_print_danfe"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="printDanfe(sale)"
               >
                 <Icon name="lucide:receipt-text" class="size-3.5" />
                 DANFE
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.payment_delivery?.action"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 data-action="send-payment-notice"
                 @click="sendPaymentNotice(sale)"
               >
                 <Icon name="lucide:send" class="size-3.5" />
                 {{ sale.payment_delivery.action_label }}
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_resend_email"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref"
                 @click="openEmailPrompt(sale)"
               >
@@ -436,10 +469,10 @@ function fiscalChipClass(status: string): string {
                      "Enviar" que aparece ali dentro — dizia "Enviar e-mail" e
                      não enviava nada. -->
                 {{ sale.email_sent ? "E-mail da nota (já enviada)" : "E-mail da nota" }}
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="sale.can_requeue_fiscal"
-                type="button" variant="outline" size="xs"
+                type="button" color="neutral" variant="outline" size="md"
                 class="gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
                 :disabled="busyRef === sale.order_ref"
                 @click="requeueFiscal(sale)"
@@ -449,36 +482,36 @@ function fiscalChipClass(status: string): string {
                      MESMO nome do gesto no Gestor de pedidos (`requeue-fiscal`):
                      um gesto, um nome, em toda superfície de operador. -->
                 Reprocessar NFC-e
-              </UiButton>
+              </NuxtButton>
               <!-- Emissão avulsa: a regra da casa não emitiu. Botão NEUTRO — não
                    há nada errado com a venda; o gerente é pedido no toque. -->
-              <UiButton
+              <NuxtButton
                 v-if="sale.can_emit_fiscal"
-                type="button" variant="outline" size="xs" class="gap-1"
+                type="button" color="neutral" variant="outline" size="md" class="gap-1"
                 :disabled="busyRef === sale.order_ref || emitBusy"
                 data-action="emit-fiscal"
                 @click="openEmitFiscal(sale)"
               >
                 <Icon name="lucide:file-plus" class="size-3.5" />
-                <!-- Par do chip "Emissão não estabelecida" (escolha do Pablo).
-                     Reticências: o toque abre a autorização do gerente. Não é
-                     "Tentar novamente" (nunca houve tentativa) nem "Solicitar
-                     autorização" (a mesma tela já pede a autorização do
-                     GERENTE: a palavra teria dois sentidos no mesmo toque). -->
-                Estabelecer emissão…
-              </UiButton>
+                <!-- Par do chip "NFC-e não solicitada" (dono, 07/11/2026): o verbo
+                     claro do que o toque faz. Reticências: o toque abre a
+                     autorização do gerente. Não é "Tentar novamente" (nunca houve
+                     tentativa) nem "Solicitar autorização" (a mesma tela já pede a
+                     autorização do GERENTE). -->
+                Solicitar NFC-e…
+              </NuxtButton>
               <!-- Desfazer dentro da janela: exceção auditada, sempre com o
                    desafio gerencial do mesmo diálogo da tela de venda. -->
-              <UiButton
+              <NuxtButton
                 v-if="sale.can_cancel"
-                type="button" variant="outline" size="xs"
+                type="button" color="neutral" variant="outline" size="md"
                 class="gap-1 border-destructive/40 text-destructive hover:bg-destructive/10"
                 :disabled="busyRef === sale.order_ref || cancelBusy"
                 @click="openCancel(sale)"
               >
                 <Icon name="lucide:undo-2" class="size-3.5" />
                 Cancelar venda
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- Consulta pública da nota (Focus/SEFAZ): os links já viajavam na
@@ -504,19 +537,19 @@ function fiscalChipClass(status: string): string {
                 class="h-8 text-sm"
                 @keydown.enter.prevent="resendEmail(sale)"
               />
-              <UiButton
-                type="button" size="sm"
+              <NuxtButton
+                type="button" size="md"
                 :disabled="!emailDraft.trim() || busyRef === sale.order_ref"
                 @click="resendEmail(sale)"
               >
                 Enviar
-              </UiButton>
+              </NuxtButton>
             </div>
           </li>
         </ul>
       </div>
-    </UiSheetContent>
-  </UiSheet>
+    </template>
+  </NuxtSlideover>
 
   <!-- Confirmação destrutiva + desafio gerencial — o MESMO diálogo da tela de
        venda; a janela anunciada é a do contrato e o servidor a valida de novo. -->
@@ -524,6 +557,8 @@ function fiscalChipClass(status: string): string {
     v-model:open="cancelDialogOpen"
     v-model:reason="cancelReason"
     :order-ref="cancelTargetRef"
+    :total-display="cancelTargetTotal"
+    :operator-name="props.operatorName || ''"
     :max-age-minutes="saleCorrection?.max_age_minutes || 0"
     :busy="cancelBusy"
     :error="cancelError"

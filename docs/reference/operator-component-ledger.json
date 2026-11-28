@@ -3,7 +3,7 @@
   "$comment": "Cobertura canônica do WP-UX-8. Uma rota pode conter várias telas operacionais; elas aparecem em variants até virarem rotas próprias.",
   "version": 2,
   "scope": {
-    "kind": "operator",
+    "uses_operator_kit": true,
     "excluded": [
       "storefront-nuxt",
       "Admin/Unfold"
@@ -268,6 +268,55 @@
             "segments",
             "retention",
             "rfm"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "delivery",
+          "source_files": [
+            "app/pages/delivery.vue"
+          ],
+          "routes": [
+            "/delivery"
+          ],
+          "variants": [
+            "kpis",
+            "daily"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback",
+            "date-time"
+          ],
+          "status": "pending"
+        },
+        {
+          "id": "ai",
+          "source_files": [
+            "app/pages/ai.vue"
+          ],
+          "routes": [
+            "/ai"
+          ],
+          "variants": [
+            "kpis",
+            "spend",
+            "daily",
+            "conference",
+            "fallbacks"
           ],
           "families": [
             "action",
@@ -1209,6 +1258,58 @@
           }
         },
         {
+          "id": "channel-reviews",
+          "source_files": [
+            "app/pages/channels/[ref]/reviews.vue"
+          ],
+          "routes": [
+            "/channels/:ref/reviews"
+          ],
+          "variants": [
+            "list",
+            "detail",
+            "reply"
+          ],
+          "families": [
+            "action",
+            "field",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
+          "id": "channel-ifood-store",
+          "source_files": [
+            "app/pages/channels/[ref]/store.vue"
+          ],
+          "routes": [
+            "/channels/:ref/store"
+          ],
+          "variants": [
+            "now",
+            "hours",
+            "registry"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
           "id": "customers",
           "source_files": [
             "app/pages/customers/index.vue"
@@ -1371,6 +1472,32 @@
             "data-display",
             "search",
             "date-time"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
+        },
+        {
+          "id": "deliveries",
+          "source_files": [
+            "app/pages/delivery.vue"
+          ],
+          "routes": [
+            "/delivery"
+          ],
+          "variants": [
+            "map",
+            "editing",
+            "rides",
+            "detail"
+          ],
+          "families": [
+            "action",
+            "selection",
+            "overlay",
+            "navigation",
+            "data-display"
           ],
           "status": "pending",
           "runner": {
@@ -1748,6 +1875,32 @@
             "feedback"
           ],
           "status": "pending"
+        },
+        {
+          "id": "operation-checklists",
+          "source_files": [
+            "app/pages/checklists.vue"
+          ],
+          "routes": [
+            "/checklists"
+          ],
+          "variants": [
+            "not-started",
+            "in-progress",
+            "supervision",
+            "completed"
+          ],
+          "families": [
+            "action",
+            "field",
+            "navigation",
+            "data-display",
+            "feedback"
+          ],
+          "status": "pending",
+          "runner": {
+            "config": "playwright.visual.config.ts"
+          }
         }
       ]
     },
@@ -2044,31 +2197,24 @@
           "status": "pending"
         },
         {
-          "id": "recipe-sheets",
+          "id": "recipe-review",
           "source_files": [
-            "app/pages/recipes/sheets/index.vue"
+            "app/pages/recipes/review.vue"
           ],
           "routes": [
-            "/recipes/sheets"
+            "/recipes/review"
           ],
           "variants": [
             "list",
             "empty",
-            "create",
-            "edit",
-            "duplicate",
             "forbidden",
             "stale"
           ],
           "families": [
             "action",
-            "field",
-            "selection",
-            "overlay",
             "navigation",
             "data-display",
-            "feedback",
-            "search"
+            "feedback"
           ],
           "status": "pending"
         },
@@ -2093,29 +2239,6 @@
             "data-display",
             "feedback",
             "date-time"
-          ],
-          "status": "pending"
-        },
-        {
-          "id": "settings",
-          "source_files": [
-            "app/pages/settings.vue"
-          ],
-          "routes": [
-            "/settings"
-          ],
-          "variants": [
-            "station",
-            "labels",
-            "defaults"
-          ],
-          "families": [
-            "action",
-            "field",
-            "selection",
-            "overlay",
-            "navigation",
-            "feedback"
           ],
           "status": "pending"
         },
@@ -2383,12 +2506,12 @@
           }
         },
         {
-          "id": "purchase-base-count",
+          "id": "purchase-count",
           "source_files": [
-            "app/pages/base/count.vue"
+            "app/pages/count.vue"
           ],
           "routes": [
-            "/base/count"
+            "/count"
           ],
           "variants": [
             "count-table",
@@ -2409,7 +2532,7 @@
           "runner": {
             "config": "playwright.visual.config.ts",
             "spec": "tests/visual/purchase.spec.ts",
-            "grep": "purchase-base-count"
+            "grep": "purchase-count"
           }
         }
       ]

@@ -10,15 +10,16 @@ import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from enum import StrEnum
 
-from django.apps import apps
 from django.db import IntegrityError, transaction
-from django.db.models import Q
 from django.utils import timezone
 from shopman.orderman import registry
+from shopman.orderman.conf import get_customer_fence
 from shopman.orderman.exceptions import CommitError, IdempotencyCacheHit, SessionError, ValidationError
 from shopman.orderman.ids import generate_order_ref
 from shopman.orderman.models import Directive, IdempotencyKey, Order, OrderItem, Session
+from shopman.orderman.protocols import CustomerIdentityConflict
 from shopman.utils.phone import normalize_phone
 
 # Ref de pedido é aleatório (1 letra + 2 dígitos). generate_order_ref já sorteia de novo
@@ -38,6 +39,31 @@ class CommitResult:
     items_count: int
 
 
+class CommitAuthority(StrEnum):
+    """Auditable origin of the decision to seal a reviewed session."""
+
+    REVIEWED = "reviewed"
+    OPERATOR_REVIEWED = "operator_reviewed"
+    OFFLINE_CHARGE = "offline_charge"
+    SYNTHETIC_DIAGNOSTIC = "synthetic_diagnostic"
+
+
+@dataclass(frozen=True)
+class CommitSeal:
+    """Exact revision and line total authorized for sealing.
+
+    ``authority`` is audit-only. Every authority obeys the same fences.
+    """
+
+    expected_revision: int
+    expected_total_q: int
+    authority: CommitAuthority
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.authority, CommitAuthority):
+            raise TypeError("CommitSeal.authority must be a CommitAuthority")
+
+
 class CommitService:
     """
     Serviço para fechar sessões e criar Orders.
@@ -55,21 +81,83 @@ class CommitService:
     """
 
     @staticmethod
+    def _idempotency_scope(session_key: str, channel_ref: str) -> str:
+        scope = f"commit:{channel_ref}:{session_key}"
+        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
+        if len(scope) > scope_limit:
+            return "commit:" + hashlib.sha256(scope.encode()).hexdigest()[: scope_limit - 7]
+        return scope
+
+    @staticmethod
+    def completed_response(
+        session_key: str,
+        channel_ref: str,
+        idempotency_key: str,
+    ) -> CommitResult | None:
+        """Return a completed commit receipt without locking or mutating state."""
+        response = (
+            IdempotencyKey.objects.filter(
+                scope=CommitService._idempotency_scope(session_key, channel_ref),
+                key=idempotency_key,
+                status="done",
+            )
+            .values_list("response_body", flat=True)
+            .first()
+        )
+        return CommitResult(**response) if response else None
+
+    @staticmethod
+    def validate_expected_revision(session: Session, expected_revision: int) -> None:
+        """Fence a commit or mutation to the exact draft revision reviewed."""
+        if session.rev == int(expected_revision):
+            return
+        raise ValidationError(
+            code="revision_changed",
+            message="Sua sacola mudou. Confira os itens e confirme novamente.",
+            context={"revision": session.rev},
+        )
+
+    @staticmethod
+    def validate_expected_total(session: Session, expected_total_q: int) -> None:
+        """Refuse a total other than the one currently sealed in the draft.
+
+        This is the canonical Orderman decision for the customer-confirmed line
+        total.  Orchestrators may call it before ``commit`` when they need to
+        persist a freshly repriced draft and ask for a second confirmation;
+        ``_do_commit`` calls the same decision again at the seal boundary.
+        """
+        actual_total_q = CommitService._calculate_total(session.items)
+        if actual_total_q == int(expected_total_q):
+            return
+        raise ValidationError(
+            code="total_changed",
+            message="O total mudou. Confira e confirme novamente.",
+            context={"new_total_q": actual_total_q, "old_total_q": int(expected_total_q)},
+        )
+
+    @staticmethod
     def commit(
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        *,
+        seal: CommitSeal,
+        channel_config: dict,
         ctx: dict | None = None,
-        channel_config: dict | None = None,
     ) -> CommitResult:
         try:
-            return CommitService._commit_atomic(session_key, channel_ref, idempotency_key, ctx, channel_config)
+            return CommitService._commit_atomic(
+                session_key, channel_ref, idempotency_key,
+                seal=seal, channel_config=channel_config, ctx=ctx,
+            )
         except Exception:
             # Preserve the failed-attempt contract without leaving a committed
             # in-progress claim between receipt acquisition and the local seal.
             # Never overwrite another request's live or completed receipt.
             IdempotencyKey.objects.get_or_create(
-                scope=f"commit:{channel_ref}:{session_key}", key=idempotency_key, defaults={"status": "failed"}
+                scope=CommitService._idempotency_scope(session_key, channel_ref),
+                key=idempotency_key,
+                defaults={"status": "failed"},
             )
             raise
 
@@ -79,8 +167,10 @@ class CommitService:
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        *,
+        seal: CommitSeal,
+        channel_config: dict,
         ctx: dict | None = None,
-        channel_config: dict | None = None,
     ) -> CommitResult:
         """
         Fecha uma sessão e cria um Order.
@@ -89,10 +179,10 @@ class CommitService:
             session_key: Chave da sessão
             channel_ref: Código do canal
             idempotency_key: Chave de idempotência
-            ctx: Contexto adicional
+            seal: Revisão, total e autoridade que compõem o selo obrigatório
+            ctx: Contexto adicional sem fences de integridade
             channel_config: Config resolvido com cascade (canal←loja←defaults).
-                Obrigatório em produção — fornecido pelo framework via ChannelConfig.for_channel().
-                Testes podem omitir para usar comportamento padrão.
+                Obrigatório — fornecido pelo framework via ChannelConfig.for_channel().
 
         Returns:
             CommitResult com order_ref e dados do pedido
@@ -104,10 +194,7 @@ class CommitService:
         ctx = ctx or {}
         # Escopo inclui a sessão: chave fornecida pelo cliente não pode
         # colidir/vazar o CommitResult de OUTRA sessão do mesmo canal.
-        idem_scope = f"commit:{channel_ref}:{session_key}"
-        scope_limit = IdempotencyKey._meta.get_field("scope").max_length
-        if len(idem_scope) > scope_limit:
-            idem_scope = "commit:" + hashlib.sha256(idem_scope.encode()).hexdigest()[: scope_limit - 7]
+        idem_scope = CommitService._idempotency_scope(session_key, channel_ref)
 
         # Receipt acquisition, seal and response share this outer transaction.
         try:
@@ -121,6 +208,7 @@ class CommitService:
                 session_key=session_key,
                 channel_ref=channel_ref,
                 idempotency_key=idempotency_key,
+                seal=seal,
                 ctx=ctx,
                 channel_config=channel_config,
             )
@@ -214,8 +302,9 @@ class CommitService:
         session_key: str,
         channel_ref: str,
         idempotency_key: str,
+        seal: CommitSeal,
         ctx: dict,
-        channel_config: dict | None = None,
+        channel_config: dict,
     ) -> CommitResult:
         """
         Execute the actual commit logic in an atomic transaction.
@@ -277,10 +366,12 @@ class CommitService:
         if session.state == "abandoned":
             raise CommitError(code="abandoned", message="Sessão foi abandonada")
 
+        CommitService.validate_expected_revision(session, seal.expected_revision)
+
         # Check required checks are fresh
         # channel_config must always be supplied by the framework caller (cascade resolvido).
         # Kernel não lê channel.config — o framework passa o config resolvido como parâmetro.
-        effective_config = channel_config or {}
+        effective_config = channel_config
         required_checks = effective_config.get("rules", {}).get("checks", [])
         checks = session.data.get("checks", {})
         now = timezone.now()
@@ -352,14 +443,7 @@ class CommitService:
                 context={"session_key": session_key},
             )
 
-        expected_total = ctx.get("expected_total_q")
-        actual_total = sum(int(item.get("line_total_q") or 0) for item in session.items)
-        if expected_total is not None and actual_total != expected_total:
-            raise ValidationError(
-                code="total_changed",
-                message="O total mudou. Confira e confirme novamente.",
-                context={"new_total_q": actual_total, "old_total_q": expected_total},
-            )
+        CommitService.validate_expected_total(session, seal.expected_total_q)
 
         # Build order.data from session.data (key fields for handlers)
         order_data = {}
@@ -389,6 +473,8 @@ class CommitService:
             "gift_hide_values",
             # Comanda do PDV que nasceu de uma transferência: de qual comanda veio.
             "transferred_from",
+            # De qual versão da loja o pedido veio: {ref: {variant, generation}}.
+            "experience",
         ):
             if key in session_data:
                 order_data[key] = session_data[key]
@@ -411,11 +497,19 @@ class CommitService:
                 pass
 
         # Create Order + OrderItems. Ref aleatório → savepoint + retry na corrida de índice.
+        order_handle_type = session.handle_type
+        order_handle_ref = session.handle_ref
+        if not order_handle_ref:
+            customer_ref, customer_phone = CommitService._session_customer_identity(session)
+            if customer_phone:
+                order_handle_type, order_handle_ref = "phone", customer_phone
+            elif customer_ref:
+                order_handle_type, order_handle_ref = "customer", customer_ref
         order_fields = {
             "channel_ref": channel_ref,
             "session_key": session_key,
-            "handle_type": session.handle_type,
-            "handle_ref": session.handle_ref,
+            "handle_type": order_handle_type,
+            "handle_ref": order_handle_ref,
             "status": Order.Status.NEW,
             # Deep copy: o snapshot é o registro SELADO e imutável do pedido, e o
             # sealed check compara `self.snapshot` contra um baseline deep-copiado.
@@ -430,6 +524,11 @@ class CommitService:
                     "data": session.data,
                     "pricing": session.pricing,
                     "rev": session.rev,
+                    "commit": {
+                        "authority": seal.authority.value,
+                        "expected_revision": seal.expected_revision,
+                        "expected_total_q": seal.expected_total_q,
+                    },
                     "commitment": commitment_snapshot,
                     "lifecycle": effective_config.get("lifecycle", {}),
                 }
@@ -486,7 +585,12 @@ class CommitService:
         order.emit_event(
             event_type="created",
             actor=ctx.get("actor", "system"),
-            payload={"from_session": session_key},
+            payload={
+                "from_session": session_key,
+                "commit_authority": seal.authority.value,
+                "expected_revision": seal.expected_revision,
+                "expected_total_q": seal.expected_total_q,
+            },
         )
 
         # Emit signal
@@ -497,6 +601,7 @@ class CommitService:
             order=order,
             event_type="created",
             actor=ctx.get("actor", "system"),
+            commit_context=dict(ctx),
         )
 
         # Mark session as committed
@@ -587,43 +692,21 @@ class CommitService:
         customer_ref, phone = CommitService._session_customer_identity(identity_snapshot)
         if not customer_ref and not phone:
             return None
+        fence = get_customer_fence()
+        if fence is None:
+            # Orderman continua um kernel instalável sem cadastro de titular;
+            # a cerca só existe quando o deployment liga o porto.
+            return None
         try:
-            Customer = apps.get_model("guestman", "Customer")
-        except LookupError:
-            # Orderman continua um kernel instalável sem Guestman; a cerca só
-            # existe quando o deployment integra o cadastro canônico.
-            return None
-        phone_query = Q(phone=phone) | Q(
-            contact_points__value_normalized=phone,
-            contact_points__type__in=("phone", "whatsapp"),
-        )
-        if customer_ref and phone:
-            query = Q(ref=customer_ref) & phone_query
-        elif customer_ref:
-            query = Q(ref=customer_ref)
-        else:
-            query = phone_query
-        matches = list(
-            Customer.objects.filter(query).values_list("pk", flat=True).distinct()[:2]
-        )
-        if len(matches) > 1:
+            customer = fence.lock_by_identity(customer_ref=customer_ref, phone=phone)
+        except CustomerIdentityConflict as exc:
             raise CommitError(
-                code="customer_identity_ambiguous",
+                code=exc.code,
                 message="A identidade do cliente precisa ser confirmada novamente.",
-            )
-        if not matches:
-            if customer_ref and phone and Customer.objects.filter(
-                Q(ref=customer_ref) | phone_query
-            ).exists():
-                raise CommitError(
-                    code="customer_identity_mismatch",
-                    message="A identidade do cliente precisa ser confirmada novamente.",
-                )
-            # Integrações legadas podem selar um ref externo sem Customer local.
-            # Exclusão não remove a linha canônica: ela a mantém inativa, então
-            # apenas uma linha encontrada e inativa comprova a corrida perdida.
+            ) from exc
+        if customer is None:
+            # Integrações podem selar um ref externo sem titular local.
             return None
-        customer = Customer.objects.select_for_update().get(pk=matches[0])
         if not customer.is_active:
             raise CommitError(
                 code="customer_inactive",
@@ -654,13 +737,9 @@ class CommitService:
             )
 
         ref_matches = not current_ref or current_ref == locked_customer.ref
-        customer_phone = normalize_phone(locked_customer.phone) or locked_customer.phone
-        phone_matches = not current_phone or current_phone == customer_phone
+        phone_matches = not current_phone or current_phone == locked_customer.phone
         if current_phone and not phone_matches:
-            phone_matches = locked_customer.contact_points.filter(
-                value_normalized=current_phone,
-                type__in=("phone", "whatsapp"),
-            ).exists()
+            phone_matches = get_customer_fence().owns_phone(locked_customer, current_phone)
         if not ref_matches or not phone_matches:
             raise CommitError(
                 code="customer_identity_changed",

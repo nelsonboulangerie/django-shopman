@@ -44,6 +44,7 @@ export function platformResultLabel(platformRef: string): string {
 export function deliveryStatePresentation(
   state: DeliveryAggregateProjectionV2["state"],
   announcementState?: AnnouncementProjectionV2["state"],
+  counts?: DeliveryCountsProjectionV2,
 ): { label: string; detail: string; tone: ResultTone; icon: string } {
   if (announcementState === "rejected") {
     return {
@@ -60,6 +61,14 @@ export function deliveryStatePresentation(
       detail: "O anúncio expirou sem aprovação e não foi enviado.",
       tone: "attention",
       icon: "lucide:timer-off",
+    };
+  }
+  if (state === "succeeded" && Number(counts?.accepted || 0) > 0) {
+    return {
+      label: "Aguardando confirmação de entrega",
+      detail: "O provedor aceitou o envio. A entrega ainda não foi confirmada; não reenvie.",
+      tone: "attention",
+      icon: "lucide:clock-3",
     };
   }
   const values: Record<
@@ -92,9 +101,9 @@ export function deliveryStatePresentation(
       icon: "lucide:send",
     },
     succeeded: {
-      label: "Entrega concluída",
+      label: counts && counts.confirmed > 0 ? "Entrega confirmada" : "Envio encerrado",
       detail:
-        "Confira abaixo o que foi confirmado e o que só foi aceito pela plataforma.",
+        "Confira abaixo o resultado de cada plataforma.",
       tone: "ok",
       icon: "lucide:check-circle-2",
     },
@@ -184,7 +193,7 @@ export function platformDeliveryLabel(
   if (switchedOff && Number(platform.counts.queued || 0) > 0) {
     return "Aguardando a plataforma ligar";
   }
-  return deliveryStatePresentation(platform.state).label;
+  return deliveryStatePresentation(platform.state, undefined, platform.counts).label;
 }
 
 export function platformSwitchedOffNote(platformRef: string): string {
@@ -614,4 +623,27 @@ export function acceptedAwaitingConfirmationNote(count: number): string {
       ? "Uma entrega foi aceita pelo provedor"
       : `${formatCount(total)} entregas foram aceitas pelo provedor`;
   return `${subject}: ele recebeu e assumiu a entrega, e a confirmação de que chegou à pessoa vem depois, dele mesmo. Quando chegar, aparece neste mesmo quadro, sem você fazer nada. Até lá não reenvie: o reenvio duplicaria a mensagem em vez de apressá-la.`;
+}
+
+/**
+ * Quem olha a revisão pode recusar / seguir? As Actions do servidor dizem; a tela só
+ * traduz `missing_capability` numa frase com saída (beta 05/11, ge:MKT-03). Outros
+ * motivos (prazo, silêncio, congelamento) o cartão da revisão explica por conta própria.
+ */
+export function reviewCapabilityBlock(actions: readonly MarketingActionProjectionV2[]): {
+  reject: string;
+  proceed: string;
+} {
+  const missing = (kind: MarketingActionProjectionV2["kind"]) => {
+    const action = actions.find((candidate) => candidate.kind === kind);
+    return action?.reason === "missing_capability";
+  };
+  const reject = missing("reject_announcement")
+    ? "Seu perfil não aprova anúncios. Peça a quem aprova."
+    : "";
+  const proceed =
+    missing("publish_announcement_now") && missing("schedule_announcement")
+      ? reject || "Seu perfil não publica anúncios. Peça a quem publica."
+      : "";
+  return { reject, proceed };
 }

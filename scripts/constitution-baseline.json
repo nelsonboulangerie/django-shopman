@@ -1,0 +1,144 @@
+{
+  "_doc": "Baseline das guardas da Constituição (scripts/guard_baseline.py). Chave = arquivo::função::achado (sem número de linha). classe: violacao (dívida, com a frente que conserta) ou excecao (decidida, com o motivo). Achado novo ou a mais reprova; entrada que não acontece mais reprova até ser apagada no mesmo PR que consertou. Estado bruto: python scripts/check_<guarda>.py --strict.",
+  "decision_authority": {},
+  "signal_on_commit": {
+    "packages/orderman/shopman/orderman/models/order.py::Order.save::order_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: order_changed é escrita acoplada (secure_stock síncrono desfaz o pedido sem estoque; o dispatch já é adiado no receiver). Falta só o comentário '# ADR-025: escrita acoplada', que substitui esta entrada"
+    },
+    "packages/orderman/shopman/orderman/services/commit.py::CommitService._do_commit::order_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: order_changed 'created' é o gate duro de estoque (secure_stock na mesma transação)"
+    },
+    "shopman/shop/services/ifood_ingest.py::ingest::order_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: a ingestão do iFood faz o papel do CommitService e emite o mesmo order_changed 'created' (gate de estoque)"
+    },
+    "packages/craftsman/shopman/craftsman/services/execution.py::CraftExecution.finish::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é o caminho canônico de escrita craftsman→stockman (consumo de insumo + entrada do produto na mesma transação)"
+    },
+    "packages/craftsman/shopman/craftsman/services/execution.py::CraftExecution.void::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é escrita acoplada (estorno do ledger de produção)"
+    },
+    "packages/craftsman/shopman/craftsman/services/scheduling.py::CraftPlanning.plan::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é escrita acoplada (holds/planejamento de estoque na mesma transação)"
+    },
+    "packages/craftsman/shopman/craftsman/services/scheduling.py::CraftPlanning._plan_batch::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é escrita acoplada (holds/planejamento de estoque na mesma transação)"
+    },
+    "packages/craftsman/shopman/craftsman/services/scheduling.py::CraftPlanning.adjust::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é escrita acoplada (ajuste de planejamento e holds na mesma transação)"
+    },
+    "packages/craftsman/shopman/craftsman/services/scheduling.py::CraftPlanning.start::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "ADR-025 §6: production_changed é escrita acoplada (início de produção e reservas na mesma transação)"
+    },
+    "config/management/commands/refresh_seed_dates.py::Command.handle::production_changed": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "comando de seed reaproveita o caminho de escrita production_changed (ADR-025 §6) para realinhar dados sintéticos"
+    },
+    "shopman/backstage/services/catalog.py::_apply_product_components::product_updated": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "escrita acoplada já explicada ao lado do send (a outbox do catalog_projection grava na mesma transação; falha de outbox não pode confirmar a composição). Trocar o comentário pelo marcador ADR-025 apaga esta entrada"
+    }
+  },
+  "ledger_immutability": {
+    "shopman/shop/services/account.py::_anonymize_order_trail::OrderEvent.update": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "LGPD art. 18: a anonimização apaga dado pessoal do payload do audit; o direito do titular prevalece sobre a imutabilidade, e só as chaves de PII são tiradas"
+    },
+    "shopman/shop/services/account.py::_anonymize_order_trail::SessionEvent.update": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "LGPD art. 18: a anonimização apaga dado pessoal do payload do audit da sessão"
+    },
+    "packages/craftsman/shopman/craftsman/management/commands/load_crafting_demo.py::Command.handle::WorkOrderEvent.delete": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "--clear do comando de demonstração apaga dado sintético antes de recarregar"
+    },
+    "config/management/commands/seed.py::Command._attach_edge_payment_intent::PaymentTransaction.create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica histórico sintético com data no passado; não há serviço que lance com timestamp retroativo"
+    },
+    "config/management/commands/seed.py::Command._seed_payments::PaymentTransaction.create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica histórico sintético de pagamentos"
+    },
+    "config/management/commands/seed.py::Command._seed_qa_orders::PaymentTransaction.create": {
+      "count": 2,
+      "classe": "excecao",
+      "motivo": "seed fabrica histórico sintético (pedidos de QA)"
+    },
+    "config/management/commands/seed.py::Command._seed_recent_native_volume::PaymentTransaction.bulk_create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica volume sintético para o B.I."
+    },
+    "config/management/commands/seed.py::Command._create_order_event::OrderEvent.create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica a trilha de eventos dos pedidos sintéticos"
+    },
+    "config/management/commands/seed.py::Command._create_order_event::OrderEvent.update": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed retrodata o evento sintético recém-criado (auto_now_add não aceita data passada)"
+    },
+    "config/management/commands/seed.py::Command._seed_recipes.add_event::WorkOrderEvent.create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica a trilha de produção sintética"
+    },
+    "config/management/commands/seed.py::Command._seed_recipes.add_event::WorkOrderEvent.update": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed retrodata o evento sintético recém-criado"
+    },
+    "config/management/commands/seed.py::Command._seed_qa_production_stuck_batch::WorkOrderEvent.create": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed fabrica a fornada travada de QA"
+    },
+    "config/management/commands/seed.py::Command._seed_qa_production_stuck_batch::WorkOrderEvent.update": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed retrodata o evento sintético da fornada travada"
+    },
+    "config/management/commands/seed.py::Command._seed_shelf_movements::Move.create": {
+      "count": 3,
+      "classe": "excecao",
+      "motivo": "seed fabrica movimentos de prateleira sintéticos"
+    }
+  },
+  "order_lifecycle_owner": {
+    "config/management/commands/seed.py::Command._seed_production_demand_history::objects.update(status)": {
+      "count": 1,
+      "classe": "excecao",
+      "motivo": "seed grava pedido sintético já concluído no passado, sem percorrer o ciclo"
+    }
+  },
+  "cross_kernel_refs": {},
+  "money_integer": {},
+  "lifecycle_functional": {},
+  "read_side_immutability": {}
+}

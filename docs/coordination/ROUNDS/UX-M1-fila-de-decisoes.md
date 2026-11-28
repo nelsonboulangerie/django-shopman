@@ -88,7 +88,7 @@ vira `reconcile_unknown` na fila e consultar de novo é gesto do operador.
 - SSR conferido contra o backend hermético (`tests/visual/mock_backend.py`): `/`, `/scheduled`,
   `/v2?area=offers` e `/history` respondem 200 com a fila, os agendados, a segunda linha de Ajustes e
   a barra do pé.
-- Envelope de segurança (ADR-026): `nuxt.config.ts` e `server/` não foram tocados.
+- Envelope de segurança (ADR-038): `nuxt.config.ts` e `server/` não foram tocados.
 
 ## O que ficou de fora
 

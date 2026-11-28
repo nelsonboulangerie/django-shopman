@@ -17,7 +17,7 @@ def _base_data(**overrides) -> dict:
         "short_description": "",
         "long_description": "",
         "keywords": "",
-        "base_price_q": "100",
+        "base_price_q": "1,00",
         "availability_policy": "planned_ok",
         "ingredients_text": "",
         "is_published": "on",
@@ -78,6 +78,25 @@ def test_the_core_has_no_opinion_about_label_vocabulary(sem_provedor):
     from shopman.offerman.contrib.admin_unfold.nutrition_form import _label_attributes
 
     assert _label_attributes() is None
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["shopman.nao_existe.Provedor", "shopman.offerman.protocols.NaoExiste"],
+)
+def test_a_provider_path_that_does_not_load_fails_loud(settings, path):
+    """Caminho configurado que não carrega é erro de configuração, não "sem provedor".
+
+    Engolir o erro sumia com alérgeno, dieta e porção do formulário sem ninguém
+    saber por quê. Antes do go-live não há configuração velha a tolerar.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+    from shopman.offerman.contrib.admin_unfold.nutrition_form import _label_attributes
+
+    settings.OFFERMAN = {**getattr(settings, "OFFERMAN", {}), "LABEL_ATTRIBUTES_PROVIDER": path}
+
+    with pytest.raises(ImproperlyConfigured, match="LABEL_ATTRIBUTES_PROVIDER"):
+        _label_attributes()
 
 
 def test_form_populates_initial_from_instance(sem_provedor):
@@ -167,7 +186,7 @@ def test_choice_group_field_writes_normalized_name_and_blank_erases():
     """
     product = Product.objects.create(sku="CHA1", name="Chá Um", base_price_q=1400)
     form = ProductAdminForm(
-        data=_base_data(sku="CHA1", name="Chá Um", base_price_q="1400", choice_group="  Chás   da casa "),
+        data=_base_data(sku="CHA1", name="Chá Um", base_price_q="14,00", choice_group="  Chás   da casa "),
         instance=product,
     )
     assert form.is_valid(), form.errors
@@ -180,7 +199,7 @@ def test_choice_group_field_writes_normalized_name_and_blank_erases():
 
     form = ProductAdminForm(
         data=_base_data(
-            sku="CHA1", name="Chá Um", base_price_q="1400",
+            sku="CHA1", name="Chá Um", base_price_q="14,00",
             metadata='{"choice_group": "Chás da casa"}', choice_group="",
         ),
         instance=saved,
@@ -248,3 +267,17 @@ def test_form_clears_the_ready_time_when_emptied():
     saved = form.save()
     saved.refresh_from_db()
     assert "ready_from" not in saved.metadata
+
+
+def test_preco_base_e_digitado_em_reais():
+    """Beta test 05/11/2026, ADM-09: quem digitava 15 publicava o produto a R$ 0,15."""
+    form = ProductAdminForm(data=_base_data(sku="REAIS", name="Reais", base_price_q="15"))
+    assert form.is_valid(), form.errors
+    assert form.save().base_price_q == 1500
+
+
+def test_preco_base_gravado_aparece_em_reais():
+    product = Product.objects.create(sku="REAIS2", name="Reais", base_price_q=1500)
+    form = ProductAdminForm(instance=product)
+    field = form.fields["base_price_q"]
+    assert field.prepare_value(form["base_price_q"].value()) == "15,00"

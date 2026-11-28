@@ -27,7 +27,7 @@ de assinante**. Os endpoints existentes são `getInfo`, `findByName`,
 `setCustomFieldByName`, `verifyBySignedRequest` e os três de envio. Nenhum apaga.
 Por isso o passo 3 existe: sem ele, "apagamos tudo" seria mentira.
 
-A ordem obedece a `docs/plans/PRIVACY-CANONICAL-FENCE-MATRIX-2026-09-16.md`:
+A ordem obedece a `docs/plans/completed/PRIVACY-CANONICAL-FENCE-MATRIX-2026-09-16.md`:
 intenção durável → I/O externo FORA da transação → readquirir `Customer` →
 finalizar. E falha fechada: limpeza não confirmada não vira "pronto".
 """
@@ -268,7 +268,9 @@ def open_operator_task(ids: tuple[str, ...], *, receipt_ref) -> None:
         return
     from shopman.shop.services.observability import create_operator_alert
 
-    deadline = timezone.now() + timedelta(days=ERASURE_DEADLINE_DAYS)
+    # A data do prazo é a de Brasília: com o UTC, entre 21h e meia-noite a tarefa do
+    # operador dizia o dia seguinte.
+    deadline = timezone.localtime(timezone.now() + timedelta(days=ERASURE_DEADLINE_DAYS))
     create_operator_alert(
         type="manychat_contact_erasure_due",
         severity="critical",

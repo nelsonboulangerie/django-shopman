@@ -3,7 +3,7 @@
 Autoria e execução são duas coisas. A ``Recipe`` continua sendo a ficha de
 execução (o BOM que a fornada consome). O inventário é onde o padeiro escreve,
 padroniza, compara e versiona; **publicar** uma versão é o único caminho que
-escreve na ficha. Ver ``docs/plans/RECIPE-INVENTORY-PLAN.md`` §2.
+escreve na ficha. Ver ``docs/plans/completed/RECIPE-INVENTORY-PLAN.md`` §2.
 """
 
 from decimal import Decimal
@@ -52,7 +52,7 @@ class RecipeEntry(models.Model):
         help_text=_("Vazio = receita sem SKU, só conhecimento."),
     )
     notes = models.TextField(blank=True, default="", verbose_name=_("Observações"))
-    is_archived = models.BooleanField(default=False, verbose_name=_("Arquivada"))
+    is_active = models.BooleanField(default=True, verbose_name=_("Ativa"))
     current_version = models.ForeignKey(
         "craftsman.RecipeVersion",
         null=True,

@@ -48,12 +48,17 @@ useOperatorWindowTitle();
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
       <OfflineBanner />
-      <!-- A casca canônica da suíte (kit): rail de ícones do tablet deitado para cima,
-           barra de seções com "Mais" no celular e no tablet em pé. -->
+      <!-- A casca canônica da suíte (kit): rail de ícones do tablet deitado para cima;
+           no celular, o selo abre o trocador e a barra de baixo leva as seções da forma
+           da tela (a olhada do dia, ou a leitura de escritório). As formas moram em
+           `biSections`. -->
       <OperatorSuiteShell
         v-if="surface.showPage"
         storage-key="bi"
         :sections="sections"
+        :switcher-sections="sections"
+        default-form="office"
+        floor-bar
         label="Seções do B.I."
         :operator-name="operator?.name"
         @lock="lock"
@@ -62,13 +67,7 @@ useOperatorWindowTitle();
           <NuxtPage />
         </div>
       </OperatorSuiteShell>
-      <main v-else-if="surface.showForbidden" class="grid min-h-dvh flex-1 place-items-center p-4">
-        <NuxtEmpty
-          icon="i-lucide-shield-x"
-          title="Seu acesso não inclui o B.I."
-          description="Peça a um responsável a permissão de acesso. Entrar novamente não concede essa permissão."
-        />
-      </main>
+      <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
       <main
         v-else-if="surface.showChecking"
         class="grid min-h-dvh flex-1 place-items-center p-4"

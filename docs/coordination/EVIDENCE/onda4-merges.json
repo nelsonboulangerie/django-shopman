@@ -1,0 +1,87 @@
+{
+  "repository": "nelsonboulangerie/django-shopman",
+  "checked_at_utc": "2026-10-21 00:04:45 UTC",
+  "source_command": "gh pr view <N> --json number,url,state,mergedAt,mergeCommit,headRefOid",
+  "pull_requests": [
+    {
+      "headRefOid": "81fa9f9f707c9c6f1ba8e2b0966f08c2cd8f3cb8",
+      "mergeCommit": {
+        "oid": "c1db8e8e3e67cc86cad536d639ee40b422cf18e1"
+      },
+      "mergedAt": "2026-10-20T23:32:08Z",
+      "number": 1960,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1960"
+    },
+    {
+      "headRefOid": "4a1d173e2dbda0b863df7077b3ac720a8285db75",
+      "mergeCommit": {
+        "oid": "3d0a10a57fdc69a539c3a881111d97037bca4d78"
+      },
+      "mergedAt": "2026-10-20T22:26:48Z",
+      "number": 1958,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1958"
+    },
+    {
+      "headRefOid": "32a2cdbbdf83d5411c86c88df79d47fbc588fc70",
+      "mergeCommit": {
+        "oid": "0cdc545781440dc0e32e56d40037c1b524eae538"
+      },
+      "mergedAt": "2026-10-20T22:36:10Z",
+      "number": 1959,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1959"
+    },
+    {
+      "headRefOid": "48b1ed6331391bf6f6053e984acb9e921689595c",
+      "mergeCommit": {
+        "oid": "8d54b1e537a8f71706cf647412f84cead7076e5c"
+      },
+      "mergedAt": "2026-10-20T23:32:08Z",
+      "number": 1957,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1957"
+    },
+    {
+      "headRefOid": "a0c9f0f8c9ec536367e9536f5b64dda61dc2590e",
+      "mergeCommit": {
+        "oid": "921d70c3275872b87a238199f9ddfd2e8beae760"
+      },
+      "mergedAt": "2026-10-21T00:02:27Z",
+      "number": 1964,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1964"
+    },
+    {
+      "headRefOid": "59b946e1fbdc3bb15a34b5e7b335f739c83f6465",
+      "mergeCommit": {
+        "oid": "53c574ff7ac4a8e2f0e22bbdaa7a97e42cc57f63"
+      },
+      "mergedAt": "2026-10-21T00:02:27Z",
+      "number": 1961,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1961"
+    },
+    {
+      "headRefOid": "248a657d359869866601436c94bdd346d2850caf",
+      "mergeCommit": {
+        "oid": "486423dc2abcf6539ab0e6e5c6222f0b45cc7fbb"
+      },
+      "mergedAt": "2026-10-20T22:59:36Z",
+      "number": 1967,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1967"
+    },
+    {
+      "headRefOid": "dca51a347cd0daa7819447d071267e7d8693dcb2",
+      "mergeCommit": {
+        "oid": "2df08fa98b0b6aa82ac3506787bbe8ed24b23cc2"
+      },
+      "mergedAt": "2026-10-20T23:39:58Z",
+      "number": 1968,
+      "state": "MERGED",
+      "url": "https://github.com/nelsonboulangerie/django-shopman/pull/1968"
+    }
+  ]
+}

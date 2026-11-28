@@ -21,13 +21,15 @@ Três regras moldam o formato:
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db.models import Count, Q, Value
+from django.db.models import CharField, Count, Func, Q, Value
 from django.db.models.functions import Concat, Lower, Trim
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.types import Action
@@ -113,6 +115,9 @@ class CustomerRowProjection:
     last_order_display: str
     # Motivo da suspeita, quando há: "Mesmo nome de outro cadastro".
     duplicate_hint: str
+    # Os grupos comerciais do cliente, o de maior prioridade primeiro. Vem do prefetch
+    # da página: uma consulta para a lista inteira, nunca uma por linha.
+    groups: tuple[CustomerPriceTierProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -139,12 +144,18 @@ class CustomerPriceTierProjection:
 class CustomerFormOptionsProjection:
     customer_types: tuple[CustomerFormOptionProjection, ...]
     price_tiers: tuple[CustomerFormOptionProjection, ...]
+    # Os grupos marcados como padrão (``PriceTier.is_default``): é com eles que o
+    # cadastro novo nasce. Vazio quando a casa não marcou nenhum, e aí o formulário
+    # nasce sem grupo; nunca "o primeiro da lista", que é ordem alfabética.
+    default_price_tier_refs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
 class CustomerListProjection:
     query: str
     filter: str
+    # O grupo comercial que recorta a lista (``?group=<ref>``); vazio = todos.
+    group: str
     filters: tuple[CustomerFilterOption, ...]
     items: tuple[CustomerRowProjection, ...]
     page: int
@@ -297,6 +308,9 @@ class MergeAuditRowProjection:
     source_ref: str
     target_ref: str
     target_name: str
+    # O nome de quem deixou de existir, para a confirmação e o aviso falarem de
+    # gente e não de código (GES-14).
+    source_name: str
     actor: str
     merged_at_display: str
     status: str
@@ -328,14 +342,13 @@ def _customer_model():
 def build_customer_form_options() -> CustomerFormOptionsProjection:
     from shopman.guestman.models import CustomerType, PriceTier
 
+    tiers = list(PriceTier.objects.order_by("-is_default", "-priority", "name", "ref"))
     return CustomerFormOptionsProjection(
         customer_types=tuple(
             CustomerFormOptionProjection(value=str(value), label=str(label)) for value, label in CustomerType.choices
         ),
-        price_tiers=tuple(
-            CustomerFormOptionProjection(value=tier.ref, label=tier.name)
-            for tier in PriceTier.objects.order_by("-is_default", "-priority", "name", "ref")
-        ),
+        price_tiers=tuple(CustomerFormOptionProjection(value=tier.ref, label=tier.name) for tier in tiers),
+        default_price_tier_refs=tuple(tier.ref for tier in tiers if tier.is_default),
     )
 
 
@@ -394,7 +407,7 @@ def _elapsed_label(moment) -> str:
 
 
 def _local(moment) -> str:
-    return timezone.localtime(moment).strftime("%d/%m/%Y às %H:%M") if moment else ""
+    return format_local(moment, "%d/%m/%Y às {clock}") if moment else ""
 
 
 def _order_stats(refs: list[str]) -> dict[str, tuple[int, object]]:
@@ -452,10 +465,51 @@ def _duplicate_hint(customer, names: set[str], documents: set[str]) -> str:
     return ""
 
 
+# Busca sem acento (GES-12): "joao" acha "João". A dobra é feita no banco, numa
+# expressão só (``FoldedText``): ``TRANSLATE(LOWER(...))`` no Postgres, e no
+# SQLite a função ``shopman_fold`` que ``register_sqlite_fold`` instala na
+# conexão (o SQLite não tem ``TRANSLATE``, e o ``REPLACE`` encadeado letra a
+# letra estoura a pilha do parser dele). Não pede a extensão ``unaccent``.
+_ACCENTED = "áàâãäéèêëíìîïóòôõöúùûüçñ"
+_PLAIN = "aaaaaeeeeiiiiooooouuuucn"
+SQLITE_FOLD_FUNCTION = "shopman_fold"
+
+
+class FoldedText(Func):
+    """O texto em minúsculas e sem acento, igual a ``_fold_text`` no Python."""
+
+    output_field = CharField()
+
+    def as_postgresql(self, compiler, connection, **extra_context):
+        return self.as_sql(
+            compiler, connection,
+            template=f"TRANSLATE(LOWER(%(expressions)s), '{_ACCENTED}', '{_PLAIN}')",
+            **extra_context,
+        )
+
+    def as_sqlite(self, compiler, connection, **extra_context):
+        return self.as_sql(compiler, connection, function=SQLITE_FOLD_FUNCTION, **extra_context)
+
+
+def register_sqlite_fold(sender, connection, **kwargs):
+    """Instala ``shopman_fold`` em cada conexão SQLite (sinal ``connection_created``)."""
+    if connection.vendor == "sqlite":
+        connection.connection.create_function(
+            SQLITE_FOLD_FUNCTION, 1, lambda text: _fold_text(text) if text is not None else None,
+            deterministic=True,
+        )
+
+
+def _fold_text(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(char for char in decomposed if not unicodedata.combining(char))
+
+
 def _search_q(query: str) -> Q:
     q = (
         Q(ref__icontains=query)
         | Q(full_name__icontains=query.lower())
+        | Q(full_name_folded__icontains=_fold_text(query))
         | Q(document__icontains=query)
         | Q(phone__icontains=query)
         | Q(email__icontains=query)
@@ -469,10 +523,11 @@ def _search_q(query: str) -> Q:
 
 
 def build_customer_list(
-    query: str = "", filter_ref: str = "all", page: int = 1, sort: str = "recent",
+    query: str = "", filter_ref: str = "all", page: int = 1, sort: str = "recent", group_ref: str = "",
 ) -> CustomerListProjection:
     Customer = _customer_model()
     query = (query or "").strip()
+    group_ref = (group_ref or "").strip()[:50]
     filter_ref = filter_ref if filter_ref in _FILTER_REFS else "all"
     page = max(int(page or 1), 1)
     sort = sort if sort in {"recent", "name"} else "recent"
@@ -489,7 +544,10 @@ def build_customer_list(
         names, documents = _duplicate_sets()
         qs = qs.filter(Q(full_name__in=names) | Q(document__in=documents))
     if query:
-        qs = qs.filter(_search_q(query))
+        qs = qs.annotate(full_name_folded=FoldedText(_full_name_expr())).filter(_search_q(query))
+    if group_ref:
+        # Recorte por grupo: é por aqui que se acha quem tirar de um grupo em lote.
+        qs = qs.filter(price_tiers__ref=group_ref)
 
     # Duplicados em sequência: quem está comparando lê os dois lado a lado.
     if filter_ref == "possible_duplicates" or sort == "name":
@@ -498,7 +556,7 @@ def build_customer_list(
         ordering = ("-created_at", "ref")
     total = qs.count()
     start = (page - 1) * PAGE_SIZE
-    customers = list(qs.order_by(*ordering)[start:start + PAGE_SIZE])
+    customers = list(qs.order_by(*ordering).prefetch_related("price_tiers")[start:start + PAGE_SIZE])
     stats = _order_stats([customer.ref for customer in customers])
     if filter_ref != "possible_duplicates" and customers:
         names, documents = _duplicate_sets(
@@ -521,12 +579,16 @@ def build_customer_list(
                 orders_label=_orders_label(count),
                 last_order_display=_elapsed_label(last),
                 duplicate_hint=_duplicate_hint(customer, names, documents),
+                groups=tuple(
+                    CustomerPriceTierProjection(ref=tier.ref, name=tier.name, is_primary=index == 0)
+                    for index, tier in enumerate(customer.price_tiers.all())
+                ),
             )
         )
 
     if total:
         total_label = "1 cliente" if total == 1 else f"{total} clientes"
-    elif query or filter_ref != "all":
+    elif query or filter_ref != "all" or group_ref:
         total_label = "Nenhum cliente com essa busca"
     else:
         total_label = "Nenhum cliente cadastrado"
@@ -534,6 +596,7 @@ def build_customer_list(
     return CustomerListProjection(
         query=query,
         filter=filter_ref,
+        group=group_ref,
         filters=tuple(CustomerFilterOption(ref=ref, label=label, active=ref == filter_ref) for ref, label in FILTERS),
         items=tuple(items),
         page=page,
@@ -658,7 +721,9 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
 
     stats = CustomerOrderHistoryService.get_customer_stats(customer.ref)
     stats_count, stats_spent, stats_last = stats.total_orders, stats.total_spent_q, stats.last_order_at
-    recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10)
+    # A lista do cadastro mostra o cancelado também, com o status ao lado; a
+    # contagem e o gasto acima são só das compras.
+    recent = CustomerOrderHistoryService.list_customer_orders(customer.ref, limit=10, include_not_purchases=True)
 
     channels = _channel_names({record.channel_ref for record in recent})
     recent_orders = tuple(
@@ -709,7 +774,9 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         CustomerAddressProjection(
             id=address.pk,
             revision=address.updated_at.isoformat(),
-            label=address.display_label,
+            # Vazio quando o endereço não tem etiqueta ("Outro" sem nome, #2775):
+            # a tela mostra o endereço, não a categoria vazia.
+            label="" if address.label == "other" and not address.label_custom else str(address.display_label),
             label_code=address.label,
             formatted_address=address.formatted_address or "",
             route=address.route or "",
@@ -769,7 +836,7 @@ def build_customer_detail(ref: str) -> CustomerDetailProjection | None:
         source_label=_source_label(customer),
         is_ifood=_is_ifood(customer),
         created_display=_local(customer.created_at),
-        notes=str(customer.notes or "").strip(),
+        notes=_operator_notes(customer.notes),
         orders_label=_orders_label(stats_count),
         total_spent_display=f"R$ {format_money(int(stats_spent))}" if stats_spent else "",
         last_order_display=_elapsed_label(stats_last),
@@ -884,6 +951,17 @@ def build_merge_preview(source, target, preview) -> MergePreviewProjection:
     )
 
 
+# A marca que a unificação do Core deixa nas observações do doador
+# (``[MERGED] → CUST-X by joyce``). É rastro técnico: quem unificou, quando e para
+# onde já mora na Unificação (``MergeAudit``) e em ``merged_into_ref``, e a ficha
+# mostra isso em português. Nas observações do operador ela não aparece (GES-14).
+_MERGE_MARK = re.compile(r"^\[MERGED\] → \S+ by .*$", re.MULTILINE)
+
+
+def _operator_notes(notes) -> str:
+    return _MERGE_MARK.sub("", str(notes or "")).strip()
+
+
 def _remaining(deadline) -> str:
     seconds = int((deadline - timezone.now()).total_seconds())
     if seconds <= 0:
@@ -898,7 +976,9 @@ def build_merge_audit_list(limit: int = 50) -> MergeAuditListProjection:
     audits = list(MergeAudit.objects.order_by("-merged_at")[:limit])
     full_names = {
         customer.ref: _customer_name(customer)
-        for customer in _customer_model().objects.filter(ref__in={audit.target_ref for audit in audits})
+        for customer in _customer_model().objects.filter(
+            ref__in={audit.target_ref for audit in audits} | {audit.source_ref for audit in audits}
+        )
     }
     status_labels = dict(MergeStatus.choices)
     items = []
@@ -929,6 +1009,7 @@ def build_merge_audit_list(limit: int = 50) -> MergeAuditListProjection:
                 source_ref=audit.source_ref,
                 target_ref=audit.target_ref,
                 target_name=full_names.get(audit.target_ref, ""),
+                source_name=full_names.get(audit.source_ref, ""),
                 actor=audit.actor or "",
                 merged_at_display=_local(audit.merged_at),
                 status=str(audit.status),

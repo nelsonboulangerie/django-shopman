@@ -6,12 +6,19 @@
 import type { OrderCardProjection } from "~/types/orders";
 import {
   cardAffordances,
+  kitchenWait,
   secondsSince,
   splitRef,
   type Affordance,
 } from "./board";
+import { blockedReasonLines, lockedButtonRepeatsPill } from "./cardBlocks";
+import { blockWaits } from "./orderPromise";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
 
-export type QueueTone = "ok" | "warning" | "late";
+export type QueueTone = Exclude<TimeTone, "ready">;
 
 /** O recorte da Fila (v4): "Precisa de você" (o padrão), "Todos" e "Atrasados". */
 export type QueueScope = "attention" | "all" | "late";
@@ -47,36 +54,41 @@ export interface QueueItem {
   seconds: number;
   /** "27 min" */
   timeLabel: string;
-  /** "meta 30" · "no balcão" · o estado ("Em preparo") de quem não pede ninguém */
+  /** "meta 30 min" · "no balcão" · o estado ("Em preparo") de quem não pede ninguém */
   goalLabel: string;
   tone: QueueTone;
   /** Fração da meta já gasta (1 = venceu). Ordena a Fila. */
   urgency: number;
   /** Segundos até o sistema CANCELAR sozinho (prazo duro); ``null`` sem prazo de perda. */
   cancelsIn: number | null;
+  /** "Vai para a Cozinha às 16h15": a encomenda do dia que ainda espera a hora dela.
+   *  Sem relógio e sem meta; a Fila mostra a frase no lugar do tempo. */
+  waits: string;
 }
 
 /** Minutos inteiros, como a prévia escreve ("27 min", "1h 5 min"). */
 export function minutesLabel(seconds: number): string {
   const m = Math.floor(Math.max(0, seconds) / 60);
   if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h >= 24) return h % 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${Math.floor(h / 24)}d`;
   const rest = m % 60;
   return rest ? `${Math.floor(m / 60)}h ${rest} min` : `${Math.floor(m / 60)}h`;
 }
 
-/** O tom do número: passou da meta é atraso; a partir de 80% dela, atenção. */
+/** O tom do número, como o iFood (dono, 13/11/2026): passou da meta é atraso; a partir
+ *  da metade dela, atenção. */
 export function goalTone(seconds: number, goalMinutes: number): QueueTone {
-  if (!goalMinutes) return "ok";
+  if (!goalMinutes) return timeTone("on_time");
   const ratio = seconds / (goalMinutes * 60);
-  if (ratio >= 1) return "late";
-  if (ratio >= 0.8) return "warning";
-  return "ok";
+  if (ratio >= 1) return timeTone("late");
+  if (ratio >= 0.5) return timeTone("warning");
+  return timeTone("on_time");
 }
 
-/** A cor do tempo (G03). Atenção ao tempo é um número com INTENSIDADE, sempre no âmbar:
- *  vermelho é só "bloqueado com motivo" (a pílula do cadeado), nunca o relógio. */
+/** A cor do tempo: vermelho atrasado, âmbar perto da meta, neutro no prazo. */
 export function queueToneClass(tone: QueueTone): string {
-  if (tone === "late") return "font-bold text-warning";
+  if (tone === "late") return "font-bold text-destructive";
   if (tone === "warning") return "text-warning";
   return "text-foreground";
 }
@@ -115,19 +127,42 @@ export function liveAge(
   return { label: item.timeLabel, tone: item.tone };
 }
 
+/** De quando o relógio do pedido conta: a chegada à Cozinha, na encomenda; a criação, no
+ *  pedido de agora (`clock_since_iso`). Contar a encomenda desde a compra fazia a Fila
+ *  dizer "3d 4h" e "o mais antigo há 3d" como tempo de preparo (WP-G02, P1-05). */
+export function clockSince(
+  card: Pick<OrderCardProjection, "clock_since_iso" | "created_at_iso">,
+): string {
+  return card.clock_since_iso || card.created_at_iso;
+}
+
 function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
+  const wait = kitchenWait(card);
+  if (!card.attention && wait)
+    return {
+      card,
+      kind: "",
+      seconds: 0,
+      timeLabel: wait.label,
+      goalLabel: card.status_label,
+      tone: timeTone("on_time"),
+      urgency: 0,
+      cancelsIn: null,
+      waits: wait.label,
+    };
   if (!card.attention) {
     const seconds =
-      secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+      secondsSince(clockSince(card), nowMs) ?? card.elapsed_seconds ?? 0;
     return {
       card,
       kind: "",
       seconds,
       timeLabel: minutesLabel(seconds),
       goalLabel: card.status_label,
-      tone: "ok",
+      tone: timeTone("on_time"),
       urgency: 0,
       cancelsIn: null,
+      waits: "",
     };
   }
   const seconds =
@@ -142,6 +177,7 @@ function itemFor(card: OrderCardProjection, nowMs: number): QueueItem {
     tone: goalTone(seconds, goal),
     urgency: goal ? seconds / (goal * 60) : 0,
     cancelsIn: cancelSeconds(card, nowMs),
+    waits: "",
   };
 }
 
@@ -173,6 +209,9 @@ export function queueItems(
   const items: QueueItem[] = [];
   for (const card of cards) {
     if (seen.has(card.ref) || (!card.attention && scope !== "all")) continue;
+    // Esperando o Pix ou o cartão: mora na faixa "Aguardando pagamento", nem no
+    // "Todos" (DEV-2026-091). O prazo vencido devolve o attention e o pedido.
+    if (!card.attention && card.awaits_online_payment) continue;
     seen.add(card.ref);
     const item = itemFor(card, nowMs);
     if (scope === "late" && item.tone !== "late") continue;
@@ -202,8 +241,51 @@ export function queueScopeCounts(
   return {
     attention: attention.length,
     late: attention.filter((item) => item.tone === "late").length,
-    all: new Set(cards.map((card) => card.ref)).size,
+    all: new Set(
+      cards
+        .filter((card) => card.attention || !card.awaits_online_payment)
+        .map((card) => card.ref),
+    ).size,
   };
+}
+
+export interface AwaitingPaymentRow {
+  ref: string;
+  /** "K12": o código que a casa fala. */
+  code: string;
+  /** "Ana · R$ 48,70" */
+  who: string;
+  /** "Aguardando Pix há 2 min" */
+  wait: string;
+}
+
+/**
+ * A faixa "Aguardando pagamento (N)" no fim da Fila (DEV-2026-091, escolha do dono,
+ * 25/11/2026): o pedido novo que só espera o Pix ou o cartão cair. Não pede ninguém,
+ * não conta como pendência e não toca; fica recolhido e só para leitura. No instante
+ * em que o pagamento cai, o servidor dá a ele o `attention` e ele sobe para a Fila
+ * tocando como pedido novo. O prazo do pagamento vencido também devolve o
+ * `attention` ("Cancelar não pago"), e aí ele sai daqui.
+ */
+export function awaitingPayment(
+  cards: OrderCardProjection[],
+  nowMs: number,
+): AwaitingPaymentRow[] {
+  const seen = new Set<string>();
+  return cards
+    .filter((card) => card.awaits_online_payment && !card.attention)
+    .filter((card) => (seen.has(card.ref) ? false : (seen.add(card.ref), true)))
+    .sort((a, b) => a.created_at_iso.localeCompare(b.created_at_iso))
+    .map((card) => {
+      const seconds = secondsSince(card.created_at_iso, nowMs) ?? card.elapsed_seconds ?? 0;
+      const method = String(card.payment_method_label || "pagamento");
+      return {
+        ref: card.ref,
+        code: splitRef(card.ref).code,
+        who: [card.customer_name, card.total_display].filter(Boolean).join(" · "),
+        wait: `Aguardando ${method} há ${minutesLabel(seconds)}`,
+      };
+    });
 }
 
 export interface ProgressLine {
@@ -215,8 +297,23 @@ export interface ProgressLine {
   detail: string;
 }
 
-const KITCHEN = new Set(["accepted", "preparing"]);
 const ROAD = new Set(["dispatched", "delivered"]);
+
+/** O pedido está DE FATO na Cozinha? Em preparo, ou aceito com ticket já aberto
+ *  numa estação (preparo automático). Aceito sem ticket ainda pede "Iniciar preparo"
+ *  e não foi para a cozinha (lifecycle: o aceito NÃO vai sozinho), e a encomenda de
+ *  outro dia só entra na cozinha no dia dela: contar qualquer um dos dois em "Na
+ *  Cozinha" mentia sobre o mesmo pedido que a Fila mostra esperando você.
+ *
+ *  Quem diz que a encomenda é de outro dia é o servidor (`is_preorder`, medido contra
+ *  o `service_day` da mesma leitura). A tela comparava a data com o "hoje" do
+ *  dispositivo, e um tablet em outro fuso (ou com o relógio errado) contava a encomenda
+ *  de amanhã como "Na Cozinha" (laudo do Gestor, P2-06). */
+export function inKitchen(card: OrderCardProjection): boolean {
+  if (card.is_preorder) return false;
+  if (card.status === "preparing") return true;
+  return card.status === "accepted" && (card.kitchen?.stations?.length ?? 0) > 0;
+}
 
 /** "Em andamento": o que não pede ninguém, agregado (Na Cozinha, Na rua). */
 export function inProgress(
@@ -233,7 +330,7 @@ export function inProgress(
     );
     return ages.length ? Math.max(...ages) : 0;
   };
-  const kitchen = quiet.filter((card) => KITCHEN.has(card.status));
+  const kitchen = quiet.filter((card) => inKitchen(card));
   const road = quiet.filter((card) => ROAD.has(card.status));
   const detail = (count: number, seconds: number) =>
     count ? `o mais antigo há ${minutesLabel(seconds)}` : "";
@@ -246,7 +343,7 @@ export function inProgress(
       detail: kitchenDetail(
         kitchen,
         nowMs,
-        oldest(kitchen, (card) => card.created_at_iso),
+        oldest(kitchen, clockSince),
       ),
     },
     {
@@ -303,8 +400,43 @@ export function restLine(
   return { hidden, moving, text: [ask, going].filter(Boolean).join(" · ") };
 }
 
+export interface QueueBlock {
+  /** O nome do bloqueio ("Pix expirado", "Esperando o lote"); sem nome, "Bloqueado". */
+  label: string;
+  /** O porquê, escrito na linha. */
+  reason: string;
+  /** Vermelho só no bloqueio que pede alguém; a espera que anda sozinha é neutra. */
+  color: "error" | "neutral";
+  icon: string;
+  /** A cobrança venceu e não destrava sozinha: a linha oferece "Cancelar pedido". */
+  cancelUnpaid: boolean;
+}
+
+/**
+ * O bloqueio do avanço na linha da Fila: o nome, o motivo escrito e a saída (resto do
+ * P1-12 do laudo: era pílula com o motivo e nenhum gesto).
+ *
+ * Aparece em quem a Fila chama de bloqueado, em quem não pede ninguém (o recorte
+ * "Todos": o pedido que só espera o lote) e em quem está com a promessa em risco. Nos
+ * outros fatos (aceitar, iniciar, despachar) o gesto da linha já diz o que fazer.
+ */
+export function queueBlock(item: QueueItem): QueueBlock | null {
+  const card = item.card;
+  const reason = String(card.advance_block_reason ?? "").trim();
+  if (!reason) return null;
+  if (item.kind && item.kind !== "blocked" && item.kind !== "promise") return null;
+  const waits = blockWaits(card);
+  return {
+    label: String(card.advance_block_label || "Bloqueado").replace(/…$/, ""),
+    reason,
+    color: item.kind === "blocked" && !waits ? "error" : "neutral",
+    icon: waits ? "i-lucide-hourglass" : "i-lucide-lock",
+    cancelUnpaid: Boolean(card.payment_lapsed),
+  };
+}
+
 export interface QueueGesture {
-  /** O gesto principal: o fato humano, com o verbo da v4 ("Aceitar", "Saiu", "Retirou"). */
+  /** O gesto principal, com o nome que o servidor dá ("Aceitar", "Entregar a Ana", "Despachar M09"). */
   primary: (Affordance & { verb: string }) | null;
   /** O secundário, quando a prévia mostra um ("Recusar"). */
   secondary: Affordance | null;
@@ -312,11 +444,12 @@ export interface QueueGesture {
   shortcut: string;
 }
 
-/** O botão da linha: só o fato humano é botão (v4). O rótulo do servidor vira `title`. */
+/** O botão da linha: só o fato humano é botão (v4), com o nome que o servidor dá. */
 export function queueGesture(item: QueueItem): QueueGesture {
   // A negociação do iFood se responde no pedido (motivo, prova, contraproposta), não
-  // com o gesto do cartão: a linha oferece "Responder", que é um link.
-  if (!item.kind || item.kind === "negotiation")
+  // com o gesto do cartão: a linha oferece "Responder", que é um link. A promessa em
+  // risco tem as saídas dela escritas na linha (WP-G08), e nenhum gesto de etapa.
+  if (!item.kind || item.kind === "negotiation" || item.kind === "promise")
     return { primary: null, secondary: null, shortcut: "" };
   // O aceite que não chegou ao iFood: o gesto é reenviar, não avançar o pedido.
   if (item.kind === "ifood_accept") {
@@ -340,37 +473,57 @@ export function queueGesture(item: QueueItem): QueueGesture {
     };
   }
   const affordances = cardAffordances(item.card);
-  const primary =
+  const found =
     affordances.find((aff) => aff.priority === "primary" || aff.disabled) ??
     null;
+  // O avanço travado que só leva o nome do bloqueio não vira botão morto: a linha já
+  // mostra o selo com esse nome e o motivo ao lado (P1-16, como no cartão).
+  const primary =
+    found &&
+    lockedButtonRepeatsPill({
+      primary: found,
+      primaryLabel: found.label,
+      blockLabel: item.card.advance_block_label,
+      blockAnnounced: Boolean(queueBlock(item)),
+    })
+      ? null
+      : found;
   const secondary =
     item.kind === "confirm"
       ? (affordances.find((aff) => aff.ref === "reject") ?? null)
       : null;
   if (!primary) return { primary: null, secondary, shortcut: "" };
-  let verb = primary.label;
-  if (!primary.disabled) {
-    if (primary.ref === "confirm") verb = "Aceitar";
-    else if (item.kind === "dispatch" && primary.ref === "advance")
-      verb = "Saiu";
-    else if (item.kind === "handoff" && primary.ref === "advance")
-      verb = item.card.fulfillment_type === "delivery" ? "Entregue" : "Retirou";
-  }
+  // Um nome por gesto em toda a suíte (coordenação, 21/11/2026; #2758 item 4): o botão
+  // diz o que o servidor nomeia, o mesmo do Painel e da Tabela ("Aceitar", "Entregar a
+  // Ana", "Despachar M09"). A Fila montava verbos próprios ("Saiu", "Retirou").
   return {
-    primary: { ...primary, verb },
+    primary: { ...primary, verb: primary.label },
     secondary,
     shortcut: primary.ref === "confirm" && !primary.disabled ? "A" : "Enter",
   };
 }
 
-/** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). */
-export function queueWho(
-  card: OrderCardProjection,
-  channel: string,
-): { name: string; rest: string } {
+/**
+ * Por que um gesto da linha está travado, escrito sob os botões: o `title` não existe
+ * no toque (sobra do WP-G06, #2710). O que o selo do bloqueio da linha já diz não se
+ * repete.
+ */
+export function queueBlockedReasons(item: QueueItem): string[] {
+  const gesture = queueGesture(item);
+  return blockedReasonLines({
+    primary: gesture.primary,
+    primaryLabel: gesture.primary?.verb ?? "",
+    secondary: gesture.secondary ? [gesture.secondary] : [],
+    blockAnnounced: Boolean(queueBlock(item)),
+  });
+}
+
+/** "João Oliveira" e o resto da linha ("Entrega · Rua Paranaguá, 800 · iFood"). O nome
+ *  do canal é o do servidor (`channel_name`). */
+export function queueWho(card: OrderCardProjection): { name: string; rest: string } {
   const parts = [card.fulfillment_label];
   if (card.delivery_address) parts.push(card.delivery_address);
-  if (channel) parts.push(channel);
+  if (card.channel_name) parts.push(card.channel_name);
   return {
     name: card.customer_name || "Sem cliente",
     rest: parts.filter(Boolean).join(" · "),
@@ -443,19 +596,25 @@ export function workingOrders(
   const age = (card: OrderCardProjection, since: string) =>
     secondsSince(since, nowMs) ?? card.elapsed_seconds ?? 0;
   const kitchen = unique
-    .filter((card) => KITCHEN.has(card.status))
+    .filter((card) => inKitchen(card))
     .map((card) => {
       const stations = (card.kitchen?.stations ?? []).map(stationLine);
       const done = stations.filter((s) => s.tone === "success").length;
-      const seconds = age(card, card.created_at_iso);
+      const seconds = age(card, clockSince(card));
       return {
         card,
         stations,
         seconds,
         ageLabel: minutesLabel(seconds),
-        summary: stations.length
-          ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
-          : "Sem estação",
+        // Com entregador do iFood, onde ele está entra na mesma linha (12/11/2026).
+        summary: [
+          stations.length
+            ? `${done} de ${stations.length} ${stations.length === 1 ? "pronta" : "prontas"}`
+            : "Sem estação",
+          card.ifood_logistics_label,
+        ]
+          .filter(Boolean)
+          .join(" · "),
       };
     })
     .sort((a, b) => b.seconds - a.seconds);
@@ -469,7 +628,10 @@ export function workingOrders(
         seconds,
         ageLabel: minutesLabel(seconds),
         summary:
-          card.courier_status_label || card.equipment_label || "A caminho",
+          card.ifood_logistics_label ||
+          card.courier_status_label ||
+          card.equipment_label ||
+          "A caminho",
       };
     })
     .sort((a, b) => b.seconds - a.seconds);

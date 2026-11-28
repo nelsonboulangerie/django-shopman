@@ -13,6 +13,7 @@ import type {
 import {
   buildUnlockPayload,
   isLocked,
+  operatorChangeNotice,
   type UnlockInput,
 } from "../presentation/operatorLock";
 import {
@@ -53,6 +54,16 @@ export function useOperatorLock(perm: string) {
   const operatorSession = useOperatorSession();
 
   const session = computed<OperatorSession | null>(() => data.value ?? null);
+  followOperatorAcrossApps();
+  // Alguém identificado nesta carga do app: a partir daqui um 401 é sessão que
+  // TERMINOU (e o login diz isso). Antes, é só a primeira visita.
+  watch(
+    () => Boolean(session.value?.operator),
+    (identified) => {
+      if (identified) operatorSession.markAuthenticated();
+    },
+    { immediate: true },
+  );
   const sessionState = computed(() =>
     operatorSessionState({
       expired: operatorSession.expired.value,
@@ -96,7 +107,18 @@ export function useOperatorLock(perm: string) {
   // meio-tempo caía no chão. Agora a segunda trava em diante abre com a lista
   // de antes, já ouvindo, e a busca só a atualiza.
   const eligible = useState<OperatorCard[]>(`operator-eligible:${perm}`, () => []);
-  async function loadEligible(): Promise<void> {
+  // Em que pé está a lista. Sem isto, a lista VAZIA de quem ainda está lendo e a
+  // lista vazia de verdade eram a mesma tela, e a trava dizia "Nenhum operador
+  // habilitado" por alguns segundos antes de mostrar a Fran e a Joyce (beta 05/11,
+  // PDV2-16). E falha de rede não é lista vazia: ela diz que não leu.
+  const eligibleStatus = useState<"idle" | "pending" | "ready" | "error">(
+    `operator-eligible-status:${perm}`,
+    () => "idle",
+  );
+  /** `quiet`: relê sem passar pelo "lendo" (a lista já está na tela e só muda um
+   *  detalhe dela, como a marca do PIN de 4 fixos depois de uma troca). */
+  async function loadEligible(options: { quiet?: boolean } = {}): Promise<void> {
+    if (!options.quiet) eligibleStatus.value = "pending";
     try {
       const res = await $fetch<OperatorEligibleResponse>(
         "/api/v1/backstage/operator/eligible/",
@@ -106,16 +128,24 @@ export function useOperatorLock(perm: string) {
         },
       );
       eligible.value = res.operators ?? [];
+      eligibleStatus.value = "ready";
     } catch {
-      eligible.value = [];
+      // Relida em silêncio, a lista de antes continua valendo: o teclado só fica
+      // com o Confirmar até a próxima leitura.
+      if (!options.quiet) eligibleStatus.value = "error";
     }
   }
 
   const busy = ref(false);
+  // A recusa do destrave mora JUNTO do teclado, e não num aviso no canto da tela
+  // que some sozinho (beta 05/11, CEN-01 e GES-14): é ali que a pessoa olha. O
+  // PIN bloqueado chega com a frase do servidor ("até 07:05, peça a um gerente").
+  const unlockError = ref("");
 
   async function unlock(input: Omit<UnlockInput, "perm">): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
+    unlockError.value = "";
     try {
       await $fetch("/api/v1/backstage/operator/unlock/", {
         method: "POST",
@@ -130,7 +160,7 @@ export function useOperatorLock(perm: string) {
       await refreshNuxtData();
       return true;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Identificação inválida. Tente de novo."));
+      unlockError.value = httpErrorMessage(err, "Não deu para entrar. Tente de novo.");
       return false;
     } finally {
       busy.value = false;
@@ -145,8 +175,12 @@ export function useOperatorLock(perm: string) {
         body: { perm },
       });
       await refresh();
-    } catch {
-      // best-effort: a failed lock leaves the operator active; surfaced on next action.
+    } catch (err) {
+      // Travar que falha calado deixa a pessoa achando que saiu, com a sessão dela
+      // aberta no balcão (beta 05/11, PDV2-02). Ela precisa saber, ali mesmo.
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível trocar de operador. Sua sessão continua aberta: tente de novo."),
+      );
     }
   }
 
@@ -172,6 +206,10 @@ export function useOperatorLock(perm: string) {
         },
       });
       await refresh();
+      // O PIN trocado é de 4 fixos (#3223): a lista de quem destrava passa a dizer
+      // isso, e o próximo destrave já entra sozinho no quarto dígito. Sem reler, a
+      // lista era a de antes da troca e pedia o Confirmar (achado na prévia).
+      void loadEligible({ quiet: true });
       return true;
     } catch (err) {
       changeError.value = httpErrorMessage(err, "Não foi possível trocar o PIN.");
@@ -221,8 +259,10 @@ export function useOperatorLock(perm: string) {
     operator,
     mustChange,
     eligible,
+    eligibleStatus,
     loadEligible,
     unlock,
+    unlockError,
     lock,
     changePin,
     changeError,
@@ -231,4 +271,35 @@ export function useOperatorLock(perm: string) {
     refresh,
     busy,
   };
+}
+
+/**
+ * A aba que volta ao foco relê quem opera. Uma vez por app (o `nuxtApp` guarda a
+ * marca), por mais componentes que chamem `useOperatorLock`: os ouvintes vivem o
+ * tempo do app, e o aviso sai uma vez só. Ver `operatorChangeNotice`.
+ */
+function followOperatorAcrossApps(): void {
+  if (!import.meta.client) return;
+  const nuxtApp = useNuxtApp() as ReturnType<typeof useNuxtApp> & { _operatorFollow?: boolean };
+  if (nuxtApp._operatorFollow) return;
+  nuxtApp._operatorFollow = true;
+  const { data } = useNuxtData<OperatorSession>("operator-session");
+  let inFlight = false;
+  async function reread(): Promise<void> {
+    if (inFlight || document.visibilityState !== "visible") return;
+    inFlight = true;
+    try {
+      const before = data.value ?? null;
+      await nuxtApp.runWithContext(() => refreshNuxtData("operator-session"));
+      const notice = operatorChangeNotice(before, data.value ?? null);
+      if (!notice) return;
+      useSonner.info(notice);
+      // O que está na tela foi lido por outra pessoa (fila, permissões, rascunho).
+      await nuxtApp.runWithContext(() => refreshNuxtData());
+    } finally {
+      inFlight = false;
+    }
+  }
+  window.addEventListener("focus", () => void reread());
+  document.addEventListener("visibilitychange", () => void reread());
 }

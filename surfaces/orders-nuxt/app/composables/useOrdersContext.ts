@@ -18,7 +18,7 @@ type BoardContext = {
   focusLabel: string;
   /** O recorte da Fila (v4): "Precisa de você", "Todos" ou "Atrasados". */
   scope: QueueScope;
-  /** A ordem da Fila ("Urgência ▾"); a do quadro e da tabela é `sort`. */
+  /** A ordem da Fila ("Urgência ▾"); a do painel e da tabela é `sort`. */
   queueSort: QueueSort;
 };
 const emptyContext = (owner: number | null): BoardContext => ({
@@ -27,7 +27,9 @@ const emptyContext = (owner: number | null): BoardContext => ({
   channel: "all",
   fulfillment: "all",
   sort: "arrival",
-  viewMode: "queue",
+  // O Painel é a casa do Gestor (dono, 14/11/2026: "O modo Painel não ia ser o
+  // padrão?"). A Fila e a Tabela seguem no mesmo controle e vão para a URL.
+  viewMode: "board",
   selected: [],
   scrollTop: 0,
   windowY: 0,
@@ -111,7 +113,7 @@ export function useOrdersContext() {
         ? { fulfillment: fulfillment.value }
         : {}),
       ...(sort.value !== "arrival" ? { sort: sort.value } : {}),
-      ...(viewMode.value !== "queue" ? { view: viewMode.value } : {}),
+      ...(viewMode.value !== "board" ? { view: viewMode.value } : {}),
       ...(scope.value !== "attention" ? { scope: scope.value } : {}),
       ...(queueSort.value !== "urgency" ? { order: queueSort.value } : {}),
     },
@@ -135,9 +137,9 @@ export function useOrdersContext() {
     viewMode.value =
       text("view") === "table"
         ? "table"
-        : text("view") === "board"
-          ? "board"
-          : "queue";
+        : text("view") === "queue"
+          ? "queue"
+          : "board";
     scope.value = ["all", "late"].includes(text("scope"))
       ? (text("scope") as QueueScope)
       : "attention";

@@ -136,8 +136,8 @@
 
     <hr class="rule" />
     <div class="center">
-      {# O CPF é o que identifica o consumidor na nota — e é a resposta para
-         "o meu CPF entrou?". Nome só quando houver nome de gente. #}
+      {% comment %} O CPF é o que identifica o consumidor na nota — e é a resposta para
+         "o meu CPF entrou?". Nome só quando houver nome de gente. {% endcomment %}
       <div class="muted" style="font-size:11px">
         {% if d.customer_tax_id_display %}
           Consumidor: {{ d.customer_tax_id_label }} {{ d.customer_tax_id_display }}
@@ -162,7 +162,6 @@
     <hr class="rule" />
     <div class="empty">
       <p>NFC-e ainda não emitida para este pedido.</p>
-      <p style="font-size:11px">Emita em homologação com<br /><code>manage.py fiscal_emit --order {{ d.order_ref }}</code></p>
       <div style="margin-top:8px"><span class="status-badge" style="background:#6b63571a;color:#6b6357">{{ d.status }} · {{ d.environment_label }}</span></div>
     </div>
     {% endif %}

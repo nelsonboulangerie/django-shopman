@@ -5,7 +5,7 @@ import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
 import { workspaceProps } from "../support/paymentWorkspaceProps";
 
 // ENCOMENDA PARA AMANHÃ não vai para a cozinha ao finalizar: o pedido espera a
-// data combinada (`lifecycle._physical_work_deferred`). O pagamento dizia "Ao
+// data combinada (`lifecycle.awaits_kitchen_release`). O pagamento dizia "Ao
 // finalizar, o item vai para a cozinha." — promessa falsa ao operador.
 
 const cash = { method: "cash", amount_q: 1000, collection: "terminal" as const };
@@ -34,13 +34,13 @@ describe("PosPaymentWorkspace — a cozinha da encomenda", () => {
     });
     const notices = wrapper.find('[aria-label="Avisos"]').text();
     expect(notices).toContain("O item vai para a cozinha no dia da encomenda.");
-    expect(notices).not.toContain("Ao finalizar");
+    expect(notices).not.toContain("Ao validar");
   });
 
   it("para hoje: vai ao finalizar", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ deliveryDate: "", deliveryDateEffective: "2026-09-28" }),
     });
-    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("Ao finalizar, o item vai para a cozinha.");
+    expect(wrapper.find('[aria-label="Avisos"]').text()).toContain("Ao validar, o item vai para a cozinha.");
   });
 });

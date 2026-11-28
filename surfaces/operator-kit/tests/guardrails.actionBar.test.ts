@@ -2,7 +2,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Trava da AÇÃO NA BASE (WP-FASE2-UX-OPERADOR, D8): a ação do momento no celular é o
 // `OperatorActionBar`, em fluxo entre o conteúdo e a barra inferior, nunca uma barra
@@ -18,7 +19,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // ficam listadas com motivo.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 /** Um texto entre aspas com `sticky`/`fixed` e `bottom-*`: uma barra grudada na base. */
@@ -43,6 +44,10 @@ const CEILING: Record<string, { max: number; reason: string; arriving?: string }
     max: 1,
     reason: "o aviso de versão nova do app instalado, acima da barra inferior",
   },
+  "operator-kit/app/components/IFoodHomologationBand.vue": {
+    max: 1,
+    reason: "a faixa de data, hora e client_id dos vídeos de homologação do iFood: só existe no runtime local de teste, sem clique (pointer-events-none), não é ação",
+  },
 };
 
 function vueFiles(dir: string, found: string[] = []): string[] {
@@ -53,7 +58,7 @@ function vueFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);

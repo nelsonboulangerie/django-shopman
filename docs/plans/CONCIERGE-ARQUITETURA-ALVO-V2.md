@@ -1,7 +1,7 @@
 # CONCIERGE-ARQUITETURA-ALVO-V2: memória, várias intenções e confiança por construção
 
 > **Estado:** estudo, rodada 2 adversarial (OBS0310-L, 03/10/2026). Nenhum código de produção.
-> **Vigente** sobre a rodada 1 ([CONCIERGE-ARQUITETURA-ALVO.md](CONCIERGE-ARQUITETURA-ALVO.md),
+> **Vigente** sobre a rodada 1 ([CONCIERGE-ARQUITETURA-ALVO.md](completed/CONCIERGE-ARQUITETURA-ALVO.md),
 > OBS0310-J, PR #1435), que fica como histórico: as medições dela continuam valendo, a
 > arquitetura e as fatias mudam aqui.
 >
@@ -15,7 +15,7 @@
 > Frentes vizinhas, não duplicadas aqui: **OBS0310-K** (régua de custo e latência por resposta e
 > conjunto de 209 mensagens reais anonimizadas, PR #1437, comando `concierge_reply_eval`) e **OBS0310-I** (alergias respondidas pelo aviso da
 > casa e pelos alérgenos do produto, PR #1436). Roteiro de teste do Deeliv e do Ailo em
-> [concierge-teste-deeliv.md](concierge-teste-deeliv.md).
+> [concierge-teste-deeliv.md](completed/concierge-teste-deeliv.md).
 >
 > Legenda: **[MEDIDO]** saída de comando, banco ou código com caminho; **[FONTE]** documento
 > externo com link; **[INFERÊNCIA]** leitura minha.
@@ -925,7 +925,7 @@ cliente vê sem a trava que prova que nada piorou.
 5. **Prazo da memória da conversa:** a pergunta que a casa fez vale 30 minutos e o resto 12 horas;
    depois disso ela pergunta de novo (pedidos e endereço continuam conhecidos)? sim (recomendo) /
    outro prazo.
-6. **Teste de campo** ([roteiro](concierge-teste-deeliv.md)). O Deeliv não tem mais robô de
+6. **Teste de campo** ([roteiro](completed/concierge-teste-deeliv.md)). O Deeliv não tem mais robô de
    demonstração público. Caminho: 1) o dono abre o teste grátis de 7 dias do Deeliv (pede CPF ou
    CNPJ, que só ele pode preencher), cadastra 6 produtos da casa, liga o Intelligence Pro, e o
    coordenador conversa com a loja de teste: sem pedido real, sem restaurante de terceiro

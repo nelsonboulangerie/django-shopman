@@ -13,6 +13,7 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel, Coupon, Promotion, Shop
 from shopman.shop.services import sessions
@@ -43,6 +44,7 @@ def _commit(coupon_code: str | None, django_capture_on_commit_callbacks):
         {"op": "add_line", "sku": "PAO-TESTE", "name": "Pão", "qty": 1, "unit_price_q": 2500},
         {"op": "set_data", "path": "customer", "value": {"name": "Ana", "phone": "+5543999990001"}},
         {"op": "set_data", "path": "fulfillment_type", "value": "pickup"},
+        {"op": "set_data", "path": "payment", "value": {"method": "cash"}},
     ]
     if coupon_code:
         ops.append({"op": "set_data", "path": "coupon_code", "value": coupon_code})
@@ -52,6 +54,7 @@ def _commit(coupon_code: str | None, django_capture_on_commit_callbacks):
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key=sessions.new_idempotency_key(),
+            seal=seal_for(session.session_key, "web"),
         )
 
 
@@ -75,6 +78,19 @@ def test_exhausted_coupon_stops_discounting(coupon, django_capture_on_commit_cal
     coupon.refresh_from_db()
     # Esgotado: não desconta e não conta de novo.
     assert coupon.uses_count == coupon.max_uses
+
+
+def test_coupon_without_discount_is_not_consumed(coupon, django_capture_on_commit_callbacks):
+    """Cupom que ficou na sacola sem descontar (pedido mínimo não atingido) não
+    gasta o uso: o cupom de uso único continua valendo (beta 06/11)."""
+    coupon.max_uses = 1
+    coupon.save(update_fields=["max_uses"])
+    coupon.promotion.min_order_q = 3000  # sacola de R$ 25,00
+    coupon.promotion.save(update_fields=["min_order_q"])
+
+    _commit("BEMVINDO", django_capture_on_commit_callbacks)
+    coupon.refresh_from_db()
+    assert coupon.uses_count == 0
 
 
 def test_coupon_use_released_on_cancel(coupon, django_capture_on_commit_callbacks):

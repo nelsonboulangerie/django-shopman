@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  REPORT_EMPTY,
+  REPORT_HISTORY_COLUMNS,
   REPORT_KINDS,
+  lossPartDetail,
+  lossPartTitle,
+  sortedLossParts,
   REPORT_PERIOD_PRESETS,
   capacityLabel,
   reportDimensions,
@@ -107,5 +112,64 @@ describe("painel de filtros dos relatórios", () => {
       position_ref: "",
       operator_ref: "ana",
     });
+  });
+});
+
+describe("Histórico — a Data fica no celular", () => {
+  // Beta 05/11: no celular, lotes de sete dias apareciam sem a coluna Data.
+  it("a coluna Data não é de apoio", () => {
+    const date = REPORT_HISTORY_COLUMNS.find((column) => "id" in column && column.id === "date");
+    expect(date).toBeDefined();
+    expect((date as { meta?: { supporting?: boolean } }).meta?.supporting).toBeFalsy();
+  });
+});
+
+describe("Histórico — a língua da casa", () => {
+  it("chama o lote de Lote e quem fechou pelo nome", () => {
+    const headers = REPORT_HISTORY_COLUMNS.map((column) => column.header);
+    expect(headers[0]).toBe("Lote");
+    expect(headers).toContain("Fechado por");
+    expect(headers).toContain("Duração");
+    expect(headers).not.toContain("OP");
+    expect(headers.join(" ")).not.toMatch(/\(min\)/);
+  });
+
+  it("todo vazio tem a razão escrita, nunca travessão", () => {
+    for (const text of Object.values(REPORT_EMPTY)) {
+      expect(text).not.toMatch(/[—–-]/);
+      expect(text.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("Perda — nenhuma tela esconde perda (dono, 24/11)", () => {
+  const declared = {
+    kind: "declared",
+    kind_label: "Perda declarada",
+    quantity: "2",
+    quantity_display: "2 un.",
+    cause: "Assou demais",
+    who: "Ana",
+    at: "14h32",
+    counts_as_loss: true,
+  };
+  const over = {
+    ...declared,
+    kind: "yield_overshoot",
+    kind_label: "Rendeu mais",
+    quantity: "1",
+    quantity_display: "1 un.",
+    cause: "Peças menores",
+    counts_as_loss: false,
+  };
+
+  it("cada parte diz quanto, a causa, quem e a hora", () => {
+    expect(lossPartTitle(declared)).toBe("Perda declarada 2 un.");
+    expect(lossPartDetail(declared)).toBe("Assou demais. Ana, 14h32.");
+  });
+
+  it("rendeu mais aparece por último e diz que não abate a perda", () => {
+    expect(sortedLossParts([over, declared]).map((part) => part.kind)).toEqual(["declared", "yield_overshoot"]);
+    expect(lossPartDetail(over)).toBe("Peças menores. Ana, 14h32. Não abate a perda.");
   });
 });

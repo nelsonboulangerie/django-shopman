@@ -16,6 +16,7 @@ import type {
   PurchaseReceiptConfirmPayload,
   PurchaseReceiptRejectPayload,
   PurchaseRequestActionPayload,
+  PurchaseRequestSendPayload,
   PurchaseOpeningPayload,
   PurchaseResponse,
   PurchaseSalePayload,
@@ -119,7 +120,7 @@ export function usePurchaseApi() {
     });
   }
 
-  async function sendRequest(payload: PurchaseRequestActionPayload) {
+  async function sendRequest(payload: PurchaseRequestSendPayload) {
     return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.requestSend(payload.materialSku), {
       ...fetchOptions(),
       method: "POST",

@@ -5,7 +5,7 @@ import {
   PURCHASE_API_BASE,
 } from "~/composables/usePurchaseApi";
 import {
-  costPerBaseUnitQ,
+  costPerReadingUnitQ,
   countConfirmPayload,
   countRow,
   countRows,
@@ -107,6 +107,7 @@ const suppliers: Supplier[] = [
     isActive: true,
     lastDeliveryAt: "2026-08-22",
     paymentTerm: "14 dias",
+    sendDirectly: false,
   },
   {
     ref: "SUP-COOP",
@@ -122,6 +123,7 @@ const suppliers: Supplier[] = [
     isActive: true,
     lastDeliveryAt: "2026-08-20",
     paymentTerm: "7 dias",
+    sendDirectly: false,
   },
 ];
 
@@ -158,12 +160,12 @@ describe("purchase presentation", () => {
       updatedAt: "2026-08-22",
     };
 
-    expect(costPerBaseUnitQ(cost, conversions)).toBe(720);
+    expect(costPerReadingUnitQ(cost, farinha, conversions)).toBe(720);
     expect(quotePreview("180,00", farinha, conversions[0])).toMatchObject({
       costQ: 18000,
-      purchaseUnitLabel: "saco 25 kg",
-      baseFactor: 25,
-      baseCostQ: 720,
+      pricedUnitLabel: "saco 25 kg",
+      readingUnitLabel: "kg",
+      readingCostQ: 720,
       approximate: false,
     });
   });
@@ -193,7 +195,7 @@ describe("purchase presentation", () => {
     const rows = supplierCostRows(farinha, costs, suppliers, conversions);
 
     expect(rows.map((row) => row.supplier.ref)).toEqual(["SUP-MOINHO", "SUP-COOP"]);
-    expect(rows[1].baseCostQ).toBe(760);
+    expect(rows[1].readingCostQ).toBe(760);
     expect(rows[1].deltaQ).toBe(40);
     expect(rows[1].deltaPercent).toBe(5.6);
   });
@@ -249,7 +251,7 @@ describe("purchase presentation", () => {
     expect(preview).toMatchObject({
       baseQty: 3,
       totalCostQ: 4800,
-      baseCostQ: 1600,
+      readingCostQ: 1600,
       approximate: true,
     });
     expect(preview?.warnings.map((warning) => warning.key)).toEqual(
@@ -422,7 +424,7 @@ describe("purchase presentation", () => {
     // O total na unidade-base NAO e conhecido ainda: imprimir "10 kg" ao lado do
     // bloqueio seria repetir na tela exatamente o numero que o dono reportou.
     expect(preview?.baseQtyKnown).toBe(false);
-    expect(preview?.baseCostQ).toBe(0);
+    expect(preview?.readingCostQ).toBe(0);
     expect(preview?.warnings).toContainEqual({
       key: "confirm-conversion",
       label: "Confirme a conversão que a NF sugere",
@@ -1126,6 +1128,30 @@ describe("reorderRows", () => {
     // Estoque (22) abaixo do mínimo (30) faria a heurística antiga sugerir
     // compra; o servidor diz 0 porque não há consumo medido. Vale o servidor.
     expect(reorderRows([semConsumo], [], [], [])).toEqual([]);
+  });
+
+  it("a solicitação da Produção chega ao cartão do Comprar (#3664)", () => {
+    // O servidor já põe a falta como piso do `suggestedQty`; a tela só leva a frase.
+    const line = "Diofer pediu às 14h05: falta 300 g para o lote de Brioche.";
+    const material: Material = {
+      ...semConsumo,
+      suggestedQty: 1,
+      internalRequests: [
+        {
+          workOrderRef: "WO-2026-00022",
+          product: "Brioche",
+          quantity: 0.3,
+          unit: "kg",
+          quantityDisplay: "300 g",
+          requestedByName: "Diofer",
+          requestedAt: "2026-11-26T17:05:00+00:00",
+          line,
+        },
+      ],
+    };
+    const [row] = reorderRows([material], [], [], []);
+    expect(row!.material.internalRequests?.map((request) => request.line)).toEqual([line]);
+    expect(line).not.toContain("—");
   });
 
   it("mostra a quantidade que o servidor sugeriu, sem recalcular", () => {

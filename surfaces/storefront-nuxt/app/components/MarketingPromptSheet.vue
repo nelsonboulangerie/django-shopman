@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // O convite de novidades: um bottom sheet na página em que a pessoa cai depois
 // de entrar. Não é passo do login (não bloqueia, não é pré-condição) e nunca
-// interrompe o que ela veio fazer — fica fora de /entrar, /a, do checkout e do
-// pedido (ver isMarketingPromptRouteExcluded). Sobe uma vez por sessão de
-// navegador, com uma folga curta depois de a página montar.
+// interrompe o que ela veio fazer: só depois do pedido enviado nesta visita, e
+// fora do caminho da compra (ver isShopInviteRouteExcluded). Sobe uma vez por
+// sessão de navegador, com uma folga curta depois de a página montar.
 //
 // Três linhas + chave + fechar. Nada mais. A chave nasce DESLIGADA
 // (consentimento é gesto afirmativo, LGPD art. 8 §4):
@@ -17,12 +17,13 @@
 //
 // A pergunta chega pela home (`omotenashi.marketing_prompt_pending`, toda visita,
 // inclusive de quem entra pelo aparelho reconhecido) e pelo login. E divide a
-// vez com o convite de instalar o app: UM convite por página (useShopInvite).
+// vez com o convite de instalar o app: UM convite por visita (useShopInvite).
 //
 // O rótulo da chave + a linha miúda são a evidência gravada pelo servidor
 // (MARKETING_PROMPT_DISCLOSURE em shopman/storefront/api/account.py): mudou
 // aqui, muda lá, e sobe a versão.
-import { isMarketingPromptRouteExcluded } from '~/presentation/auth'
+import { isShopInviteRouteExcluded } from '~/presentation/invites'
+import { orderSecuredThisVisit } from '~/utils/orderSecured'
 
 const props = withDefaults(defineProps<{
   /** Folga entre a página montar e o sheet subir (ms). */
@@ -46,18 +47,28 @@ const pending = ref(false)
 const answered = ref(false)
 let openTimer: ReturnType<typeof setTimeout> | null = null
 
-const excluded = computed(() => isMarketingPromptRouteExcluded(route.path))
+// Decisão 3 (16/11/2026): só depois do pedido enviado nesta visita. Falso até o
+// mount (no servidor ninguém sabe); relido a cada navegação, porque o pedido se
+// conclui no acompanhamento, que é rota sem convite.
+const orderSecured = ref(false)
+function refreshOrderSecured () {
+  orderSecured.value = orderSecuredThisVisit()
+}
+onMounted(refreshOrderSecured)
+
+const excluded = computed(() => isShopInviteRouteExcluded(route.path))
 const eligible = computed(() => session.isAuthenticated.value
   && session.welcomeAsksMarketing.value
+  && orderSecured.value
   && !excluded.value
-  && invite.canOpen('marketing-prompt', route.path))
+  && invite.canOpen('marketing-prompt'))
 
 // Marca a vez ao abrir e a devolve ao fechar (qualquer caminho de fechamento).
 watch(open, value => {
-  if (value) invite.claim('marketing-prompt', route.path)
-  else invite.release('marketing-prompt', route.path)
+  if (value) invite.claim('marketing-prompt')
+  else invite.release('marketing-prompt')
 }, { flush: 'sync' })
-watch(() => route.path, path => invite.leavePage(path))
+watch(() => route.path, refreshOrderSecured)
 
 function alreadyShownThisBrowserSession (): boolean {
   if (!import.meta.client) return true

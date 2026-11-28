@@ -491,7 +491,10 @@ class TestLifecycleV2:
         assert {event for _, event, _ in emitted} == {"user-notification"}
         assert all(set(payload) == {"id", "category"} for _, _, payload in emitted)
 
-    def test_fetch_reconciles_a_source_changed_without_a_signal(self, client, gestor):
+    def test_worker_reconciles_a_source_changed_without_a_signal(self, client, gestor):
+        """A rede do signal perdido é o worker; o GET do sino só lê."""
+        from django.core.management import call_command
+
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
         UserNotification.objects.filter(pk=notification.pk).update(
@@ -502,8 +505,13 @@ class TestLifecycleV2:
         Announcement.objects.filter(pk=announcement.pk).update(status=AnnouncementStatus.REJECTED)
         client.force_login(gestor)
 
-        body = client.get(self.V2_URL).json()
+        client.get(self.V2_URL)
+        notification.refresh_from_db()
+        assert notification.lifecycle == NotificationLifecycle.SEEN
 
+        call_command("reconcile_user_notifications")
+
+        body = client.get(self.V2_URL).json()
         assert body["notifications"] == []
         assert body["counts"] == {"unseen": 0, "unresolved": 0}
         notification.refresh_from_db()

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from django.db.models import Count, Max, Min
+from django.db.models import Count, Max, Min, Sum
+from django.db.models.functions import Coalesce
 from shopman.orderman.models import Order
 
 
@@ -40,23 +41,40 @@ class CustomerOrderHistoryService:
     customer resolution flow in the framework.
     """
 
+    #: O que NÃO é compra: o pedido que não aconteceu (cancelado, inclusive o
+    #: Pix ou cartão que venceu sem pagamento) e o que foi desfeito (devolvido).
+    #: Contá-los fazia "Cliente fiel · 5 pedidos" de quem nunca pagou nada, com
+    #: ticket médio e favorito tirados de pedidos que não existiram (beta 06/11,
+    #: PIXEXP-07).
+    NOT_PURCHASES = (Order.Status.CANCELLED, Order.Status.RETURNED)
+
     @classmethod
     def list_customer_orders(
         cls,
         customer_ref: str,
         *,
         limit: int = 10,
+        include_not_purchases: bool = False,
     ) -> list[CustomerOrderRecord]:
-        orders = cls._base_queryset(customer_ref).order_by("-created_at")[:limit]
+        """Os pedidos do cliente, do mais recente.
+
+        Por padrão, só as compras (o mesmo recorte de ``get_customer_stats``):
+        favorito, "comprou da última vez" e RFM leem daqui. Quem LISTA o
+        histórico com o status ao lado (o cadastro do cliente) pede
+        ``include_not_purchases=True`` e mostra também o cancelado, rotulado.
+        """
+        qs = (
+            Order.objects.filter(data__customer_ref=customer_ref)
+            if include_not_purchases
+            else cls._base_queryset(customer_ref)
+        )
+        orders = qs.order_by("-created_at")[:limit]
         return [
             CustomerOrderRecord(
                 order_ref=order.ref,
                 channel_ref=order.channel_ref or "",
                 ordered_at=order.created_at,
-                total_q=(order.snapshot or {}).get("pricing", {}).get(
-                    "total_q",
-                    order.total_q,
-                ),
+                total_q=order.total_q,
                 items_count=len((order.snapshot or {}).get("items", [])),
                 status=order.status,
                 items=list((order.snapshot or {}).get("items", [])),
@@ -71,13 +89,14 @@ class CustomerOrderHistoryService:
             total_orders=Count("id"),
             first_order_at=Min("created_at"),
             last_order_at=Max("created_at"),
+            # `Order.total_q` é o total selado de todo pedido. O `snapshot.pricing`
+            # só existe quando a sessão passou pelo ModifyService (PDV, conta e seed
+            # não passam), e somá-lo dava gasto zero ao cliente fiel.
+            total_spent_q=Coalesce(Sum("total_q"), 0),
         )
 
         total_orders = stats["total_orders"] or 0
-        total_spent_q = sum(
-            (snapshot or {}).get("pricing", {}).get("total_q", 0)
-            for snapshot in qs.values_list("snapshot", flat=True).iterator()
-        )
+        total_spent_q = stats["total_spent_q"] or 0
 
         return CustomerOrderStats(
             total_orders=total_orders,
@@ -87,6 +106,7 @@ class CustomerOrderHistoryService:
             average_order_q=total_spent_q // total_orders if total_orders > 0 else 0,
         )
 
-    @staticmethod
-    def _base_queryset(customer_ref: str):
-        return Order.objects.filter(data__customer_ref=customer_ref)
+    @classmethod
+    def _base_queryset(cls, customer_ref: str):
+        """As compras do cliente: tudo menos ``NOT_PURCHASES``."""
+        return Order.objects.filter(data__customer_ref=customer_ref).exclude(status__in=cls.NOT_PURCHASES)

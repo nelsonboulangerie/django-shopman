@@ -7,9 +7,8 @@ calibrar cortes. O CSV não leva texto de cliente: o texto se lê no Admin pela
 amostra. Não grava nada no banco — o ciclo automático (``run_intent_pilot``)
 é quem guarda o placar no Admin.
 
-LLM e Jev só entram se o provedor deles estiver em
-``SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED``: sem isso, saem do placar dizendo
-por quê.
+LLM e Jev só entram se a conexão de IA deles estiver liberada para mensagem de
+cliente (Admin → Conexões de IA): sem isso, saem do placar dizendo por quê.
 """
 
 from __future__ import annotations
@@ -43,7 +42,7 @@ class Command(BaseCommand):
         parser.add_argument("--limit", type=int, default=500, help="Máximo de amostras conferidas (default 500).")
         parser.add_argument(
             "--llm-model", action="append",
-            help="Modelo do concorrente llm; repetível (ex.: claude-haiku-4-5). Default: AI_ASSIST_MODEL.",
+            help="Modelo do concorrente llm; repetível (ex.: claude-haiku-4-5). Default: o modelo da rota de IA intents.",
         )
         parser.add_argument("--embedding-model", default=DEFAULT_EMBEDDING_MODEL, help="Modelo do fastembed.")
         parser.add_argument(
@@ -88,11 +87,7 @@ class Command(BaseCommand):
         )
         boards = run(samples, categories, contenders, prices=prices)
         self.stdout.write(self.style.SUCCESS("\n═══ Placar das intenções ═══"))
-        self.stdout.write(render_report(boards, samples, categories))
-        for model in unpriced:
-            self.stdout.write(self.style.WARNING(
-                f"Custo de llm:{model} zerado: modelo fora da tabela; passe --llm-price-in/--llm-price-out."
-            ))
+        self.stdout.write(render_report(boards, samples, categories, unpriced=unpriced))
         self.stdout.write("Nada foi gravado: o comando só mede.")
         if options["csv"]:
             self._write_csv(boards, options["csv"])

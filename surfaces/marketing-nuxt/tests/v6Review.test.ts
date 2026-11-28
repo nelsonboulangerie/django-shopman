@@ -34,15 +34,16 @@ function item(overrides: Partial<DecisionItem> = {}): DecisionItem {
 }
 
 describe("o fato do lote no cartão de revisão", () => {
-  it("diz quantas unidades saíram e quando, na voz do forno", () => {
-    expect(lotLine(item(), TZ, NOW)).toBe("24 un saíram às 10:01");
-    expect(lotLine(item({ lot_quantity: "2.5", lot_finished_at: null }), TZ, NOW)).toBe("2,5 un saíram");
+  it("diz quantas unidades ficaram prontas e quando", () => {
+    expect(lotLine(item(), TZ, NOW)).toBe("24 un ficaram prontas às 10h01");
+    expect(lotLine(item({ lot_quantity: "2.5", lot_finished_at: null }), TZ, NOW)).toBe("2,5 un ficaram prontas");
+    expect(lotLine(item({ lot_quantity: "1" }), TZ, NOW)).toBe("1 un ficou pronta às 10h01");
     expect(lotLine(item({ lot_quantity: "" }), TZ, NOW)).toBe("");
   });
 
   it("junta o fato do lote ao destino, e sem lote cai no nome da campanha", () => {
-    expect(reviewSubtitle(item(), TZ, NOW)).toMatch(/^24 un saíram às 10:01 · /);
-    expect(reviewSubtitle(item({ lot_quantity: "" }), TZ, NOW)).not.toContain("saíram");
+    expect(reviewSubtitle(item(), TZ, NOW)).toMatch(/^24 un ficaram prontas às 10h01 · /);
+    expect(reviewSubtitle(item({ lot_quantity: "" }), TZ, NOW)).not.toContain("prontas");
   });
 });
 
@@ -52,21 +53,21 @@ describe("o cartão de falha conta o que já foi entregue", () => {
       item({ kind: "retry_failed", delivered_platform_refs: ["facebook", "whatsapp"], delivered_people: 52 }),
       TZ,
     );
-    expect(line).toMatch(/^Croissant das 10:01 · /);
+    expect(line).toMatch(/^Croissant das 10h01 · /);
     expect(line).toMatch(/entregues \(52\)$/);
   });
 
   it("sem nada entregue, fica só o anúncio", () => {
-    expect(failureSubtitle(item({ kind: "retry_failed" }), TZ)).toBe("Croissant das 10:01");
+    expect(failureSubtitle(item({ kind: "retry_failed" }), TZ)).toBe("Croissant das 10h01");
   });
 });
 
 describe("o quando do histórico", () => {
   it("fala hoje, ontem e a data, sem travessão", () => {
-    expect(historyWhen("2026-10-04T12:15:00Z", TZ, NOW)).toBe("hoje às 09:15");
-    expect(historyWhen("2026-10-03T21:40:00Z", TZ, NOW)).toBe("ontem às 18:40");
-    expect(historyWhen("2026-09-28T11:00:00Z", TZ, NOW)).toBe("28/09 às 08:00");
-    expect(historyWhen("2025-12-20T11:00:00Z", TZ, NOW)).toBe("20/12/2025 às 08:00");
+    expect(historyWhen("2026-10-04T12:15:00Z", TZ, NOW)).toBe("hoje às 9h15");
+    expect(historyWhen("2026-10-03T21:40:00Z", TZ, NOW)).toBe("ontem às 18h40");
+    expect(historyWhen("2026-09-28T11:00:00Z", TZ, NOW)).toBe("28/09 às 8h");
+    expect(historyWhen("2025-12-20T11:00:00Z", TZ, NOW)).toBe("20/12/2025 às 8h");
     expect(historyWhen("não é data", TZ, NOW)).toBe("");
   });
 });

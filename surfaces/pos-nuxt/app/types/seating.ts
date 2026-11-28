@@ -44,6 +44,8 @@ export interface SeatingResponse {
   today: string;
   today_label: string;
   revision: string;
+  /** Quem lê grava o salão (Gerente e Dono; decisão do dono, 05/11/2026). */
+  can_edit?: boolean;
   spots: SeatingSpotProjection[];
   totals: SeatingTotals;
   shapes: { value: SpotShape; label: string }[];

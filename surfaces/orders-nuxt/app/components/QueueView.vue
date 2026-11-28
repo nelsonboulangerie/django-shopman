@@ -2,7 +2,7 @@
 // A Fila "Precisa de você" (V4-G4, prévia v4 `gestor-fila4.html`):
 //
 //   PRECISA DE VOCÊ 4                         Mais urgente primeiro (tempo contra a meta)
-//   [R7K  27 min meta 30 | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
+//   [R7K  27 min meta 30 min | João Oliveira · Entrega · … | Dinheiro …  R$ 74,00 [Saiu]]
 //   …
 //   Mais 3 pedem você · Seguem sozinhos: 5 na cozinha, 2 na rua            Ver todos ›
 //
@@ -14,23 +14,34 @@
 // "Atrasados". O tempo é âmbar com intensidade: vermelho é só o bloqueio com motivo.
 // Nada aqui decide estado: o fato, a meta, a previsão da Cozinha e o "o sistema fez"
 // vêm do servidor (`order_attention`).
+//
+// WP-G08: a promessa em risco aparece na linha com o item que falta, o
+// porquê, o PRÓXIMO PASSO escrito (o que fazer, com o que a casa pode oferecer no
+// lugar) e as saídas, a recomendada em botão cheio; o bloqueio ganha o motivo escrito
+// e o gesto ao lado, e o avanço travado que só repetia o nome do bloqueio deixa de ser
+// botão.
 import type {
   OrderCardProjection,
   QueueAwarenessProjection,
 } from "~/types/orders";
 import type { AffordanceRef } from "~/presentation/board";
 import {
-  channelLabel,
   cardAuthorizationNotice,
   cardDeadlineLabel,
   confirmationRemainingLabel,
+  kitchenWait,
+  paymentLabel,
+  schedulePromise,
   splitRef,
   undoLine,
 } from "~/presentation/board";
 import {
+  awaitingPayment,
   inProgress,
   QUEUE_FOCUS,
   QUEUE_SORT_OPTIONS,
+  queueBlock,
+  queueBlockedReasons,
   queueGesture,
   queueItems,
   queueWho,
@@ -40,12 +51,17 @@ import {
   type QueueScope,
   type QueueSort,
 } from "~/presentation/queue";
+import { promiseRisk, promiseRiskLeads } from "~/presentation/orderPromise";
+import { orderFocusKey } from "~/presentation/promiseAlert";
 import OrderCardMenu from "./OrderCardMenu.vue";
+import OrderPromiseExits from "./OrderPromiseExits.vue";
+import OrderPromiseSuggestions from "./OrderPromiseSuggestions.vue";
 import {
   COURIER_CALL_HASH,
   courierReminderLine,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = withDefaults(
   defineProps<{
@@ -97,6 +113,9 @@ const rest = computed(() =>
     : { hidden: 0, moving: 0, text: "" },
 );
 const working = computed(() => workingOrders(props.cards, props.nowMs));
+// O pedido que só espera o Pix ou o cartão (DEV-2026-091): fora da Fila, numa faixa
+// recolhida no fim, sem som e sem contar como pendência.
+const awaiting = computed(() => awaitingPayment(props.cards, props.nowMs));
 // Lembrete temporário de chamar o entregador: a entrega da casa em preparo há X min
 // sem entregador chamado não pede "fato humano" à Fila, mas cobra aqui, no topo,
 // um aviso por pedido, com o gesto e o "Dispensar".
@@ -183,7 +202,7 @@ function cardAuth(card: OrderCardProjection) {
 function clock(iso: string): string {
   const at = iso ? new Date(iso) : null;
   return at && !Number.isNaN(at.getTime())
-    ? at.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+    ? formatClock(at)
     : "";
 }
 function readyStation(card: OrderCardProjection) {
@@ -201,10 +220,6 @@ function systemUndoOpen(line: {
 }
 function cardFor(ref: string): OrderCardProjection | undefined {
   return props.cards.find((card) => card.ref === ref);
-}
-/** A pílula do bloqueio é um estado, não uma espera em curso: sem reticências. */
-function blockLabel(card: OrderCardProjection): string {
-  return (card.advance_block_label || "Bloqueado").replace(/…$/, "");
 }
 function toneColor(tone: QueueItem["tone"]): "success" | "warning" | "error" {
   if (tone === "late") return "error";
@@ -228,6 +243,14 @@ function switchHint(row: {
 }): string {
   if (!row.switch?.requires_manager_approval) return "";
   return row.active ? "desligar pede gerente" : "ligar pede gerente";
+}
+
+// Um botão cheio por linha. Com a promessa em risco e uma saída recomendada pelo
+// servidor ("Resolver", "Abrir a Produção"), é ela a cheia: o gesto da etapa
+// continua na linha, em contorno. Iniciar o preparo de um pedido sem lastro não é o
+// próximo passo (dono, 19/11/2026: o aviso diz o que fazer).
+function riskLeads(item: { card: OrderCardProjection }): boolean {
+  return promiseRiskLeads(item.card);
 }
 </script>
 
@@ -297,6 +320,7 @@ function switchHint(row: {
         highlight-color="primary"
         :data-queue-item="item.kind || 'moving'"
         :data-queue-ref="item.card.ref"
+        :data-focus-target="orderFocusKey(item.card.ref)"
         :aria-current="item.card.ref === focusRef || undefined"
         @pointerdown="emit('focus', item.card.ref)"
       >
@@ -317,7 +341,10 @@ function switchHint(row: {
             <p v-else class="op-figure leading-none">
               {{ splitRef(item.card.ref).code }}
             </p>
+            <!-- A encomenda que espera a hora da Cozinha não tem tempo nem meta a
+                 mostrar aqui: a frase dela mora com o combinado, na coluna do meio. -->
             <NuxtBadge
+              v-if="!item.waits"
               :color="toneColor(item.tone)"
               :label="item.timeLabel"
               :data-queue-tone="item.tone"
@@ -334,15 +361,35 @@ function switchHint(row: {
           >
             <p class="op-body">
               <span class="font-semibold">{{
-                queueWho(item.card, channelLabel(item.card.channel_ref)).name
+                queueWho(item.card).name
               }}</span>
               <span class="text-muted-foreground">
                 ·
                 {{
-                  queueWho(item.card, channelLabel(item.card.channel_ref)).rest
+                  queueWho(item.card).rest
                 }}</span
               >
             </p>
+            <!-- O combinado, com as palavras do cartão (WP-G01). -->
+            <NuxtBadge
+              v-if="schedulePromise(item.card)"
+              class="max-w-full self-start"
+              :color="schedulePromise(item.card)!.color"
+              :icon="schedulePromise(item.card)!.icon"
+              :data-queue-promise="schedulePromise(item.card)!.state"
+            >
+              <!-- O texto quebra a linha, nunca corta: o dia e a hora são o motivo do selo. -->
+              <span class="whitespace-normal text-start">{{ schedulePromise(item.card)!.label }}</span>
+            </NuxtBadge>
+            <NuxtBadge
+              v-if="item.waits"
+              class="max-w-full self-start"
+              color="neutral"
+              :icon="kitchenWait(item.card)!.icon"
+              data-queue-kitchen-wait
+            >
+              <span class="whitespace-normal text-start">{{ item.waits }}</span>
+            </NuxtBadge>
             <p class="op-body text-foreground/85">
               {{ item.card.items_summary }}
             </p>
@@ -351,7 +398,7 @@ function switchHint(row: {
             <p
               v-if="
                 item.card.change_label ||
-                (item.card.payment_method_label && item.kind !== 'blocked')
+                (paymentLabel(item.card) && item.kind !== 'blocked')
               "
               class="flex items-start gap-1.5 op-micro text-muted-foreground"
               data-queue-payment
@@ -363,10 +410,69 @@ function switchHint(row: {
                 class="mt-px size-3.5 shrink-0"
               />
               <span>{{
-                item.card.change_label || item.card.payment_method_label
+                item.card.change_label || paymentLabel(item.card)
               }}</span>
             </p>
-            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <!-- Promessa em risco (WP-G08): o item que falta, o porquê, as sugestões
+                 do que oferecer no lugar e as saídas, com as palavras do servidor. A
+                 saída que ele recomenda é a única cheia. -->
+            <div
+              v-if="promiseRisk(item.card)"
+              class="flex min-w-0 flex-col gap-1.5"
+              data-queue-promise-risk
+            >
+              <NuxtBadge
+                class="self-start"
+                color="error"
+                icon="i-lucide-package-x"
+                :label="promiseRisk(item.card)!.label"
+              />
+              <ul class="flex flex-col gap-1">
+                <li
+                  v-for="risk in promiseRisk(item.card)!.items"
+                  :key="risk.key"
+                  class="flex flex-col"
+                >
+                  <span class="op-body font-medium">{{ risk.label }}</span>
+                  <span class="op-micro text-muted-foreground">{{
+                    risk.detail
+                  }}</span>
+                  <OrderPromiseSuggestions
+                    v-if="risk.suggestions.length"
+                    class="mt-1 op-body"
+                    :options="risk.suggestions"
+                  />
+                </li>
+              </ul>
+              <!-- A frase do servidor, quando a lista e a saída cheia não dizem tudo. -->
+              <p
+                v-if="promiseRisk(item.card)!.nextStep"
+                class="op-body font-medium"
+                data-queue-promise-next-step
+              >
+                {{ promiseRisk(item.card)!.nextStep }}
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <OrderPromiseExits
+                  :exits="promiseRisk(item.card)!.exits"
+                  :code="splitRef(item.card.ref).code"
+                  @resolve="emit('action', item.card.ref, 'resolve_promise')"
+                />
+              </div>
+              <p
+                v-for="reason in promiseRisk(item.card)!.blockedReasons"
+                :key="reason"
+                class="text-xs text-muted"
+                data-queue-promise-blocked
+              >
+                {{ reason }}
+              </p>
+            </div>
+            <!-- Sem estado a dizer (a promessa em risco já disse tudo acima), a linha
+                 some em vez de deixar um vão. -->
+            <div
+              class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 empty:hidden"
+            >
               <template
                 v-if="undoLine(item.card, nowMs)?.kind === 'auto_ready'"
               >
@@ -474,18 +580,30 @@ function switchHint(row: {
                   }}</span>
                 </span>
               </template>
-              <template v-else-if="item.kind === 'blocked'">
+              <!-- O bloqueio: o nome, o motivo escrito e, na cobrança que venceu, a
+                   saída pronta (o detalhe abre o cancelar com o motivo marcado). -->
+              <template v-else-if="queueBlock(item)">
                 <NuxtBadge
-                  color="error"
-                  icon="i-lucide-lock"
-                  :label="blockLabel(item.card)"
+                  :color="queueBlock(item)!.color"
+                  :icon="queueBlock(item)!.icon"
+                  :label="queueBlock(item)!.label"
                   data-queue-block
                 />
                 <span
                   class="min-w-0 op-micro text-muted-foreground"
                   data-queue-block-reason
-                  >{{ item.card.advance_block_reason }}</span
+                  >{{ queueBlock(item)!.reason }}</span
                 >
+                <NuxtButton
+                  v-if="canOpen && queueBlock(item)!.cancelUnpaid"
+                  :to="`/${item.card.ref}#cancel-unpaid`"
+                  icon="i-lucide-ban"
+                  label="Cancelar pedido"
+                  color="error"
+                  variant="outline"
+                  :aria-label="`Cancelar pedido ${splitRef(item.card.ref).code}`"
+                  data-queue-cancel-unpaid
+                />
               </template>
               <template
                 v-else-if="item.kind === 'station' && readyStation(item.card)"
@@ -506,7 +624,7 @@ function switchHint(row: {
                   data-queue-moving
                 />
                 <span class="op-micro text-muted-foreground"
-                  >nada pede você agora</span
+                  >acompanhe o andamento do pedido</span
                 >
               </template>
             </div>
@@ -524,12 +642,15 @@ function switchHint(row: {
           <!-- pagamento, total e o gesto -->
           <!-- total e gesto: numa linha sob o conteúdo; na coluna própria a partir do xl -->
           <div
-            class="flex min-w-0 items-center gap-3 sm:col-start-2 xl:col-start-auto xl:flex-col xl:items-stretch xl:gap-1.5"
+            class="flex min-w-0 flex-col gap-1.5 sm:col-start-2 xl:col-start-auto"
+          >
+          <div
+            class="flex min-w-0 items-center gap-3 xl:flex-col xl:items-stretch xl:gap-1.5"
           >
             <span class="shrink-0 op-title tnum xl:self-end">{{
               item.card.total_display
             }}</span>
-            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do quadro) -->
+            <!-- o gesto da linha e o ⋯ do pedido (as mesmas opções do cartão do painel) -->
             <div class="flex min-w-0 flex-1 items-center gap-1.5">
               <NuxtButton
                 v-if="item.kind === 'negotiation'"
@@ -591,7 +712,6 @@ function switchHint(row: {
                     isBusy(item.card.ref) ||
                     queueGesture(item).secondary!.disabled
                   "
-                  :title="queueGesture(item).secondary!.reason || undefined"
                   data-queue-secondary
                   @click="
                     emit(
@@ -619,15 +739,18 @@ function switchHint(row: {
                             )
                   "
                   :color="
-                    queueGesture(item).primary!.disabled
+                    queueGesture(item).primary!.disabled || riskLeads(item)
                       ? 'neutral'
                       : item.kind === 'ifood_accept'
                         ? 'error'
                         : 'primary'
                   "
                   :variant="
-                    queueGesture(item).primary!.disabled ? 'outline' : 'solid'
+                    queueGesture(item).primary!.disabled || riskLeads(item)
+                      ? 'outline'
+                      : 'solid'
                   "
+                  :data-queue-primary-weight="riskLeads(item) ? 'secondary' : undefined"
                   block
                   class="min-w-0"
                   :disabled="
@@ -635,11 +758,10 @@ function switchHint(row: {
                     queueGesture(item).primary!.disabled
                   "
                   :title="
-                    queueGesture(item).primary!.reason ||
-                    (queueGesture(item).primary!.verb !==
+                    queueGesture(item).primary!.verb !==
                     queueGesture(item).primary!.label
                       ? queueGesture(item).primary!.label
-                      : undefined)
+                      : undefined
                   "
                   data-queue-primary
                   @click="
@@ -678,6 +800,16 @@ function switchHint(row: {
               />
             </div>
           </div>
+          <!-- Por que o gesto está travado, escrito: o `title` não existe no toque. -->
+          <p
+            v-for="line in queueBlockedReasons(item)"
+            :key="line"
+            class="text-xs text-muted xl:text-end"
+            data-queue-blocked-reason
+          >
+            {{ line }}
+          </p>
+          </div>
         </div>
       </NuxtPageCard>
 
@@ -692,6 +824,9 @@ function switchHint(row: {
         data-queue-rest
         @click="emit('scope', 'all')"
       />
+
+      <!-- Aguardando pagamento (DEV-2026-091): recolhido no fim, sem som e sem contar. -->
+      <AwaitingPaymentBand :rows="awaiting" :can-open="canOpen" />
     </section>
 
     <!-- a coluna de consciência: o agregado, o que o sistema fez e os interruptores -->
@@ -869,7 +1004,7 @@ function switchHint(row: {
           <NuxtBadge
             v-if="awareness?.menu_outages_more"
             color="warning"
-            :label="`+${awareness.menu_outages_more} fora do ar`"
+            :label="`+${awareness.menu_outages_more} ${awareness.menu_outages_more === 1 ? 'produto' : 'produtos'} fora do ar`"
           />
         </div>
         <div

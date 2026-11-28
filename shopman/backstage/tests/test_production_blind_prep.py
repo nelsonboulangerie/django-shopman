@@ -19,10 +19,8 @@ import pytest
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem
 
-from shopman.backstage.projections.production import (
-    blind_prep_code,
-    build_production_weighing,
-)
+from shopman.backstage.projections.production import build_production_weighing
+from shopman.backstage.services.blind_prep_codes import blind_prep_code
 
 pytestmark = pytest.mark.django_db
 
@@ -51,7 +49,7 @@ class TestBlindPrepCode:
 
     def test_digit_reuse_avoids_same_phonetic_family(self):
         """2ª volta do número vem com letra de OUTRA família sonora (Z7 veta D7)."""
-        from shopman.backstage.projections.production import _BLIND_LETTER_FAMILIES
+        from shopman.backstage.services.blind_prep_codes import BLIND_LETTER_FAMILIES
 
         today = date.today()
         codes = [blind_prep_code(f"preparo-{i}", today) for i in range(16)]
@@ -59,7 +57,7 @@ class TestBlindPrepCode:
         for code in codes:
             by_digit.setdefault(code[1], []).append(code[0])
         for digit, letters in by_digit.items():
-            families = [_BLIND_LETTER_FAMILIES.get(letter, letter) for letter in letters]
+            families = [BLIND_LETTER_FAMILIES.get(letter, letter) for letter in letters]
             assert len(set(families)) == len(families), f"número {digit} repetiu família sonora: {letters}"
 
     def test_ninth_onward_may_repeat_digit_never_letter(self):
@@ -102,7 +100,7 @@ class TestBlindPrepCode:
 
     def test_window_skips_sunday(self):
         """Sábado e segunda são adjacentes (domingo sem expediente)."""
-        from shopman.backstage.projections.production import _blind_window
+        from shopman.backstage.services.blind_prep_codes import _blind_window
         from shopman.shop.models import Shop
 
         Shop.objects.create(
@@ -139,7 +137,7 @@ class TestBlindPrepCode:
         assert not (codes_sat & codes_mon)
 
     def test_without_calendar_window_is_simple_yesterday_today_tomorrow(self):
-        from shopman.backstage.projections.production import _blind_window
+        from shopman.backstage.services.blind_prep_codes import _blind_window
 
         today = date.today()
         assert _blind_window(today) == (
@@ -171,7 +169,7 @@ class TestWeighingAPI:
         from django.contrib.contenttypes.models import ContentType
         from rest_framework.test import APIClient
 
-        from shopman.backstage.models import DayClosing
+        from shopman.backstage.models import BlindPrepCode, DayClosing
 
         massa = Recipe.objects.create(
             ref="massa-pao", name="Massa Pão", output_sku="MASSA-PAO", batch_size=Decimal("1")
@@ -189,13 +187,56 @@ class TestWeighingAPI:
 
         resp = client.get("/api/v1/backstage/production/weighing/")
         assert resp.status_code == 200
-        tickets = resp.json()["weighing"]["tickets"]
+        cold = resp.json()["weighing"]
+        assert BlindPrepCode.objects.count() == 0
+        assert cold["codes_ready"] is False
+        assert all(ticket["blind_code"] == "" for ticket in cold["tickets"])
+        action = next(item for item in cold["actions"] if item["kind"] == "allocate_blind_codes")
+        response = client.post(
+            action["href"],
+            {
+                "selected_date": cold["selected_date"],
+                "position": cold["selected_position_ref"],
+                "base_recipe": cold["selected_base_recipe"],
+                "idempotency_key": "allocate-cold-weighing",
+                "projection_generated_at": cold["generated_at"],
+                "source_revision": cold["source_revision"],
+                "fresh_until": cold["fresh_until"],
+                "contract_version": cold["contract_version"],
+                "action_ref": action["ref"],
+                "action_proof": action["proof"],
+            },
+            format="json",
+        )
+        assert response.status_code == 200
+        ready = response.json()["weighing"]
+        assert ready["codes_ready"] is True
+        tickets = ready["tickets"]
         ticket = next(t for t in tickets if t["recipe_ref"] == "massa-pao")
         assert re.fullmatch(r"[A-HJ-NP-Z][2-9]", ticket["blind_code"])
         assert ticket["ingredients"][0]["sku"] == "FARINHA"
         assert ticket["ingredients"][0]["quantity_display"] == "4200 g"
         assert resp.json()["weighing"]["scale_precision_g"] == "2"
         assert ticket["ingredients"][0]["target_g"] == "4200"
+
+        repeated = client.post(
+            action["href"],
+            {
+                "selected_date": cold["selected_date"],
+                "position": cold["selected_position_ref"],
+                "base_recipe": cold["selected_base_recipe"],
+                "idempotency_key": "allocate-cold-weighing-retry",
+                "projection_generated_at": cold["generated_at"],
+                "source_revision": cold["source_revision"],
+                "fresh_until": cold["fresh_until"],
+                "contract_version": cold["contract_version"],
+                "action_ref": action["ref"],
+                "action_proof": action["proof"],
+            },
+            format="json",
+        )
+        assert repeated.status_code == 200
+        assert repeated.json()["weighing"]["tickets"] == tickets
 
     def test_endpoint_requires_permission(self):
         from django.contrib.auth import get_user_model
@@ -228,12 +269,13 @@ class TestManagerBlindMap:
 
         gestor = get_user_model().objects.create_superuser("gestor-map", "g@x.com", "x")
         client.force_login(gestor)
+        expected_code = blind_prep_code("massa-map", date.today())
 
         resp = client.get("/api/v1/backstage/production/weighing/blind-map/")
         assert resp.status_code == 200
         rows = resp.json()["blind_map"]["rows"]
         row = next(item for item in rows if item["name"] == "Massa Map")
-        assert row["code"] == blind_prep_code("massa-map", date.today())
+        assert row["code"] == expected_code
 
 
 class TestWeighingTicketConventions:
@@ -346,8 +388,9 @@ class TestWeighingTicketsCarryBlindCode:
         )
         RecipeItem.objects.create(recipe=croissant, input_sku="MASSA-CROISSANT", quantity="2", unit="kg")
         craft.plan(croissant, Decimal("10"), date=date.today())
+        expected_code = blind_prep_code("massa-croissant", date.today())
 
         weighing = build_production_weighing(selected_date=date.today())
         ticket = next(t for t in weighing.tickets if t.recipe_ref == "massa-croissant")
-        assert ticket.blind_code == blind_prep_code("massa-croissant", date.today())
+        assert ticket.blind_code == expected_code
         assert ticket.ingredients[0].sku == "FARINHA"

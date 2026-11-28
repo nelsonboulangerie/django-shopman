@@ -163,6 +163,39 @@ export const NuxtCheckboxStub = defineComponent({
   },
 });
 
+export const NuxtRadioGroupStub = defineComponent({
+  name: "NuxtRadioGroup",
+  inheritAttrs: false,
+  props: {
+    modelValue: { type: String, default: "" },
+    items: { type: Array as () => { value: string; label: string }[], default: () => [] },
+    valueKey: { type: String, default: "value" },
+    labelKey: { type: String, default: "label" },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { attrs, emit }) {
+    return () =>
+      h(
+        "div",
+        mergeProps(attrs, { role: "radiogroup", "data-slot": "radio-group" }),
+        props.items.map((item) => {
+          const value = String((item as Record<string, unknown>)[props.valueKey] ?? "");
+          return h(
+            "button",
+            {
+              type: "button",
+              role: "radio",
+              "aria-checked": String(value === props.modelValue),
+              "data-value": value,
+              onClick: () => emit("update:modelValue", value),
+            },
+            String((item as Record<string, unknown>)[props.labelKey] ?? value),
+          );
+        }),
+      );
+  },
+});
+
 export const NuxtFormFieldStub = defineComponent({
   name: "NuxtFormField",
   inheritAttrs: false,
@@ -385,6 +418,7 @@ export const nuxtUiStubs = {
   NuxtInput: NuxtInputStub,
   NuxtTextarea: NuxtTextareaStub,
   NuxtCheckbox: NuxtCheckboxStub,
+  NuxtRadioGroup: NuxtRadioGroupStub,
   NuxtFormField: NuxtFormFieldStub,
   NuxtModal: NuxtModalStub,
   NuxtDrawer: NuxtDrawerStub,

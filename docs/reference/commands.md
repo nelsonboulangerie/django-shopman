@@ -43,8 +43,11 @@ DigitalOcean ou do Sentry.
 |---------|-----|-----------|-----------|
 | [`release_expired_holds`](#release_expired_holds) | stockman | Manutenção | Libera holds expirados |
 | [`compute_product_affinity`](#compute_product_affinity) | shop | Manutenção | Recalcula o que a casa vende junto (cestas do ano, lift) — segura a própria cadência |
+| [`bake_alpha_tradi_daily`](#bake_alpha_tradi_daily) | backstage | Manutenção | Só no alpha: a fornada diária da TRADI pelo caminho do operador, para o Google ler a baguete disponível. Segura a própria cadência |
 | [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
+| [`act_on_incidents`](#act_on_incidents) | backstage | Manutenção | Repescagem do acionador de incidentes: refaz a directive perdida e vence a conferência atrasada. Não aciona nada sozinha |
+| [`issue_incident_reader_credential`](#issue_incident_reader_credential) | backstage | Operação | Emite a credencial de leitura da ponte de incidentes (GitHub) e imprime o token uma vez |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`relocate_resale_stock`](#relocate_resale_stock) | shop | Dados | Leva para a posição que vende o saldo de revenda guardado fora da venda |
 | [`repair_corrupted_tags`](#repair_corrupted_tags) | shop | Dados | Conserta etiquetas gravadas pelo Admin como repr de objeto ("[<Tag: pao>"); sem `--apply` só relata |
@@ -53,14 +56,15 @@ DigitalOcean ou do Sentry.
 | [`import_recipe_versions`](#import_recipe_versions) | backstage | Dados | Importa de um JSON gerado na hora (nunca versionado) uma versão nova por receita do inventário; sem `--apply` só mostra, `--publish` publica a parte antes da massa |
 | [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
-| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
+| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | config | Operação | Cria/ativa o canal de venda `whatsapp` do concierge no banco vivo, sem reseed, e liga o espelho da vitrine na loja online |
 | [`efi_webhook`](#efi_webhook) | shop | Operação | Confere e cadastra na Efí o webhook do Pix com a URL canônica do deployment (roda no release) |
 | [`migration_safety`](#migration_safety) | shop | Release | Recusa o deploy com migração destrutiva pendente e nenhum ponto de restauração declarado (roda antes do `migrate` no release) |
-| [`setup_commercial_groups`](#setup_commercial_groups) | shop | Release | Instala os grupos comerciais Equipe e Aliança Francesa que ainda faltarem no banco vivo, sem sobrescrever edições do gestor |
+| [`setup_commercial_groups`](#setup_commercial_groups) | config | Release | Instala os grupos comerciais que o descritor da Instância declara e ainda faltam no banco vivo, sem sobrescrever edições do gestor |
 | [`issue_menuboard_player_credential`](#issue_menuboard_player_credential) | shop | Operação | Emite credenciais escopadas e o JSON do player Raspberry Pi dos menuboards |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`prune_unbacked_login_identifiers`](#prune_unbacked_login_identifiers) | guestman (identifiers) | Segurança | Lista (padrão) ou, com `--apply`, apaga identificador de telefone/WhatsApp/e-mail sem contato que o sustente (A4-1); manual |
 | [`purge_consent_ip`](#purge_consent_ip) | guestman | Privacidade | Conta (padrão) ou, com `--apply`, apaga o IP bruto vencido das provas de consentimento — manual, fora do worker |
 | [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
@@ -75,8 +79,10 @@ DigitalOcean ou do Sentry.
 | [`capture_ifood_catalog`](#capture_ifood_catalog) | shop | Diagnóstico | Captura catálogo por GET em arquivo privado, sem escrita remota |
 | [`prepare_ifood_catalog_review`](#prepare_ifood_catalog_review) | shop | Diagnóstico | Prepara revisão de snapshot completo, sem HTTP ou gravações |
 | [`reconcile_ifood_catalog`](#reconcile_ifood_catalog) | shop | Diagnóstico | Compara inventário local iFood com SKUs, sem HTTP ou gravações |
+| [`sync_platform_catalogs`](#sync_platform_catalogs) | shop | Manutenção | Reenvia ao Google e à Meta o catálogo vencido (24h) e retira o que saiu do canal; roda no `maintenance_worker` |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
+| [`reconcile_user_notifications`](#reconcile_user_notifications) | backstage | Operação | Fecha o alerta pessoal cuja causa acabou e que o produtor não fechou; roda no `maintenance_worker` |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
 | [`omotenashi_qa`](#omotenashi_qa) | backstage | QA | Lista matriz manual QA Omotenashi com evidências do seed |
 | [`ingest_yooga`](#ingest_yooga) | backstage | B.I. | Aterrissa o export do Yooga em `HistoricalSale`, por lote (hash, validação, uma transação) |
@@ -85,10 +91,15 @@ DigitalOcean ou do Sentry.
 | [`audit_recipe_material_day1`](#audit_recipe_material_day1) | backstage | Dados | Audita fichas e dependências reais de insumo/custo para um escopo Day-1 explícito |
 | [`suggest_aliases`](#suggest_aliases) | backstage | B.I. | Propõe de-paras (produto, categoria, forma de pagamento) a partir do histórico; nunca confirma |
 | [`benchmark_alias_matchers`](#benchmark_alias_matchers) | backstage | B.I. | Piloto: mede fuzzy × Jev × LLM × embeddings no de-para de produto contra o gabarito confirmado; não grava |
-| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar semanal do de-para de produto, guardado no Admin (B.I. → Placar do de-para); roda no `maintenance_worker` |
+| [`run_alias_benchmark`](#run_alias_benchmark) | backstage | B.I. | Placar do de-para de produto, guardado no Admin (B.I. → Placar do de-para); só à mão, com travas de custo |
 | [`concierge_check`](#concierge_check) | storefront | Concierge | Confere se o Concierge ligado consegue atender (configuração; com `--live`, o campo de atendimento humano no ManyChat) |
 | [`run_intent_pilot`](#run_intent_pilot) | storefront | Concierge | Piloto de intenções: um ciclo (sorteia, pré-marca com IA, mede, sombra do Jev); roda no `maintenance_worker` |
 | [`concierge_triage_shadow`](#concierge_triage_shadow) | storefront | Concierge | O Jev decidindo a intenção em sombra: onde ele e a regra local discordam |
+| [`concierge_verification_sweep`](#concierge_verification_sweep) | storefront | Concierge | Os prazos do "vou verificar": aviso ao cliente no primeiro, conversa para a equipe no segundo (no `maintenance_worker`) |
+| [`record_usd_brl_quotes`](#record_usd_brl_quotes) | shop | B.I. | Grava a PTAX de venda final dos dias com gasto de IA, para o B.I. dizer o gasto em reais (no `maintenance_worker`; só lê a API quando falta dia) |
+| [`concierge_shadow_decisions`](#concierge_shadow_decisions) | storefront | Concierge | A decisão em sombra: o que o framework conversacional faria com cada entrada, e os pedidos do cliente em 24 h e 7 dias; nunca envia nem escreve no comércio |
+| [`concierge_eval`](#concierge_eval) | storefront | Concierge | O ensaio do leitor da Nice no ar: a bateria de 56 pedidos pela IA da rota `intents`, com teto de chamadas, sem efeito e sem escrita no banco |
+| [`concierge_engine_tick`](#concierge_engine_tick) | storefront | Concierge | Os prazos vencidos do motor do framework: avisa o cliente uma vez, só com classe ligada na Shop e frase da Nice para o aviso (no `maintenance_worker`) |
 | [`setup_intent_categories`](#setup_intent_categories) | storefront | Concierge | Piloto de intenções: cria o vocabulário inicial (só o que falta; nunca sobrescreve) |
 | [`sample_intent_messages`](#sample_intent_messages) | storefront | Concierge | Piloto de intenções: sorteia mensagens de clientes para rotular no Admin |
 | [`benchmark_intent_classifiers`](#benchmark_intent_classifiers) | storefront | Concierge | Piloto de intenções: mede regex × embeddings × LLM × Jev contra o gabarito rotulado; não grava |
@@ -119,13 +130,32 @@ DigitalOcean ou do Sentry.
 
 ### setup_commercial_groups
 
-Cria, somente quando ainda faltarem no banco vivo, os grupos Equipe (30% na
-retirada) e Aliança Francesa (15%). O `setup_groups` chama este comando no hook
-de release já existente. Depois da primeira criação, edições e pausas feitas no
-Gestor são preservadas nos deploys seguintes.
+Cria, somente quando ainda faltarem no banco vivo, os grupos comerciais que o
+descritor da Instância declara em `bootstrap.customer_groups` (na Nelson: Equipe,
+30% na retirada, e Aliança Francesa, 15%). Instância que não declara grupo não
+ganha grupo. O `setup_groups` chama este comando no hook de release já existente.
+Depois da primeira criação, edições e pausas feitas no Gestor são preservadas nos
+deploys seguintes.
 
 ```bash
 python manage.py setup_commercial_groups
+```
+
+### act_on_incidents
+
+Roda no `maintenance_worker`. O acionador de incidentes nasce com o alerta (Directive
+`incident.act`); aqui entra o alerta com remédio cuja directive se perdeu, e a
+conferência que passou do prazo vira "não resolveu". Contrato em
+[incidents.md](incidents.md).
+
+### issue_incident_reader_credential
+
+Emite a credencial de LEITURA da ponte de incidentes e imprime o token uma vez. Ele vira
+o segredo `INCIDENTS_TOKEN` do repositório; o banco guarda só o HMAC. Revoga-se no
+Admin (Incidentes, Credenciais da ponte). Só lê `/api/v1/backstage/incidents/`.
+
+```bash
+python manage.py issue_incident_reader_credential --ttl-days 365
 ```
 
 ### issue_menuboard_player_credential
@@ -454,10 +484,10 @@ manual. O perfil `qa` do `seed` já nasce com eles, mas chegar lá custa
 python manage.py qa_scenarios                     # relatório (não escreve)
 python manage.py qa_scenarios --arm               # arma todos os cenários
 python manage.py qa_scenarios --arm sold_out      # arma só um
-python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
-python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --arm sold_out=TRADI # ... num SKU escolhido
+python manage.py qa_scenarios --restock TRADI     # repõe → dispara o "Avise-me"
 python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
-python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+python manage.py qa_scenarios --reset TRADI       # ... incluindo um SKU pausado à mão
 ```
 
 | Estado | Como | O que aparece na loja |
@@ -626,7 +656,7 @@ receitas, o snapshot do `DayClosing` e os `params` de regra. História não se r
 ⚠️ **Depois de rodar, re-exporte o cofre** (`export_backup`): uma planilha anterior
 reimportada escreve a unidade antiga por cima, e como ela reverte cadastro e ficha juntos,
 os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
-[WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md).
+[WP-BASE-UNIT-LIQUIDS-KG](../plans/completed/WP-BASE-UNIT-LIQUIDS-KG.md).
 
 ### rewrite_recipe_per_unit
 
@@ -746,16 +776,18 @@ python manage.py process_directives --watch --interval 5 --limit 100 --max-attem
 
 ### bootstrap_whatsapp_channel
 
-**App:** `shopman.shop`
-**Arquivo:** `shopman/shop/management/commands/bootstrap_whatsapp_channel.py`
+**App:** `config`
+**Arquivo:** `config/management/commands/bootstrap_whatsapp_channel.py`
 
 Põe de pé, no banco vivo, o canal de venda dos pedidos do [concierge de WhatsApp](../guides/whatsapp-concierge.md):
-`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, aceite `manual`) e a vitrine `whatsapp`
+`Channel` ref `whatsapp`, com a definição que o descritor da Instância declara (`SHOPMAN_INSTANCE_DESCRIPTOR`,
+item `whatsapp` de `bootstrap.channels`; sem config própria no comando), e a vitrine `whatsapp`
 **espelhando** a da loja online pelo ponteiro `pricing.listing_from` (`shop/services/listing_mirror.py`).
 Idempotente: cria o que falta, ativa o que está inativo, só preenche chave de config que falta. Alinha a
 vitrine uma vez (item que só o WhatsApp tinha sai, preço diferente vira o do site); dali em diante cada
 mudança no site chega ao WhatsApp sozinha, sem rodar nada. `pricing.listing_from = ""` gravado no canal
-mantém vitrine própria (chave presente não é tocada). Roda no release do alpha. `--dry-run` mostra o plano.
+mantém vitrine própria (chave presente não é tocada). Instância que não declara o canal: nada a fazer.
+Roda no release do alpha. `--dry-run` mostra o plano.
 
 ```bash
 python manage.py bootstrap_whatsapp_channel
@@ -859,6 +891,18 @@ python manage.py cleanup_idempotency_keys --days 3 --include-in-progress
 
 ---
 
+### prune_unbacked_login_identifiers
+
+**App:** `shopman.guestman.contrib.identifiers` (app label: `customer_identifiers`)
+**Arquivo:** `packages/guestman/shopman/guestman/contrib/identifiers/management/commands/prune_unbacked_login_identifiers.py`
+
+Acha o `CustomerIdentifier` de telefone, WhatsApp ou e-mail cujo cadastro não tem mais nenhum `ContactPoint` da mesma família com o mesmo valor. Até o A4-1, a troca de número ou de e-mail deixava essa sobra, e o porto de identidade a lê: o valor antigo abria a conta por OTP. Desde a correção, o `post_delete` do contato apaga o identificador no mesmo ato; este comando limpa o que já existia. Sem flag só lista (cadastro, tipo, valor mascarado); `--apply` apaga. Num ambiente com dado real, o `--apply` é decisão de quem responde por ele.
+
+```bash
+python manage.py prune_unbacked_login_identifiers          # lista
+python manage.py prune_unbacked_login_identifiers --apply  # apaga
+```
+
 ### customers_cleanup
 
 **App:** `shopman.guestman` (app label: `guestman`)
@@ -892,7 +936,6 @@ Limpa artefatos de autenticação expirados: AccessLinks, VerificationCodes e Tr
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
-| `--days` | `7` | Compatibilidade de CLI; aceita somente os 7 dias fixados pela política R10 |
 | `--dry-run` | — | Mostra o que seria removido |
 
 ```bash
@@ -901,10 +944,9 @@ python manage.py auth_cleanup --dry-run
 
 # Cleanup padrão
 python manage.py auth_cleanup
-
-# O prazo é fixo; qualquer valor diferente de 7 é recusado antes de alterar dados
-python manage.py auth_cleanup --days 7
 ```
+
+O prazo de sete dias da política R10 é fixo no comando e não recebe override.
 
 **Recomendação:** Executar via cron diariamente.
 
@@ -971,9 +1013,11 @@ Roda no `maintenance_worker`, depois do `check_directive_health`. Está no ciclo
 min mas **não trabalha a cada 5 min**: carrega a própria janela (03h–05h local) e o
 próprio teto de lote (200 por execução). Três decisões valem registro:
 
-- **Cliente sem nenhum pedido fica de fora.** Sem pedido, `r=1, f=1, m=1` cai em
-  `lost` — carimbar "Perdido" em quem nunca comprou é mentira, não classificação.
-  Para dar insight a cliente importado, use `--all` (ou a ação do CustomerAdmin).
+- **Cliente sem nenhum pedido fica de fora.** Sem pedido não há recência para
+  envelhecer. E sem pedido não há segmento: o próprio `InsightService.recalculate`
+  grava `rfm_segment` vazio (e R/F/M e `churn_risk` nulos) para quem nunca comprou,
+  então nenhum caminho, `--all` incluído, carimba "Perdido" nele. Para dar insight a
+  cliente importado, use `--all` (ou a ação do CustomerAdmin).
 - **Teto de lote porque o worker é serial.** Varrer a base inteira num ciclo atrasaria
   `reconcile_payments` e tudo atrás dela. A janela de 2h drena o resto, do insight mais
   velho para o mais novo.
@@ -1006,6 +1050,70 @@ python manage.py reconcile_payments --since=4h
 ```
 
 **Veja também:** [runbook de pedido pago sem confirmacao](../runbooks/pedido-pago-sem-confirmacao.md).
+
+---
+
+### reconcile_user_notifications
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/reconcile_user_notifications.py`
+
+Para toda caixa com alerta pessoal ativo, compara o alerta com a condição de
+origem (anúncio em revisão, ticket da Cozinha, revisão de qualidade, segundo
+controle do Marketing) e fecha o que já não vale. Cada produtor fecha o próprio
+alerta no caminho feliz; isto é a rede para o signal que falhou. Antes era a
+leitura do sino (GET da caixa) que fazia esta conferência, e leitura não produz
+efeito. Roda no `maintenance_worker`, depois do `check_directive_health`.
+Idempotente, sem flags.
+
+```bash
+python manage.py reconcile_user_notifications
+```
+
+---
+
+### check_ifood_polling
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_ifood_polling.py`
+
+O sinal de vida do `ifood_poll --watch` (componente `ifood-poll-worker`). A
+integração direta do iFood entra só por polling, e o iFood cancela em 8 minutos o
+pedido que ninguém aceitou. Cada resposta do iFood ao poll (200 com lista, ou 204)
+grava a hora em `worker_heartbeat` (`ifood_poll`, Redis compartilhado). Passados
+2 minutos sem resposta, abre o `OperatorAlert` crítico `ifood_poll_stale`, com
+e-mail síncrono (`critical_alerts.deliver_now`); quando o polling volta, resolve o
+alerta aberto. Sem credencial OAuth do iFood, ou com cache por processo (dev/CI),
+volta calado. Roda no `maintenance_worker`, depois do `check_ifood_store`. A sonda
+gêmea é `ifood_polling` do Watchman (perfis `diagnostic` e `ifood`, fora da
+prontidão):
+
+```bash
+python manage.py check_ifood_polling
+python manage.py watchman check --profile ifood
+```
+
+---
+
+### courier_machine_probe
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/courier_machine_probe.py`
+
+Sonda de homologação da TaOn (Machine). Sem `--write` só faz `GET`: lê a conta
+(webhooks, categorias, se a mesma API Key abre a v2), uma corrida pelas vias da v1
+e da v2 (`--ride`, `--recent`), cota com paradas para achar o separador de
+`latlng_paradas` (`--stop=`) e lista as corridas abertas há pouco (`--window`). O
+laudo mostra formato e não conteúdo: nome, telefone, CPF, placa, endereço,
+coordenada e código de confirmação saem mascarados. As quatro sondas que escrevem
+(`--cancel`, `--attach`, `--remove-stop`, `--boost`) pedem `--write`, uma corrida
+só e o mesmo id em `--confirm`. Usa a credencial que o adaptador já lê. Roteiro em
+[courier-machine-homologacao](../runbooks/courier-machine-homologacao.md).
+
+```bash
+python manage.py courier_machine_probe --recent 3 --out /tmp/taon-laudo.txt
+make taon-probe homolog=1 args='--ride <id>'   # homologação: pergunta as credenciais no terminal
+```
 
 ---
 
@@ -1190,6 +1298,28 @@ mas a origem e completude do snapshot dependem de quem o forneceu. Erros de
 arquivo, formato, escopo e banco usam `CommandError` sem conteúdo sensível.
 
 Veja [regras e interpretação da saída](../guides/IFOOD-CATALOG-RECONCILIATION.md).
+
+---
+
+### sync_platform_catalogs
+
+**App:** shop · **Categoria:** Manutenção (rede de segurança do envio ao Google e à Meta)
+**Arquivo:** `shopman/shop/management/commands/sync_platform_catalogs.py`
+
+O envio ao Google (Merchant API) e à Meta (`items_batch`) acontece na hora de cada
+mudança. Este comando é a reconciliação: reenvia o SKU cujo último envio passou de
+`--min-interval-hours` (24h; o Google expira produto sem reenvio em 30 dias) e retira
+o que saiu da composição do canal. Só age nos canais com envio ligado
+(`GOOGLE_MERCHANT_PROJECTION`, `META_CATALOG_PROJECTION`). Roda no `maintenance_worker`.
+
+```bash
+.venv/bin/python manage.py sync_platform_catalogs                    # o que venceu
+.venv/bin/python manage.py sync_platform_catalogs --force            # tudo, agora
+.venv/bin/python manage.py sync_platform_catalogs --dry-run --channel google-shopping
+```
+
+`--dry-run` mostra o que seria enviado, sem credencial e sem enfileirar. Plano:
+[CATALOG-PUSH-GOOGLE-META-PLAN](../plans/CATALOG-PUSH-GOOGLE-META-PLAN.md).
 
 ---
 
@@ -1523,8 +1653,9 @@ do `seed` / `setup_bi_reference`, já confirmadas (curadoria do dono).
 
 **Propósito:** Piloto do de-para de produto ([BI-JEV-PILOT](../plans/BI-JEV-PILOT.md)). Mede três
 concorrentes contra os `ProductAlias` **confirmados**: `fuzzy` (o `suggest_aliases` de hoje), `jev`
-(TypeSafe Jev, `JEV_API_KEY`), `llm:<modelo>` (um por `--llm-model`, com a credencial de
-`AI_ASSIST_*`; preço da tabela `LLM_PRICES`, em `shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
+(TypeSafe Jev, a conexão de IA `decision`), `llm:<modelo>` (um por `--llm-model`, pela conexão de
+IA `benchmark`; preço da tabela `LLM_PRICES` ou o cadastrado na conexão, `model_prices` em
+`shopman/shop/services/ai_pricing.py`) e `embed` (embeddings locais via `fastembed`, que não
 está na imagem: `pip install fastembed` no console antes). Não grava alias.
 
 **Uso:**
@@ -1543,7 +1674,7 @@ teto deles e sai no relatório. O `embed` procura no catálogo inteiro (corte `-
 
 **Propósito:** Responde "o Concierge, ligado, consegue atender?". Sem rede, repete o system check
 `SHOPMAN_W022`/`SHOPMAN_W023` (`shopman/storefront/checks.py`): modo `assist`, contrato 3,
-`AI_ASSIST_API_KEY`, conexão ativa, coorte de assinantes, `CONCIERGE_API_KEY`,
+conexão de IA do `concierge` (`shopman/shop/ai.py`), conexão ativa, coorte de assinantes, `CONCIERGE_API_KEY`,
 `MANYCHAT_API_TOKEN`, campo de atendimento humano e fuso da janela de 24 horas. Com `--live`,
 pergunta ao ManyChat (`getCustomFields`) se o campo que a triagem usa para calar o bot existe.
 Desligado, só informa o modo e sai com 0; com pendência, sai com 1. Não confere o grafo do flow
@@ -1553,12 +1684,13 @@ cobre o Concierge.
 
 ### run_intent_pilot
 
-**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/INTENT-PILOT-PLAN.md)),
+**Propósito:** Um ciclo do piloto de intenções ([INTENT-PILOT-PLAN](../plans/completed/INTENT-PILOT-PLAN.md)),
 e roda sozinho no `maintenance_worker`: garante o vocabulário, sorteia mensagens recentes (até 40
 por dia, fila aberta de até 200, dentro da retenção da observação), pré-marca as intenções com
-`AI_ASSIST_MODEL` (estado "sugerida", se `anthropic` estiver aprovado e houver chave) e, com 30
-conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com
-`typesafe` aprovado e `JEV_API_KEY`, grava a sombra do Jev em até 60 mensagens novas por ciclo
+o modelo da rota de IA `labeling` (estado "sugerida", se a conexão estiver liberada para mensagem
+de cliente e tiver chave) e, com 30
+conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por semana. Com a
+conexão do Jev liberada e com chave, grava a sombra do Jev em até 60 mensagens novas por ciclo
 (ver `concierge_triage_shadow`). `--measure-now` força o placar.
 `SHOPMAN_INTENT_PILOT_ENABLED=false` desliga.
 
@@ -1568,16 +1700,110 @@ conferidas, mede e guarda o placar (`IntentPilotReport`) no máximo uma vez por 
 mudar nada para o cliente. Lê `ConversationMessage.envelope["triage_shadow"]` (a decisão da regra
 local e a do Jev, gravadas pelo `run_intent_pilot`) e diz quantas concordam, as discordâncias
 mais comuns, onde o Jev escalaria e a regra não, e o tempo do Jev. `--run N` grava a sombra de até
-N mensagens antes; `--days` (padrão 7) e `--examples`. Para o Jev decidir de verdade quando a
-Concierge atender: `CONCIERGE_TRIAGE_CLASSIFIER=jev`.
+N mensagens antes; `--days` (padrão 7) e `--examples`. Quando a Concierge atende, quem decide é o
+Jev (com `CONCIERGE_TRIAGE_WITH_MODEL` ligado), e a regra local sensível vence.
+
+### concierge_reading_check
+
+**Propósito:** A Concierge atendendo sem modelo vira aviso no Gestor (decisão do dono, 19/11/2026, "opção 1",
+camada 3). Roda no `maintenance_worker`, depois do `concierge_verification_sweep`. Lê a rota de IA `intents`
+(`concierge/reading_health.py`): sem conexão, sem chave, sem liberação, sem modelo, freio de gasto ou três
+leituras seguidas falhando no provedor abrem UM aviso `concierge_no_model` por causa (cor de erro, sino e topo
+do Gestor, `AlertSpec.on_screen`); a causa que passou é resolvida. Nunca chama modelo. A mesma leitura é a sonda
+`concierge_reading` do Watchman (`storefront/watchman_checks.py`). Saída: `{"opened": n, "resolved": n}`.
+
+### concierge_keywords
+
+**Propósito:** As palavras-chave dos produtos, que a Concierge usa para achar o produto chamado por outro
+nome ("folhado de maçã" é o Chausson aux Pommes; dono, 24/11/2026). Sem `--write` só lê: quantos
+produtos publicados têm palavras-chave, quais não têm e o que a proposta
+(`shopman/storefront/concierge/keywords_proposal.json`) acrescentaria ou tiraria em cada um. Com
+`--write` grava a proposta. No ar, `--write` só com a aprovação do dono.
+
+```bash
+python manage.py concierge_keywords           # levantamento e o que mudaria
+python manage.py concierge_keywords --write   # grava (no ar, só com a aprovação do dono)
+```
+
+### concierge_verification_sweep
+
+**Propósito:** O relógio do "vou verificar" da Concierge (WP-05/WP-06 do
+[plano da Concierge](../plans/CONCIERGE-PLANO-DE-ACAO.md)). Roda no `maintenance_worker`, logo depois do
+`recover_concierge`. Para cada verificação aberta (`Conversation.flags["verification"]`): no primeiro prazo
+(`ChannelConfig.confirmation.concierge_verify_nudge_minutes`, 10 por padrão) sem resposta da equipe, o cartão
+`concierge_verify`, que conta até esse prazo desde que nasceu, segue na janela do aviso dizendo há quanto passou e o
+cliente recebe UM aviso ("Ainda estou confirmando com a equipe..."); no segundo
+(`concierge_verify_handoff_minutes`, 30), a conversa vai para a equipe, com a pergunta no cartão de
+handoff, e o cliente recebe "Alguém da equipe continua com você por aqui.". Os prazos contam só tempo de loja
+aberta, e com a casa fechada nada corre. Cada passo é reivindicado sob trava antes do envio: sai uma vez só.
+Custo zero, nenhuma chamada de modelo. Imprime as contagens do ciclo em JSON.
+
+### concierge_eval
+
+**Propósito:** O ensaio do leitor da Nice (passo 5 do pedido pelo motor). Roda a bateria de 56 pedidos pelo leitor de verdade: o portão do Jev e a IA da rota `intents` (no ar, a DeepSeek), pelo freio e pelo medidor de gasto da casa. Imprime o placar por caso, a transcrição (o que a IA leu de cada fala), a latência p95 e o custo estimado.
+
+Nenhum efeito, nenhuma mensagem, nenhuma linha nova no banco: a conversa e a sacola são de memória. O produto é conferido pelo nome do item no catálogo.
+
+```bash
+python manage.py concierge_eval --battery                 # os 56, tetos de 150 chamadas e US$ 0,50
+python manage.py concierge_eval --battery --case frase    # só os casos cujo id contém "frase"
+python manage.py concierge_eval --battery --max-calls 20  # teto menor
+python manage.py concierge_eval --cards                   # os 5 cartões do WP-14 pelo motor, em memória
+```
+
+`--cards` roda os 5 cartões do WP-14 pelo motor da Nice, de ponta a ponta. Usa as regras, os moldes, os formatadores e o perfil dela, com o leitor de verdade. A sacola, a cotação, a execução, o pedido e os registros ficam em memória, com as portas falsas do pacote. O "sim" fecha um pedido de memória.
+
+Do Shopman vem só o que se lê: o cardápio, e o nome e o preço base de cada item. A linha P08 e a validade da concessão (`grant.validity_seconds`, 600 s, a do perfil de teste do pacote) são ligadas SÓ no perfil do ensaio.
+
+A transcrição, em texto puro, traz por turno:
+- a fala;
+- a resposta da Nice;
+- o que se leu;
+- os movimentos e os bloqueios;
+- quando o turno sairia, no ar, pelo caminho de hoje (molde sem frase da Nice).
+
+Sem conexão utilizável na rota `intents` (ou com o freio puxado), o comando falha antes de chamar. Sai com código diferente de zero, depois de imprimir o placar, quando um teto estoura (`--max-calls`, `--max-usd`) ou quando a IA recusa alguma fala, com o erro verdadeiro dela (aí o placar não mede o leitor).
+
+### concierge_engine_tick
+
+**Propósito:** Os prazos do motor do framework conversacional (#3298). Roda no `maintenance_worker`, depois do
+`concierge_shadow_decisions`. Não faz nada com as classes da Shop desligadas (`Shop.conversational_live_*`) nem
+enquanto algum molde do aviso de prazo (`wait.*`) não tem frase da Nice aprovada em
+`turn_framework.NICE_TEMPLATE_COPY`: aviso em frase genérica do pacote nunca sai. Ligado, cada conversa com
+compromisso do motor aberto e vencido ganha o próprio motor (contexto e envio dela) e `Engine.tick` avisa o
+cliente UMA vez (K22). A falha numa conversa não derruba as outras. Nenhuma chamada de modelo. Imprime as
+contagens em JSON (`conversations`, `notices`, `failed`, `skipped` com o motivo).
+
+### concierge_shadow_decisions
+
+**Propósito:** A decisão em sombra (N5 do [plano do adaptador da Nice](../plans/COMERCIO-CONVERSACIONAL-ADAPTADOR-NICE-PLANO.md),
+seção 6). Desligado pelo campo `Shop.conversational_shadow_enabled` (nasce desligado), não toca em nada. Ligado,
+pega as entradas da Concierge ainda sem decisão (`--limit`, 200 por padrão) e, para cada uma, faz os passos 1 a 5
+do turno do framework sobre as portas de leitura do Shopman, com o leitor local por regra e o perfil da Nice, em
+`environment=shadow`. Grava o `DecisionRecord` em `ConversationalDecision`: uma linha por entrada, sem texto do
+cliente. Depois junta, por decisão, os pedidos do cliente em 24 horas e em 7 dias em `ConversationalOutcome`:
+janela aberta é `censored` e a madura substitui a censurada. Nunca envia, nunca escreve no comércio, nunca chama
+modelo; o que deriva de uma entrada observada sai com ela no `purge_observations`. Imprime as contagens em JSON.
+
+### record_usd_brl_quotes
+
+**Propósito:** A cotação que diz em reais o gasto com IA no B.I. (seção IA, DEV-2026-067). O B.I. só lê
+(`services/usd_brl.quotes_for`); quem grava é este comando, no `maintenance_worker`. Pega os dias com gasto de
+IA dos últimos `--days` dias (40 por padrão) que ainda não têm cotação em `UsdBrlQuote`, pede a PTAX de venda ao
+Banco Central numa chamada só e grava a final de cada dia (dia passado, ou o próprio dia depois de publicada).
+Fim de semana e feriado usam a do último dia útil (`quoted_on`). Sem dia faltando, não chama a API.
 
 ### run_alias_benchmark
 
-**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. Roda no
-`maintenance_worker`: com pelo menos 20 `ProductAlias` confirmados e o último placar com mais de 7
-dias, mede `fuzzy`, `llm:claude-haiku-4-5`, `llm:claude-opus-5` e, quando disponíveis, `embed` e
-`jev`, e grava `AliasBenchmarkReport` (Admin → B.I. → Placar do de-para, só leitura, só agregado).
-Concorrente sem credencial ou pacote fica de fora e o placar diz por quê. `--now` força.
+**Propósito:** A medição do [BI-JEV-PILOT](../plans/BI-JEV-PILOT.md) sem console. **Só à mão**:
+saiu do `maintenance_worker` em 11/11/2026, depois de gastar cerca de US$ 1.180 de API em loop. Com pelo
+menos 20 `ProductAlias` confirmados e o último placar com mais de 7 dias (ou com `--now`), mede `fuzzy`
+e `embed`. Os pagos (`llm:claude-haiku-4-5`, `llm:claude-opus-5`, `jev`) só entram com
+`--paid`. Valem sempre os tetos de casos (`--max-cases`, default 60) e de gasto estimado
+(`--budget-usd`, default US$ 1). As travas são flags, nunca settings: nenhuma variável de ambiente
+religa o gasto. A vaga da semana é reservada antes de medir:
+uma medição interrompida aparece como tal no Admin e não recomeça sozinha. Grava `AliasBenchmarkReport`
+(Admin → B.I. → Placar do de-para, só leitura, só agregado).
 
 ### setup_intent_categories
 
@@ -1612,9 +1838,8 @@ python manage.py benchmark_intent_classifiers --llm-model claude-haiku-4-5 --llm
 ```
 
 **Comportamento:** todos recebem o texto **redigido** (`redact_observation_text`). `llm` e `jev`
-mandam esse texto para fora e só entram se o provedor estiver em
-`SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED` (default `anthropic`, decisão do dono em 23/09; `typesafe`
-fora); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
+mandam esse texto para fora e só entram se a conexão de IA deles estiver liberada para mensagem de cliente
+(Anthropic aprovada pelo dono em 23/09, Jev em 02/10); sem isso saem do placar dizendo por quê. Só mensagens **conferidas** contam. O CSV não leva
 texto de cliente, só o número da amostra.
 
 ### refresh_bi_daily_series
@@ -2100,6 +2325,22 @@ Contrato e estado de rollout:
 
 # Worker de directives (systemd/supervisor, não cron)
 # python manage.py process_directives --watch
+```
+
+### bake_alpha_tradi_daily
+
+Só no alpha (`SHOPMAN_ENVIRONMENT=staging`) e só a TRADI: a fornada diária que
+o dono aprovou em 29/10/2026 para a página do produto mostrar estoque de verdade
+e o Google aceitar as Listagens locais gratuitas. Roda no `maintenance_worker`;
+assa 20 baguetes uma vez por dia a partir das 7h, de segunda a sábado (a chave
+de idempotência é a data). O caminho é a fornada avulsa da Produção
+(`apply_quick_finish`): `WorkOrder`, `production_changed` e ledger `MAKE`.
+Quando a massa falta, confirma a falta exata que o guardrail mediu, com
+justificativa, como o operador faz na tela.
+
+```bash
+python manage.py bake_alpha_tradi_daily            # o que o worker roda
+python manage.py bake_alpha_tradi_daily --dry-run  # diz o que faria
 ```
 
 ### compute_product_affinity

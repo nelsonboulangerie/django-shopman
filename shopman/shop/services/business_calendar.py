@@ -8,6 +8,9 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
+
+from shopman.shop.projections.opening_hours import split_by_breaks
 
 logger = logging.getLogger(__name__)
 
@@ -87,11 +90,26 @@ def current_business_state(*, now: datetime | None = None, shop=None) -> Busines
     opens_at, closes_at = day_window
     current_time = local_now.time()
     if opens_at <= current_time < closes_at:
+        shifts = _day_shifts(shop, local_now.date())
+        shift = next((s for s in shifts if s[0] <= current_time < s[1]), None)
+        if shift is None:
+            # Intervalo entre turnos (almoço, por exemplo): fechado agora, volta
+            # no começo do próximo turno do mesmo dia.
+            resume = next(s[0] for s in shifts if s[0] > current_time)
+            return BusinessCalendarState(
+                is_open=False,
+                opens_at=_fmt_hhmm(resume),
+                closes_at=_fmt_hhmm(closes_at),
+                message=f"Fechado. Voltamos às {_fmt_hour(resume)}",
+                next_open_at=datetime.combine(local_now.date(), resume, tzinfo=local_now.tzinfo),
+                closure_source="break",
+                resolved_at=local_now,
+            )
         return BusinessCalendarState(
             is_open=True,
-            opens_at=_fmt_hhmm(opens_at),
-            closes_at=_fmt_hhmm(closes_at),
-            message=f"Aberto até {_fmt_hour(closes_at)}",
+            opens_at=_fmt_hhmm(shift[0]),
+            closes_at=_fmt_hhmm(shift[1]),
+            message=f"Aberto até {_fmt_hour(shift[1])}",
             next_open_at=None,
             resolved_at=local_now,
         )
@@ -119,6 +137,11 @@ def current_business_state(*, now: datetime | None = None, shop=None) -> Busines
     )
 
 
+#: Quantos expedientes um prazo pode atravessar antes de a conta desistir. Prazo de
+#: aceite cabe num expediente; o teto só impede um laço sem fim com agenda torta.
+_MAX_DEADLINE_WINDOWS = 14
+
+
 def next_operational_deadline(
     *,
     timeout: timedelta,
@@ -127,16 +150,41 @@ def next_operational_deadline(
 ) -> tuple[datetime | None, BusinessCalendarState]:
     """Return the truthful deadline for an operator timeout.
 
-    When the shop is closed, the timeout starts at the next known opening. If
-    there is no configured future opening, no automated deadline is returned.
+    O prazo gasta só tempo de LOJA ABERTA. Com a loja fechada, começa na próxima
+    abertura; com a loja aberta, o que não couber até o fechamento continua na
+    abertura seguinte (60 min pedidos às 19:30 com a casa fechando às 20:00
+    vencem 30 min depois de ela reabrir, e não às 20:30 com a casa fechada).
+    If there is no configured future opening, no automated deadline is returned.
+
+    O estado devolvido é o de ``now`` (quem agenda precisa saber se o pedido
+    chegou com a loja fechada), não o do instante em que o prazo vence.
     """
     local_now = now or timezone.now()
     state = current_business_state(now=local_now, shop=shop)
-    if state.is_open:
-        return local_now + timeout, state
-    if state.next_open_at:
-        return state.next_open_at + timeout, state
+    cursor = local_now if state.is_open else state.next_open_at
+    window = state
+    remaining = timeout
+    for _ in range(_MAX_DEADLINE_WINDOWS):
+        if cursor is None:
+            return None, state
+        if window.is_closed:
+            window = current_business_state(now=cursor, shop=shop)
+        closes = _closing_moment(window)
+        if closes is None or cursor + remaining <= closes:
+            # Sem hora de fechar (casa sem grade): o relógio corre direto.
+            return cursor + remaining, state
+        remaining -= closes - cursor
+        window = current_business_state(now=closes, shop=shop)
+        cursor = closes if window.is_open else window.next_open_at
     return None, state
+
+
+def _closing_moment(state: BusinessCalendarState) -> datetime | None:
+    """A hora em que o expediente aberto de ``state`` fecha; ``None`` sem grade."""
+    if not state.is_open or not state.closes_at or state.resolved_at is None:
+        return None
+    resolved = state.resolved_at
+    return datetime.combine(resolved.date(), time.fromisoformat(state.closes_at), tzinfo=resolved.tzinfo)
 
 
 def store_review_deferred_state(
@@ -195,6 +243,19 @@ def selling_hours_for(day: date, *, shop=None) -> tuple[time, time] | None:
     return _day_window(shop, day)
 
 
+def shifts_for(day: date, *, shop=None) -> list[tuple[time, time]]:
+    """Os turnos de venda de ``day``: o expediente (``selling_hours_for``) menos os
+    intervalos declarados no dia da semana (``Shop.opening_hours[dia]["breaks"]``).
+
+    Dia sem intervalo devolve um turno só, igual ao expediente. Lista vazia = dia
+    sem expediente. Horário especial (``closed_dates`` com hora) é um turno só.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return []
+    return _day_shifts(shop, day)
+
+
 def closed_weekdays(*, shop=None) -> list[int]:
     """Índices de dia da semana (0=segunda … 6=domingo) sem expediente regular."""
     shop = _load_shop(shop)
@@ -209,7 +270,9 @@ def closed_weekdays(*, shop=None) -> list[int]:
     return out
 
 
-def available_dates(*, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None) -> list[date]:
+def available_dates(
+    *, max_count: int = 3, horizon_days: int = 30, now: datetime | None = None, shop=None
+) -> list[date]:
     """As próximas ``max_count`` datas em que a loja realmente opera.
 
     Pula dias da semana fechados e exceções (feriados/férias) — nunca devolve
@@ -286,14 +349,18 @@ def delivery_slots_for(
     cursor = datetime.combine(day, opens_at)
     end = datetime.combine(day, closes_at)
     step = timedelta(minutes=DELIVERY_SLOT_MINUTES)
+    shifts = _day_shifts(shop, day) if shop else [window]
     while cursor + step <= end:
         starts = cursor.time()
         finishes = (cursor + step).time()
-        if earliest is None or starts >= earliest:
-            slots.append({
-                "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
-                "label": f"{_fmt_hhmm(starts)} às {_fmt_hhmm(finishes)}",
-            })
+        inside_a_shift = any(s_start <= starts and finishes <= s_end for s_start, s_end in shifts)
+        if inside_a_shift and (earliest is None or starts >= earliest):
+            slots.append(
+                {
+                    "ref": f"{_fmt_hhmm(starts)}-{_fmt_hhmm(finishes)}",
+                    "label": f"{_fmt_hour(starts)} às {_fmt_hour(finishes)}",
+                }
+            )
         cursor += step
     return slots
 
@@ -319,6 +386,23 @@ def weekly_windows(*, shop=None) -> dict[str, tuple[time, time]]:
         window = _weekday_window(shop, name)
         if window is not None:
             out[name] = window
+    return out
+
+
+def weekly_shifts(*, shop=None) -> dict[str, list[tuple[time, time]]]:
+    """A grade semanal em turnos: ``{"sunday": [(09:00, 12:00), (13:00, 16:00)], ...}``.
+
+    É a leitura que o iFood espelha (um turno do iFood por turno da casa). Mesma
+    fonte de ``weekly_windows``: o turno é o expediente do dia menos os intervalos.
+    """
+    shop = _load_shop(shop)
+    if not shop:
+        return {}
+    out: dict[str, list[tuple[time, time]]] = {}
+    for name in DAY_ORDER:
+        window = _weekday_window(shop, name)
+        if window is not None:
+            out[name] = split_by_breaks(window, (getattr(shop, "opening_hours", None) or {}).get(name))
     return out
 
 
@@ -488,8 +572,7 @@ def _closed_dates(shop) -> list:
 def _has_regular_hours(shop) -> bool:
     hours = getattr(shop, "opening_hours", None)
     return isinstance(hours, dict) and any(
-        isinstance(value, dict) and value.get("open") and value.get("close")
-        for value in hours.values()
+        isinstance(value, dict) and value.get("open") and value.get("close") for value in hours.values()
     )
 
 
@@ -498,6 +581,16 @@ def _day_window(shop, day: date) -> tuple[time, time] | None:
     if special is not None:
         return special
     return _weekday_window(shop, DAY_ORDER[day.weekday()])
+
+
+def _day_shifts(shop, day: date) -> list[tuple[time, time]]:
+    window = _day_window(shop, day)
+    if window is None:
+        return []
+    if special_hours_for(day, _closed_dates(shop)) is not None:
+        return [window]
+    entry = (getattr(shop, "opening_hours", None) or {}).get(DAY_ORDER[day.weekday()])
+    return split_by_breaks(window, entry)
 
 
 def _calendar_time(value) -> time | None:
@@ -546,10 +639,9 @@ def _next_open_at(shop, *, local_now: datetime) -> datetime | None:
 
 
 def _fmt_hhmm(value: time) -> str:
-    return value.strftime("%H:%M")
+    """O ``"HH:MM"`` do contrato (``opens_at``, ``closes_at``, ref do horário): quem lê é código."""
+    return value.strftime("%H:%M")  # hora-ok: contrato HH:MM, lido por código
 
 
 def _fmt_hour(value: time) -> str:
-    if value.minute:
-        return f"{value.hour}h{value.minute:02d}"
-    return f"{value.hour}h"
+    return format_clock(value)

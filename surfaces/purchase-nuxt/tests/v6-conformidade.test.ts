@@ -79,8 +79,7 @@ describe("C02/C04/C05/C06: a Base (fase 2)", () => {
     const sections = app("components/PurchaseBaseSections.vue");
     expect(sections).toContain("<OperatorQuickFilters");
     expect(sections).toContain("to: section.to");
-    // Quatro opções: no celular, lista (seção 11: mais de 3 vira `NuxtSelect`), pela
-    // régua do kit, sem teto avulso na tela.
+    expect(sections).toContain("PURCHASE_BASE_RECORD_SECTIONS");
     expect(sections).not.toContain("phone-max");
     expect(sections).not.toContain("<NuxtTabs");
     expect(sections).not.toContain("<NuxtSelect");
@@ -128,7 +127,7 @@ describe("C09/C10: a gaveta do item", () => {
 describe("T-06: Atualizar mora no ⋯, com a tecla R", () => {
   it("toda tela declara Atualizar nas ações do cabeçalho; a tecla é do app", () => {
     for (const page of ["pages/index.vue", "pages/buy.vue", "pages/base/materials.vue"]) {
-      expect(app(page), page).toContain('{ label: "Atualizar", icon: "i-lucide-refresh-cw", kbds: ["R"]');
+      expect(app(page), page).toMatch(/label:\s*"Atualizar",\s*icon:\s*"i-lucide-refresh-cw",\s*kbds:\s*\["R"\]/);
     }
     expect(app("app.vue")).toContain('onKeyStroke(["r", "R"]');
   });

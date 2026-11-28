@@ -206,8 +206,15 @@ function alertActionViolations(): string[] {
 
 describe("Gestor canônico em Nuxt UI", () => {
   it("não mantém controles HTML ou wrappers visuais paralelos", () => {
+    // "Tem mais abaixo" é a peça da suíte para conteúdo que passa da dobra (CLAUDE.md,
+    // "Tem mais abaixo (site-wide)"), e o chevron dela é um botão nativo translúcido por
+    // decisão do dono, registrada no próprio componente: um `NuxtButton` ali se leria
+    // como controle pesado. Admitida PELO NOME, sem curinga (WP-G03): qualquer outro
+    // controle HTML continua reprovando.
     expect(
-      runtimeOffenders(/<(?:button|input|select|textarea|form|table)\b/i),
+      runtimeOffenders(/<(?:button|input|select|textarea|form|table)\b/i).filter(
+        (file) => file !== "operator-kit/MoreBelow.vue",
+      ),
     ).toEqual([]);
     // Os cinco campos de data e hora da suíte são o cânone por decisão do dono (brief
     // do WP-OPERADOR-NUXTUI-ONDAS, #1529): camadas finas sobre InputDate, InputTime e
@@ -247,6 +254,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       // A caixa de Avisos (P1-12, 14/10/2026): a descrição preserva as quebras de
       // linha, para o aviso que traz os dados um por linha (a nota de estorno).
       "operator-kit/OperatorInbox.vue",
+      // A faixa invertida (dono, 13/11/2026): o ícone leva o tom do aviso, porque o
+      // fundo é um só para todas as gravidades.
+      "operator-kit/OperatorBand.vue",
     ]);
     expect(
       runtimeOffenders(/\b:ui=|\bui="/).filter((file) => !kitPieceUi.has(file)),
@@ -527,7 +537,8 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(app).toContain("<OperatorAppRoot>");
     expect(app).toContain("<OperatorSuiteShell");
     expect(app).toContain("operatorSurfaceGate({");
-    expect(app).toContain('v-if="surface.showPage"');
+    expect(app).toContain('v-if="surface.showPage && !redirectingToRoleLanding"');
+    expect(app).toContain('navigateTo("/catalog", { replace: true })');
     expect(app).toContain('v-else-if="surface.showForbidden"');
     expect(app).toContain('v-else-if="surface.showChecking"');
     expect(app).toContain('v-if="surface.showUnavailable"');
@@ -543,21 +554,33 @@ describe("Gestor canônico em Nuxt UI", () => {
         (boardHeading.match(/<NuxtTabs\b/g)?.length ?? 0),
       // Abas das colunas no celular e no tablet em pé, e a visão Grade | Lista.
     ).toBeGreaterThanOrEqual(2);
-    // Os recortes (escopo da Fila e o fluxo, o mesmo na Saída) são os filtros rápidos
-    // da suíte, com a contagem e o colapso no celular do kit.
-    expect(board.match(/<OperatorQuickFilters\b/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+    // O escopo da Fila é o modo da lista (filtro rápido); o recebimento e o canal moram
+    // SÓ no filtro único da suíte (dono, 04/11/2026): o painel na mesa e o ícone na linha
+    // do chão, sem abas, seletor de canal nem gaveta paralelos.
+    expect(board.match(/<OperatorQuickFilters\b/g)?.length ?? 0).toBe(1);
+    expect(board).toContain('data-queue-scopes');
+    expect(board.match(/<OperatorFilterPanel\b/g)?.length ?? 0).toBe(2);
+    expect(board).toMatch(/<OperatorFilterPanel\b[^>]*trigger="icon"[^>]*:chips="false"/s);
+    expect(board).not.toContain("data-fulfillment-filters");
+    expect(board).not.toContain("data-channel-picker");
+    expect(board).not.toContain("Filtros e ações da fila");
+    expect(board).not.toMatch(/<OperatorCompactBar[\s\S]*?<template[^>]*#filters>[\s\S]*?<\/OperatorCompactBar>/);
     expect(board).toContain("<OperatorSplitter");
     expect(board).not.toContain("<QueueColumnResizeHandle");
     expect(board).not.toContain("<QueueColumnStrip");
-    expect(board).toContain('v-if="hasChannelQueueSignal" #feedback');
-    expect(boardColumn).toContain('v-if="!phone && heading" as="header"');
+    expect(board).toContain('v-if="hasChannelQueueSignal || showSystemBand" #feedback');
+    // A coluna é um bloco só, com o cabeçalho dentro (dono, 13/11/2026, prévia
+    // `gestor-d`): nada de faixa de toolbar com linha embaixo.
+    expect(boardColumn).toMatch(/<header\s+v-if="!phone && heading"/);
+    expect(boardColumn).not.toContain("<OperatorToolbar");
     expect(boardColumn).toContain("<OrderBoardHeading");
-    // O posto Saída usa a mesma faixa de recortes; não há cabeçalho de coluna na toolbar.
-    expect(board).toContain(':items="fulfillmentFilterTabs"');
+    // O posto Saída usa o mesmo painel de filtros; não há cabeçalho de coluna na toolbar.
     expect(board).not.toContain('v-if="exitPostView && desktopZones[0]"');
     expect(board).toContain(':heading="!exitPostView"');
+    // As colunas em abas são a última barra do topo: moram no `#below` do cabeçalho, e o
+    // aviso da tela vem depois delas (dono, 20/11/2026, DEV-2026-063).
     expect(board).toMatch(
-      /<OperatorToolbar[\s\S]*?v-if="boardAsTabs && view === 'board' && zones\.length"[\s\S]*?class="py-2"/,
+      /<template v-if="boardAsTabs && view === 'board' && zones\.length" #below>\s*<OperatorToolbar class="items-end pt-2 pb-0" data-board-zone-bar>/,
     );
     const header = board.slice(
       board.indexOf("<OperatorPageHeader"),
@@ -568,7 +591,12 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(header).not.toMatch(
       /<NuxtTabs\b(?=[^>]*data-view-switch)[^>]*color="neutral"/s,
     );
-    expect(runtimeOffenders(/#below\b/)).toEqual([]);
+    // O `#below` é a navegação secundária (as colunas em abas), dentro do cabeçalho; o
+    // sinal do canal mora no `#feedback`, nunca ali.
+    expect(header).toContain("data-board-zone-bar");
+    expect(runtimeOffenders(/<template\b[^>]*#below\b/)).toEqual(["pages/index.vue"]);
+    const below = header.slice(header.indexOf("#below>"), header.indexOf("</OperatorToolbar>", header.indexOf("#below>")));
+    expect(below).not.toContain("ChannelQueueSignal");
     expect(
       componentTags("Tabs", sources)
         .filter(({ tag }) => !/:content="false"/.test(tag))
@@ -733,6 +761,10 @@ describe("Gestor canônico em Nuxt UI", () => {
       new URL("../app/components/OrderCard.vue", import.meta.url),
       "utf8",
     );
+    const cardActions = readFileSync(
+      new URL("../app/components/OrderCardActions.vue", import.meta.url),
+      "utf8",
+    );
     const feeds = readFileSync(
       new URL("../app/pages/feeds.vue", import.meta.url),
       "utf8",
@@ -767,7 +799,7 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(appConfig).toMatch(
       /pageCard:\s*\{[\s\S]*?container:\s*["']p-4 sm:p-4["']/,
     );
-    expect(card).toMatch(/<NuxtCard\s+as="article"/);
+    expect(card).toMatch(/<NuxtCard\s+(?:v-(?:if="compact"|else)\s+)?as="article"/);
     expect(card).toContain(
       // 1fr, não minmax(0,1fr): numa grade que rola, o corpo não pode encolher
       // abaixo do conteúdo (o rodapé subia por cima dele na Saída). Sem h-full
@@ -779,8 +811,14 @@ describe("Gestor canônico em Nuxt UI", () => {
     expect(card).toContain("<template #header>");
     expect(card).toContain("<template #footer>");
     // 1/3 + 2/3 quando o rodapé tem largura para isso; abaixo, empilha legível.
-    expect(card).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
-    expect(card).toContain('class="@container flex items-end gap-2"');
+    // O rodapé de gestos é um componente só (cartão inteiro e compacto do Painel).
+    expect(card).toContain("<OrderCardActions");
+    expect(cardActions).toContain("'@[22rem]:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'");
+    // A linha dos botões continua alinhada pela base; o porquê de um botão travado
+    // vai escrito logo abaixo dela, dentro do mesmo contêiner (WP-G06).
+    expect(cardActions).toContain('class="@container flex flex-col gap-1.5"');
+    expect(cardActions).toContain('class="flex items-end gap-2"');
+    expect(cardActions).toContain("data-card-blocked-reason");
     // Cartão sem cabeçalho nem rodapé destacados (conjunto mínimo, regra do dono): o
     // título e as ações moram no corpo, sem a divisória dos slots oficiais. O
     // `OrderCard` (acima) é a exceção da Saída: o cartão do pedido tem cabeçalho.
@@ -788,9 +826,11 @@ describe("Gestor canônico em Nuxt UI", () => {
       expect(source).not.toContain("#header");
       expect(source).not.toContain("#footer");
     }
-    // O painel do produto tem um #footer legítimo: o do sheet, não de cartão.
+    // O painel do produto delega gaveta, rodapé e descarte ao casco canônico.
     expect(productPanel).not.toContain("#header");
-    expect(productPanel.match(/<template #footer>/g)?.length).toBe(1);
+    expect(productPanel).toContain("<OperatorFormShell");
+    expect(productPanel).toContain("<OperatorFormSection");
+    expect(productPanel).not.toContain("<template #footer>");
     expect(courier).not.toContain("#header");
     expect(courier).not.toContain("#footer");
     expect(catalog).not.toContain('<NuxtCard v-if="loading"');
@@ -856,17 +896,21 @@ describe("Gestor canônico em Nuxt UI", () => {
     );
     expect(queue).not.toContain('size="xl"');
     expect(pageHeader).toContain("flex-nowrap overflow-x-auto no-scrollbar");
-    expect(
-      [
-        board,
-        readFileSync(
-          new URL("../app/components/OrderCard.vue", import.meta.url),
-          "utf8",
-        ),
-      ]
-        .join("\n")
-        .replaceAll(/\s+/g, " "),
-    ).not.toMatch(/tone[^?]{0,80}=== ['"]late['"][^?]{0,80}\? ['"]error['"]/);
+    const timeSurfaces = [
+      board,
+      readFileSync(
+        new URL("../app/components/OrderCard.vue", import.meta.url),
+        "utf8",
+      ),
+    ]
+      .join("\n")
+      .replaceAll(/\s+/g, " ");
+    expect(timeSurfaces).toMatch(
+      /clock\.tone === ['"]late['"][^?]{0,80}\? ['"]error['"]/,
+    );
+    expect(timeSurfaces).not.toMatch(
+      /clock\.tone === ['"]late['"][^?]{0,80}\? ['"]warning['"]/,
+    );
   });
 
   it("não mistura o estado da visão com a fileira de botões do cabeçalho", () => {
@@ -875,8 +919,9 @@ describe("Gestor canônico em Nuxt UI", () => {
       "utf8",
     );
     expect(board).not.toContain("data-board-view-label");
-    // A visão do posto é o título da página; não há selo repetindo-a.
-    expect(board).toContain(`:title="exitPostView ? 'Saída' : 'Pedidos'"`);
+    // O título é sempre "Pedidos" (D, 13/11/2026): o balcão é o mesmo painel com
+    // colunas recolhidas, não uma tela com outro nome; não há selo repetindo a visão.
+    expect(board).toContain('title="Pedidos"');
     expect(board).not.toContain("viewLabel");
   });
 

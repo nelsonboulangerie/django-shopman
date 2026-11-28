@@ -42,3 +42,21 @@ def has_active_recipe_for_output_sku(output_sku: str) -> bool:
     from shopman.craftsman.models import Recipe
 
     return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+
+
+def production_modes_for_output_skus(output_skus) -> dict[str, str]:
+    """``sku`` → modo de produção da ficha vigente (``ProductionMode``), em lote.
+
+    A leitura única do modo: o KDS (estação de preparo × separação), a baixa de
+    insumo na venda e o planejamento perguntam aqui. SKU sem ficha vigente fica
+    de fora do dicionário: é revenda (ou ficha arquivada), e não tem modo.
+    """
+    skus = sorted({str(sku).strip() for sku in output_skus or () if str(sku or "").strip()})
+    if not skus:
+        return {}
+
+    from shopman.craftsman.models import Recipe
+
+    return dict(
+        Recipe.objects.filter(output_sku__in=skus, is_active=True).values_list("output_sku", "production_mode")
+    )

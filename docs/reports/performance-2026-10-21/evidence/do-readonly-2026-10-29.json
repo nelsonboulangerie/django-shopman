@@ -1,0 +1,91 @@
+{
+  "captured_at_utc": "2026-10-29T17:18:14.191950+00:00",
+  "app_id": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f",
+  "region": "nyc",
+  "services": [
+    {
+      "name": "web-operator",
+      "instance_size_slug": "apps-d-1vcpu-2gb",
+      "instance_count": 1
+    },
+    {
+      "name": "web-storefront",
+      "instance_size_slug": "apps-s-1vcpu-1gb",
+      "instance_count": 1
+    },
+    {
+      "name": "storefront-nuxt",
+      "instance_size_slug": "apps-s-1vcpu-1gb",
+      "instance_count": 1
+    },
+    {
+      "name": "operator-floor",
+      "instance_size_slug": "apps-s-1vcpu-1gb-fixed",
+      "instance_count": 1
+    },
+    {
+      "name": "operator-office",
+      "instance_size_slug": "apps-s-1vcpu-0.5gb",
+      "instance_count": 1
+    }
+  ],
+  "deployment": {
+    "id": "872bd271-0ab9-4684-aa80-e15bd610b5e5",
+    "phase": "ACTIVE",
+    "created_at": "2026-10-29T17:00:36Z"
+  },
+  "observations": [
+    {
+      "timestamp": "2026-10-29T17:06:37.022829Z",
+      "path": "storefront_menu",
+      "mode": "baseline",
+      "cache_status": "off",
+      "status": 200,
+      "query_count": 36,
+      "projection_ms": 1047.70521799999,
+      "availability_ms": 250.7729339999969,
+      "personalization_ms": 17.588363999990975,
+      "db_ms": 216.66917500000693,
+      "cache_ms": 63.04821999998467,
+      "cache_calls": 5,
+      "response_bytes": 58307,
+      "connect_ms": 3.0999150000070586,
+      "connect_count": 1,
+      "gc_ms": 6.281877999981589,
+      "gc_count": 14
+    },
+    {
+      "timestamp": "2026-10-29T17:10:48.846389Z",
+      "path": "storefront_catalog",
+      "mode": "baseline",
+      "cache_status": "off",
+      "status": 200,
+      "query_count": 34,
+      "projection_ms": 1011.6561069999648,
+      "availability_ms": 229.86176400002023,
+      "personalization_ms": 20.829523999964294,
+      "db_ms": 182.248851999816,
+      "cache_ms": 30.46399299995528,
+      "cache_calls": 3,
+      "response_bytes": 56731,
+      "connect_ms": 3.3318549999989955,
+      "connect_count": 1,
+      "gc_ms": 5.526079999924605,
+      "gc_count": 10
+    }
+  ],
+  "log_command_exit_code": 0,
+  "observations_count": 2,
+  "projection_sample_summary": {
+    "storefront_catalog": {
+      "n": 1,
+      "p50_ms": 1011.6561069999648,
+      "maximum_ms": 1011.6561069999648
+    },
+    "storefront_menu": {
+      "n": 1,
+      "p50_ms": 1047.70521799999,
+      "maximum_ms": 1047.70521799999
+    }
+  }
+}

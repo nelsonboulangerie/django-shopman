@@ -18,8 +18,11 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from django.core.cache import cache
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +120,52 @@ _CASH_AUDIT_PUBLIC_MESSAGE = (
     "Detalhe no B.I. › Caixa (quem audita)."
 )
 
-#: Idem para o faturamento: a PROPORÇÃO é operacional (dia fraco é informação de
-#: quem está no balcão), mas o valor em reais não é.
+#: Idem para o faturamento: o dia fraco é informação de quem está no balcão, mas
+#: nenhum número do faturamento é, para o Gerente e o Caixa, nem o valor em reais
+#: nem a proporção do esperado. Dono, 21/11/2026: "não quero que eles saibam ou que
+#: possam ter um panorama sobre o quanto está sendo faturado pela casa." A versão
+#: gravada no alerta não tem número; quem lê o B.I. ou audita o caixa recebe a
+#: proporção na hora de servir (``revenue_share_messages``), por papel.
 #:
 #: ⚠️ Não bastava mover a métrica para `AUDIT_ONLY_METRICS`: aí o GERENTE perderia
 #: o aviso, e ele é justamente quem age sobre um dia fraco. A leitura íntegra
 #: continua no `BIAlertEvent`, que já é gateado.
-_REVENUE_PUBLIC_MESSAGE = (
-    "o faturamento de {dia} ficou em {share:.0f}% do esperado. Detalhe no B.I. › Vendas."
-)
+_REVENUE_PUBLIC_MESSAGE = "as vendas de {dia} ficaram abaixo do esperado. Detalhe no B.I. › Vendas."
+
+#: A mesma leitura para quem PODE ter o panorama (lê o B.I. ou audita o caixa): a
+#: proporção do esperado, como a decisão escrita sempre deu ao Dono. O alerta é
+#: gravado com a versão sem número; o sino troca por esta na hora de servir, por
+#: papel (``revenue_share_messages``).
+_REVENUE_SHARE_MESSAGE = "o faturamento de {dia} ficou em {share:.0f}% do esperado. Detalhe no B.I. › Vendas."
+
+
+def _revenue_day(message: str) -> str:
+    """O dia sai da própria mensagem íntegra, que já o formata como "14/08 (sexta)"."""
+    return message.split(" faturou")[0] if " faturou" in (message or "") else "o dia"
+
+
+def revenue_share_messages(alert_pks) -> dict[int, str]:
+    """``{pk do OperatorAlert: mensagem com a proporção}`` dos avisos de dia fraco.
+
+    Uma consulta para o sino inteiro. Só quem chama sabe se o leitor pode ver o
+    número (``can_view_bi`` ou ``can_audit_cash``); sem essa pergunta respondida,
+    nada aqui deve ser servido.
+    """
+    from shopman.backstage.models import BIAlertEvent, BIAlertRule
+
+    pks = [pk for pk in alert_pks if pk]
+    if not pks:
+        return {}
+    messages: dict[int, str] = {}
+    events = BIAlertEvent.objects.filter(
+        operator_alert_id__in=pks, rule__metric=BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE,
+    ).select_related("rule")
+    for event in events:
+        baseline = float(event.baseline or 0)
+        share = (float(event.value or 0) / baseline * 100) if baseline else 0.0
+        text = _REVENUE_SHARE_MESSAGE.format(dia=_revenue_day(event.message), share=share)
+        messages[event.operator_alert_id] = f"{event.rule.label}: {text}"
+    return messages
 
 #: Marca de dinheiro na mensagem. O alerta de operador é servido sob um predicado
 #: que é um OR de TODAS as personas operacionais — e o grupo Caixa satisfaz dois
@@ -160,11 +200,7 @@ def _public_message(rule, reading: Reading) -> str:
         )
 
     if rule.metric == BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE:
-        baseline = reading.baseline or 0
-        share = (float(reading.value or 0) / baseline * 100) if baseline else 0.0
-        # O dia sai da própria mensagem íntegra, que já o formata como "14/08 (sexta)".
-        dia = reading.message.split(" faturou")[0] if " faturou" in reading.message else "o dia"
-        return _REVENUE_PUBLIC_MESSAGE.format(dia=dia, share=share)
+        return _REVENUE_PUBLIC_MESSAGE.format(dia=_revenue_day(reading.message))
 
     if _MONEY_MARK in (reading.message or ""):
         return _REDACTED_FALLBACK.format(label=rule.label)
@@ -217,7 +253,7 @@ def import_silence(rule, *, now) -> Reading:
             value=round(age_days, 1), baseline=float(expected), fired=True,
             message=(
                 f"último lote de '{rule.source}' há {age_days:.0f} dias "
-                f"({timezone.localtime(last):%d/%m %H:%M}); esperado a cada {expected} dias"
+                f"({format_local(last, '%d/%m {clock}')}); esperado a cada {expected} dias"
             ),
         )
     return Reading(
@@ -376,7 +412,7 @@ def cash_variance_by_drawer(rule, *, today: date) -> Reading:
 
 def curation_pending(rule) -> Reading:
     """No último lote concluído da origem, a fatia de linhas sem de-para de produto confirmado."""
-    from shopman.backstage.models import HistoricalSaleItem, ImportBatch, ProductAlias
+    from shopman.backstage.models import ImportBatch, ProductAlias
 
     batch = (
         ImportBatch.objects.filter(source=rule.source, status=ImportBatch.Status.DONE)
@@ -394,13 +430,14 @@ def curation_pending(rule) -> Reading:
         ProductAlias.objects.confirmed().filter(source=rule.source, external_sku="")
         .values_list("external_name", flat=True)
     )
-    total = 0
-    pending = 0
-    for sku, name in HistoricalSaleItem.objects.filter(sale__batch=batch).order_by().values_list("sku", "product_name"):
-        total += 1
-        key_ok = (sku in confirmed_skus) if sku else ((name or "") in confirmed_names)
-        if not key_ok:
-            pending += 1
+    # O lote concluído é imutável. Reutilizamos só a distribuição de linhas,
+    # nunca a leitura do alarme: confirmar um alias ou mudar a régua vale já.
+    counts = _curation_item_counts(batch)
+    total = sum(count for _sku, _name, count in counts)
+    pending = sum(
+        count for sku, name, count in counts
+        if not ((sku in confirmed_skus) if sku else ((name or "") in confirmed_names))
+    )
     if not total:
         return Reading(value=None, baseline=None, fired=False,
                        message=f"lote #{batch.pk} de '{rule.source}' não tem linhas de item")
@@ -425,3 +462,37 @@ _WEEKDAYS = ("segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domin
 
 def _weekday_name(day: date) -> str:
     return _WEEKDAYS[day.weekday()]
+
+
+def _curation_item_counts(batch) -> list[tuple[str, str, int]]:
+    """Uma distribuição por lote concluído, com peso de LINHAS, não de SKUs.
+
+    A identidade inclui o término/contagens da importação. Rebuild cria outro
+    lote; um novo lote muda a chave. O TTL limita retenção no Valkey existente.
+    Em transação não publicamos dados que ainda podem sofrer rollback.
+    """
+    from shopman.backstage.models import HistoricalSaleItem
+
+    finished = batch.finished_at.isoformat() if batch.finished_at else "unfinished"
+    key = f"bi:curation-items:v1:{batch.pk}:{batch.imported_at.isoformat()}:{finished}:{batch.items_created}"
+    try:
+        counts = cache.get(key)
+    except Exception:
+        logger.warning("bi.curation: cache indisponível; lendo distribuição no banco", exc_info=True)
+        counts = None
+    if counts is not None:
+        return counts
+    counts = list(
+        HistoricalSaleItem.objects.filter(sale__batch=batch).order_by()
+        .values("sku", "product_name").annotate(lines=Count("pk"))
+        .values_list("sku", "product_name", "lines")
+    )
+
+    def publish():
+        try:
+            cache.set(key, counts, timeout=24 * 60 * 60)
+        except Exception:
+            logger.warning("bi.curation: distribuição calculada sem cache", exc_info=True)
+
+    transaction.on_commit(publish)
+    return counts

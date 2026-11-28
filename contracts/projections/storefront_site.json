@@ -60,6 +60,16 @@
       "ref": "location"
     },
     {
+      "answer": "Você paga com dinheiro (na retirada ou na entrega).",
+      "question": "Como posso pagar?",
+      "ref": "payment"
+    },
+    {
+      "answer": "Sim. Ao finalizar o pedido, você escolhe o dia, com até 30 dias de antecedência.",
+      "question": "Posso encomendar para outro dia?",
+      "ref": "preorder"
+    },
+    {
       "answer": "Você pode falar conosco por telefone (43) 0000-0000 ou e-mail contato@padaria.test.",
       "question": "Como falar com vocês?",
       "ref": "contact"

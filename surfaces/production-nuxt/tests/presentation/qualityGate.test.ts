@@ -51,7 +51,6 @@ function card(
     partition: [{ quantity: "60", quality_grade_ref: "standard", quality_defect_ref: "", loss: false }],
     correction_count: 0,
     last_correction_at_display: "",
-    committed_qty: "",
     full_price_qty: "60",
     discounted_qty: "0",
     loss_qty: "0",
@@ -99,8 +98,8 @@ describe("qualityGate", () => {
         card(2, { closed_by: "Joana", closed_at_display: "06:10" }),
         card(3, { closed_by: "Rafael", closed_at_display: "09:00" }),
       ]),
-    ).toEqual({ names: "Rafael · Joana", window: "entre 06:10 e 13:40" });
-    expect(closersSummary([card(1)])).toEqual({ names: "Rafael", window: "às 07:25" });
+    ).toEqual({ names: "Rafael · Joana", window: "entre 6h10 e 13h40" });
+    expect(closersSummary([card(1)])).toEqual({ names: "Rafael", window: "às 7h25" });
   });
 
   it("soma o 'Me avise' por produto e cala quando a fila não foi lida", () => {

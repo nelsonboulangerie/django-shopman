@@ -18,8 +18,10 @@ import type {
 import {
   formatMoney,
   formatShortDate,
+  invoiceKeyHint,
   invoiceKeyTail,
   invoiceNumberLabel,
+  receiptHasStarted,
   receiptOutcomeSummary,
 } from "~/presentation/purchase";
 import { materialForEan, parseGs1, receiptLineForEan } from "~/presentation/scanning";
@@ -28,6 +30,7 @@ import { plural } from "~/presentation/purchaseUi";
 import { RECEIPT_LINE_STATUS_COLOR, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
 import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const route = useRoute();
 const router = useRouter();
@@ -60,6 +63,9 @@ const {
   receiptTotalCostQ,
   receiptHasRejectionReason,
   receiptReady,
+  receiptPreferredCostChanges,
+  receiptPriceCheck,
+  setReceiptPreferredCost,
   receiptTotalPending,
   readonlyFallback,
   actionPending,
@@ -81,6 +87,10 @@ const {
   receiptHistory,
   refresh,
 } = usePurchaseDesk();
+// O começo (abas Com NF/Sem NF) fica até entrar o primeiro item; digitar a chave não
+// mexe no layout (CMP-10). E a chave só de números que não fecha 44 dígitos avisa ali.
+const receiptStarted = computed(() => receiptHasStarted(receiptLines.value));
+const keyHint = computed(() => (receiptMode.value === "invoice" ? invoiceKeyHint(invoiceInput.value) : ""));
 
 const touch = useCoarsePointer();
 const supplierItems = computed(() => suppliers.value.map((supplier) => ({ label: supplier.displayName, value: supplier.ref })));
@@ -135,7 +145,7 @@ watch(
   () => [invoiceStatus.value.accessKey, receiptLinePreviews.value.length] as const,
   ([key, count]) => {
     if (key && count && !invoiceReadAt.value) {
-      invoiceReadAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      invoiceReadAt.value = formatClock(new Date());
     }
     if (!key) invoiceReadAt.value = "";
   },
@@ -281,12 +291,23 @@ function reportReceiptBlocker(blocker: ReceiptBlocker) {
   });
   goThere();
 }
+// Preço diferente do custo preferencial: confirmar pergunta antes se o custo muda.
+// Gravar em silêncio trocava o custo que alimenta custeio e pedido (CMP-06).
+const preferredCostOpen = ref(false);
+const preferredCostAnswered = computed(() =>
+  receiptPreferredCostChanges.value.every((change) => change.decision !== ""),
+);
 async function onConfirmReceipt() {
   const blocker = receiptFirstBlocker.value;
   if (blocker) {
     reportReceiptBlocker(blocker);
     return;
   }
+  if (!preferredCostAnswered.value) {
+    preferredCostOpen.value = true;
+    return;
+  }
+  preferredCostOpen.value = false;
   if (await confirmReceipt()) await revealReceiptOutcome();
 }
 async function onRejectReceipt() {
@@ -728,28 +749,43 @@ const thumbAction = computed(() => {
     contextValue: formatMoney(receiptTotalCostQ.value),
   };
 });
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Receber" :phone-title="phoneTitle" :actions="headerActions" actions-label="Mais ações do Receber">
-      <!-- Celular com a entrada aberta: "‹" volta ao começo, com a conferência guardada
-           em "Em conferência · Continuar". -->
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão do kit toma o lugar da barra de
+         cima. Com a entrada aberta, o "‹" ocupa o lugar do selo, e o fornecedor com o
+         documento ficam ao lado, como o item aberto do Gestor. -->
+    <OperatorCompactBar
+      :title="phoneTitle || 'Receber'"
+      :tone="sealTone" :time="sealTime" :conn-label="sealConn"
+      :search="!receiveStart"
+      :query="receiveQuery"
+      search-button-label="Buscar item da entrada"
+      :options="headerActions"
+      @clear="receiveQuery = ''"
+    >
       <template v-if="conferenceOpen" #lead>
         <NuxtButton
           icon="i-lucide-chevron-left"
           color="neutral"
           variant="ghost"
           square
-          class="md:hidden"
+          class="size-11 shrink-0 justify-center"
           aria-label="Voltar ao começo do Receber"
           data-receipt-back
           @click="receiptParked = true"
         />
       </template>
-      <template v-if="conferenceOpen" #subtitle>
-        <p class="text-xs text-muted tabular-nums md:hidden" data-receipt-subtitle>{{ documentLine }}</p>
+      <template v-if="conferenceOpen" #identity>
+        <!-- Quebra, nunca corta: o nome do fornecedor é comprido no celular de 320 px. -->
+        <p class="text-sm font-semibold break-words">{{ phoneTitle }}</p>
+        <p class="text-xs text-muted tabular-nums break-words" data-receipt-subtitle>{{ documentLine }}</p>
       </template>
+    </OperatorCompactBar>
+    <OperatorPageHeader title="Receber" :actions="headerActions" actions-label="Mais ações do Receber">
       <template #status>
         <PurchaseReadStatus />
         <NuxtBadge v-if="volumesBadge" color="success" icon="i-lucide-package-check" :label="volumesBadge" data-receipt-volumes-badge />
@@ -762,7 +798,7 @@ const thumbAction = computed(() => {
           data-receipt-key-badge
         />
         <!-- O documento da entrada aberta, ao lado do título (na mesa). -->
-        <span v-if="!receiptIsBlank" class="min-w-0 text-sm max-md:hidden" data-receipt-document>
+        <span v-if="receiptStarted" class="min-w-0 text-sm max-md:hidden" data-receipt-document>
           <span class="font-semibold">{{ receiptDocumentTitle || "Entrada em conferência" }}</span>
           <span class="text-muted tabular-nums">
             · {{ receiptSupplier?.paymentTerm || "prazo a combinar" }} · {{ formatMoney(receiptTotalCostQ) }}
@@ -779,7 +815,7 @@ const thumbAction = computed(() => {
         />
       </template>
       <!-- Origem da entrada (só no começo): com NF ou sem NF. -->
-      <template v-if="receiptIsBlank" #filters-primary>
+      <template v-if="!receiptStarted" #filters-primary>
         <div class="flex gap-1" role="group" aria-label="Origem da entrada" data-receipt-origin>
           <NuxtButton
             icon="i-lucide-scan-line"
@@ -880,6 +916,11 @@ const thumbAction = computed(() => {
                     placeholder="Escaneie, cole ou digite a chave de acesso"
                     class="w-full [&_textarea]:tabular-nums"
                   />
+                  <!-- A linha de ajuda existe sempre: o aviso troca o texto, não a altura, e o
+                       botão de baixo não foge do dedo. -->
+                  <template #help>
+                    <span :class="keyHint ? 'text-warning' : ''" data-receipt-key-hint>{{ keyHint || "A chave de acesso tem 44 dígitos." }}</span>
+                  </template>
                 </NuxtFormField>
                 <div class="mt-2 grid grid-cols-2 gap-2">
                   <NuxtButton
@@ -889,7 +930,7 @@ const thumbAction = computed(() => {
                     variant="outline"
                     block
                     :loading="actionPending"
-                    :disabled="readonlyFallback || !invoiceInput.trim()"
+                    :disabled="readonlyFallback || !invoiceInput.trim() || Boolean(keyHint)"
                     @click="onReadInvoice()"
                   />
                   <NuxtButton
@@ -1003,6 +1044,7 @@ const thumbAction = computed(() => {
                 :line-count="receiptLinePreviews.length"
                 :total-cost-q="receiptTotalCostQ"
                 :declared-volumes="receiptInvoiceVolumes"
+                :price-check="receiptPriceCheck"
                 :pending="readonlyFallback || actionPending"
                 :volumes-ring="anchorRing('volumes')"
                 :count-in-thumb="phone"
@@ -1211,6 +1253,57 @@ const thumbAction = computed(() => {
         </div>
       </template>
     </NuxtDrawer>
+
+    <!-- Preço diferente do custo preferencial: a troca do custo é escolha, nunca efeito colateral. -->
+    <NuxtModal
+      v-model:open="preferredCostOpen"
+      title="Preço diferente do custo preferencial"
+      description="O custo preferencial alimenta o custeio das receitas, a sugestão de preço e o pedido de compra. Escolha, em cada item, se ele passa a ser o preço desta entrada."
+    >
+      <template #body>
+        <ul class="space-y-3" data-preferred-cost-changes>
+          <li v-for="change in receiptPreferredCostChanges" :key="change.lineId" :data-preferred-cost-line="change.lineId">
+            <NuxtCard variant="soft">
+              <p class="text-sm font-semibold">{{ change.materialName }} · {{ change.unitLabel }}</p>
+              <p class="text-xs text-muted tabular-nums">
+                Custo preferencial {{ formatMoney(change.currentQ) }} · Esta entrada {{ formatMoney(change.incomingQ) }}
+              </p>
+              <div class="mt-2 flex flex-wrap gap-2">
+                <NuxtButton
+                  :label="`Atualizar para ${formatMoney(change.incomingQ)}`"
+                  :color="change.decision === 'update' ? 'primary' : 'neutral'"
+                  :variant="change.decision === 'update' ? 'solid' : 'outline'"
+                  :aria-pressed="change.decision === 'update'"
+                  data-preferred-cost-update
+                  @click="setReceiptPreferredCost(change.lineId, 'update')"
+                />
+                <NuxtButton
+                  :label="`Manter ${formatMoney(change.currentQ)}`"
+                  :color="change.decision === 'keep' ? 'primary' : 'neutral'"
+                  :variant="change.decision === 'keep' ? 'solid' : 'outline'"
+                  :aria-pressed="change.decision === 'keep'"
+                  data-preferred-cost-keep
+                  @click="setReceiptPreferredCost(change.lineId, 'keep')"
+                />
+              </div>
+            </NuxtCard>
+          </li>
+        </ul>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <NuxtButton label="Voltar" color="neutral" variant="outline" @click="preferredCostOpen = false" />
+          <NuxtButton
+            icon="i-lucide-check"
+            label="Confirmar entrada"
+            :disabled="!preferredCostAnswered"
+            :loading="actionPending"
+            data-preferred-cost-confirm
+            @click="onConfirmReceipt"
+          />
+        </div>
+      </template>
+    </NuxtModal>
 
     <!-- Ressalva geral: abre pelo ⋯ ou pelo painel da conferência. -->
     <NuxtModal

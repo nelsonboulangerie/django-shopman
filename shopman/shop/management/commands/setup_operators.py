@@ -107,6 +107,11 @@ class Command(BaseCommand):
             action="store_true",
             help=f"Confirma que este NÃO é o ambiente de produção (senha e PIN {DEV_PIN} são de dev).",
         )
+        parser.add_argument(
+            "--groups-ready",
+            action="store_true",
+            help="Usa os grupos já materializados pelo descritor de Instância.",
+        )
 
     def handle(self, *args, **options):
         # A pergunta do ambiente NÃO é do chamador. `--yes` pedia que quem chama
@@ -139,7 +144,8 @@ class Command(BaseCommand):
 
         # Os grupos são pré-requisito: associar a um grupo que não existe falharia
         # no meio, deixando metade do elenco pronto. Idempotente, custa milissegundos.
-        call_command("setup_groups", verbosity=0)
+        if not options["groups_ready"]:
+            call_command("setup_groups", verbosity=0)
 
         User = get_user_model()
         grupos = {g.name: g for g in Group.objects.all()}

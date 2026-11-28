@@ -22,7 +22,7 @@ from shopman.backstage.services import pos as pos_service
 from shopman.backstage.services.exceptions import POSError
 from shopman.shop.services.pos_intent import PosIntentError
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 MANAGER_PIN = "4321"
 

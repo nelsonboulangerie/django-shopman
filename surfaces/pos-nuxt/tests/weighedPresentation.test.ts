@@ -151,7 +151,7 @@ describe("a linha pesada no resto do PDV", () => {
       deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
       paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
       tenderedQ: null, changeForQ: 0, receiptChannels: [],
-      receiptEmail: "", manualDiscount: null, managerApproval: null,
+      receiptEmail: "", manualDiscount: null,
       saveReceiptTaxIdConfirmed: false,
       clientRequestId: "pos:peso-1",
       items: [queijo()],
@@ -161,6 +161,6 @@ describe("a linha pesada no resto do PDV", () => {
   });
 
   it("o recibo do navegador soma a peça pelo peso", () => {
-    expect(receiptLineTotalQ({ name: "Queijo", qty: 0.312, price_q: PRECO_KG, discountPct: 0, weightG: 312 })).toBe(2805);
+    expect(receiptLineTotalQ({ name: "Queijo", qty: 0.312, list_price_q: PRECO_KG, charged_price_q: PRECO_KG, weightG: 312 })).toBe(2805);
   });
 });

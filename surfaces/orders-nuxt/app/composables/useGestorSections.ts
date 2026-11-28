@@ -1,12 +1,14 @@
 import { getCurrentInstance, onBeforeUnmount, onMounted, watch } from "vue";
 import {
+  accessResolved,
+  deliveriesWaitingBadge,
+  deniedSettingsSection,
   gestorSections,
   gestorSettingsSections,
 } from "~/presentation/gestorSections";
-import { useOperatorResourceKey } from "./useOperatorResourceKey";
 
-/** O que o quadro conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
- *  Vale enquanto o quadro está montado; fora dele, `useGestorRailCounts` lê a contagem. */
+/** O que o painel conta ao rail (selos de Pedidos e Saída, e se o posto é a Saída).
+ *  Vale enquanto o painel está montado; fora dele, `useGestorRailCounts` lê a contagem. */
 export interface GestorRailState {
   onBoard: boolean;
   exitPost: boolean;
@@ -23,7 +25,7 @@ export function useGestorRail() {
   }));
 }
 
-/** Os selos fora do quadro: `orders/rail-counts/` a cada minuto enquanto `active()`.
+/** Os selos fora do painel: `orders/rail-counts/` a cada minuto enquanto `active()`.
  *  Leitura que falha não vira zero mentiroso: o selo some até a próxima dar certo. */
 export function useGestorRailCounts(active: () => boolean) {
   const counts = useState<{ intake: number; exit: number }>(
@@ -66,46 +68,99 @@ export function useGestorSections() {
     "operator-session",
   );
   const operatorId = computed(() => session.value?.operator?.id ?? null);
+  // As perguntas de permissão têm chave ESTÁVEL, sem o operador: no servidor o rail
+  // monta antes de a sessão do operador chegar ("unidentified") e, no navegador, a
+  // sessão já vem no payload; com o operador na chave, o navegador não achava a
+  // resposta do servidor e desenhava o rail sem Catálogo e Canais (hidratação
+  // divergente, PR #2331). Trocar de operador relê pelo `watch: [operatorId]`.
+  const ACCESS_KEY = (resource: string) => `orders:rail:${resource}`;
   // Clientes só para quem pode usar a seção (`shop.manage_customers`, 24/09/2026).
-  const { data: customersAccess } = useFetch<{ authorized?: boolean }>(
+  const { data: customersAccess, status: customersStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("customers-access"),
+      key: ACCESS_KEY("customers-access"),
       query: { perm: "shop.manage_customers" },
       server: true,
       watch: [operatorId],
     },
   );
   // Postos só para quem gere operadores (vincula dispositivos e cadastra postos).
-  const { data: workstationsAccess } = useFetch<{ authorized?: boolean }>(
+  const { data: workstationsAccess, status: workstationsStatus } = useFetch<{ authorized?: boolean }>(
     "/api/v1/backstage/operator/session/",
     {
-      key: useOperatorResourceKey("workstations-access"),
+      key: ACCESS_KEY("workstations-access"),
       query: { perm: "cashman.manage_operators" },
       server: true,
       watch: [operatorId],
     },
   );
-  const { expeditesOnly } = useGestorAccess();
+  // Catálogo e Canais só para quem cuida do catálogo (`shop.manage_catalog`): o
+  // servidor já recusava; a tela mostrava as duas e depois "Sem conexão".
+  const { data: catalogAccess, status: catalogStatus } = useFetch<{ authorized?: boolean }>(
+    "/api/v1/backstage/operator/session/",
+    {
+      key: ACCESS_KEY("catalog-access"),
+      query: { perm: "shop.manage_catalog" },
+      server: true,
+      watch: [operatorId],
+    },
+  );
+  const { expeditesOnly, catalogOnly } = useGestorAccess();
   const rail = useGestorRail();
-  // Fora do quadro (Catálogo, Clientes, Canais) os selos continuam (G26, v4
-  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do quadro.
+  // Fora do painel (Catálogo, Clientes, Canais) os selos continuam (G26, v4
+  // `catalogo-produto`: "Pedidos 10"): uma contagem leve, com a régua do painel.
   const offBoard = useGestorRailCounts(() => !rail.value.onBoard);
+  // O selo de Entregas: entregas do dia sem corrida chamada, relido a cada push
+  // do canal de pedidos (e no poll calmo de fallback). `waiting: null` (o servidor
+  // não conseguiu contar) e a leitura que falhou viram "?", nunca zero.
+  const {
+    data: deliveries,
+    error: deliveriesError,
+    refresh: refreshDeliveries,
+  } = useDeliveriesWaiting();
+  if (import.meta.client) useBackstageEvents("orders", () => void refreshDeliveries(), { pollMs: 60_000 });
 
   const input = computed(() => ({
     channelsAttention: attention.value?.label || "",
     canManageCustomers: customersAccess.value?.authorized === true,
     canManageWorkstations: workstationsAccess.value?.authorized === true,
+    canManageCatalog: catalogAccess.value?.authorized === true,
     expeditesOnly: expeditesOnly.value,
+    catalogOnly: catalogOnly.value,
     intakeCount: rail.value.onBoard ? rail.value.intake : offBoard.value.intake,
-    exitCount: rail.value.onBoard ? rail.value.exit : offBoard.value.exit,
+    deliveriesWaiting: deliveriesWaitingBadge(deliveries.value, Boolean(deliveriesError.value)),
   }));
   const sections = computed(() => gestorSections(input.value));
   const settings = computed(() => gestorSettingsSections(input.value));
-  // No quadro, quem diz se a tela é "Pedidos" ou "Saída" é a arrumação do posto.
   const route = useRoute();
-  const current = computed(() =>
-    route.path === "/" ? (rail.value.exitPost ? "exit" : "orders") : undefined,
+  const current = computed(() => {
+    if (catalogOnly.value) {
+      return route.path.startsWith("/feeds") || route.path.startsWith("/channels")
+        ? "feeds"
+        : "catalog";
+    }
+    if (route.path.startsWith("/delivery")) return "deliveries";
+    return route.path === "/" ? "orders" : undefined;
+  });
+  // As três perguntas de permissão já voltaram: a grade de Ajustes desenha inteira.
+  const ready = computed(() =>
+    accessResolved([
+      customersStatus.value,
+      workstationsStatus.value,
+      catalogStatus.value,
+    ]),
   );
-  return { sections, settings, current };
+  // A URL direta numa seção que o acesso não inclui: só depois de as três
+  // perguntas responderem com sucesso (enquanto carrega, a página monta como antes).
+  const accessReady = computed(() =>
+    [customersStatus, workstationsStatus, catalogStatus].every(
+      (s) => s.value === "success",
+    ),
+  );
+  const denied = computed(() =>
+    accessReady.value
+      ? deniedSettingsSection(route.path, [...sections.value, ...settings.value])
+      : "",
+  );
+  return { sections, settings, current, ready, denied };
 }

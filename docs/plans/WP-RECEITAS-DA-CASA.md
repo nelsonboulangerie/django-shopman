@@ -51,6 +51,14 @@ todo o resto é trabalho que se perde na próxima dúvida.
 sai (o B.I. já sabe), com a massa em destaque, porque foi ali que errou. Ele
 confirma ou corrige; cada confirmação vira procedência "conferida por ele".
 
+> ✅ **F1 e F2 entregues em 19/10/2026 (FRENTE 9).** Procedência lida do
+> `RecipeVersion.source` (da casa · do caderno · do cadastro inicial), conferência em
+> `RecipeVersion.meta["review"]` com autor, data e digital da fórmula (editou depois,
+> deixa de valer). Fila em `/recipes/review` ("Conferência"), do que mais vendeu em 12
+> meses (a massa soma as peças feitas dela), com a massa da peça em destaque; "Está
+> certa" assina, "Corrigir" abre a receita. O inventário filtra "Não conferidas" e o
+> cartão e a versão mostram o estado. Serviço: `backstage/services/recipe_review.py`.
+
 **F3 — as 32 sem ficha.** Cada produto publicado sem receita é um custo que
 ninguém calcula e um alérgeno que ninguém deriva. A porta "Foto" existe para
 isto: ele fotografa o caderno e revisa o rascunho.

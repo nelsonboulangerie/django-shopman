@@ -19,6 +19,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money
 
 from shopman.shop.notifications import notify
@@ -77,6 +78,11 @@ _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
         # depender de o cliente abrir a tela por conta própria.
         "waitlist_available",
         "waitlist_released",
+        # "Avisar o cliente" (WP-G07): o Caixa tocou para avisar. Sem canal, o
+        # recibo diz que falhou; nunca some como "não precisava".
+        "order_delayed",
+        "order_item_missing",
+        "order_reschedule_needed",
     }
 )
 
@@ -134,7 +140,7 @@ def send(order, template: str, *, occurrence: str = "", **extra) -> None:
         "order_ref": order.ref,
         "channel_ref": order.channel_ref or "",
         "template": template,
-        "requires_active_notification": _requires_active_notification(template),
+        "requires_active_notification": requires_active_notification(template),
     }
     payload.update(extra)
 
@@ -213,7 +219,10 @@ def delivery_uncertainty_refusal(order, template: str) -> NotificationResendRefu
     if uncertain:
         return NotificationResendRefused(
             "notification_acceptance_unknown",
-            "Aceite do envio anterior não confirmado. Confira o envio com o responsável antes de reenviar.",
+            # Quem lê é o operador: a frase diz o que houve e o que fazer, sem mandar
+            # a "o responsável", que não existe na tela (P2-22, #2705 item 4).
+            "O envio anterior ficou sem resposta do provedor e pode ter chegado. "
+            "Pergunte ao cliente antes de mandar de novo, para não chegar duas vezes.",
         )
     return None
 
@@ -264,7 +273,7 @@ def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTER
         "order_ref": order.ref,
         "channel_ref": order.channel_ref or "",
         "template": template,
-        "requires_active_notification": _requires_active_notification(template),
+        "requires_active_notification": requires_active_notification(template),
     }
     origin = (order.data or {}).get("origin_channel")
     if origin in _ORIGIN_CHANNELS:
@@ -484,7 +493,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
     template = _canonical_template(template)
     critical = is_critical_notification(template)
     backend_chain = _resolve_backend_chain(order)
-    requires_active = _requires_active_notification(template, payload=payload)
+    requires_active = requires_active_notification(template, payload=payload)
     routing: dict[str, str] = {}
     backend_chain = _filter_backend_chain(
         order,
@@ -578,6 +587,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
                     critical=critical,
                     attempts=attempts,
                 )
+                _note_in_conversation(order, template, backend_name, recipient, context)
                 return True, None
             accepted_without_receipt = (backend_name, recipient)
             logger.info(
@@ -622,6 +632,7 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
             critical=critical,
             attempts=attempts,
         )
+        _note_in_conversation(order, template, backend_name, recipient, context)
         return True, None
 
     if ambiguous is not None:
@@ -636,15 +647,16 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
             _record_delivery(payload, status="skipped", reason="expected_no_contact")
             return True, None
         if requires_active:
-            logger.warning(
-                "notification.deliver: active notification has no recipient order=%s template=%s",
-                order.ref,
-                template,
-            )
             error = (
                 "no active notification backend available"
                 if any_recipient
                 else "no active notification recipient available"
+            )
+            logger.warning(
+                "notification.deliver: active notification not attempted (%s) order=%s template=%s",
+                error,
+                order.ref,
+                template,
             )
             _record_delivery(
                 payload,
@@ -666,6 +678,89 @@ def deliver_order_notification(order, template: str, payload: dict) -> tuple[boo
         attempts=attempts,
     )
     return False, last_error
+
+
+# ── O aviso na conversa da Concierge (OC-10) ──
+#
+# O aviso de pedido sai por este pipeline, à parte da conversa: sem a nota, a
+# Concierge não sabia o que o cliente já tinha recebido ("cadê o Pix?" depois do
+# aviso com o código). Entregue o aviso pelo WhatsApp, a MESMA conversa em que ela
+# atende ganha uma nota com o texto e a hora. Só grava: nada é enviado de novo.
+
+#: Backends cujo aviso cai no chat de WhatsApp em que a Concierge atende.
+_CONVERSATION_BACKENDS = frozenset({"manychat", "whatsapp"})
+
+#: ``ConversationMessage.envelope["kind"]`` da nota do aviso. Ver docs/reference/data-schemas.md.
+ORDER_NOTICE_NOTE = "order_notice"
+
+
+def _note_in_conversation(order, template: str, backend_name: str, recipient: str, context: dict) -> None:
+    """Grava o aviso entregue como nota na conversa da Concierge com este contato.
+
+    A conversa é a do chat que recebeu o aviso: o assinante do ManyChat (o
+    ``subject`` do vínculo) ou o telefone. Contato sem conversa não grava nada.
+    O aviso já saiu: falhar aqui só registra no log, nunca devolve erro (erro faria
+    a directive tentar de novo e o cliente receber o aviso em dobro).
+    """
+    if backend_name not in _CONVERSATION_BACKENDS or not recipient:
+        return
+    try:
+        from django.db.models import Q
+        from shopman.utils.phone import normalize_phone
+
+        from shopman.shop.adapters import notification_manychat
+        from shopman.shop.models import Conversation, ConversationMessage
+
+        recipient = str(recipient).strip()
+        same_chat = Q(transport_bindings__subject=recipient)
+        if recipient.startswith("+") or backend_name == "whatsapp":
+            same_chat |= Q(phone=normalize_phone(recipient) or recipient)
+        # Savepoint: a directive pode rodar dentro de uma transação, e um erro de banco
+        # aqui não pode envenená-la.
+        with transaction.atomic():
+            conversation = (
+                Conversation.objects.filter(same_chat)
+                .exclude(state=Conversation.State.CLOSED)
+                .order_by("-pk")
+                .first()
+            )
+            if conversation is None:
+                return
+            approved_template = _sent_as_approved_template(backend_name, template)
+            if approved_template:
+                # O template aprovado na Meta não leva o código Pix (é longo e opcional,
+                # docs/reference/whatsapp-templates-meta.md): a nota não pode dizer que levou.
+                context = {**context, "pix_suffix": "", "copy_paste": ""}
+            ConversationMessage.objects.create(
+                conversation=conversation,
+                role=ConversationMessage.Role.ASSISTANT,
+                kind=ConversationMessage.Kind.NOTE,
+                # O texto como a casa o monta, o mesmo do envio em texto livre.
+                text=notification_manychat._build_message(template, context),
+                envelope={
+                    "version": 3,
+                    "kind": ORDER_NOTICE_NOTE,
+                    "order_ref": order.ref,
+                    "template": template,
+                    "backend": backend_name,
+                    "approved_template": approved_template,
+                },
+            )
+    except Exception:
+        logger.exception(
+            "notification.conversation_note_failed order=%s template=%s", getattr(order, "ref", ""), template
+        )
+
+
+def _sent_as_approved_template(backend_name: str, template: str) -> bool:
+    """O aviso saiu pelo template aprovado na Meta (texto fixo), e não em texto livre?"""
+    if backend_name == "manychat":
+        from shopman.shop.adapters import notification_manychat
+
+        return notification_manychat.sends_as_flow(template)
+    from shopman.shop.adapters import notification_whatsapp
+
+    return bool((notification_whatsapp._get_config().get("templates") or {}).get(template))
 
 
 # ── private helpers ──
@@ -732,7 +827,7 @@ def _filter_backend_chain(
     if identity_state == _IDENTITY_UNAVAILABLE:
         routing["identity_lookup_failed"] = "true"
         routing["error"] = "notification customer identity unavailable"
-        if _dev_console_allowed(backend_chain):
+        if dev_console_allowed(backend_chain):
             return [backend for backend in backend_chain if backend == "console"]
         return []
     if identity_state == _IDENTITY_ABSENT:
@@ -763,7 +858,7 @@ def _filter_backend_chain(
         channel for channel in available_channels if channel not in revoked_channels
     }
 
-    if not allowed_channels and _dev_console_allowed(backend_chain):
+    if not allowed_channels and dev_console_allowed(backend_chain):
         return [backend for backend in backend_chain if backend == "console"]
 
     if not allowed_channels:
@@ -778,6 +873,12 @@ def _filter_backend_chain(
         channel = _BACKEND_CHANNELS.get(backend)
         if channel in allowed_channels:
             filtered.append(backend)
+    # Dev local: o console entra no FIM, depois dos canais reais (beta 06/11,
+    # PIXEXP-09). Sem isto o cliente sem opt-out perdia o console e o aviso
+    # falhava, enquanto quem revogou tudo recebia pelo console. No fim ele não
+    # engole WhatsApp nem SMS: só responde quando nenhum real atendeu.
+    if dev_console_allowed(backend_chain) and "console" not in filtered:
+        filtered.append("console")
     return filtered
 
 
@@ -804,42 +905,6 @@ def _build_context(order, payload: dict, template: str) -> dict:
         customer_data.get("phone", "") if isinstance(customer_data, dict) else ""
     )
 
-    customer_uuid = customer_data.get("uuid") if isinstance(customer_data, dict) else None
-    if customer_uuid:
-        try:
-            from uuid import UUID
-
-            from shopman.doorman.protocols.customer import AuthCustomerInfo
-
-            from shopman.shop.services.access_urls import (
-                build_payment_access_url,
-                build_reorder_access_url,
-                build_tracking_access_url,
-            )
-
-            auth_customer = AuthCustomerInfo(
-                uuid=UUID(str(customer_uuid)),
-                name=customer_data.get("name", ""),
-                phone=customer_data.get("phone"),
-                email=customer_data.get("email"),
-                is_active=True,
-            )
-            order_ref = payload.get("order_ref") or order.ref
-            context["tracking_url"] = build_tracking_access_url(auth_customer, order_ref)
-            context["payment_url"] = build_payment_access_url(auth_customer, order_ref)
-            context["reorder_url"] = build_reorder_access_url(auth_customer, order_ref)
-        except Exception:
-            # ⚠️ Isto era `logger.debug` e engoliu em silêncio o defeito que chegou ao
-            # cliente: sem estas URLs o template do Admin manda `{tracking_url}` cru.
-            # Falhar fechado não é opção aqui (o aviso tem de sair), então falha
-            # GRITANDO — e o fallback logo abaixo garante um link comum no lugar.
-            logger.warning(
-                "access_urls: magic link não gerado para o pedido %s; "
-                "os links do aviso caem para o link comum de acompanhamento",
-                order.ref,
-                exc_info=True,
-            )
-
     if order.total_q:
         # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
         # que o cliente recebe. O formatador da casa é um só.
@@ -863,12 +928,32 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # que anuncia saldo sem dizer onde vê-lo é promessa sem porta.
     context["account_url"] = storefront_links.account_url()
 
-    # PAYMENT-TRACKING-MERGE: o link de pagamento é o do próprio acompanhamento
-    # (o Pix/cartão vivem lá inline). Sem tela /pagamento.
+    # Os links do aviso não levam credencial de login nem de conta (decisão D5 do dono,
+    # OC-01): mensagem se encaminha, e um link que entrasse na conta entregaria a conta
+    # a quem recebesse o encaminhamento. Desde 25/11/2026 (DEV-2026-093, atualização da
+    # D5/X6) o link leva a CAPACIDADE DO PEDIDO (`/pedido/<ref>~<selo>`,
+    # `order_view_link`): abre este pedido no navegador embutido do WhatsApp sem pedir
+    # a entrada de novo, e não abre conta, sacola, histórico nem outro pedido. Cancelar,
+    # avaliar e pedir de novo continuam pedindo a entrada.
+    #
+    # Acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE: o Pix e o cartão
+    # vivem inline no acompanhamento, e o código Pix já vai no próprio texto do aviso).
+    # Pedir de novo é o histórico da conta, o mesmo destino do botão fixo do template
+    # aprovado no WhatsApp.
+    from shopman.shop.services import order_view_link
+
+    tracking_url = order_view_link.url_for(order)
+    # O valor do botão aprovado na Meta (`/pedido/{{1}}`): o ref com o selo, no mesmo
+    # segmento. O ManyChat grava ESTE valor no campo `order_ref` (que só vai em botão,
+    # nunca no corpo), sem re-submeter modelo nenhum.
+    context["order_link_ref"] = order_view_link.link_ref(order)
+    context["tracking_url"] = tracking_url
+    context["payment_url"] = tracking_url
+    context["reorder_url"] = storefront_links.storefront_url(storefront_links.path_order_history())
+
     payment = order.data.get("payment")
     if payment:
         context["payment"] = payment
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         copy_paste = payment.get("copy_paste")
         context["copy_paste"] = copy_paste or ""
         context["pix_suffix"] = f" Código PIX: {copy_paste}" if copy_paste else ""
@@ -877,48 +962,17 @@ def _build_context(order, payload: dict, template: str) -> dict:
         # manda o cliente para cá, não para a tela do pedido.
         context["checkout_url"] = str(payment.get("checkout_url") or "")
     else:
-        context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""
         context["checkout_url"] = ""
-
-    # Mesmo critério do `payment_url` acima: sem magic link (pedido da loja não grava
-    # `customer.uuid`, ou a cunhagem do token falhou), o acompanhamento vira o link
-    # COMUM do pedido. Sem este fallback a chave sumia do contexto e o texto do Admin
-    # entregava `{tracking_url}` literal na tela do cliente — link comum é pior que
-    # magic link e MUITO melhor que placeholder cru.
-    context["tracking_url"] = context.get("tracking_url") or storefront_links.order_tracking_url(
-        order.ref
-    )
-
-    # Gêmeas PÚBLICAS dos três links de cliente. O ManyChat recusa, por construção,
-    # gravar magic link como campo personalizado do assinante (`_safe_field_value`): o
-    # token viveria em texto claro no perfil dele, dentro de uma ferramenta SaaS de
-    # marketing. Sem uma gêmea informada aqui, a recusa vira botão EM BRANCO no template
-    # aprovado — o canal que interpola o texto na hora (SMS, e-mail) segue recebendo o
-    # link pessoal, que é o bom.
-    #
-    # O destino público de cada um é diferente, e é por isso que quem sabe é o emissor:
-    # acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE, o Pix/cartão vivem
-    # inline no acompanhamento); repetir o pedido é o histórico da conta. Quem chega
-    # sem sessão não bate num 404: a loja mostra "entre com seu telefone" e volta para
-    # o mesmo pedido (`presentation/orderAccess.ts`).
-    public_tracking = storefront_links.order_tracking_url(order.ref)
-    context["tracking_url_public"] = public_tracking
-    context["payment_url_public"] = public_tracking
-    context["reorder_url_public"] = storefront_links.storefront_url(
-        storefront_links.path_order_history()
-    )
-    # Mesmo critério do `tracking_url`: sem magic link, o link comum (o aviso de
-    # prazo vencido manda "pedir de novo" por ele).
-    context["reorder_url"] = context.get("reorder_url") or context["reorder_url_public"]
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
     # corrida ou antes do aceite. Distinto do tracking_url (página do pedido).
-    courier_block = order.data.get("courier")
-    courier_tracking = (
-        str(courier_block.get("tracking_url") or "") if isinstance(courier_block, dict) else ""
-    )
+    # Só o link casado com a parada DESTE pedido: numa corrida com várias
+    # paradas, o link de outra parada mostra a entrega de outro cliente.
+    from shopman.shop.services.courier import proven_tracking
+
+    courier_tracking = proven_tracking(order.data.get("courier"))["url"]
     context["courier_tracking_url"] = courier_tracking
     context["courier_tracking_suffix"] = (
         f"\nAcompanhe o entregador: {courier_tracking}" if courier_tracking else ""
@@ -929,6 +983,12 @@ def _build_context(order, payload: dict, template: str) -> dict:
     # caber no template aprovado do WhatsApp, que não aceita variável vazia
     # (revisão do dono, 25/09/2026; texto em `shopman/shop/notification_copy.py`).
     context["status_note"] = _status_note(order, template, reason, note=payload.get("status_note"))
+    # O nome da casa, para o aviso que se apresenta ("Aqui é da … 💛", WP-G07). A
+    # chave existe sempre; a leitura da loja só acontece no aviso que a usa.
+    context["shop_name"] = _shop_name() if _canonical_template(template) in _CUSTOMER_NOTICE_TEMPLATES else ""
+    # A data da ENCOMENDA no aviso de confirmado ("confirmado para retirada amanhã,
+    # a partir das 9h"). Auto-suprimível: pedido de hoje fica sem nada.
+    context["commitment_suffix"] = _commitment_suffix(order)
 
     # A NFC-e autorizada (aviso ``fiscal_note_ready``): o link da DANFE que o
     # provedor hospeda, ou a consulta da SEFAZ do QR. Não é link pessoal (não
@@ -987,7 +1047,7 @@ FISCAL_NOTE_MESSAGE_KEY = "fiscal_note_message"
 
 
 def _is_storefront_order(order) -> bool:
-    storefront_channel = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    storefront_channel = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     return (order.channel_ref or "") == storefront_channel
 
 
@@ -1142,11 +1202,29 @@ def _status_note(order, template: str, reason, *, note=None) -> str:
         # Sem ela no payload (reenvio), a mesma frase sai da chave gravada no pedido.
         from shopman.shop.services import cancel_reasons
 
+        if cancel_reasons.reason_key_of(order.data) == "customer_request":
+            return cancel_reasons.customer_text(order.data)
         return str(note or "").strip() or cancel_reasons.customer_text(order.data)
     if template == "order_rejected":
+        # A recusa usa a MESMA lista do cancelar: com a chave gravada, o cliente
+        # lê a frase revisada dela.
+        from shopman.shop.services import cancel_reasons
+
+        if cancel_reasons.cancel_reason((order.data or {}).get("cancellation_reason_key")):
+            return cancel_reasons.customer_text(order.data)
         return f"Motivo: {reason}." if reason else "Os detalhes estão no pedido."
     if template == "order_rescheduled":
         return _commitment_phrase(order) or "a nova data que está no pedido"
+    if template in _CUSTOMER_NOTICE_TEMPLATES:
+        # "Avisar o cliente" (WP-G07): a frase chega pronta no payload, montada no
+        # gesto (``services/customer_notice``), porque é o Caixa quem escolhe a hora
+        # nova e o que falta. A padrão só cobre um reenvio sem ela.
+        return str(note or "").strip() or _CUSTOMER_NOTICE_TEMPLATES[template](order)
+    if template == "order_accepted":
+        # Só na ENCOMENDA: "retirada amanhã, a partir das 9h", sem ponto final. Vazio
+        # no pedido do dia, e é esse vazio que faz o adapter manter o modelo
+        # ``pedido_confirmado`` (``notification_manychat._preorder_accepted_variant``).
+        return _commitment_note(order)
     if template == "payment_refunded":
         # Montada por quem estornou (sabe o meio); a padrão é a do meio desconhecido.
         return str(note or "").strip() or refund_arrival_note("")
@@ -1210,6 +1288,15 @@ def _returned_money_note(order) -> str:
     return "A devolução do valor é feita pela nossa equipe, na mesma forma de pagamento"
 
 
+#: A frase-padrão de cada aviso do "Avisar o cliente", quando o payload vem sem
+#: ela: sempre uma frase que cabe no {{3}} do modelo, nunca vazia.
+_CUSTOMER_NOTICE_TEMPLATES = {
+    "order_delayed": lambda order: "a que está no acompanhamento",
+    "order_item_missing": lambda order: "que está no acompanhamento",
+    "order_reschedule_needed": lambda order: _commitment_note(order) or "a data combinada",
+}
+
+
 def _commitment_phrase(order) -> str:
     """A data combinada por extenso, SEM ponto final: "sábado, 04/10, a partir das 9h".
 
@@ -1237,10 +1324,55 @@ def _commitment_phrase(order) -> str:
         phrase = "amanhã"
     else:
         phrase = f"{formats.date_format(day, 'l')}, {formats.date_format(day, 'd/m')}"
-    window = fulfillment_window.window_label(data.get("delivery_time_slot"))
+    window = fulfillment_window.window_label(data.get("delivery_time_slot"), for_customer=True)
     if window:
         phrase = f"{phrase}, {window[:1].lower()}{window[1:]}"
     return phrase
+
+
+def _commitment_note(order) -> str:
+    """"retirada amanhã, a partir das 9h" quando o pedido é ENCOMENDA; senão "".
+
+    A promessa da encomenda numa frase só, SEM ponto final, para duas bocas: o
+    sufixo do texto livre (``_commitment_suffix``: "confirmado para …") e o
+    ``{{2}}`` do modelo ``pedido_encomenda_confirmada`` ("confirmada para {{2}}."),
+    via ``status_note`` do ``order_accepted``.
+
+    Encomenda é ``is_preorder`` gravado no commit (data futura) ou data ainda à
+    frente de hoje. Dia da semana leva o artigo ("no sábado", "na sexta-feira");
+    "hoje" e "amanhã" vão sem. O recebimento diz o que acontece na data:
+    retirada ou entrega.
+    """
+    from datetime import date as _date
+
+    data = order.data or {}
+    try:
+        day = _date.fromisoformat(str(data.get("delivery_date") or "").strip())
+    except ValueError:
+        return ""
+    from shopman.shop.services.order_helpers import is_preorder
+
+    if not (is_preorder(order) or day > timezone.localdate()):
+        return ""
+    phrase = _commitment_phrase(order)
+    if not phrase:
+        return ""
+    # O nome do dia vem com maiúscula do formatador; no meio da frase, minúscula.
+    phrase = f"{phrase[:1].lower()}{phrase[1:]}"
+    if not phrase.startswith(("hoje", "amanhã")):
+        phrase = f"{'no' if phrase.startswith(('sábado', 'domingo')) else 'na'} {phrase}"
+    receipt = "entrega" if data.get("fulfillment_type") == "delivery" else "retirada"
+    return f"{receipt} {phrase}"
+
+
+def _commitment_suffix(order) -> str:
+    """" para retirada amanhã, a partir das 9h" quando o pedido é ENCOMENDA; senão "".
+
+    Entra logo depois de "está confirmado", sem ponto final (o ponto é do texto).
+    A frase é a de ``_commitment_note`` (uma fonte só).
+    """
+    note = _commitment_note(order)
+    return f" para {note}" if note else ""
 
 
 def _eta_clock(order) -> str:
@@ -1257,8 +1389,13 @@ def _eta_clock(order) -> str:
     eta = parse_datetime(eta_iso) if eta_iso else None
     if eta is None:
         return ""
-    local = timezone.localtime(eta)
-    return f"{local.hour}h{local.minute:02d}" if local.minute else f"{local.hour}h"
+    return format_clock(eta)
+
+
+def _shop_name() -> str:
+    from shopman.shop.models import Shop
+
+    return str(Shop.load() or "").strip()
 
 
 def _qualify_template(template: str, context: dict) -> str:
@@ -1384,10 +1521,17 @@ def _canonical_template(template: str) -> str:
     return str(template or "").strip()
 
 
-def _requires_active_notification(template: str, *, payload: dict | None = None) -> bool:
+def requires_active_notification(template: str, *, payload: dict | None = None) -> bool:
+    """O aviso precisa sair: sem canal, ele FALHA (retry e alerta), não é pulado.
+
+    Crítico implica obrigatório (beta 06/11, W4): o ``order_accepted`` é crítico
+    por decisão do dono e, sem canal, era gravado "não se aplica" e sumia em
+    silêncio ao lado do selo "Crítico".
+    """
     if payload and payload.get("requires_active_notification") is True:
         return True
-    return _canonical_template(template) in _ACTIVE_NOTIFICATION_TEMPLATES
+    canonical = _canonical_template(template)
+    return canonical in _ACTIVE_NOTIFICATION_TEMPLATES or canonical in CRITICAL_NOTIFICATION_TEMPLATES
 
 
 def _dedupe_key(order, template: str) -> str:
@@ -1518,7 +1662,7 @@ def subscription_notification_allowed(*, customer_ref: str, phone: str) -> bool:
         return False
 
 
-def _dev_console_allowed(backend_chain: list[str]) -> bool:
+def dev_console_allowed(backend_chain: list[str]) -> bool:
     return bool(getattr(settings, "DEBUG", False) and "console" in backend_chain)
 
 

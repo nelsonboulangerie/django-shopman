@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopman-fiscalman"
 version = "0.1.0"
 description = "Fiscal domain for the Shopman suite (product fiscal classification — NCM/CEST/CFOP/CSOSN — named fiscal profiles, and NFC-e/NF-e emission)"
-license = "MIT"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
 authors = [
     {name = "Pablo Valentini", email = "pablondrina@gmail.com"}
 ]

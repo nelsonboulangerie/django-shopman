@@ -28,16 +28,29 @@ from shopman.shop.rules.validation import BusinessHoursRule, DeliveryZoneRule
 
 class TestHappyHourRule:
     def test_code_and_label(self):
-        rule = HappyHourRule()
-        assert rule.code == "shop.happy_hour"
-        assert rule.rule_type == "modifier"
+        assert HappyHourRule.code == "shop.happy_hour"
+        assert HappyHourRule.rule_type == "modifier"
 
-    def test_default_params(self):
-        assert HappyHourRule.default_params == {
-            "discount_percent": 25,
-            "start": "17:30",
-            "end": "18:00",
-        }
+    def test_the_window_has_no_default_in_code(self):
+        """Janela e percentual são da casa: sem params a regra não existe (A7-2)."""
+        assert not hasattr(HappyHourRule, "default_params")
+        with pytest.raises(TypeError):
+            HappyHourRule()
+        for missing in ("discount_percent", "start", "end"):
+            params = {"discount_percent": 25, "start": "17:30", "end": "18:00"}
+            params.pop(missing)
+            with pytest.raises(ValueError, match=missing):
+                HappyHourRule.validate_params(params)
+
+    def test_invalid_params_are_refused(self):
+        for params in (
+            {"discount_percent": 120, "start": "17:30", "end": "18:00"},
+            {"discount_percent": "25", "start": "17:30", "end": "18:00"},
+            {"discount_percent": 25, "start": "", "end": "18:00"},
+            {"discount_percent": 25, "start": "17:30", "end": "25:00"},
+        ):
+            with pytest.raises(ValueError):
+                HappyHourRule.validate_params(params)
 
     def test_custom_params(self):
         rule = HappyHourRule(discount_percent=15, start="14:00", end="17:00")

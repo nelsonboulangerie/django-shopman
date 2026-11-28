@@ -17,9 +17,10 @@ import {
   receiptLineLabel,
   receiptLineStatus,
   receiptLineStatusBadge,
+  receiptNextStepField,
 } from "~/presentation/purchase";
 import { RECEIPT_LINE_STATUS_COLOR } from "~/utils/receiptLineStatus";
-import { FLASH_RING } from "~/utils/receiptFocus";
+import { FLASH_RING, receiptFieldSelector } from "~/utils/receiptFocus";
 import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation/dates";
 
 /**
@@ -207,8 +208,22 @@ function ring(field: ReceiptFieldAnchor): string {
 
 /** Conferir fecha a gaveta; desmarcar mantém aberta, porque ainda há o que ver. */
 function onCheck(checked: boolean) {
-  emit("check", checked);
-  if (checked) emit("update:open", false);
+  if (!checked) {
+    emit("check", false);
+    return;
+  }
+  // Com o que ainda trava o item (a validade, o insumo), conferir NÃO fecha: a
+  // gaveta fechava, a linha ficava "Pendente" e o motivo só aparecia no painel ao
+  // lado. Fica aberta, com o foco no campo que falta (beta 05/11, CMP-16).
+  const blocked = props.preview?.warnings.some((warning) => warning.tone === "block");
+  if (blocked && props.preview) {
+    const anchor = receiptNextStepField(props.preview.warnings);
+    const field = anchor ? document.querySelector<HTMLElement>(receiptFieldSelector(props.preview.line.id, anchor)) : null;
+    (field?.querySelector<HTMLElement>("input, button, textarea") ?? field)?.focus?.();
+    return;
+  }
+  emit("check", true);
+  emit("update:open", false);
 }
 </script>
 
@@ -358,8 +373,8 @@ function onCheck(checked: boolean) {
               <span class="text-xs font-medium text-muted-foreground">Valor total (R$)</span>
               <span class="flex w-full items-baseline justify-between gap-2">
                 <span class="text-2xl font-semibold tabular-nums">{{ preview.line.costInput || "0,00" }}</span>
-                <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="text-xs font-normal text-muted-foreground tabular-nums">
-                  {{ formatMoney(preview.baseCostQ) }}/{{ preview.material.unit }}
+                <span v-if="preview.baseQtyKnown && preview.readingCostQ > 0" class="text-xs font-normal text-muted-foreground tabular-nums">
+                  {{ formatMoney(preview.readingCostQ) }}/{{ preview.readingUnitLabel }}
                 </span>
               </span>
             </NuxtButton>

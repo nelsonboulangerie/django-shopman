@@ -35,12 +35,12 @@ describe("OperatorPushInvite", () => {
     const wrapper = await mountSuspended(OperatorPushInvite);
     expect(holder.state.activate).not.toHaveBeenCalled();
     const alert = wrapper.get("[data-operator-push-invite]");
-    expect(alert.attributes("data-orientation")).toBe("horizontal");
+    expect(alert.attributes("data-orientation")).toBe("vertical");
     expect(alert.classes()).toContain(
       "bg-[color-mix(in_srgb,var(--info)_10%,var(--card))]",
     );
     expect(alert.classes()).not.toContain("bg-info/10");
-    await wrapper.get("button").trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Ativar avisos")!.trigger("click");
     expect(holder.state.activate).toHaveBeenCalledOnce();
   });
 
@@ -62,4 +62,13 @@ describe("OperatorPushInvite", () => {
       expect(wrapper.text()).not.toContain("esta área");
     },
   );
+});
+
+
+it("permite dispensar o convite sem pedir permissão", async () => {
+  holder.state.activate.mockClear();
+  const wrapper = await mountSuspended(OperatorPushInvite);
+  await wrapper.findAll("button").find((button) => button.text() === "Agora não")!.trigger("click");
+  expect(wrapper.find("[data-operator-push-invite]").exists()).toBe(false);
+  expect(holder.state.activate).not.toHaveBeenCalled();
 });

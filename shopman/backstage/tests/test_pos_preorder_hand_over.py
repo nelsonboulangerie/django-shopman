@@ -282,6 +282,16 @@ def test_entrega_no_endereco_nao_sai_pelo_balcao(shift):
     assert "Gestor" in operator_orders.counter_hand_over_block(order)
 
 
+def test_sem_tipo_de_recebimento_o_cartao_e_o_botao_dizem_a_mesma_coisa(shift):
+    """Beta 07/11: o cartão dizia "Retirada" e o painel, "entregar no endereço"."""
+    from shopman.backstage.projections import order_queue
+
+    order = _order("SEMTIPO", fulfillment_type="", payment={"method": "cash", "collection": "on_delivery"})
+
+    assert order_queue._fulfillment_label(order_queue._is_delivery(order)) == "Retirada"
+    assert "endereço" not in operator_orders.counter_hand_over_block(order)
+
+
 def test_saldo_a_receber_sem_caixa_aberto_pede_o_caixa():
     order = _order("SEM-CAIXA", payment={"method": "cash"})
 

@@ -85,9 +85,8 @@ def requires_captured_payment(order) -> bool:
 
     # Sem método gravado, o intent é a prova: só dinheiro de gateway nasce com
     # ``intent_ref``/``status`` sem que ninguém tenha dito a forma. Pedido sem
-    # informação de pagamento NENHUMA continua fora do gate — barrar por
-    # ausência de dado travaria pedido importado e legado sem recuperar
-    # centavo algum; quem cuida disso é o pill "Pagamento não informado".
+    # forma de pagamento NENHUMA não existe (dono, 06/11/2026, GES-03): o commit
+    # o recusa (``policies.order_payment.PaymentMethodRule``) e o seed se confere.
     return bool(payment.get("intent_ref") or payment.get("status"))
 
 

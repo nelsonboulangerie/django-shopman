@@ -5,6 +5,7 @@
       badgeVariants({ disabled, size, variant, class: normalizeClass(props.class) || undefined })
     "
     v-bind="forwarded"
+    :data-contrast-exception="variant === 'warning' ? 'ambar-da-marca-3523' : undefined"
     @click="onClick"
   >
     <slot />
@@ -22,7 +23,7 @@
 
 <script lang="ts" setup>
   const badgeVariants = tv({
-    base: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border whitespace-nowrap transition-[color,box-shadow] focus-visible:ring-[3px] [&>svg]:pointer-events-none [&>svg]:size-3",
+    base: "focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 inline-flex w-fit max-w-full shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border text-center wrap-anywhere transition-[color,box-shadow] focus-visible:ring-[3px] [&>svg]:pointer-events-none [&>svg]:size-3",
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground [a&]:hover:bg-primary/90 border-transparent",
@@ -39,6 +40,10 @@
         ghost: "text-foreground [a&]:hover:bg-accent/50 border-transparent bg-transparent",
         error:
           "bg-destructive focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90 border-transparent text-white",
+        // Selo de promoção (dono, 24/11/2026: "B nos dois", card e produto): a cor da
+        // promoção a ~10% com o texto na cor da promoção, leve, sem perder o sinal.
+        // As cores moram em `.shop-badge-promotion` (tailwind.css), com o tom do escuro.
+        promotion: "shop-badge-promotion border-transparent",
       },
       disabled: {
         true: "cursor-not-allowed opacity-50",
@@ -49,10 +54,20 @@
         lg: "px-2.5 py-1 text-sm font-semibold",
       },
     },
+    // O rótulo quebra linha em vez de vazar (`max-w-full`, sem `whitespace-nowrap`, e
+    // `wrap-anywhere` para a palavra que sozinha passa da foto a 320 px): com a
+    // fonte do sistema a 200 %, "Fica pronto amanhã" saía do cartão do produto (X11).
+    // O âmbar cheio da marca com letra branca dá 3,73:1, abaixo do AA a 14 px. O dono
+    // decidiu (24/11/2026) manter o selo assim e escurecer o âmbar da PALETA (#3523);
+    // até lá, o selo âmbar é exceção de contraste NOMEADA (`data-contrast-exception`),
+    // que a varredura X9 lista à parte e não esconde. O tamanho continua cobrado.
+    // `md` (14 px) por padrão: na loja o selo carrega estado e disponibilidade
+    // ("Indisponível", "Fica pronto amanhã", "Últimas unidades"), que não descem de
+    // 14 px (X9, OC-30). O `sm` (12) fica para o contador em pílula, pedido pelo nome.
     defaultVariants: {
       variant: "default",
       disabled: false,
-      size: "sm",
+      size: "md",
     },
   });
 

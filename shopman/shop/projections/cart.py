@@ -18,10 +18,14 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from decimal import Decimal
+from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
+from django.utils import timezone
+
 from shopman.shop import product_options
+from shopman.shop.discount_spread import merged_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +34,7 @@ DEFAULT_STOREFRONT_CHANNEL_REF = "web"
 # Pricing-modifier discount keys aggregated into the cart breakdown.
 _PRICING_MODIFIER_KEYS = (
     "happy_hour",
+    "lot_discount",
     "loyalty_redeem",
     "manual_discount",
 )
@@ -104,9 +109,19 @@ class CartLineProjection:
     confirmation_deadline_iso: str | None
     # Batch date the waitlisted line is planned against (None = no plan yet).
     planned_for_date: str | None
+    # Data ANTERIOR à fornada prevista em que a linha inteira já tem saldo
+    # (fornada extra planejada depois, pão pronto). None = não há; o pedido
+    # começa na fornada prevista. O fechamento move a reserva para a data
+    # escolhida (``policies.order_date_before_batch``).
+    earlier_available_date: str | None
 
-    # Pricing transparency — set when a promo/coupon reduced the line.
-    original_price_q: int | None
+    # Preço de LISTA da linha (``meta._list_q``, carimbado pelo ItemPricingModifier
+    # antes de qualquer desconto) e o total a esse preço. A sacola mostra a linha
+    # cheia e o desconto só no resumo: Subtotal = soma das linhas, Subtotal menos
+    # descontos = Total (beta 05/11, MKT-05). O preço cobrado continua em
+    # ``unit_price_q``/``line_total_q``.
+    list_price_q: int
+    list_total_q: int
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
 
@@ -145,10 +160,18 @@ class CartDiscountLineProjection:
 
 @dataclass(frozen=True)
 class CartCouponProjection:
-    """Applied coupon — code + cents saved."""
+    """Applied coupon — code + cents saved.
+
+    Com ``discount_q == 0``, ``zero_reason`` diz por quê (``pricing.coupon.reason``,
+    ``DiscountModifier._coupon_zero_reason``); ``missing_q`` é o que falta para o
+    pedido mínimo e ``fulfillment_types`` onde o cupom vale.
+    """
 
     code: str
     discount_q: int
+    zero_reason: str = ""
+    missing_q: int = 0
+    fulfillment_types: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -197,6 +220,14 @@ class CartProjection:
     # Mensagem de economia do grupo (texto por grupo, editável no Admin). Vazia
     # quando não houve desconto de grupo.
     group_savings_message: str = ""
+    # De onde a sacola veio quando outro canal a passou para cá (OC-15/OC-16):
+    # ``Session.data["transferred_from"]``, lido na mesma consulta da sacola, para
+    # o recibo da passagem só custar consulta quando existe.
+    transferred_from: dict | None = None
+    # O dia da sacola quando ela é de OUTRO dia (a reserva, ou o dia escolhido no
+    # "Para quando?" do cardápio, OC-33 B1): a mesma data em que ela reserva
+    # (``cart._cart_date``). ``None`` para hoje ou sem data.
+    cart_date: date | None = None
 
 
 def _empty_cart(session_key: str = "") -> CartProjection:
@@ -228,6 +259,154 @@ def _empty_cart(session_key: str = "") -> CartProjection:
     )
 
 
+def reserved_until(session_key: str | None):
+    """Até quando a sacola guarda os itens: o menor prazo das reservas vivas da sessão.
+
+    Leitura pura, para a superfície dizer a hora ao cliente ("Guardamos seus
+    itens até 19h18"). Conta só reserva ATIVA e COM prazo: a de fornada futura e
+    a de demanda nascem sem ``expires_at`` e não entram, e a que já venceu deixou
+    de contar no saldo no instante em que venceu (mesma régua de
+    ``availability.bump_session_hold_expiry``, que é quem renova o prazo a cada
+    gesto na sacola). Sem reserva com prazo, ``None``: nada é prometido.
+    """
+    if not session_key:
+        return None
+    try:
+        from django.db.models import Min
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("cart.reserved_until degraded; returning None", exc_info=True)
+        return None
+    return Hold.objects.filter(
+        metadata__reference=session_key,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__gt=timezone.now(),
+    ).aggregate(until=Min("expires_at"))["until"]
+
+
+def reservation_lapsed_at(session_key: str | None, skus):
+    """Até quando valia a reserva que venceu, para a sacola dizer o que houve (#2767).
+
+    Leitura pura, irmã de :func:`reserved_until`. Quem abre a sacola depois do
+    prazo (voltou no dia seguinte, recarregou a página) vê as linhas normais; sem
+    esta leitura, nada diria que a reserva acabou. Conta a reserva com prazo de um
+    item que ainda está na sacola (``skus``) e que venceu pelo relógio: a ainda
+    viva com o prazo já passado e a que o ``release_expired`` soltou depois do
+    prazo (``resolved_at`` no prazo ou depois). A que a cliente soltou tirando o
+    item sai antes do prazo e não conta. Item que já tem reserva viva (renovada
+    por um gesto, ou de fornada futura, sem relógio) também não conta: está
+    guardado. Devolve o prazo mais tarde entre as vencidas, ou ``None``.
+    """
+    skus = [sku for sku in (skus or ()) if sku]
+    if not session_key or not skus:
+        return None
+    from django.db.models import F, Max, Q
+    from shopman.stockman import Hold, HoldStatus
+
+    now = timezone.now()
+    live = [HoldStatus.PENDING, HoldStatus.CONFIRMED]
+    mine = Hold.objects.filter(metadata__reference=session_key, sku__in=skus)
+    held = mine.filter(status__in=live).filter(Q(expires_at__isnull=True) | Q(expires_at__gt=now))
+    return (
+        mine.exclude(sku__in=held.values("sku"))
+        .filter(expires_at__lte=now)
+        .filter(Q(status__in=live) | Q(status=HoldStatus.RELEASED, resolved_at__gte=F("expires_at")))
+        .aggregate(at=Max("expires_at"))["at"]
+    )
+
+
+def open_elsewhere(customer_ref: str, channel_ref: str):
+    """As sacolas abertas deste cliente nos outros canais (OC-17, C06).
+
+    Leitura pura sobre ``sessions.open_sessions_for_customer``: o canal que
+    pergunta avisa, nunca sincroniza. Vazio sem cliente.
+    """
+    if not customer_ref:
+        return ()
+    from shopman.shop.services.sessions import open_sessions_for_customer
+
+    return open_sessions_for_customer(customer_ref, exclude_channel=channel_ref)
+
+
+def offered_cart(channel_ref: str, session_key: str):
+    """A sacola de outro canal que uma passagem aponta (``transferred_to``), contada; ``None`` se fechou."""
+    from shopman.shop.services.sessions import open_session_summary
+
+    return open_session_summary(channel_ref, session_key)
+
+
+def conversation_number_available() -> bool:
+    """A loja tem WhatsApp para a mensagem pronta de "Continuar pelo WhatsApp" (X1)."""
+    from shopman.shop.services.session_transfer import conversation_number
+
+    return bool(conversation_number())
+
+
+@dataclass(frozen=True)
+class TransferArrival:
+    """A sacola deste canal que chegou de outro, com o recibo da passagem (OC-15/OC-16).
+
+    Só existe na sacola em que ``session_transfer.accept`` pôs os itens (nova, ou a
+    que o destino já tinha): a adoção no mesmo canal não grava recibo. As diferenças são as do recibo gravado na origem.
+    """
+
+    source_channel: str
+    source_channel_name: str
+    differences: tuple[dict, ...]
+    source_total_q: int
+    dest_total_q: int
+    #: O que entrou: linhas e unidades ("3"; "1.5" com item de peso).
+    carried_lines: int = 0
+    carried_units: str = ""
+
+
+def transfer_arrival(session_key: str | None, came_from: dict | None) -> TransferArrival | None:
+    """O recibo da passagem que trouxe esta sacola, ou ``None``. Leitura pura.
+
+    ``came_from`` é o ``transferred_from`` que ``build_cart`` já leu da sacola: sem
+    ele, nenhuma consulta.
+    """
+    if not session_key:
+        return None
+    from shopman.orderman.models import Session
+
+    from shopman.shop.models import Channel
+
+    if not isinstance(came_from, dict) or not came_from.get("channel_ref") or "tab_ref" in came_from:
+        return None
+    source_data = (
+        Session.objects.filter(channel_ref=came_from["channel_ref"], session_key=came_from.get("session_key") or "")
+        .values_list("data", flat=True)
+        .first()
+    )
+    receipt = (source_data or {}).get("transfer_receipt") if isinstance(source_data, dict) else None
+    if not isinstance(receipt, dict) or receipt.get("dest_session_key") != session_key:
+        return None
+    name = Channel.objects.filter(ref=came_from["channel_ref"]).values_list("name", flat=True).first()
+    return TransferArrival(
+        source_channel=str(came_from["channel_ref"]),
+        source_channel_name=str(name or came_from["channel_ref"]),
+        differences=tuple(diff for diff in receipt.get("differences") or () if isinstance(diff, dict)),
+        source_total_q=int(receipt.get("source_total_q") or 0),
+        dest_total_q=int(receipt.get("dest_total_q") or 0),
+        carried_lines=int(receipt.get("carried_lines") or 0),
+        carried_units=str(receipt.get("carried_units") or ""),
+    )
+
+
+def items_phrase(entry) -> str:
+    """Quanto há na outra sacola, como a cliente conta: "3 itens", "1 item".
+
+    Com item de peso (quantidade quebrada) a soma de unidades não diz nada, e a
+    frase conta os produtos: "2 produtos".
+    """
+    count = entry.items_count
+    if isinstance(count, int):
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    lines = entry.lines_count
+    return f"{lines} {'produto' if lines == 1 else 'produtos'}"
+
+
 def build_cart(
     session_key: str | None,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
@@ -253,12 +432,14 @@ def build_cart(
 
     # A linha __DELIVERY_FEE__ é cobrança (entra em Order.total_q), não item do
     # carrinho: fica fora de lines/subtotal — a taxa aparece via delivery_fee_q.
-    raw_items = [
+    # A linha que o rateio do desconto partiu (#3240) aparece inteira: a cliente
+    # comprou 3 Croissants, e o cupom de pedido já tem linha própria na sacola.
+    raw_items = merged_for_display([
         dict(item)
         for item in (session.items or [])
         if item.get("sku") != "__DELIVERY_FEE__"
         and (item.get("meta") or {}).get("type") != "delivery_fee"
-    ]
+    ])
     if not raw_items:
         return _empty_cart(session_key)
 
@@ -269,8 +450,10 @@ def build_cart(
     # das linhas, logo abaixo, sai do memo. A resposta é a mesma: o trilho só
     # depende do conjunto de SKUs da sacola, que já está decidido aqui.
     upsell = _upsell(set(skus), channel_ref=channel_ref)
-    avail_map, own_holds = _availability(skus, session_key, channel_ref)
+    cart_date = _future_cart_date(session)
+    avail_map, own_holds = _availability(skus, session_key, channel_ref, cart_date)
     planned_by_sku = _planned_holds(session_key, skus)
+    earlier_by_sku = _earlier_available_dates(raw_items, planned_by_sku, channel_ref)
 
     pricing = session.pricing or {}
     discount_data = pricing.get("discount", {})
@@ -280,6 +463,7 @@ def build_cart(
         _build_line(
             item, names_by_sku, avail_map, own_holds, discount_items,
             planned_by_sku=planned_by_sku,
+            earlier_by_sku=earlier_by_sku,
             made_to_order_skus=made_to_order,
             sellable_skus=sellable,
         )
@@ -326,7 +510,10 @@ def build_cart(
     threshold_base_q = subtotal_q + coupon_discount_q
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
     delivery_minimum = build_delivery_minimum_progress(threshold_base_q, channel_ref)
-    free_delivery = build_free_delivery_progress(threshold_base_q, channel_ref)
+    free_delivery = build_free_delivery_progress(
+        threshold_base_q, channel_ref,
+        price_tier_refs=((session.data or {}).get("customer") or {}).get("price_tiers") or (),
+    )
 
     can_checkout, block_reason = _checkout_eligibility(
         is_empty=False,
@@ -334,8 +521,10 @@ def build_cart(
         minimum_order=minimum_order,
     )
 
+    came_from = (session.data or {}).get("transferred_from")
     return CartProjection(
         session_key=session_key,
+        transferred_from=came_from if isinstance(came_from, dict) else None,
         revision=session.rev,
         lines=lines,
         count=count,
@@ -361,6 +550,7 @@ def build_cart(
         can_checkout=can_checkout,
         checkout_block_reason=block_reason,
         group_savings_message=str((discount_data.get("savings") or {}).get("message") or ""),
+        cart_date=cart_date,
     )
 
 
@@ -425,8 +615,23 @@ def _made_to_order_skus(products: list, skus: list[str]) -> frozenset[str]:
         return frozenset()
 
 
+def _future_cart_date(session) -> date | None:
+    """A data da sacola quando ela é de outro dia; ``None`` para hoje ou sem data.
+
+    A fonte é a mesma da reserva (``cart._cart_date``): o teto da linha
+    lê a data em que a sacola reserva. Sacola de hoje (ou sem data) segue na
+    leitura canônica do cardápio, sem data explícita.
+    """
+    from shopman.shop.services.cart import _cart_date
+
+    day = _cart_date(session)
+    if day is None or day <= timezone.localdate():
+        return None
+    return day
+
+
 def _availability(
-    skus: list[str], session_key: str, channel_ref: str,
+    skus: list[str], session_key: str, channel_ref: str, target_date: date | None = None,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
     """Canonical catalog availability + own-hold lookup.
 
@@ -434,13 +639,16 @@ def _availability(
     enabled, the first reservable future batch as a separate promise. Passing
     the waitlist horizon directly to Stockman made a zero-day product's fresh
     stock look expired in the cart even while the menu correctly offered it.
+
+    A sacola com data futura (``target_date``) lê ESSA data, a mesma em que a
+    reserva sai: o teto da linha não pode ser o pronto de hoje.
     """
     try:
         from shopman.shop.projections import catalog_context
         from shopman.shop.services import availability as availability_service
 
         avail_map = catalog_context.availability_for_skus(
-            skus, channel_ref=channel_ref,
+            skus, channel_ref=channel_ref, target_date=target_date,
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds
@@ -457,6 +665,7 @@ def _build_line(
     discount_items: dict[str, dict],
     *,
     planned_by_sku: dict[str, tuple[bool, bool, str | None, str | None]],
+    earlier_by_sku: dict[str, str] | None = None,
     made_to_order_skus: frozenset[str] = frozenset(),
     sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
@@ -505,7 +714,19 @@ def _build_line(
     )
 
     disc = discount_items.get(sku)
-    original_price_q = int(disc["original_price_q"]) if disc else None
+    unit_price_q = int(item.get("unit_price_q", 0) or 0)
+    line_total_q = int(item.get("line_total_q", 0) or 0)
+    listed = (item.get("meta") or {}).get("_list_q")
+    if listed is None and disc and int(disc.get("original_price_q") or 0) > 0:
+        listed = disc["original_price_q"]
+    list_price_q = max(unit_price_q, int(listed)) if listed is not None else unit_price_q
+    list_total_q = (
+        # Mesma conta do ``monetary_mult`` (meio para cima), sem importar o
+        # formatador: projection de dados não carrega aparência (regra R-B).
+        int((Decimal(str(qty)) * list_price_q).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        if list_price_q != unit_price_q
+        else line_total_q
+    )
     discount_name = (disc.get("name") or "") if disc else None
     discount_is_coupon = bool(disc and disc.get("type") == "coupon")
 
@@ -514,8 +735,8 @@ def _build_line(
         sku=sku,
         name=name,
         qty=qty,
-        unit_price_q=int(item.get("unit_price_q", 0) or 0),
-        line_total_q=int(item.get("line_total_q", 0) or 0),
+        unit_price_q=unit_price_q,
+        line_total_q=line_total_q,
         is_available=is_available,
         available_qty=available_qty,
         is_made_to_order=is_made_to_order,
@@ -527,7 +748,9 @@ def _build_line(
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,
         planned_for_date=planned_for_date,
-        original_price_q=original_price_q,
+        earlier_available_date=(earlier_by_sku or {}).get(sku),
+        list_price_q=list_price_q,
+        list_total_q=list_total_q,
         discount_name=discount_name or None,
         discount_is_coupon=discount_is_coupon,
     )
@@ -574,6 +797,50 @@ def _planned_holds(
     return out
 
 
+def _earlier_available_dates(
+    raw_items: list[dict],
+    planned_by_sku: dict[str, tuple[bool, bool, str | None, str | None]],
+    channel_ref: str,
+) -> dict[str, str]:
+    """Por SKU que espera fornada futura, a data anterior em que a linha já tem saldo.
+
+    Só olha linha com data prevista depois do primeiro dia em que a casa
+    atende: sacola sem fila não paga leitura nenhuma. Degrada para vazio (a
+    data prevista segue sendo o piso).
+    """
+    from datetime import date as date_type
+
+    waiting = {
+        sku: date_type.fromisoformat(state[3])
+        for sku, state in planned_by_sku.items()
+        if state[3]
+    }
+    if not waiting or not channel_ref:
+        return {}
+    first_day = _earliest_fulfillable_date()
+    out: dict[str, str] = {}
+    try:
+        from shopman.shop.policies.order_date_before_batch import earliest_day_with_room
+
+        qty_by_sku: dict[str, Decimal] = {}
+        for item in raw_items:
+            sku = item.get("sku", "")
+            if sku in waiting:
+                qty_by_sku[sku] = qty_by_sku.get(sku, Decimal("0")) + Decimal(str(item.get("qty", 0) or 0))
+        for sku, qty in qty_by_sku.items():
+            if waiting[sku] <= first_day or qty <= 0:
+                continue
+            day = earliest_day_with_room(
+                sku, qty, waiting[sku], channel_ref=channel_ref, first_day=first_day,
+            )
+            if day is not None:
+                out[sku] = day.isoformat()
+    except Exception:
+        logger.debug("cart._earlier_available_dates degraded", exc_info=True)
+        return {}
+    return out
+
+
 def _earliest_fulfillable_date():
     """Próxima data em que a loja realmente opera (hoje só se ainda aberta).
 
@@ -592,37 +859,26 @@ def _earliest_fulfillable_date():
 
 
 def _line_availability(
-    sku: str, qty: int, avail: dict | None, own_holds: dict[str, Decimal],
-) -> tuple[bool, int | None]:
-    """Own-hold-corrected availability: a line is unavailable only when the
-    shortage is real (external), not when the session's own hold drained
-    ``total_promisable``. Returns ``(is_available, available_qty)``.
+    sku: str, qty, avail: dict | None, own_holds: dict[str, Decimal],
+) -> tuple[bool, int | Decimal | None]:
+    """Decisão do Stockman para a linha, com a reserva da própria sessão como dela.
+
+    Uma linha só fica indisponível quando a falta é real (de fora), nunca porque
+    o hold da própria sessão drenou ``total_promisable``; e o SKU sem ledger
+    (nenhum ``Quant``) não tem teto, como o Stockman e o commit decidem. A regra
+    mora em ``catalog_context.session_line_promise``. Returns
+    ``(is_available, available_qty)``; ``None`` = sem teto finito.
     """
     if avail is None:
         return True, None
-    if avail.get("availability_policy") == "demand_ok" and not avail.get("is_paused", False):
-        return True, None
+    from shopman.shop.projections import catalog_context
 
-    if avail.get("is_paused", False):
-        # Pausado é decisão do operador, não escassez: nem o próprio hold da
-        # sessão reabre a linha.
-        return False, 0
-
-    own_hold = own_holds.get(sku, Decimal("0"))
-    promisable = avail.get("total_promisable")
-    if promisable is None:
-        return True, None
-    # ``total_promisable`` já é a promessa da POLÍTICA (``stock_only`` →
-    # só o pronto; ``planned_ok`` → pronto + em produção + fornada
-    # planejada dentro do horizonte) e já desconta margem e holds — o da
-    # própria sessão inclusive, por isso ele volta somado. Ler
-    # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
-    # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
-    # junto do selo que prometia a fornada (WP-P2E F1).
-    max_orderable = max(Decimal("0"), Decimal(str(promisable)) + own_hold)
-    if max_orderable == max_orderable.to_integral_value():
-        max_orderable = int(max_orderable)
-    return max_orderable >= qty, max_orderable
+    approved, ceiling = catalog_context.session_line_promise(
+        sku, qty, avail, own_holds.get(sku, Decimal("0")),
+    )
+    if ceiling is not None and ceiling == ceiling.to_integral_value():
+        ceiling = int(ceiling)
+    return approved, ceiling
 
 
 def _discount_lines(discount_data: dict, pricing: dict) -> tuple[CartDiscountLineProjection, ...]:
@@ -665,7 +921,16 @@ def _coupon(data: dict, pricing: dict) -> CartCouponProjection | None:
     coupon_data = pricing.get("coupon")
     if not (code and coupon_data):
         return None
-    return CartCouponProjection(code=code, discount_q=int(coupon_data.get("discount_q", 0) or 0))
+    discount_q = int(coupon_data.get("discount_q", 0) or 0)
+    if discount_q > 0:
+        return CartCouponProjection(code=code, discount_q=discount_q)
+    return CartCouponProjection(
+        code=code,
+        discount_q=discount_q,
+        zero_reason=str(coupon_data.get("reason") or ""),
+        missing_q=int(coupon_data.get("missing_q") or 0),
+        fulfillment_types=tuple(coupon_data.get("fulfillment_types") or ()),
+    )
 
 
 def _checkout_eligibility(
@@ -766,13 +1031,30 @@ def build_delivery_minimum_progress(
 def build_free_delivery_progress(
     subtotal_q: int,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
+    *,
+    price_tier_refs=(),
 ) -> FreeDeliveryProgressProjection | None:
     """Progress toward free delivery (``shop.defaults.rules.free_delivery_above_q``).
 
     Returns ``None`` when the policy is off or the subtotal already qualifies.
     The same value zeroes the fee in ``DeliveryFeeModifier`` — single source.
+
+    Cliente de grupo com frete grátis (``PriceTierAdvantage`` ``free_shipping``)
+    mede contra o MENOR dos dois mínimos: o do grupo e o da loja. É o mesmo que o
+    ``resolve_delivery_fee_waiver`` usa para zerar a taxa, senão a barra diria
+    "faltam R$ 40" a quem já tem frete grátis por ser do grupo.
     """
     threshold_q = shop_rule_q("free_delivery_above_q")
+    if price_tier_refs:
+        from shopman.shop.policies.group_advantage import free_shipping_minimum_q
+        from shopman.shop.services import promotions as promotion_service
+
+        group = promotion_service.best_group_advantage(price_tier_refs, "free_shipping")
+        if group is not None:
+            group_q = free_shipping_minimum_q(group.value.config)
+            threshold_q = group_q if not threshold_q else min(threshold_q, group_q)
+            if threshold_q <= 0:
+                return None
     progress = _threshold_progress(subtotal_q, threshold_q)
     if progress is None:
         return None

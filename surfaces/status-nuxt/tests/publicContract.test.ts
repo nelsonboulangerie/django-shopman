@@ -16,7 +16,14 @@ describe("public projection contract", () => {
 
   it("does not expose raw evidence or technical logs", () => {
     expect(page).not.toMatch(/evidence|stack trace|request id|database|redis|pool/i);
-    expect(page).toContain("opera de forma independente do Shopman");
+    expect(page).toContain("continua no ar mesmo quando a loja online está fora");
+  });
+
+  // Beta 05/11 (STA-01): título com travessão e o nome interno do sistema para o cliente.
+  it("speaks to the customer: no dash, no internal system name", () => {
+    const config = readFileSync(new URL("../nuxt.config.ts", import.meta.url), "utf8");
+    expect(config).toContain('title: "Status · Nelson Boulangerie"');
+    expect(`${page}\n${config}`).not.toMatch(/—|Shopman/);
   });
 
   it("stays on the canonical Nuxt surface tokens", () => {

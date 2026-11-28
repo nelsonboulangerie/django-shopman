@@ -1,0 +1,172 @@
+name: Benchmark de runner
+
+# DEV-2026-098, seção 9 de docs/plans/CI-DX-LOCAL-FIRST-PLAN.md.
+#
+# Pergunta que este workflow responde, e nenhum outro responde: uma máquina
+# maior (ou de outro fornecedor) encurta OS SEIS JOBS que seguram o relógio da
+# fila? Medido em 25/11/2026: o `linux-4core` rodou cada job na MESMA
+# velocidade do grátis (0,97x–1,12x), porque o runner grátis de repositório
+# público já tem 4 vCPU. Pagar por velocidade só faz sentido se ela existir.
+#
+# Como mede: os seis jobs, com os MESMOS comandos e o MESMO ambiente da fila
+# (cobertura ligada nos shards, fases de navegador do PDV lidas do contrato),
+# no MESMO commit e AO MESMO TEMPO em dois runners — o grátis (`ubuntu-latest`)
+# e o candidato —, N repetições cada. Comparação:
+#   python3 scripts/ci_baseline.py --compare-runners --run <id do run>
+#
+# Não é check obrigatório, não roda em pull_request nem em merge_group e só LÊ
+# cache: não muda nada no caminho do merge. O custo é só o do runner
+# candidato: N × 6 jobs × ~10–15 min.
+#
+# Disparo:
+#   gh workflow run runner-benchmark.yml -f runner=<rótulo> -f reps=3
+#   ou push num branch `ci-bench/**` com `vars.CI_BENCH_RUNNER` definido
+#   (o push usa o arquivo do próprio branch: mede antes de entrar no main).
+
+"on":
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Rótulo do runner candidato (ex. ubicloud-standard-8, linux-8core)
+        required: true
+      reps:
+        description: Repetições por runner (1 a 5)
+        default: "3"
+  push:
+    branches: ["ci-bench/**"]
+
+concurrency:
+  group: runner-benchmark-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  DJANGO_DEBUG: "true"
+  DJANGO_SECRET_KEY: ci-runtime-gate-local-secret-key
+  DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  plan:
+    name: Plano do benchmark
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runners: ${{ steps.plan.outputs.runners }}
+      reps: ${{ steps.plan.outputs.reps }}
+    steps:
+      - id: plan
+        env:
+          CANDIDATE: ${{ inputs.runner || vars.CI_BENCH_RUNNER }}
+          REPS: ${{ inputs.reps || vars.CI_BENCH_REPS || '3' }}
+        run: |
+          if [ -z "$CANDIDATE" ]; then
+            echo "::error::sem runner candidato: -f runner=<rótulo> ou vars.CI_BENCH_RUNNER"
+            exit 1
+          fi
+          case "$REPS" in 1|2|3|4|5) ;; *) echo "::error::reps entre 1 e 5"; exit 1 ;; esac
+          echo "runners=$(jq -cn --arg c "$CANDIDATE" '["ubuntu-latest", $c] | unique')" >> "$GITHUB_OUTPUT"
+          echo "reps=$(jq -cn --argjson n "$REPS" '[range(1; $n + 1)]')" >> "$GITHUB_OUTPUT"
+          echo "Candidato: \`$CANDIDATE\` × $REPS repetições, contra \`ubuntu-latest\`." >> "$GITHUB_STEP_SUMMARY"
+
+  python-shards:
+    name: ${{ matrix.target }} · ${{ matrix.runner }} · ${{ matrix.rep }}
+    needs: plan
+    # `vars.CI_BENCH_ONLY=pos-nuxt` mede só o PDV (sem ocupar runner com os shards).
+    if: vars.CI_BENCH_ONLY != 'pos-nuxt'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.plan.outputs.runners) }}
+        rep: ${{ fromJSON(needs.plan.outputs.reps) }}
+        target: [test-backstage-rest-1, test-backstage-rest-2, test-backstage-heavy-1, test-backstage-heavy-2, test-backstage-seed-1, test-backstage-seed-2, test-shop-rest-1, test-shop-rest-2, test-shop-heavy]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Create virtualenv
+        run: python -m venv .venv
+      - name: Install dependencies
+        run: make install
+      - name: ${{ matrix.target }}
+        timeout-minutes: 30
+        env:
+          # O mesmo custo da fila: lá os shards rodam com cobertura.
+          COVERAGE_FILE: .coverage.bench
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+        run: |
+          # CPU no resumo: a Ubicloud manda para o "premium" (Ryzen 7950X3D) e cai no
+          # padrão (EPYC) quando o premium está ocupado; a comparação precisa saber qual.
+          echo "cpu=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p') nproc=$(nproc) mem=$(free -g | awk '/Mem:/{print $2}')G" | tee -a "$GITHUB_STEP_SUMMARY"
+          start=$SECONDS
+          make ${{ matrix.target }}
+          echo "${{ matrix.target }} em ${{ matrix.runner }}: $((SECONDS - start)) s" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  pos-nuxt:
+    name: pos-nuxt · ${{ matrix.runner }} · ${{ matrix.rep }}
+    needs: plan
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ${{ fromJSON(needs.plan.outputs.runners) }}
+        rep: ${{ fromJSON(needs.plan.outputs.reps) }}
+    defaults:
+      run:
+        working-directory: surfaces/pos-nuxt
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Restore npm cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('surfaces/pos-nuxt/package-lock.json', 'surfaces/operator-kit/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
+      - name: Install operator-kit layer deps
+        working-directory: surfaces/operator-kit
+        run: npm ci
+      - name: Install dependencies
+        run: npm ci
+      # As fases do pos-nuxt na fila, lidas do contrato (não copiadas): o que a
+      # matriz `quality` com CI_HEAVY=true liga para ele.
+      - name: Fases da fila (contrato)
+        env:
+          CI_HEAVY: "true"
+        run: |
+          echo "cpu=$(lscpu | sed -n 's/^Model name:[[:space:]]*//p') nproc=$(nproc)" | tee -a "$GITHUB_STEP_SUMMARY"
+          entry="$(node ../../scripts/surface_contract.mjs matrix quality | jq -c '.include[] | select(.dir == "pos-nuxt")')"
+          phases="unit lint typecheck"
+          [ "$(jq -r .component <<<"$entry")" = "true" ] && phases="$phases component"
+          for cap in geometry browser a11y security; do
+            [ "$(jq -r ".$cap" <<<"$entry")" = "true" ] && phases="$phases $cap"
+          done
+          if echo "$phases" | grep -qE "geometry|browser|a11y"; then
+            node ../../scripts/install_playwright_browsers.mjs "$(jq -r .browser_engines <<<"$entry")" \
+              $([ "$(jq -r .browser_with_deps <<<"$entry")" = "true" ] && echo --with-deps)
+          fi
+          # Como a fila: o que o contrato declara em concurrentPhases roda junto.
+          concurrent="$(jq -r .concurrent <<<"$entry")"
+          start=$SECONDS
+          for phase in $phases; do
+            case " $concurrent " in *" $phase "*) continue ;; esac
+            t=$SECONDS
+            node ../../scripts/surface_contract.mjs run pos "$phase"
+            echo "pos-nuxt $phase em ${{ matrix.runner }}: $((SECONDS - t)) s" | tee -a "$GITHUB_STEP_SUMMARY"
+          done
+          if [ -n "$concurrent" ]; then
+            t=$SECONDS
+            node ../../scripts/surface_contract.mjs run-many pos $concurrent
+            echo "pos-nuxt [$concurrent] juntas em ${{ matrix.runner }}: $((SECONDS - t)) s" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "pos-nuxt (fases) em ${{ matrix.runner }}: $((SECONDS - start)) s" | tee -a "$GITHUB_STEP_SUMMARY"

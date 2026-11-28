@@ -1,8 +1,8 @@
 # ADR-009 — WhatsApp via ManyChat: vendor lock-in consciente
 
-**Data**: 2026-04-18
-**Atualizado**: 2026-09-17
-**Status**: Accepted
+**Status:** Aceito
+**Data:** 2026-04-18
+**Atualizado:** 2026-09-17
 
 ---
 
@@ -238,7 +238,7 @@ Reavaliar a decisão quando **qualquer**:
 
 ## Referências
 
-- Memória: [feedback_whatsapp_via_manychat.md](.claude/memory).
+- Memória de projeto: `feedback_whatsapp_via_manychat.md`.
 - [packages/doorman/shopman/doorman/models/access_link.py](../../packages/doorman/shopman/doorman/models/access_link.py) — enum `Source`.
 - [shopman/shop/adapters/notification_manychat.py](../../shopman/shop/adapters/notification_manychat.py).
 - [docs/reference/manychat-conversation-projection.md](../reference/manychat-conversation-projection.md).

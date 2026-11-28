@@ -267,7 +267,7 @@ Handlers processam directives. Cada handler é registrado em `setup.py` via `reg
 
 | Receiver | Signal | Ação |
 |----------|--------|------|
-| `on_holds_materialized` | `holds_materialized` (stocking) | Auto-commit de sessões aguardando produção |
+| `on_holds_materialized` | `holds_materialized` (stocking) | Notifica disponibilidade; confirmação humana posterior cria o pedido |
 | `on_production_voided` | `production_changed` (crafting) | Libera demand holds quando produção é anulada |
 
 ---

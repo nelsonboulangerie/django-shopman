@@ -23,7 +23,11 @@ for (const viewport of CASES) {
     if (mode === "day") {
       await expect(page.locator("[data-preorders-day] [data-preorder]:visible")).toHaveCount(2);
     } else {
-      await expect(page.locator("[data-week-board] [data-preorder]:visible")).toHaveCount(3);
+      // A semana começa HOJE e só hoje vem aberto (dono, 03/11/2026): os 2 de hoje à
+      // vista, e o dia com encomenda que não é hoje fica recolhido, com a conta.
+      await expect(page.locator("[data-week-board] [data-preorder]:visible")).toHaveCount(2);
+      await expect(page.locator("[data-week-day]").first()).toHaveAttribute("data-week-day", "2026-09-29");
+      await expect(page.locator("[data-week-day-toggle][aria-expanded=false]")).toHaveCount(1);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     const firstCard = await page.locator("[data-preorder]:visible").first().boundingBox();

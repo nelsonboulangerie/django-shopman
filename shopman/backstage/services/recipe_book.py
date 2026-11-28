@@ -14,6 +14,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
+import re
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -23,7 +25,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 from shopman.craftsman.exceptions import RecipeBookError
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeItem, RecipeVersion
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeItem, RecipeVersion
 from shopman.craftsman.recipe_steps import normalize_steps
 from shopman.craftsman.services import recipe_book as craftsman
 
@@ -88,6 +90,12 @@ def _text(data: dict, key: str, *, default: str = "") -> str:
     return value.strip()
 
 
+#: Faixa plausível da temperatura de uma etapa, do congelador ao forno a lenha.
+#: Fora dela é erro de digitação (``9999 °C`` publicava; beta 05/11/2026, PROD-19).
+#: A tela usa a mesma (``STEP_TEMPERATURE_RANGE`` em ``presentation/recipeBook.ts``).
+STEP_TEMPERATURE_RANGE = (-40, 450)
+
+
 def _steps(value: Any, *, field: str = "steps") -> list[dict]:
     """Etapas na forma única (``shopman.craftsman.recipe_steps``).
 
@@ -103,10 +111,16 @@ def _steps(value: Any, *, field: str = "steps") -> list[dict]:
         raise _fail("As etapas precisam ser uma lista.", field=field)
     value = [step for step in value if not (isinstance(step, str) and not step.strip())]
     try:
-        return normalize_steps(value)
+        steps = normalize_steps(value)
     except ValidationError as exc:
         _, detail = _first_validation_message(exc)
         raise _fail(detail, field=field) from exc
+    low, high = STEP_TEMPERATURE_RANGE
+    for number, step in enumerate(steps, start=1):
+        celsius = step.get("temperature_celsius")
+        if celsius is not None and not low <= celsius <= high:
+            raise _fail(f"Etapa {number}: use uma temperatura entre {low} e {high} °C.", field=field)
+    return steps
 
 
 def _kind(value: Any, *, allow_empty: bool) -> str:
@@ -152,6 +166,72 @@ def _formula(value: Any, *, required: bool) -> dict | None:
     return value
 
 
+def _ingredient_defaults(value: Any) -> dict:
+    """Validate the copied-on-use defaults of a recipe-backed ingredient."""
+    if value in (None, {}):
+        return {}
+    if not isinstance(value, dict):
+        raise _fail("O padrão de uso precisa ser um objeto.", field="ingredient_defaults")
+    composition = str(value.get("composition") or "").strip()
+    if composition not in {"additional", "included"}:
+        raise _fail(
+            "Composição precisa ser additional ou included.",
+            field="ingredient_defaults.composition",
+        )
+    quantity = value.get("quantity")
+    if not isinstance(quantity, dict):
+        raise _fail("Informe a quantidade padrão.", field="ingredient_defaults.quantity")
+    kind = str(quantity.get("kind") or "").strip()
+    if kind not in {"fixed", "ratio"}:
+        raise _fail("Quantidade precisa ser fixed ou ratio.", field="ingredient_defaults.quantity.kind")
+
+    def number(key: str, *, required: bool = False) -> Decimal | None:
+        raw = quantity.get(key)
+        if raw in (None, ""):
+            if required:
+                raise _fail("Informe o alvo da quantidade.", field=f"ingredient_defaults.quantity.{key}")
+            return None
+        try:
+            parsed = Decimal(str(raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise _fail("Informe um número válido.", field=f"ingredient_defaults.quantity.{key}") from exc
+        if not parsed.is_finite() or parsed < 0 or (required and parsed == 0):
+            raise _fail("A quantidade precisa ser positiva.", field=f"ingredient_defaults.quantity.{key}")
+        return parsed
+
+    minimum, target, maximum = number("minimum"), number("target", required=True), number("maximum")
+    assert target is not None
+    if minimum is not None and minimum > target:
+        raise _fail("O mínimo não pode superar o alvo.", field="ingredient_defaults.quantity.minimum")
+    if maximum is not None and target > maximum:
+        raise _fail("O máximo não pode ficar abaixo do alvo.", field="ingredient_defaults.quantity.maximum")
+    normalized_quantity: dict[str, Any] = {
+        "kind": kind,
+        "minimum": None if minimum is None else str(minimum),
+        "target": str(target),
+        "maximum": None if maximum is None else str(maximum),
+    }
+    if kind == "fixed":
+        unit = str(quantity.get("unit") or "").strip()
+        if unit not in {"g", "kg", "ml", "L", "un"}:
+            raise _fail("Selecione uma unidade válida.", field="ingredient_defaults.quantity.unit")
+        normalized_quantity["unit"] = unit
+    else:
+        basis = quantity.get("basis")
+        if not isinstance(basis, dict) or basis.get("kind") not in {"flour", "total", "ingredient"}:
+            raise _fail("Selecione a base do percentual.", field="ingredient_defaults.quantity.basis")
+        normalized_basis = {"kind": str(basis["kind"])}
+        if basis["kind"] == "ingredient":
+            sku = str(basis.get("sku") or "").strip()
+            if not sku:
+                raise _fail(
+                    "Selecione o ingrediente-base.", field="ingredient_defaults.quantity.basis.sku"
+                )
+            normalized_basis["sku"] = sku
+        normalized_quantity["basis"] = normalized_basis
+    return {"quantity": normalized_quantity, "composition": composition}
+
+
 # ── Ref ──────────────────────────────────────────────────────────────────────
 
 
@@ -183,8 +263,9 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
     if not name:
         raise _fail("Informe o nome da receita.", field="name")
     kind = _kind(data.get("kind"), allow_empty=True)
-    output_sku = _text(data, "output_sku")
+    output_sku = canonical_output_sku(_text(data, "output_sku"))
     notes = _text(data, "notes")
+    ingredient_defaults = _ingredient_defaults(data.get("ingredient_defaults")) if "ingredient_defaults" in data else {}
     version_data = data.get("version")
     if version_data is not None and not isinstance(version_data, dict):
         raise _fail("A versão precisa ser um objeto.", field="version")
@@ -198,6 +279,9 @@ def create_entry_from_payload(data: dict, *, actor: str = "") -> tuple[RecipeEnt
                 output_sku=output_sku,
                 notes=notes,
             )
+            if ingredient_defaults:
+                entry.meta = {**(entry.meta or {}), "ingredient_defaults": ingredient_defaults}
+                entry.save(update_fields=["meta", "updated_at"])
             version = None
             if version_data is not None:
                 version = create_version_from_payload(entry, version_data, actor=actor)
@@ -233,14 +317,22 @@ def _patch_entry_locked(entry: RecipeEntry, data: dict) -> RecipeEntry:
     if "kind" in data:
         entry.kind = _kind(data.get("kind"), allow_empty=False)
     if "output_sku" in data:
-        entry.output_sku = _text(data, "output_sku")
+        entry.output_sku = canonical_output_sku(_text(data, "output_sku"))
     if "notes" in data:
         entry.notes = _text(data, "notes")
-    if "is_archived" in data:
-        value = data.get("is_archived")
+    if "is_active" in data:
+        value = data.get("is_active")
         if not isinstance(value, bool):
-            raise _fail("Arquivar aceita apenas sim ou não.", field="is_archived")
-        entry.is_archived = value
+            raise _fail("Arquivar ou desarquivar aceita apenas sim ou não.", field="is_active")
+        entry.is_active = value
+    if "ingredient_defaults" in data:
+        defaults = _ingredient_defaults(data.get("ingredient_defaults"))
+        meta = dict(entry.meta or {})
+        if defaults:
+            meta["ingredient_defaults"] = defaults
+        else:
+            meta.pop("ingredient_defaults", None)
+        entry.meta = meta
     if external_references.FIELD in data:
         references = external_references.validate(data.get(external_references.FIELD))
         meta = dict(entry.meta or {})
@@ -253,6 +345,33 @@ def _patch_entry_locked(entry: RecipeEntry, data: dict) -> RecipeEntry:
         entry.full_clean()
         entry.save()
     return entry
+
+
+#: Rendimento escrito como texto: dígitos e, no máximo, UM separador decimal.
+_YIELD_TEXT = re.compile(r"^\d+(?:[.,]\d+)?$")
+
+
+def _yield_input(value: Any) -> Any:
+    """O rendimento como a porta aceita: número JSON, ou texto de máquina sem notação científica.
+
+    A tela manda número (o campo é o ``NuxtInputNumber`` pt-BR). Texto continua
+    aceito com UM separador decimal (``1.5``, ``1,5``), porque é o formato que a
+    própria API devolve. Fora disso a porta recusa em vez de adivinhar: ``1,5e3``
+    virava 1500 e ``1.500,0`` não tem leitura única (beta 05/11/2026, PROD-03).
+    """
+    if isinstance(value, bool):
+        raise _fail("O rendimento precisa ser um número.", field="yield_quantity")
+    if isinstance(value, (int, float, Decimal)):
+        if isinstance(value, float) and not math.isfinite(value):
+            raise _fail("O rendimento precisa ser um número.", field="yield_quantity")
+        return value
+    text = str(value).strip()
+    if not _YIELD_TEXT.match(text):
+        raise _fail(
+            "Escreva o rendimento só com algarismos e, se precisar, uma vírgula (ex.: 1500 ou 1,5).",
+            field="yield_quantity",
+        )
+    return text
 
 
 def _assert_revision(row, data: dict, *, field: str = "expectedRevision") -> None:
@@ -337,10 +456,26 @@ def update_execution(entry: RecipeEntry, data: dict, *, actor: str) -> Recipe:
         raise RecipeEntryNotFound("Publique uma versão antes de configurar a ficha de execução.")
     _assert_revision(recipe, data)
     recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    apply_production_mode(recipe, data)
     with translating_errors():
         recipe.full_clean()
         recipe.save()
     return recipe
+
+
+def apply_production_mode(recipe: Recipe, data: dict) -> None:
+    """``productionMode`` do corpo vira ``Recipe.production_mode`` (ADR-040).
+
+    Faz parte da operação da ficha, no mesmo dialeto camelCase dela: "Em lote"
+    é planejado e sai por ordem de produção; "Na hora" é puxado pela venda, vai
+    à estação de preparo e a venda baixa os insumos. Ausente no corpo, fica.
+    """
+    if "productionMode" not in data:
+        return
+    mode = str(data.get("productionMode") or "").strip()
+    if mode not in ProductionMode.values:
+        raise _fail("Escolha Em lote ou Na hora.", field="productionMode")
+    recipe.production_mode = mode
 
 
 def apply_execution_settings(meta: dict, data: dict, *, actor: str) -> dict:
@@ -528,6 +663,7 @@ def create_version_from_payload(entry: RecipeEntry, data: dict, *, actor: str = 
     yield_quantity = data.get("yield_quantity", base.get("yield_quantity"))
     if yield_quantity in (None, ""):
         raise _fail("Informe o rendimento da fórmula.", field="yield_quantity")
+    yield_quantity = _yield_input(yield_quantity)
     yield_unit = str(data.get("yield_unit") or base.get("yield_unit") or "").strip()
     if not yield_unit:
         raise _fail("Informe a unidade do rendimento.", field="yield_unit")
@@ -563,7 +699,7 @@ def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersi
     if "yield_quantity" in data:
         if data.get("yield_quantity") in (None, ""):
             raise _fail("Informe o rendimento da fórmula.", field="yield_quantity")
-        changes["yield_quantity"] = data.get("yield_quantity")
+        changes["yield_quantity"] = _yield_input(data.get("yield_quantity"))
     if "yield_unit" in data:
         unit = str(data.get("yield_unit") or "").strip()
         if not unit:
@@ -596,9 +732,91 @@ def publish(version: RecipeVersion, data: dict | None = None, *, actor: str = ""
     version = RecipeVersion.objects.select_for_update().get(pk=version.pk)
     _assert_version_revision(version, data)
     _assert_revision(entry, data, field="expectedEntryRevision")
+    _assert_formula_has_ingredients(version)
+    _assert_output_sku_publishable(entry, data)
     with translating_errors():
         return craftsman.publish_version(
             version, actor=actor, default_item_meta=material_profiles_for(version.formula or {}),
+        )
+
+
+def _assert_formula_has_ingredients(version: RecipeVersion) -> None:
+    """Fórmula sem ingrediente não vira ficha de produção (beta 05/11/2026, PROD-02)."""
+    if not (version.formula or {}).get("ingredients"):
+        raise _fail("Adicione ao menos um ingrediente antes de publicar.", field="formula", code="FORMULA_EMPTY")
+
+
+def output_sku_is_known(sku: str) -> bool:
+    """O SKU já existe em algum cadastro da casa: venda, compra ou outra ficha (de saída ou de insumo).
+
+    O pré-preparo (``MASSA-TRADICAO``) não tem cadastro de venda nem de compra:
+    ele existe porque uma ficha o produz ou o consome.
+    """
+    from shopman.buyman.models import Material
+    from shopman.offerman.models import Product
+
+    sku = str(sku or "").strip()
+    if not sku:
+        return False
+    return (
+        Product.objects.filter(sku__iexact=sku).exists()
+        or Material.objects.filter(sku__iexact=sku).exists()
+        or Recipe.objects.filter(output_sku__iexact=sku).exists()
+        or RecipeItem.objects.filter(input_sku__iexact=sku).exists()
+    )
+
+
+def canonical_output_sku(value: Any) -> str:
+    """O SKU de saída como a casa o escreve: o do cadastro que já existe, ou em maiúsculas.
+
+    ``xyz-nao-existe`` e ``XYZ-NAO-EXISTE`` são o mesmo SKU para quem digita; para a
+    ficha eram dois, e a troca da ficha em uso passava sem ninguém ver (PROD-01).
+    """
+    from shopman.buyman.models import Material
+    from shopman.offerman.models import Product
+
+    sku = str(value or "").strip()
+    if not sku:
+        return ""
+    for model, column in ((Product, "sku"), (Material, "sku"), (Recipe, "output_sku")):
+        known = model.objects.filter(**{f"{column}__iexact": sku}).values_list(column, flat=True).first()
+        if known:
+            return known
+    return sku.upper()
+
+
+def _assert_output_sku_publishable(entry: RecipeEntry, data: dict) -> None:
+    """Publicar não troca a ficha em uso nem cria SKU novo sem a pessoa dizer que é isso (PROD-01/02).
+
+    Duas perguntas, cada uma com a sua confirmação no corpo:
+
+    - ``replace_active``: o SKU já tem OUTRA ficha em uso na produção. Publicar esta
+      tira aquela de uso (``_write_recipe`` do Craftsman desativa as outras do SKU).
+    - ``new_output_sku``: o SKU não existe em cadastro nenhum da casa. Publicar
+      assim cria um item que só a produção conhece (o pré-preparo novo é o caso
+      legítimo; o SKU digitado errado é o outro).
+    """
+    sku = str(entry.output_sku or "").strip()
+    if not sku:
+        return  # o Craftsman recusa com ENTRY_WITHOUT_SKU
+    in_use = (
+        Recipe.objects.filter(output_sku__iexact=sku, is_active=True).exclude(ref=entry.ref).order_by("pk").first()
+    )
+    if in_use is not None:
+        if data.get("replace_active") is not True:
+            raise _fail(
+                f"O SKU {sku} já tem a ficha {in_use.name} em uso na produção. "
+                "Publicar esta receita tira aquela ficha de uso.",
+                field="output_sku",
+                code="SKU_ALREADY_IN_USE",
+            )
+        return
+    if data.get("new_output_sku") is not True and not output_sku_is_known(sku):
+        raise _fail(
+            f"O SKU {sku} não existe no Catálogo, no Compras nem em outra receita. "
+            "Publicar assim cria um item que só a produção conhece.",
+            field="output_sku",
+            code="OUTPUT_SKU_UNKNOWN",
         )
 
 
@@ -612,7 +830,7 @@ def material_profiles_for(formula: dict) -> dict[str, dict]:
 
     skus = {
         str(line.get("sku") or "").strip()
-        for line in [*list(formula.get("items") or []), *list(formula.get("parts") or [])]
+        for line in list(formula.get("ingredients") or [])
         if str(line.get("sku") or "").strip()
     }
     if not skus:
@@ -716,6 +934,7 @@ def recipe_revision(recipe: Recipe) -> str:
         "output_sku": recipe.output_sku,
         "batch_size": str(recipe.batch_size),
         "is_active": bool(recipe.is_active),
+        "production_mode": str(recipe.production_mode),
         "steps": recipe.steps or [],
         "meta": recipe.meta or {},
         "items": [
@@ -881,6 +1100,7 @@ def create_sheet_from_payload(data: dict, *, actor: str = "") -> Recipe:
         is_active=_sheet_is_active(data.get("is_active"), default=True),
         meta=apply_execution_settings({}, data, actor=actor),
     )
+    apply_production_mode(recipe, data)
     try:
         with translating_errors():
             recipe.full_clean()
@@ -917,6 +1137,7 @@ def update_sheet_from_payload(sheet: Recipe, data: dict, *, actor: str = "") -> 
     if "is_active" in data:
         recipe.is_active = _sheet_is_active(data.get("is_active"), default=recipe.is_active)
     recipe.meta = apply_execution_settings(dict(recipe.meta or {}), data, actor=actor)
+    apply_production_mode(recipe, data)
     lines = _item_lines(data) if "items" in data else None
     try:
         with translating_errors():
@@ -959,8 +1180,10 @@ def duplicate_sheet(sheet: Recipe, data: dict, *, actor: str = "") -> Recipe:
         batch_size=source.batch_size,
         steps=list(source.steps or []),
         is_active=_sheet_is_active(data.get("is_active"), default=False),
+        production_mode=source.production_mode,
         meta=meta,
     )
+    apply_production_mode(copy, data)
     source_items = list(source.items.order_by("sort_order", "input_sku"))
     try:
         with translating_errors():

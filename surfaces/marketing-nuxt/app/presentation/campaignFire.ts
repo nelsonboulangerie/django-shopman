@@ -32,6 +32,14 @@ export function fireAvailability(
 ): FireAvailability {
   const action = fireActionFor(rule, actions);
   if (action?.enabled) return { enabled: true, reason: "" };
+  // A capacidade vem antes do estado: dizer "ligue a campanha" a quem não pode disparar
+  // promete que ligar resolve, e não resolve (beta 05/11, ge:MKT-17).
+  if (action?.reason === "missing_capability") {
+    return {
+      enabled: false,
+      reason: "Seu perfil não autoriza disparos manuais.",
+    };
+  }
   if (!rule.is_active || action?.reason === "campaign_inactive") {
     return {
       enabled: false,
@@ -43,12 +51,6 @@ export function fireAvailability(
       enabled: false,
       reason:
         "O disparo direto está indisponível até concluir a atualização de segurança.",
-    };
-  }
-  if (action.reason === "missing_capability") {
-    return {
-      enabled: false,
-      reason: "Seu perfil não autoriza disparos manuais.",
     };
   }
   return {

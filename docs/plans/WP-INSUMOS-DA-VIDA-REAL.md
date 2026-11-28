@@ -15,7 +15,7 @@ outro lado da cozinha.
 
 **Não é** a fricção do recebimento — essa é do
 [`WP-INSUMOS-SEM-FRICCAO`](WP-INSUMOS-SEM-FRICCAO.md) — nem o enriquecimento por
-GTIN, que é do [`WP-ENRIQUECIMENTO-INSUMOS-GTIN`](WP-ENRIQUECIMENTO-INSUMOS-GTIN.md).
+GTIN, que é do [`WP-ENRIQUECIMENTO-INSUMOS-GTIN`](completed/WP-ENRIQUECIMENTO-INSUMOS-GTIN.md).
 Os dois assumem que a lista está certa. **Este vem antes deles**: enriquecer o
 insumo errado é trabalho perdido duas vezes.
 

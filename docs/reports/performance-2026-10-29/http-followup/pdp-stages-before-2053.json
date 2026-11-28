@@ -1,0 +1,46 @@
+{
+  "method": "Isolated process, RequestFactory and empty SessionStore, READ ONLY REPEATABLE READ transaction and rollback, same request memo across product and cart. First iteration cold. No serving worker/file/settings changed.",
+  "samples": [
+    {
+      "product_ms": 268.07,
+      "cart_ms": 0.68,
+      "render_ms": 0.26,
+      "total_ms": 269.02,
+      "bytes": 4555,
+      "product_bytes": 2979,
+      "cart_empty": true,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8"
+    },
+    {
+      "product_ms": 135.0,
+      "cart_ms": 0.58,
+      "render_ms": 0.18,
+      "total_ms": 135.76,
+      "bytes": 4555,
+      "product_bytes": 2979,
+      "cart_empty": true,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8"
+    },
+    {
+      "product_ms": 131.29,
+      "cart_ms": 0.48,
+      "render_ms": 0.15,
+      "total_ms": 131.92,
+      "bytes": 4555,
+      "product_bytes": 2979,
+      "cart_empty": true,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8"
+    },
+    {
+      "product_ms": 131.6,
+      "cart_ms": 0.48,
+      "render_ms": 0.19,
+      "total_ms": 132.27,
+      "bytes": 4555,
+      "product_bytes": 2979,
+      "cart_empty": true,
+      "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8"
+    }
+  ],
+  "conclusion": "Empty cart construction is below 1ms here; it is not the measured CPU bottleneck. Separating cart enables shared reuse of the public product response without caching shopper state."
+}

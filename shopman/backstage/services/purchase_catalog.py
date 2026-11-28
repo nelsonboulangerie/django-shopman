@@ -33,6 +33,7 @@ from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.utils import IntegrityError
+from shopman.utils.phone import is_valid_phone
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.services.purchase import PurchaseError, _supplier_ref_from_name
@@ -75,6 +76,9 @@ _SUPPLIER_COPY_BLOCKED_META = frozenset(
         "created_from",
         "last_delivery_at",
         "lastDeliveryAt",
+        # Confiança para pular a revisão é decisão sobre ESTA empresa. Uma
+        # cópia nunca nasce autorizada a enviar pedido direto.
+        "send_directly",
     }
 )
 
@@ -120,6 +124,22 @@ def _text(raw: Any, *, field: str, label: str, required: bool = False, max_lengt
     return value
 
 
+def _phone(raw: Any) -> str:
+    """Telefone do fornecedor: vazio, ou um número que dá para discar.
+
+    'abc' entrava como telefone e o pedido de compra tentava sair por ele
+    (beta 05/11, CMP-14). Guarda como foi digitado; só recusa o que não é número.
+    """
+    value = _text(raw, field="phone", label="o telefone", max_length=32)
+    if value and not is_valid_phone(value):
+        raise PurchaseError(
+            "Confira o telefone: DDD e número, como (43) 3333-0000.",
+            code="phone_invalid",
+            field="phone",
+        )
+    return value
+
+
 def _ref(raw: Any, *, required: bool = False) -> str:
     value = _text(raw, field="ref", label="a referência", required=required, max_length=64)
     if value:
@@ -134,7 +154,10 @@ def _ref(raw: Any, *, required: bool = False) -> str:
 
 
 def _sku(raw: Any) -> str:
-    value = _text(raw, field="sku", label="o SKU", required=True, max_length=64)
+    # SKU é sempre em maiúsculas (as duas convenções da casa). Em minúsculas,
+    # 'bich' passava ao lado do produto BICH e furava a trava de unidade e a de
+    # "produzido aqui", que comparam o SKU exato (beta 05/11, CMP-05).
+    value = _text(raw, field="sku", label="o SKU", required=True, max_length=64).upper()
     if "/" in value:
         raise PurchaseError("O SKU não pode ter barra (/).", code="sku_invalid", field="sku")
     return value
@@ -223,7 +246,13 @@ def _material_metadata(metadata: Any, *, category: str | None) -> dict[str, Any]
     return _write_purchase_meta(meta, purchase)
 
 
-def _supplier_metadata(metadata: Any, *, lead_time_days: int | None, payment_term: str | None) -> dict[str, Any]:
+def _supplier_metadata(
+    metadata: Any,
+    *,
+    lead_time_days: int | None,
+    payment_term: str | None,
+    send_directly: bool | None = None,
+) -> dict[str, Any]:
     meta, purchase = _purchase_meta(metadata)
     if lead_time_days is not None:
         if lead_time_days > 0:
@@ -235,6 +264,11 @@ def _supplier_metadata(metadata: Any, *, lead_time_days: int | None, payment_ter
             purchase["payment_term"] = payment_term
         else:
             purchase.pop("payment_term", None)
+    if send_directly is not None:
+        if send_directly:
+            purchase["send_directly"] = True
+        else:
+            purchase.pop("send_directly", None)
     return _write_purchase_meta(meta, purchase)
 
 
@@ -482,12 +516,13 @@ def create_supplier(data: dict[str, Any], *, user=None) -> tuple[dict[str, Any],
         trade_name=_text(data.get("tradeName"), field="tradeName", label="o nome fantasia", max_length=_SUPPLIER_TRADE_MAX),
         document=_text(data.get("document"), field="document", label="o documento", max_length=32),
         email=_text(data.get("email"), field="email", label="o e-mail", max_length=254),
-        phone=_text(data.get("phone"), field="phone", label="o telefone", max_length=32),
+        phone=_phone(data.get("phone")),
         is_active=_as_flag(data, "isActive", default=True),
         metadata=_supplier_metadata(
             {},
             lead_time_days=_lead_time(data.get("leadTimeDays")),
             payment_term=_text(data.get("paymentTerm"), field="paymentTerm", label="a condição de pagamento", max_length=80),
+            send_directly=_as_flag(data, "sendDirectly", default=False),
         ),
     )
     try:
@@ -526,10 +561,10 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
     if "email" in data:
         supplier.email = _text(data.get("email"), field="email", label="o e-mail", max_length=254)
     if "phone" in data:
-        supplier.phone = _text(data.get("phone"), field="phone", label="o telefone", max_length=32)
+        supplier.phone = _phone(data.get("phone"))
     if "isActive" in data:
         supplier.is_active = _as_flag(data, "isActive", default=supplier.is_active)
-    if "leadTimeDays" in data or "paymentTerm" in data:
+    if "leadTimeDays" in data or "paymentTerm" in data or "sendDirectly" in data:
         lead_time_days = _lead_time(data.get("leadTimeDays")) if "leadTimeDays" in data else None
         payment_term = (
             _text(data.get("paymentTerm"), field="paymentTerm", label="a condição de pagamento", max_length=80)
@@ -537,7 +572,14 @@ def update_supplier(ref: str, data: dict[str, Any], *, user=None) -> dict[str, A
             else None
         )
         supplier.metadata = _supplier_metadata(
-            supplier.metadata, lead_time_days=lead_time_days, payment_term=payment_term,
+            supplier.metadata,
+            lead_time_days=lead_time_days,
+            payment_term=payment_term,
+            send_directly=(
+                _as_flag(data, "sendDirectly", default=False)
+                if "sendDirectly" in data
+                else None
+            ),
         )
 
     try:
@@ -636,7 +678,7 @@ def _contact_payload(contact, data: dict[str, Any]) -> None:
     if "email" in data:
         contact.email = str(data.get("email") or "").strip()
     if "phone" in data:
-        contact.phone = str(data.get("phone") or "").strip()
+        contact.phone = _phone(data.get("phone"))
     if "notes" in data:
         contact.notes = str(data.get("notes") or "").strip()
     if "isPrimary" in data:

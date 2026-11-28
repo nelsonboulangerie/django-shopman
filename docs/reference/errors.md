@@ -56,6 +56,19 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+Nos gestos de dinheiro do caixa (`pos/cash/*`, devolução, estorno, troco, acerto,
+cancelar venda recente) e em `POST pos/sale/close/`, toda recusa sai com o canônico
+**por cima** do superset: quando `error.field` existe, `field` sobe para o topo e
+`errors` traz `{field: [detail]}` (#2347, WP-E6). Falha que não é recusa de negócio
+(banco, bug) sai **500** com `error.code = "cash_system_error"` e, em `detail`, a frase
+do gesto que não aconteceu ("O sistema não conseguiu registrar o movimento no
+livro-caixa."); o texto da exceção vai só para o log.
+
+| `error.code` | Status | O que aconteceu | O que resolve |
+|---|---|---|---|
+| `manager_approval_throttled` | 429 | O operador errou o PIN de gerente três vezes em 15 minutos; o PDV para de conferir antes de o gerente travar (P2-12) | Esperar, ou o gerente assinar com o crachá (crachá não conta) |
+| `cash_system_error` | 500 | Falha do sistema num gesto de caixa | O que a saída da tela diz; repetir não grava duas vezes |
+
 ### Recusas do PDV pela política "encomenda cobra antes" (422)
 
 Encomenda não vai à cozinha enquanto não paga (política da casa, 28/08/2026), e o
@@ -89,6 +102,29 @@ Todos saem **409**. O 200 devolve `{ok, ref, detail, payment_link_notice}` — a
 prova de envio ("Enviando o link ao cliente…") que o detalhe do gestor também
 carrega em `payment_link_notice`.
 
+### Recusa nomeada: a corrida de vários pedidos e o pedido que mudou (409 `revision_changed`)
+
+`POST /api/v1/backstage/orders/courier-ride/` (uma corrida da TaOn para vários
+pedidos) passa pelo protocolo de intenção das ações de operador
+(`_intention_response` em `shopman/backstage/api/operations.py`): quem a tela leu
+(`expected_actor_id`), uma `Idempotency-Key` por corrida e o que a tela leu de
+CADA pedido (`base_revisions`: `{ref: courier.dispatch_revision}`, entregue pronto
+na ação `courier-ride` da projeção). As recusas:
+
+| Status | `code` | O que aconteceu | O que resolve |
+|---|---|---|---|
+| 400 | `intention_required` | Faltou a chave ou a revisão de algum pedido | Atualizar a fila e chamar de novo |
+| 409 | `actor_changed` | Quem está identificado não é quem a tela leu | Atualizar a fila |
+| 409 | `revision_changed` | Endereço, pagamento ou corrida de um pedido mudou depois que a tela foi lida. `errors` aponta cada pedido que mudou (`{ref: [mensagem]}`) e `detail` diz qual, pelo código curto | A tela mostra o `detail`, relê a fila e o operador confere antes de chamar |
+| 409 | `intention_conflict` | A mesma chave com outros pedidos ou outra custódia | Nunca reaproveitar a chave de outra corrida |
+| 400 | (sem código, ou `change_out_required`) | Recusa de negócio: diz qual pedido e por quê | O que o `detail` diz |
+
+Repetir a mesma chave devolve o mesmo resultado com `replayed: true`, e
+`GET ?idempotency_key=` lê o resultado sem executar nada. A corrida que já
+existe com estes mesmos pedidos (outro dispositivo chamou) não é recusa: sai
+**200** com `already_called: true` e a frase em `detail`. O 200 traz
+`ride_number` e `ride_letter`, o número e a letra com que a corrida ficou.
+
 ### Recusa nomeada: `error.code` em 403
 
 Nem toda recusa é igual, e o status HTTP sozinho não separa as três que o operador
@@ -99,6 +135,7 @@ quando ela tem nome:
 |---|---|---|
 | `not_authenticated` | A sessão do operador caiu (ex.: 7 dias sem uso) ou nunca existiu | Login |
 | `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
+| `operator_changed` (409) | A gravação levou um operador (`X-Shopman-Operator`) e a sessão já é de outra pessoa: a troca foi feita em outro app do mesmo navegador. Nada foi gravado (`ExpectedOperatorMiddleware`) | A tela relê quem opera; a pessoa confere e refaz |
 | *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
 
 ⚠️ **O backstage nunca devolve 401.** `DEFAULT_AUTHENTICATION_CLASSES` tem uma
@@ -135,7 +172,7 @@ resto sem quebrar:
 ```json
 {
   "detail": "Atualize a quantidade: temos menos em estoque.",
-  "error_code": "insufficient_stock",
+  "error_code": "insufficient_supply",
   "title": "Revise este item",
   "actions": [ ... ],
   "retry_after_seconds": 60
@@ -144,7 +181,7 @@ resto sem quebrar:
 
 | Chave | Presença | Uso |
 |-------|----------|-----|
-| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`, `contact_already_taken`…). |
+| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_supply`, `order_not_cancellable`, `contact_already_taken`…). |
 | `title` | Alertas ricos (carrinho) | Título curto do alerta quando a tela não deriva o próprio (o 404 NÃO carrega `title` — a tela gera pelo status). |
 | `actions` / `retry_after_seconds` | Rate-limit e conflitos | Ações de 1 clique e cadência de retry (`Retry-After` também vai no header). |
 | `payment_status` | 409 `order_not_cancellable` | Enum **cru** do pagamento (`pending`/`authorized`/`captured`) que explica *por que* o cancelamento foi recusado. É o único ponto onde `payment_status` aparece — o payload de tracking usa `payment_status_label` (rótulo humano), sem colisão de nome. |
@@ -196,6 +233,38 @@ Não é "indisponível" (o item existe) nem "ajuste a quantidade" (nenhuma
 quantidade resolve): `available_qty` é nulo, sem substituto e sem "me avise".
 Reserva de demanda (café, croque: `quant` nulo) e SKU não rastreado não fixam a
 data da sacola. O concierge devolve o mesmo `code` com a mesma frase.
+
+### O envio recusa porque a sacola saiu ou sumiu (409 `order_already_sent` / `cart_empty`)
+
+`POST /api/v1/checkout/` não repassa a frase do Core quando a recusa é da SACOLA
+(#3267). Os códigos `revision_changed`, `already_committed`, `already_abandoned`,
+`abandoned`, `not_found` e `empty_session` (e a sacola que já chega vazia) fazem a
+API ler o estado ATUAL da sacola (`checkout.refused_cart`), e é ele que decide a
+frase: o mesmo `revision_changed` é "sua sacola mudou" numa sacola viva e "este
+pedido já foi enviado" numa sacola que outra aba selou.
+
+| Estado da sacola | `error_code` | `detail` | `actions[0]` |
+|------------------|--------------|----------|--------------|
+| Virou pedido (outra aba enviou primeiro) | `order_already_sent` | "Este pedido já foi enviado." | "Ver o pedido" → `/pedido/<ref>` (também em `next_url`; o acesso ao pedido é dado a este navegador) |
+| Encerrada, apagada ou sem item | `cart_empty` | "Sua sacola ficou vazia antes do envio." | "Ver o cardápio" → `/menu` |
+| Viva | segue a recusa original (`revision_changed` reprecifica e reabre) | | |
+
+Quando a chave da sacola já saiu da sessão (o envio que deu certo a tira), a outra
+aba do mesmo navegador não tem sacola para ler. Aí vale o pedido mais novo que ESTE
+navegador recebeu (`grant_order_access`), neste canal, da pessoa logada, criado há
+menos de `checkout.RECENTLY_SENT_WINDOW` (30 min, o prazo padrão da reserva da
+sacola): é `order_already_sent` com o link dele. Sem esse pedido, `cart_empty`.
+Outro navegador da mesma pessoa não tem a concessão e recebe `cart_empty`.
+
+O selo do Core ainda em andamento com a mesma chave (`in_progress`, quando o
+recibo de 30 s da loja expirou antes) sai como `mutation_in_progress`, "Seu pedido
+ainda está sendo enviado. Aguarde a confirmação nesta tela.", e a tela confere até
+o pedido aparecer. `finalizar.vue` abre o pedido que já saiu com o aviso de página
+"Este pedido já foi enviado." (o mesmo quando a tentativa cai em
+`idempotency_conflict` e a tela recupera o pedido) e, na sacola que sumiu, recarrega
+a tela vazia com o aviso de página e o botão "Ver o cardápio"; enquanto ele está à
+vista, a etapa e a barra do total não repetem a frase nem a saída. Nenhuma dessas
+recusas vira toast (`utils/checkoutBagRefusal.ts`, `components/PageNotice.vue`).
 
 ### Recusa nomeada: contato já usado por outro cadastro (409)
 
@@ -252,6 +321,44 @@ As APIs do Marketing (`/api/v1/backstage/marketing/`,
 (`contracts/openapi/marketing_v2.openapi.json`). Um `MarketingContractError` que
 uma view não traduziu cai em `_CampaignBase.handle_exception` e sai no shape de
 comando (422) — nunca 500 sem código.
+
+### Superset da Produção (deliberado; WP-F14)
+
+As mutações da Produção (`/api/v1/backstage/production/…`) falam o canônico **por
+cima** de um envelope próprio. Na validação (400), `detail` é a frase do primeiro
+problema, nunca "Corrija os campos indicados"; `field` sobe quando o problema é de um
+campo e `errors` traz o mapa campo → frases. `error.issues` segue para a tela marcar
+cada campo (`shopman/backstage/api/_production_mutations.py::validation_error_body`).
+
+```json
+{
+  "detail": "Um número válido é necessário.",
+  "field": "quantity",
+  "errors": {"quantity": ["Um número válido é necessário."]},
+  "error": {"code": "validation_error", "issues": [{"field": "quantity", "code": "invalid", "message": "Um número válido é necessário."}]}
+}
+```
+
+O Core nunca fala com o operador. `_operator_error`
+(`shopman/backstage/services/production.py`) traduz `CraftError` e `StockError` na
+borda, e os serviços que não passavam por ele (`register_old_dough`,
+`authorize_formula_deviation`) passam pelo `_speaks_to_operator`: nada deles vira 500.
+
+| Código do Core | O que o operador lê |
+|---|---|
+| `COMMITTED_HOLDS` | "Há 12 un. encomendadas para este dia. O plano não pode ficar abaixo disso." No Planejamento, a recusa vem **antes** do Core, como `order_shortage` (409) sem a oferta de forçar, com "Revisar quantidade" e "Ver encomendas" |
+| `INSUFFICIENT_MATERIALS` | "Falta insumo para esta quantidade: Manteiga. Revise o número ou peça ao Compras antes de planejar." (o nome do insumo, nunca o SKU) |
+| `DOWNSTREAM_DEFICIT` | "Reduzir este lote deixa faltar para os lotes que já estão planejados com ele (Croissant). Reduza esses lotes primeiro." |
+| `TERMINAL_STATUS`, `VOID_FROM_DONE`, `INVALID_STATUS`, `STALE_REVISION`, `IDEMPOTENCY_CONFLICT`, `AMBIGUOUS_WORK_ORDER` | conflito (409) com "Atualize o painel" |
+| `RECIPE_NOT_FOUND`, `WORK_ORDER_NOT_FOUND` | 404 com "Receita/Lote não encontrado. Atualize o painel." |
+| código sem tradução | "Não deu para salvar esta mudança na produção. Atualize o painel e tente de novo."; o código vai para o log (`production.untranslated_craft_error`), para virar tradução |
+| `StockError` (qualquer) | "O estoque não aceitou: {a frase do estoque}. Nada foi gravado. Atualize o painel e tente de novo." (sem `[CODIGO]`) |
+
+As duas travas de redução do plano dizem uma frase só. Onde o Core recusaria
+(`COMMITTED_HOLDS`), a Produção recusa antes e não oferece "Salvar com
+justificativa". Onde só a trava dos pedidos ligados ao lote recusa, a frase é "Há 8 un.
+encomendadas neste lote. Para planejar menos, é preciso justificar.", e quem tem
+a permissão salva com justificativa. Trava: `shopman/backstage/tests/test_erros_em_portugues.py`.
 
 ---
 
@@ -361,7 +468,7 @@ raise BaseError(code="SOME_CODE", message="descrição", extra_key="valor")
 
 **Subclasse:** `StaleRevision(CraftError)` — levantada com `code="STALE_REVISION"` automaticamente, recebe `(order, expected_rev)`.
 
-**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
+**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/completed/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
 
 | Código | Quando ocorre | Na API do backstage (`/api/v1/backstage/recipes/*`) |
 |--------|--------------|------|

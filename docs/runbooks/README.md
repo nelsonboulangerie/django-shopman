@@ -44,11 +44,13 @@ não implementou deve percorrer as oito decisões e assinar a evidência do MKT-
 - [Loja aberta/fechada em estado errado](loja-estado-incorreto.md)
 - [Pedido remoto preso](pedido-remoto-preso.md)
 - [Rollback de deploy quebrado](rollback-de-deploy.md)
+- [Promover um release do alpha para produção (mesmo digest, sem rebuild)](promover-release.md)
 - [Admin fora do ar com instância única: sondas, access log e a 2ª instância](web-operator-resiliencia.md)
 - [Backup antes do `migrate`, e restore ensaiado](backup-e-restore.md)
 - [Alpha tecnico pronto-para-virar](alpha-technical-readiness.md)
 - [Alpha DigitalOcean - handoff operacional](alpha-digitalocean-handoff.md)
 - [Ativar Focus NFe (NFC-e): homologação → produção](ativar-focus-nfe.md)
+- [Formas de pagamento da NFC-e: prova em homologação (03, 04, 17, 99, troco)](nfce-formas-de-pagamento-homologacao.md)
 - [Pré-flight de go-live (switches antes do alpha/produção)](go-live-preflight.md)
 
 ## Procedimentos

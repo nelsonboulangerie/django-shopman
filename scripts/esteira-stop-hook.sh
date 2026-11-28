@@ -15,9 +15,10 @@
 #   - arquivo não commitado          → commit por arquivo nomeado
 #   - commit não empurrado           → git push -u origin <branch>
 #   - delta real sem PR              → gh pr create (draft + "WIP:" se parcial)
-#   - PR verde fora da fila          → gh pr merge <N>
+#   - PR verde fora da fila          → make ready pr=<N> (preflight verde do HEAD; DEV-2026-098)
 #   - PR vermelho / em conflito      → conserte, ou nomeie a causa no relatório
 #   - PR mergeado e branch com delta → PR de seguimento
+#   - PR sem a seção "Ficou de fora"  → issue `ficou-de-fora` por item, ou "nada"
 #
 # Bloqueia UMA vez por turno (stop_hook_active): a segunda tentativa passa, para
 # que "estou esperando a palavra do Pablo sobre X" continue sendo uma saída
@@ -84,13 +85,20 @@ if [ "${ahead}" -gt 0 ] && command -v gh >/dev/null 2>&1; then
     fail="$(printf '%s' "${pr}" | jq -r '[.statusCheckRollup[]? | select(.conclusion=="FAILURE")] | length')"
     case "${state}" in
       OPEN)
+        # O que o PR deixou de fora precisa estar em issue (check "Ficou de fora
+        # declarado"). Pergunta aqui para a sessão saber antes do CI reprovar.
+        top="$(git -C "${cwd}" rev-parse --show-toplevel 2>/dev/null)"
+        if [ "${draft}" != "true" ] && [ -f "${top}/scripts/check_ficou_de_fora.py" ] && \
+          ! python3 "${top}/scripts/check_ficou_de_fora.py" --pr "${prn}" >/dev/null 2>&1; then
+          pend+="  - PR #${prn} não declara o que ficou de fora: issue com label ficou-de-fora para cada item + seção '## Ficou de fora' (ou 'nada') no corpo (python3 scripts/check_ficou_de_fora.py --pr ${prn})\n"
+        fi
         if [ "${draft}" != "true" ]; then
           if [ "${mss}" = "DIRTY" ]; then
             pend+="  - PR #${prn} em CONFLITO com o main (merge do main no branch, resolva, push)\n"
           elif [ "${fail}" -gt 0 ]; then
             pend+="  - PR #${prn} VERMELHO: ${fail} check(s) reprovados — conserte, ou nomeie a causa e o próximo passo no relatório\n"
           elif [ "${queued}" != "true" ] && { [ "${mss}" = "CLEAN" ] || [ "${mss}" = "BEHIND" ] || [ "${mss}" = "UNSTABLE" ]; }; then
-            pend+="  - PR #${prn} verde e FORA DA FILA (gh pr merge ${prn} — sem flag de estratégia; a fila é dona)\n"
+            pend+="  - PR #${prn} verde e FORA DA FILA (make preflight && make ready pr=${prn} — enfileira o HEAD com prova local; a fila é dona)\n"
           fi
         fi ;;
       MERGED)
@@ -108,7 +116,7 @@ fi
   echo "ESTEIRA: a sessão não encerra com trabalho dormente. Pendente em ${branch}:"
   printf '%b' "${pend}"
   echo
-  echo "Regra da casa (CLAUDE.md, 'A ESTEIRA'): aprovado = commit → push → PR → gh pr merge <N>, no mesmo turno."
+  echo "Regra da casa (CLAUDE.md, 'A ESTEIRA'): aprovado = commit → push → PR → make preflight → make ready pr=<N>, no mesmo turno."
   echo "Versionamento reverte; trabalho parado na worktree é invisível para o Pablo e para as outras sessões."
   echo "Faça agora: commit por ARQUIVO nomeado, push, PR (draft 'WIP:' se parcial), enfileire se verde."
   echo "Se está bloqueado por decisão que só o Pablo pode tomar: publique o que existe, escreva a pergunta"

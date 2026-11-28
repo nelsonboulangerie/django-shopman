@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
+import FloorTimerCreateDialog from "../../app/components/FloorTimerCreateDialog.vue";
 import TimersPage from "../../app/pages/timers.vue";
 // O card entra DE VERDADE: é a integração página↔card que importa aqui (o
 // gesto em si tem teste próprio em FloorTimerCard.test.ts). Componente
@@ -15,6 +16,8 @@ import { nuxtUiStubs } from "../support/nuxtUiStubs";
 // é a UX pedida: UM toque na etiqueta dispara, "Novo timer" abre o caminho
 // livre, e os ativos aparecem como cards.
 const entries = ref<FloorTimerEntry[]>([]);
+const soundOff = ref(false);
+const enableSoundSpy = vi.fn();
 const tags = ref([
   { ref: "estufa", label: "Estufa", minutes: 60, origin: "admin" as const },
   { ref: "pausa-cafe", label: "Pausa-café", minutes: 15, origin: "admin" as const },
@@ -22,6 +25,7 @@ const tags = ref([
 const createSpy = vi.fn();
 const seenSpy = vi.fn();
 const clearSpy = vi.fn();
+const restoreSpy = vi.fn();
 const extendSpy = vi.fn();
 const createTagSpy = vi.fn();
 const sonnerSuccess = vi.fn();
@@ -71,8 +75,11 @@ beforeEach(() => {
     create: createSpy,
     seen: seenSpy,
     clear: clearSpy,
+    restore: restoreSpy,
     extend: extendSpy,
     remainingLabel: () => "12:34",
+    soundOff,
+    enableSound: enableSoundSpy,
   }));
   vi.stubGlobal("useTimerTags", () => ({
     tags,
@@ -84,6 +91,8 @@ beforeEach(() => {
     saving: ref(false),
   }));
   entries.value = [];
+  soundOff.value = false;
+  enableSoundSpy.mockClear();
   createSpy.mockClear();
   createTagSpy.mockClear();
   createTagSpy.mockResolvedValue({ ok: true, created: true, tag: tags.value[0] });
@@ -125,6 +134,14 @@ describe("Página /timers — disparo de um toque", () => {
     expect(page.find("[data-create-dialog]").exists()).toBe(false);
   });
 
+  it("toque duplo na mesma etiqueta arma um timer só (beta 05/11)", async () => {
+    const page = await mountPage();
+    const tag = byLabel(page, "Disparar Estufa, 1 h")!;
+    await tag.trigger("click");
+    await tag.trigger("click");
+    expect(createSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('"Novo timer" abre o caminho livre', async () => {
     const page = await mountPage();
     expect(page.find("[data-create-dialog]").exists()).toBe(false);
@@ -133,6 +150,18 @@ describe("Página /timers — disparo de um toque", () => {
     await novo!.trigger("click");
 
     expect(page.find("[data-create-dialog]").exists()).toBe(true);
+  });
+
+  it("o nome do timer para em 40 letras, o teto da etiqueta (beta 05/11)", async () => {
+    const dialog = mount(FloorTimerCreateDialog, {
+      props: { open: true, tags: [], lastMinutes: 20, savingTag: false },
+      global: { stubs: { ...nuxtUiStubs, Icon: true } },
+    });
+    await nextTick();
+    const nameInput = dialog.find('[aria-label="Nome do timer"]');
+    expect(nameInput.attributes("maxlength")).toBe("40");
+    expect(dialog.html()).not.toContain("Não trava lote");
+    dialog.unmount();
   });
 });
 
@@ -167,8 +196,37 @@ describe("Página /timers — os ativos como cards", () => {
     await explicit.find((b) => b.text() === "+5 min")!.trigger("click");
     expect(extendSpy).toHaveBeenCalledWith("a", 5);
 
+    const removed = { endsAt: 123, minutes: 20, kind: "free", label: "Estufa" };
+    clearSpy.mockReturnValueOnce(removed);
     await explicit.find((b) => b.text() === "Encerrar")!.trigger("click");
     expect(clearSpy).toHaveBeenCalledWith("a");
+    // Encerrar não pergunta, mas oferece Desfazer com o mesmo fim (beta 05/11).
+    const [message, options] = sonnerSuccess.mock.calls.at(-1)!;
+    expect(message).toBe("Timer encerrado.");
+    options.action.onClick();
+    expect(restoreSpy).toHaveBeenCalledWith("a", removed);
+  });
+});
+
+// WP-F12 (P1-12): depois de recarregar, o navegador só libera o som no próximo
+// toque. O card que ainda vai tocar avisa, e o toque no aviso liga.
+describe("Página /timers — som desligado depois de recarregar", () => {
+  it('o card diz "Som desligado. Toque para ligar." e o toque liga', async () => {
+    soundOff.value = true;
+    entries.value = [entry({ key: "a", title: "Estufa", mode: "running" })];
+    const page = await mountPage();
+
+    const notice = page.find("[data-floor-timer-sound-off]");
+    expect(notice.text()).toBe("Som desligado. Toque para ligar.");
+    await notice.trigger("click");
+    expect(enableSoundSpy).toHaveBeenCalled();
+  });
+
+  it("com o som ligado, nada de aviso", async () => {
+    entries.value = [entry({ key: "a", title: "Estufa", mode: "running" })];
+    const page = await mountPage();
+
+    expect(page.find("[data-floor-timer-sound-off]").exists()).toBe(false);
   });
 });
 

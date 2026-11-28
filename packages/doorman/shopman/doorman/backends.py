@@ -50,10 +50,10 @@ class PhoneOTPBackend(BaseBackend):
         if customer_id is None:
             return None
 
-        from .conf import get_customer_resolver
+        from .conf import get_identity_resolver
 
-        resolver = get_customer_resolver()
-        customer = resolver.get_by_uuid(customer_id)
+        resolver = get_identity_resolver()
+        customer = resolver.get(customer_id, purpose="session")
 
         if customer is None:
             logger.warning(

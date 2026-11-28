@@ -123,20 +123,19 @@ Checklist para qualquer wrapper:
 
 ## Vocabulário-alvo
 
-Esta tabela é o **alvo** de vocabulário, não o inventário do kit. Vários `Ui*`
-listados ainda não têm consumidor de produção e estão em decisão (adotar ou
-apagar); o inventário vivo é `docs/reference/operator-component-ledger.json` e o
-léxico executável do catálogo (`docs/reference/operator-kitchen-sink.md`).
+Esta tabela é o vocabulário vigente. O inventário vivo é
+`docs/reference/operator-component-ledger.json` e o léxico executável do catálogo
+(`docs/reference/operator-kitchen-sink.md`).
 
 Use estes contratos antes de criar qualquer peça nova:
 
 | Necessidade | Contrato |
 |---|---|
-| ação | `UiButton` |
-| texto curto | `UiInput` |
-| texto longo | `UiTextarea` |
-| escolha curta do sistema | `UiNativeSelect` |
-| escolha longa com busca local | `UiSelect` |
+| ação | `NuxtButton` |
+| texto curto | `NuxtInput` |
+| texto longo | `NuxtTextarea` |
+| escolha curta e fixa | `NuxtSelect` |
+| escolha longa, buscável ou crescente | `NuxtSelectMenu` |
 | múltipla escolha | `UiCheckbox` |
 | escolha exclusiva | `UiRadioGroup` e `UiRadio` |
 | liga/desliga | `UiSwitch` |

@@ -48,7 +48,7 @@ def test_roda_de_novo_enquanto_ha_mensagem_pendente(monkeypatch):
     ])
     calls: list[tuple[int, int]] = []
 
-    def fake_run_turn(conversation_id, binding_id, *, client=None):
+    def fake_run_turn(conversation_id, binding_id, **kwargs):
         calls.append((conversation_id, binding_id))
         return next(results)
 

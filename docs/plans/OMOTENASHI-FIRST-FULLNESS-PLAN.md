@@ -17,7 +17,7 @@ Este plano complementa:
 - [`docs/reference/omotenashi-audit-framework.md`](../reference/omotenashi-audit-framework.md)
 - [`docs/omotenashi-checklist.md`](../omotenashi-checklist.md)
 - [`docs/plans/completed/OMOTENASHI-PLAN.md`](completed/OMOTENASHI-PLAN.md)
-- [`docs/plans/PROJECTION-UI-PLAN.md`](PROJECTION-UI-PLAN.md)
+- [`docs/plans/PROJECTION-UI-PLAN.md`](completed/PROJECTION-UI-PLAN.md)
 
 ## Principio central
 

@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Clique nunca inerte: trava estática da layer e dos apps de operador.
 //
@@ -14,6 +14,15 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // pela `usePendingAction` (que não é `async function`, então sai da varredura). O que
 // já existia sem isso está em `KNOWN_INERT`, que só encolhe: consertou, tira da lista
 // (a entrada que sobrou reprova); entrada nova reprova com o arquivo e a função.
+//
+// Desde DEV-2026-094 o `NuxtButton` (e o `OperatorButton`, que o embrulha) nasce com o
+// `loadingAuto` ligado (`app/plugins/buttonPendingByDefault.ts`): o clique que DEVOLVE
+// a promessa (`@click="save"`, `@click="save(x)"`) já gira e trava sozinho, e sai da
+// varredura. O que ainda pode ficar mudo é:
+//   - o `<button>` nativo, que não tem o automático (a regra de sempre);
+//   - o botão da suíte cujo handler DESCARTA a promessa (`@click="a(); save()"`,
+//     `@click="() => { save() }"`): o automático não a enxerga. Isso reprova sem lista;
+//   - o `:loading-auto="false"`, que desliga o automático: só com motivo, na lista.
 //
 // É heurística de propósito: não vê handler inline (`@click="x = await …"`) nem ação
 // async importada de composable. Pega o caso comum, o botão que chama a função async
@@ -133,6 +142,42 @@ function confirmOnlyNames(
   return confirmOnly;
 }
 
+// Botões da suíte com o pendente automático (o `loadingAuto` ligado no plugin).
+const AUTO_PENDING_TAGS = /^<(?:NuxtButton|OperatorButton)\b/;
+// Handler que devolve o que a função devolveu: o nome solto ou UMA chamada.
+const RETURNS_RESULT = /^(?:\w+|\w+\([^;]*\))$/;
+
+function asyncNamesOf(script: string): Set<string> {
+  const declaredAsync = new Set([
+    ...[...script.matchAll(/async\s+function\s+(\w+)/g)].map((m) => m[1]!),
+    ...[...script.matchAll(/(?:const|let)\s+(\w+)\s*=\s*async\b/g)].map(
+      (m) => m[1]!,
+    ),
+  ]);
+  const confirmOnly = confirmOnlyNames(script, declaredAsync);
+  return new Set([...declaredAsync].filter((name) => !confirmOnly.has(name)));
+}
+
+// Botão da suíte cujo handler chama uma função async e joga a promessa fora: o
+// pendente automático não a vê, e o botão fica mudo.
+function discardedAsyncClicks(source: string): string[] {
+  const { script, template } = splitScripts(source);
+  const asyncNames = asyncNamesOf(script);
+  const found = new Set<string>();
+  for (const tag of openingTags(template)) {
+    if (!AUTO_PENDING_TAGS.test(tag)) continue;
+    const click = tag.match(/@click(?:\.\w+)*="([^"]*)"/);
+    if (!click) continue;
+    const handler = click[1]!.trim();
+    if (RETURNS_RESULT.test(handler)) continue;
+    if (/\s:(?:loading|aria-busy)=/.test(tag)) continue;
+    for (const call of handler.matchAll(/\b(\w+)\s*\(/g)) {
+      if (asyncNames.has(call[1]!)) found.add(call[1]!);
+    }
+  }
+  return [...found].sort();
+}
+
 function inertAsyncClicks(source: string): string[] {
   const { script, template } = splitScripts(source);
   const declaredAsync = new Set([
@@ -148,32 +193,26 @@ function inertAsyncClicks(source: string): string[] {
   const inert = new Set<string>();
   for (const tag of openingTags(template)) {
     const click = tag.match(
-      /@click(?:\.\w+)*="(?:void\s+)?(\w+)(?:\([^"]*\))?"/,
+      /@click(?:\.\w+)*="(void\s+)?(\w+)(?:\([^"]*\))?"/,
     );
-    if (!click || !asyncNames.has(click[1]!)) continue;
+    if (!click || !asyncNames.has(click[2]!)) continue;
+    // O botão da suíte gira sozinho quando o handler devolve a promessa.
+    if (AUTO_PENDING_TAGS.test(tag) && !click[1]) continue;
     if (/\s:(?:loading|aria-busy|disabled)=/.test(tag)) continue;
-    inert.add(click[1]!);
+    inert.add(click[2]!);
   }
   return [...inert].sort();
 }
 
-// O que já existia sem pendente declarado em 01/10/2026. Só encolhe.
-const KNOWN_INERT: Record<string, string[]> = {
-  "bi-nuxt/app/pages/explore.vue": ["removeLoaded"],
-  "marketing-nuxt/app/pages/settings/templates.vue": ["confirmRemove"],
-  "orders-nuxt/app/components/ChannelHealthChecklist.vue": ["copyAddress"],
-  "orders-nuxt/app/pages/catalog.vue": ["saveOrderDraft"],
-  "pos-nuxt/app/components/PosAddressAutocomplete.vue": ["accept"],
-  "pos-nuxt/app/components/PosCustomerModal.vue": ["cancelDecision"],
-  "pos-nuxt/app/components/PosPaymentResult.vue": ["copyCode", "copyLink"],
-  "production-nuxt/app/components/ProductionStageGrid.vue": ["confirmVoid"],
-  "production-nuxt/app/pages/board.vue": ["toggleFullscreen"],
-};
+// O que já existia sem pendente declarado em 01/10/2026. Só encolhe. Zerou em
+// 25/11/2026 (DEV-2026-094): os dez itens eram `NuxtButton`, e o pendente automático
+// os cobriu. Fica vazio; item novo reprova.
+const KNOWN_INERT: Record<string, string[]> = {};
 
 describe("clique nunca inerte (layer + apps de operador)", () => {
   it("botão com ação async declara o pendente; a lista do que falta só encolhe", () => {
     const found: Record<string, string[]> = {};
-    for (const dir of ["operator-kit", ...OPERATOR_SURFACES]) {
+    for (const dir of ["operator-kit", ...OPERATOR_KIT_SURFACES]) {
       for (const file of vueFiles(join(surfacesDir, dir, "app"))) {
         const inert = inertAsyncClicks(readFileSync(file, "utf8"));
         if (inert.length) found[relative(surfacesDir, file)] = inert;
@@ -215,5 +254,65 @@ describe("clique nunca inerte (layer + apps de operador)", () => {
     expect(board).toContain("loading: bulkAdvancing.value");
     const bar = readFileSync(join(surfacesDir, "operator-kit/app/components/OperatorBulkBar.vue"), "utf8");
     expect(bar.match(/:aria-busy="[^"]*loading \|\| undefined"/g)?.length).toBe(3);
+  });
+  it("botão da suíte nunca joga fora a promessa da ação (o automático não a veria)", () => {
+    const found: Record<string, string[]> = {};
+    for (const dir of ["operator-kit", ...OPERATOR_KIT_SURFACES]) {
+      for (const file of vueFiles(join(surfacesDir, dir, "app"))) {
+        const discarded = discardedAsyncClicks(readFileSync(file, "utf8"));
+        if (discarded.length) found[relative(surfacesDir, file)] = discarded;
+      }
+    }
+    expect(found).toEqual({});
+  });
+
+  it("a varredura do descarte reconhece o handler que joga a promessa fora", () => {
+    const script = "<script setup>async function save() {}\nconst open = ref(false)</script>";
+    const returns = `${script}<template><NuxtButton @click="save(1)" /></template>`;
+    const discards = `${script}<template><NuxtButton @click="open = false; save()" /></template>`;
+    const block = `${script}<template><OperatorButton label="x" @click="() => { save() }" /></template>`;
+    const declared = `${script}<template><NuxtButton :loading="busy" @click="open = false; save()" /></template>`;
+    expect(discardedAsyncClicks(returns)).toEqual([]);
+    expect(discardedAsyncClicks(discards)).toEqual(["save"]);
+    expect(discardedAsyncClicks(block)).toEqual(["save"]);
+    expect(discardedAsyncClicks(declared)).toEqual([]);
+    // E o botão da suíte que devolve a promessa não é mais "inerte".
+    expect(inertAsyncClicks(returns)).toEqual([]);
+    expect(inertAsyncClicks(`${script}<template><button @click="save">x</button></template>`)).toEqual(["save"]);
+  });
+
+  it("desligar o automático (`:loading-auto=\"false\"`) só com motivo escrito aqui", () => {
+    // Hoje ninguém desliga. Quem precisar, entra nesta lista com o porquê.
+    const ALLOWED_OPT_OUT: Record<string, string> = {};
+    const found: string[] = [];
+    for (const dir of ["operator-kit", ...OPERATOR_KIT_SURFACES]) {
+      for (const file of vueFiles(join(surfacesDir, dir, "app"))) {
+        if (/:loading-auto="false"|:loadingAuto="false"/.test(readFileSync(file, "utf8")))
+          found.push(relative(surfacesDir, file));
+      }
+    }
+    expect(found.sort()).toEqual(Object.keys(ALLOWED_OPT_OUT).sort());
+  });
+
+  it("a raiz está ligada: botão pendente por padrão, barra de rota, link marcado e quadro antes da troca", () => {
+    const plugin = readFileSync(join(kitDir, "app/plugins/buttonPendingByDefault.ts"), "utf8");
+    expect(plugin).toContain("option.default = true");
+    const root = readFileSync(join(kitDir, "app/components/OperatorAppRoot.vue"), "utf8");
+    expect(root).toContain("<OperatorLoadingFeedback />");
+    const feedback = readFileSync(join(kitDir, "app/components/OperatorLoadingFeedback.vue"), "utf8");
+    expect(feedback).toContain('"page:loading:start"');
+    expect(feedback).toContain("data-navigation-pending");
+    // A barra anda só por `transform` (o compositor a mantém viva em tarefa longa).
+    expect(feedback).toContain("data-operator-route-bar");
+    expect(feedback).toMatch(/@keyframes operator-route-bar \{\s*from \{ transform/);
+    const paints = readFileSync(join(kitDir, "app/plugins/navigationPaintsFirst.client.ts"), "utf8");
+    expect(paints).toContain("await nextPaint()");
+    // A marca do link mora no próprio componente (global), não no tema com gate de baseline.
+    expect(feedback).toMatch(/<style>\s*[\s\S]*a\[data-navigation-pending\]/);
+    // Todo app da suíte monta o OperatorAppRoot: é por ele que a barra chega.
+    for (const dir of OPERATOR_KIT_SURFACES) {
+      const app = join(surfacesDir, dir, "app/app.vue");
+      if (existsSync(app)) expect(readFileSync(app, "utf8"), dir).toContain("<OperatorAppRoot");
+    }
   });
 });

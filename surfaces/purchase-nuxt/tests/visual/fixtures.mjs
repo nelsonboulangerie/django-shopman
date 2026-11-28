@@ -92,6 +92,7 @@ function suppliers() {
     isActive: index !== 4,
     lastDeliveryAt: "2026-10-06",
     paymentTerm: term,
+    sendDirectly: false,
   }));
 }
 
@@ -130,7 +131,7 @@ function materials() {
       name,
       unit,
       shelfLifeDays: category === "Frutas" ? 4 : category === "Laticínios" ? 20 : null,
-      isActive: true,
+      isActive: sku !== "AMENDOA-LAMINADA",
       category,
       stockOnHand: stock,
       dailyUse,

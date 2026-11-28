@@ -7,9 +7,9 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
-from django.apps import apps
 from django.db import transaction
 from shopman.orderman import registry
+from shopman.orderman.conf import get_customer_fence
 from shopman.orderman.exceptions import SessionError, ValidationError
 from shopman.orderman.ids import generate_line_id
 from shopman.orderman.models import Directive, Session
@@ -47,6 +47,7 @@ class ModifyService:
         ops: list[dict],
         ctx: dict | None = None,
         channel_config: dict | None = None,
+        expected_revision: int | None = None,
     ) -> Session:
         ctx = ctx or {}
 
@@ -56,20 +57,14 @@ class ModifyService:
         # operations do not pay for, or participate in, this lock.
         locked_customer = None
         customer_ref = ModifyService._customer_ref_from_ops(ops)
-        if customer_ref:
-            try:
-                Customer = apps.get_model("guestman", "Customer")
-            except LookupError:
-                Customer = None
-            if Customer is not None:
-                locked_customer = (
-                    Customer.objects.select_for_update().filter(ref=customer_ref).first()
+        fence = get_customer_fence() if customer_ref else None
+        if fence is not None:
+            locked_customer = fence.lock_by_ref(customer_ref)
+            if locked_customer is not None and not locked_customer.is_active:
+                raise SessionError(
+                    code="customer_inactive",
+                    message="O titular desta sessão não está mais ativo.",
                 )
-                if locked_customer is not None and not locked_customer.is_active:
-                    raise SessionError(
-                        code="customer_inactive",
-                        message="O titular desta sessão não está mais ativo.",
-                    )
 
         # 1. Lock session
         try:
@@ -83,11 +78,14 @@ class ModifyService:
                 message=f"Sessão não encontrada: {channel_ref}:{session_key}",
             ) from exc
 
-        if locked_customer is not None and not type(locked_customer).objects.filter(
-            pk=locked_customer.pk,
-            ref=customer_ref,
-            is_active=True,
-        ).exists():
+        if expected_revision is not None and session.rev != int(expected_revision):
+            raise ValidationError(
+                code="revision_changed",
+                message="Sua sacola mudou. Confira os itens e confirme novamente.",
+                context={"revision": session.rev},
+            )
+
+        if locked_customer is not None and not fence.is_active_owner(locked_customer, customer_ref):
             raise SessionError(
                 code="customer_inactive",
                 message="O titular desta sessão não está mais ativo.",

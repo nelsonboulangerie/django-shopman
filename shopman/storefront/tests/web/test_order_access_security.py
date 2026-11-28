@@ -21,11 +21,12 @@ pytestmark = pytest.mark.django_db
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=getattr(customer, "email", None) or None,
@@ -51,7 +52,7 @@ def test_tracking_api_allows_session_order_access(client, order):
     assert response.json()["ref"] == order.ref
 
 
-def test_tracking_route_resumes_pix_intent_that_has_no_payable_artifact(client, order):
+def test_payment_check_resumes_pix_intent_that_has_no_payable_artifact(client, order):
     order.data = {"payment": {"method": "pix", "intent_ref": "PAY-PARTIAL-EFI"}}
     order.save(update_fields=["data", "updated_at"])
 
@@ -69,7 +70,7 @@ def test_tracking_route_resumes_pix_intent_that_has_no_payable_artifact(client, 
         "shopman.shop.services.customer_orders.payment_service.initiate",
         side_effect=finish_qr,
     ) as resume:
-        response = client.get(f"/api/v1/tracking/{order.ref}/")
+        response = client.post(f"/api/v1/orders/{order.ref}/payment/check/")
 
     assert response.status_code == 200
     resume.assert_called_once()

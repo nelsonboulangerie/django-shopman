@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 
 
 def _parse(value) -> datetime | None:
@@ -94,6 +95,19 @@ def delivery_start(order) -> datetime | None:
     return _parse(schedule.get("delivery_start_at"))
 
 
+def delivery_end(order) -> datetime | None:
+    """Fim da janela de entrega que o iFood prometeu ao cliente (UTC).
+
+    A mesma validação de :func:`delivery_start`: agendamento ilegível não tem fim.
+    """
+    if not is_scheduled(order):
+        return None
+    schedule = ((order.data or {}).get("ifood") or {}).get("schedule") or {}
+    if _validate_schedule(schedule) is None:
+        return None
+    return _parse(schedule.get("delivery_end_at"))
+
+
 def block_reason(order, *, now: datetime | None = None) -> str:
     """Human reason preventing physical work; confirmation remains allowed."""
     if not is_scheduled(order):
@@ -105,9 +119,25 @@ def block_reason(order, *, now: datetime | None = None) -> str:
     if current is None:
         return "Não foi possível validar o horário atual para preparar o pedido iFood."
     if current < start:
-        display = timezone.localtime(start).strftime("%d/%m/%Y às %H:%M")
+        display = format_local(start, "%d/%m/%Y às {clock}")
         return f"Pedido agendado no iFood: aguarde o início do preparo em {display}."
     return ""
+
+
+def dispatch_before_window(order, *, now: datetime | None = None) -> bool:
+    """A saída do agendado ainda não abriu: a janela do cliente começa depois de agora.
+
+    O iFood reprova o despacho de pedido agendado antes do início da janela que o
+    cliente escolheu (homologação de 07/11/2026, cenário "Pedido Despachado
+    Agendado": "O pedido foi despachado antes da janela de entrega agendada").
+    Janela ausente ou ilegível não decide nada aqui: quem barra o agendado sem
+    horário válido é :func:`block_reason`, já no preparo.
+    """
+    start = delivery_start(order)
+    if start is None:
+        return False
+    current = _parse(now) if now is not None else timezone.now()
+    return current is not None and current < start
 
 
 def is_due(order, *, now: datetime | None = None) -> bool:

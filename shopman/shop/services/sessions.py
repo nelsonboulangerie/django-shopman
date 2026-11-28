@@ -7,16 +7,25 @@ clearest representation boundary.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal
+
 from django.db import models, transaction
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Session
-from shopman.orderman.services.commit import CommitResult, CommitService
+from shopman.orderman.services.commit import CommitAuthority as _CommitAuthority
+from shopman.orderman.services.commit import CommitResult, CommitSeal, CommitService
 from shopman.orderman.services.modify import ModifyService
 from shopman.utils.phone import normalize_phone
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.models import Channel
+
+# Public facade name for surfaces that must construct the canonical seal
+# without importing an Orderman write module directly.
+CommitAuthority = _CommitAuthority
 
 
 def new_session_key() -> str:
@@ -59,6 +68,7 @@ def modify_session(
     ops: list[dict],
     ctx: dict | None = None,
     channel_config: dict | None = None,
+    expected_revision: int | None = None,
 ) -> Session:
     """Apply canonical session operations through Orderman."""
     return ModifyService.modify_session(
@@ -67,6 +77,7 @@ def modify_session(
         ops=ops,
         ctx=ctx,
         channel_config=channel_config,
+        expected_revision=expected_revision,
     )
 
 
@@ -95,8 +106,8 @@ def commit_session(
     session_key: str,
     channel_ref: str,
     idempotency_key: str,
+    seal: CommitSeal,
     ctx: dict | None = None,
-    channel_config: dict | None = None,
 ) -> CommitResult:
     """Commit a session through the canonical Orderman service.
 
@@ -106,10 +117,13 @@ def commit_session(
     from shopman.shop.services.channel_switch import ensure_accepting_orders
 
     ensure_accepting_orders(channel_ref)
+    channel = Channel.objects.get(ref=channel_ref)
+    channel_config = ChannelConfig.for_channel(channel).to_dict()
     return CommitService.commit(
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idempotency_key,
+        seal=seal,
         ctx=ctx,
         channel_config=channel_config,
     )
@@ -123,10 +137,10 @@ def assign_phone_handle(
     phone: str,
     abandon_existing: bool = True,
 ) -> None:
-    """Attach an open session to a phone handle.
+    """Attach the target session to a phone handle.
 
-    When ``abandon_existing`` is true, older open sessions for the same phone
-    and channel are abandoned so the phone has a single active cart/session.
+    When ``abandon_existing`` is true, older open sessions for the same owner
+    and channel are abandoned so the phone has a single active cart.
     """
     if not phone:
         return
@@ -155,12 +169,19 @@ def assign_phone_handle(
                 message="A identidade do titular mudou; confirme novamente.",
             )
 
+    same_owner = models.Q(handle_type="phone", handle_ref=phone)
+    if customer_hint is not None:
+        # Uma tentativa recusada não recebe handle, mas a recotação preserva a
+        # identidade canônica no draft. Só um checkout posteriormente selado
+        # pode abandonar esse carrinho antigo e devolver seus holds.
+        same_owner |= models.Q(data__customer__ref=customer_hint.ref)
+
     sessions = list(
         Session.objects.select_for_update()
-        .filter(channel_ref=channel_ref, state="open")
+        .filter(channel_ref=channel_ref)
         .filter(
             models.Q(session_key=session_key)
-            | models.Q(handle_type="phone", handle_ref=phone)
+            | models.Q(state="open") & same_owner
         )
         .order_by("pk")
     )
@@ -172,14 +193,16 @@ def assign_phone_handle(
             code="session_anonymized",
             message="Uma sessão anonimizada não pode recuperar sua identidade.",
         )
+    older = [
+        candidate
+        for candidate in sessions
+        if candidate.pk != session.pk and candidate.state == "open"
+    ]
+    if not abandon_existing and older:
+        # Preflight: conserva a titularidade e os holds anteriores até todas as
+        # guardas comerciais passarem; a chamada final abaixo fará a troca.
+        return
     if abandon_existing:
-        older = [
-            candidate
-            for candidate in sessions
-            if candidate.pk != session.pk
-            and candidate.handle_type == "phone"
-            and candidate.handle_ref == phone
-        ]
         older_keys = [candidate.session_key for candidate in older]
         if older:
             Session.objects.filter(pk__in=[candidate.pk for candidate in older]).update(
@@ -195,6 +218,86 @@ def assign_phone_handle(
     session.handle_type = "phone"
     session.handle_ref = phone
     session.save(update_fields=["handle_type", "handle_ref"])
+
+
+@transaction.atomic
+def finalize_phone_handle(
+    *,
+    session_key: str,
+    channel_ref: str,
+    phone: str,
+    superseded_session_keys: tuple[str, ...],
+    expected_customer_ref: str = "",
+) -> None:
+    """Finalize only the exact cart predecessors sealed with an Order."""
+    if not phone:
+        return
+    phone = normalize_phone(phone) or phone
+
+    from shopman.guestman.services import customer as customer_service
+
+    from shopman.shop.services import account as account_service
+
+    customer_hint = customer_service.get_by_phone(phone)
+    if customer_hint is not None:
+        if expected_customer_ref and customer_hint.ref != expected_customer_ref:
+            raise SessionError(
+                code="customer_identity_changed",
+                message="A identidade do titular mudou; confirme novamente.",
+            )
+        try:
+            locked_customer = account_service.lock_active_customer(customer_uuid=customer_hint.uuid)
+        except account_service.AccountUnavailable as exc:
+            raise SessionError(
+                code="customer_inactive",
+                message="O titular desta sessão não está mais ativo.",
+            ) from exc
+        current = customer_service.get_by_phone(phone)
+        if current is None or current.pk != locked_customer.pk:
+            raise SessionError(
+                code="customer_identity_changed",
+                message="A identidade do titular mudou; confirme novamente.",
+            )
+
+    exact_keys = tuple(dict.fromkeys(str(key) for key in superseded_session_keys if key))
+    locked = list(
+        Session.objects.select_for_update()
+        .filter(channel_ref=channel_ref)
+        .filter(models.Q(session_key=session_key) | models.Q(session_key__in=exact_keys))
+        .order_by("pk")
+    )
+    target = next((candidate for candidate in locked if candidate.session_key == session_key), None)
+    if target is None:
+        raise SessionError(code="not_found", message="Sessão do pedido não encontrada.")
+    if target.is_anonymized:
+        raise SessionError(
+            code="session_anonymized",
+            message="Uma sessão anonimizada não pode recuperar sua identidade.",
+        )
+
+    abandoned_keys = []
+    for candidate in locked:
+        if candidate.pk == target.pk or candidate.state != "open" or candidate.session_key not in exact_keys:
+            continue
+        candidate_customer = (candidate.data or {}).get("customer") or {}
+        same_phone = candidate.handle_type == "phone" and candidate.handle_ref == phone
+        same_customer = bool(
+            expected_customer_ref
+            and isinstance(candidate_customer, dict)
+            and candidate_customer.get("ref") == expected_customer_ref
+        )
+        if same_phone or same_customer:
+            candidate.state = "abandoned"
+            candidate.save(update_fields=["state"])
+            abandoned_keys.append(candidate.session_key)
+
+    from shopman.shop.services.availability import release_session_holds
+
+    for key in abandoned_keys:
+        release_session_holds(key)
+    target.handle_type = "phone"
+    target.handle_ref = phone
+    target.save(update_fields=["handle_type", "handle_ref"])
 
 
 @transaction.atomic
@@ -235,6 +338,62 @@ def assign_customer(
         return False
     data = dict(session.data or {})
     data["customer"] = merged
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
+def release_customer(*, session_key: str, channel_ref: str) -> bool:
+    """O avesso de ``assign_customer``: a sacola aberta volta a ser de ninguém.
+
+    Roda no logout (OC-09). A sacola sobrevive ao sair, mas o bloco ``customer``
+    (ref, grupos e o que mais a cliente deixou nele) é dela e sai junto com ela:
+    sem isto, o próximo a usar o mesmo navegador lia o preço da anterior até
+    outro login. Devolve ``True`` quando havia identidade a tirar; quem chama
+    reprecifica.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None or "customer" not in (session.data or {}):
+        return False
+    data = dict(session.data or {})
+    data.pop("customer")
+    session.data = data
+    session.save(update_fields=["data"])
+    return True
+
+
+@transaction.atomic
+def assign_experience(
+    *,
+    session_key: str,
+    channel_ref: str,
+    mark: dict,
+) -> bool:
+    """Grava em ``Session.data["experience"]`` de qual versão da loja a sacola veio (OC-22).
+
+    ``mark`` é o ``experience.order_mark`` da requisição. Vazio tira a chave
+    (nenhum experimento valendo). Não mexe em linha, preço nem revisão: é marcação,
+    e o commit a copia para ``Order.data``. Devolve ``True`` quando gravou.
+    """
+    session = (
+        Session.objects.select_for_update()
+        .filter(session_key=session_key, channel_ref=channel_ref, state="open")
+        .first()
+    )
+    if session is None:
+        return False
+    data = dict(session.data or {})
+    if data.get("experience") == (mark or None):
+        return False
+    if mark:
+        data["experience"] = dict(mark)
+    else:
+        data.pop("experience", None)
     session.data = data
     session.save(update_fields=["data"])
     return True
@@ -312,3 +471,95 @@ def abandon_session(*, session_key: str, channel_ref: str) -> bool:
 
         release_session_holds(session_key)
     return bool(updated)
+
+
+@dataclass(frozen=True)
+class OpenSessionElsewhere:
+    """Uma sacola aberta do mesmo cliente em outro canal (OC-17, C06).
+
+    ``session_key`` e ``revision`` são para quem oferece a passagem
+    (``session_transfer.offer``) e nunca saem para a superfície: a chave da
+    sacola de outro canal não é dado de tela. ``items_count`` soma as
+    quantidades como a sacola conta as dela (int quando inteiro);
+    ``subtotal_q`` soma as linhas, sem a entrega.
+    """
+
+    channel_ref: str
+    channel_name: str
+    session_key: str
+    revision: int
+    lines_count: int
+    items_count: int | Decimal
+    subtotal_q: int
+    updated_at: datetime
+
+
+def open_sessions_for_customer(
+    customer_ref: str,
+    *,
+    exclude_channel: str,
+) -> tuple[OpenSessionElsewhere, ...]:
+    """As sacolas abertas, com itens, deste cliente nos OUTROS canais (OC-17, C06).
+
+    Leitura pura: não grava, não trava, não reprecifica e não sincroniza nada.
+    O canal que pergunta avisa que a outra sacola existe; trazer é a oferta do
+    serviço de transferência, nunca esta função. O dono é o ``customer_ref``
+    gravado na sacola (``Session.data["customer"]["ref"]``), nunca o telefone:
+    número coincidente não abre a sacola de outra pessoa (X7). Mais recente
+    primeiro.
+    """
+    if not customer_ref:
+        return ()
+    candidates = (
+        Session.objects.filter(state="open", data__customer__ref=customer_ref)
+        .exclude(channel_ref=exclude_channel)
+        .order_by("-updated_at", "-pk")
+    )
+    return _summaries(candidates)
+
+
+def open_session_summary(channel_ref: str, session_key: str) -> OpenSessionElsewhere | None:
+    """Uma sacola aberta, com itens, contada como em ``open_sessions_for_customer``.
+
+    Para a Nice dizer onde está a sacola que a conversa mandou ao site (OC-18, §4.4),
+    sem abrir as linhas dela. Leitura pura.
+    """
+    if not (channel_ref and session_key):
+        return None
+    found = _summaries(Session.objects.filter(state="open", channel_ref=channel_ref, session_key=session_key))
+    return found[0] if found else None
+
+
+def _summaries(candidates) -> tuple[OpenSessionElsewhere, ...]:
+    found = []
+    for session in candidates:
+        if session.is_anonymized:
+            continue
+        lines = [
+            item
+            for item in (session.items or [])
+            if item.get("sku") != "__DELIVERY_FEE__"
+            and (item.get("meta") or {}).get("type") != "delivery_fee"
+        ]
+        if not lines:
+            continue
+        units = sum((Decimal(str(item.get("qty") or 0)) for item in lines), Decimal(0))
+        found.append((session, lines, int(units) if units == units.to_integral_value() else units))
+    if not found:
+        return ()
+    names = dict(
+        Channel.objects.filter(ref__in={session.channel_ref for session, _, _ in found}).values_list("ref", "name")
+    )
+    return tuple(
+        OpenSessionElsewhere(
+            channel_ref=session.channel_ref,
+            channel_name=names.get(session.channel_ref) or session.channel_ref,
+            session_key=session.session_key,
+            revision=session.rev,
+            lines_count=len(lines),
+            items_count=units,
+            subtotal_q=sum(int(item.get("line_total_q") or 0) for item in lines),
+            updated_at=session.updated_at,
+        )
+        for session, lines, units in found
+    )

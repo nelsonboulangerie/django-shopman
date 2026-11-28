@@ -3,22 +3,31 @@
 // de cada estação, o Painel de retirada), por isso usa pages/. As telas de operador
 // moram no shell da suíte (`OperatorSuiteShell`, fase 2): barra lateral em três estados
 // na mesa, gaveta pelo ☰ e barra inferior abaixo de `lg`, com as estações da casa pelo
-// nome (`kdsShellSections`), a Saída levando ao Gestor e Ajustes no pé.
+// nome (`kdsShellSections`), a Saída levando ao Gestor e Ajustes no pé. O selo abre o
+// trocador (modelo de navegação, 31/10/2026): no celular, a barra de baixo leva as
+// estações e a Saída (`kdsSwitcherSections`), e o ponto de conexão mora no selo.
 //
 // Exceção declarada: o Painel de retirada (`/pickup`) é a TV do salão, para o cliente.
 // Fica fora do shell, em tela cheia, sem navegação e sem login; a trava de operador
 // nunca o cobre.
+import { operatorSupportContext } from "../../operator-kit/app/presentation/support";
+
 const OPERATOR_PERM = "backstage.operate_kds";
 const { canIdentify, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
 
 const route = useRoute();
+
+// O chamado da Cozinha leva app, tela e posto.
+const supportContext = computed(() =>
+  operatorSupportContext("kds", route.path, stationRef.value ? { workstation_ref: stationRef.value } : {}),
+);
 const isCustomerBoard = computed(() => route.path.startsWith("/pickup"));
 // Vincular o dispositivo a um posto (kit, a mesma regra dos oito apps): oferta, não
 // parede, só para quem gere operadores, num dispositivo que ainda não é posto.
 const stationSetup = useStationSetupOffer({ canIdentify, locked, stationRef });
 
-const { sections, current } = useKdsSections();
+const { sections, switcherSections, current } = useKdsSections();
 const settingsOpen = useKdsSettingsOpen();
 // Ajustes não é rota: abre o painel de Ajustes da estação.
 function onSelect(key: string) {
@@ -44,8 +53,12 @@ useOperatorWindowTitle();
         storage-key="kds"
         :sections="sections"
         :current="current"
+        :switcher-sections="switcherSections"
+        default-form="floor"
+        floor-bar
         label="Seções da Cozinha"
         :operator-name="operator?.name"
+        :support-context="supportContext"
         @select="onSelect"
         @lock="lock"
       >
@@ -69,7 +82,7 @@ useOperatorWindowTitle();
         @unavailable="stationSetup.dismiss({ remember: false })"
       />
       <OperatorSonner />
-      <OperatorPwaRuntime />
+      <OperatorPwaRuntime :show-prompts="!isCustomerBoard" />
     </div>
   </OperatorAppRoot>
 </template>

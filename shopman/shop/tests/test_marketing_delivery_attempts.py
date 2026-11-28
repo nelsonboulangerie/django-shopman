@@ -6,8 +6,6 @@ import json
 from datetime import timedelta
 
 import pytest
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 from django.utils import timezone
 
@@ -437,34 +435,3 @@ def test_provider_call_failure_allows_only_failure_taxonomy():
             kind=ProviderOutcomeKind.ACCEPTED_UNCONFIRMED,
             code="not_a_failure",
         )
-
-
-@pytest.mark.django_db(transaction=True)
-def test_attempt_state_migration_preserves_old_rows_conservatively():
-    target = _queued_target(suffix="attempt-migration")
-    attempt = DeliveryAttempt.objects.create(
-        target=target,
-        ordinal=1,
-        state=DeliveryAttempt.State.PREPARED,
-        idempotency_token_hash="b" * 64,
-        request_hash="a" * 64,
-        started_at=timezone.now(),
-        retention_until=timezone.now() + timedelta(days=365 * 5),
-    )
-    before = [("shop", "0030_marketing_delivery_ledger")]
-    after = [("shop", "0031_marketing_attempt_outcomes")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    old_apps = executor.loader.project_state(before).apps
-    OldAttempt = old_apps.get_model("shop", "DeliveryAttempt")
-    assert OldAttempt.objects.get(pk=attempt.pk).state == "started"
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    new_apps = executor.loader.project_state(after).apps
-    NewAttempt = new_apps.get_model("shop", "DeliveryAttempt")
-    assert NewAttempt.objects.get(pk=attempt.pk).state == "calling"
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

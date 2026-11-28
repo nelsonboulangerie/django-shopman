@@ -1,9 +1,12 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # A imagem base é ARG só para a CI trocar de REGISTRO (espelho público da mesma
 # imagem oficial, sem o limite de pull anônimo do Docker Hub). O default é o que o
 # deploy usa e não muda: deploy-images.yml e o App Platform não passam o arg.
-ARG PYTHON_IMAGE=python:3.12-slim
+# O digest @sha256 fixa a imagem exata (o tag anda sozinho); a CI passa o MESMO
+# digest pelo espelho (shopman/shop/tests/test_base_image_digests.py confere).
+# Atualizar = trocar o digest aqui e nos build-args dos workflows, no mesmo PR.
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
 
 FROM ${PYTHON_IMAGE} AS runtime
 
@@ -39,7 +42,7 @@ RUN addgroup --system shopman \
 #   2. `check_geoip_freshness` — no ciclo do maintenance_worker, avisa o operador aos 21
 #      dias e, aos 90, a cidade deixa de aparecer na tela.
 # Ver docs/guides/geolite2-city.md.
-ARG GEOLITE2_SNAPSHOT=2026-09-29
+ARG GEOLITE2_SNAPSHOT=2026-10-27
 
 # ⚠️ A chave entra por `ARG`. Quem a passa, no deploy vivo, é o GitHub Actions
 # (`.github/workflows/deploy-images.yml`, segredo `MAXMIND_LICENSE_KEY` do repositório):
@@ -72,6 +75,10 @@ RUN python -m pip install --upgrade pip \
 COPY config ./config
 COPY packages ./packages
 COPY shopman ./shopman
+# Os checks de deploy validam a zona de cookie das superfícies operacionais a
+# partir do registry canônico. Ele precisa existir também na imagem de runtime,
+# não apenas no checkout usado pela CI.
+COPY surfaces/registry.json ./surfaces/registry.json
 # O agente do balcão é BAIXADO pelo Admin (o dono já está lá colando a config do
 # terminal). Sem esta linha o download quebra só em produção, que é o pior lugar
 # para descobrir. Ver shopman/backstage/admin_console/pos_counter_agent.py.
@@ -96,6 +103,7 @@ RUN python -m pip install -c constraints.txt \
         ./packages/buyman \
         ./packages/fiscalman \
         ./packages/cashman \
+        ./packages/conversational-commerce \
         .
 
 RUN mkdir -p /app/staticfiles /app/media \
@@ -107,6 +115,22 @@ RUN mkdir -p /app/staticfiles /app/media \
         MANYCHAT_API_TOKEN=build-only \
         python manage.py collectstatic --noinput -v 0 \
     && chown -R shopman:shopman /app /home/shopman
+
+# ── Identidade da release (WP-RELEASE-01 R1) ────────────────────────────────
+# Quem passa é o deploy-images.yml; build local fica sem identidade (vazio), e o
+# endereço /health/release diz isso em vez de inventar um número. Fica no FIM de
+# propósito: o valor muda a cada commit e só invalida estas camadas de metadado,
+# nunca o pip/npm/build acima. Não é segredo e não pode virar segredo: aparece em
+# resposta pública e no rótulo da imagem. Contrato: docs/reference/release-contract.md.
+ARG SHOPMAN_BUILD_SHA=""
+ARG SHOPMAN_RELEASE_ID=""
+ARG SHOPMAN_RELEASE_COMPONENT="web"
+ENV SHOPMAN_BUILD_SHA=${SHOPMAN_BUILD_SHA} \
+    SHOPMAN_RELEASE_ID=${SHOPMAN_RELEASE_ID} \
+    SHOPMAN_RELEASE_COMPONENT=${SHOPMAN_RELEASE_COMPONENT}
+LABEL org.opencontainers.image.revision=${SHOPMAN_BUILD_SHA} \
+      org.opencontainers.image.version=${SHOPMAN_RELEASE_ID} \
+      org.opencontainers.image.title=${SHOPMAN_RELEASE_COMPONENT}
 
 USER shopman
 

@@ -90,7 +90,7 @@ def test_recipe_ratings_criteria_and_sources_survive_the_vault(tmp_path):
     entry = craftsman.create_entry(ref="baguete", name="Baguete", kind="bread", output_sku="")
     RecipeEntry.objects.filter(pk=entry.pk).update(meta={"external_references": sources})
     draft = craftsman.create_version(
-        entry, formula={"anchor": {"kind": "total"}, "items": [], "parts": []}, yield_quantity=1, yield_unit="g",
+        entry, formula={"anchor": {"kind": "total"}, "ingredients": []}, yield_quantity=1, yield_unit="g",
     )
     RecipeRatingCriterion.objects.filter(name="Aparência").update(name="Casca", description="Cor e estalo")
     criteria = {criterion.name: criterion for criterion in recipe_ratings.active_criteria()}
@@ -127,7 +127,7 @@ def test_a_lost_score_comes_back_even_with_the_rating_still_standing(tmp_path):
 
     entry = craftsman.create_entry(ref="brioche", name="Brioche", kind="sweet_dough", output_sku="")
     version = craftsman.create_version(
-        entry, formula={"anchor": {"kind": "total"}, "items": [], "parts": []}, yield_quantity=1, yield_unit="g",
+        entry, formula={"anchor": {"kind": "total"}, "ingredients": []}, yield_quantity=1, yield_unit="g",
     )
     criteria = recipe_ratings.active_criteria()
     recipe_ratings.rate("nota-bia", version, {str(criterion.pk): 3 for criterion in criteria})

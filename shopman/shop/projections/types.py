@@ -44,7 +44,7 @@ class CategoryProjection:
 
     ref: str
     name: str
-    icon: str  # Material Symbols ligature (fallback: "restaurant_menu")
+    icon: str  # nome Lucide do cadastro (metadata.icon), ou "" sem ícone
     url: str
 
 
@@ -62,6 +62,10 @@ ORDER_STATUS_TONES: dict[str, Tone] = {
     "completed": Tone.SUCCESS,
     "cancelled": Tone.DANGER,
     "returned": Tone.NEUTRAL,
+    # Chaves semânticas da lista da Conta para o cancelado com devolução (#2992):
+    # o dinheiro voltou (assunto encerrado) ou está voltando (ainda acontece).
+    "refunded": Tone.NEUTRAL,
+    "refund_in_progress": Tone.WARNING,
 }
 
 
@@ -100,6 +104,10 @@ class Action:
     #   "none"               — repetir e inofensivo; exige justificativa na allowlist
     idempotency: str = "required"
     confirmation: dict[str, Any] = field(default_factory=dict)
+    # O que a acao `kind="copy"` copia (o copia-e-cola do Pix). Sem ele, quem nao
+    # tem botao de copiar (a conversa) so tinha o `href`, e o rotulo "Copiar
+    # codigo Pix" virava um link para a pagina do pedido (X3, OC-05).
+    value: str = ""
 
 
 @dataclass(frozen=True)
@@ -199,6 +207,12 @@ class OrderItemProjection:
     qty: str  # Exact decimal, without insignificant trailing zeros.
     unit_price_display: str
     total_display: str
+    # O valor cheio riscado ao lado, quando a promoção do produto abateu a linha
+    # (dono, 16/11/2026, #2570 decisão 1). Vazio sem promoção.
+    full_total_display: str = ""
+    # Instrução do item (observação do cliente, complementos do iFood): a mesma
+    # que o ticket da cozinha mostra. Vazio quando o item não tem nenhuma.
+    notes: str = ""
 
 
 @dataclass(frozen=True)

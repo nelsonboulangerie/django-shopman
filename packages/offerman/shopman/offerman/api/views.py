@@ -47,7 +47,7 @@ class ProductViewSet(ReadOnlyModelViewSet):
         return ProductSerializer
 
     def get_queryset(self):
-        return Product.objects.published().sellable().prefetch_related("keywords", "components__component")
+        return Product.objects.available_for_sale().prefetch_related("keywords", "components__component")
 
     @action(detail=True, methods=["get"])
     def price(self, request, sku=None):

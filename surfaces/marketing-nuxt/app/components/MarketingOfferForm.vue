@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MarketingOfferOptions } from "~/types/campaign";
+import type { MarketingOffer, MarketingOfferOptions } from "~/types/campaign";
 
 const props = defineProps<{
   kind: "offer" | "coupon";
@@ -7,6 +7,7 @@ const props = defineProps<{
   busy?: boolean;
   globalError?: string;
   fieldErrors?: Record<string, string[]>;
+  initial?: MarketingOffer;
 }>();
 const emit = defineEmits<{
   submit: [payload: Record<string, unknown>];
@@ -19,21 +20,22 @@ function localInput(date: Date): string {
 }
 
 const now = new Date();
-const name = ref("");
-const couponCode = ref("");
-const type = ref<"percent" | "fixed" | "free_delivery">("percent");
-const value = ref("10");
-const validFrom = ref(localInput(now));
-const validUntil = ref(localInput(new Date(now.getTime() + 7 * 86_400_000)));
-const minOrder = ref("0");
-const maxUses = ref("0");
-const skus = ref<string[]>([]);
-const collections = ref<string[]>([]);
-const channels = ref<string[]>([]);
-const fulfillmentTypes = ref<string[]>([]);
-const customerSegments = ref<string[]>([]);
-const birthdayOnly = ref(false);
-const isActive = ref(true);
+const initial = props.initial;
+const name = ref(initial?.name ?? "");
+const couponCode = ref(initial?.coupons[0]?.code ?? "");
+const type = ref<"percent" | "fixed" | "free_delivery">(initial?.type ?? "percent");
+const value = ref(String(initial ? (initial.type === "percent" ? initial.value : initial.value / 100) : 10));
+const validFrom = ref(initial ? localInput(new Date(initial.valid_from)) : localInput(now));
+const validUntil = ref(initial ? localInput(new Date(initial.valid_until)) : localInput(new Date(now.getTime() + 7 * 86_400_000)));
+const minOrder = ref(String(initial ? initial.min_order_q / 100 : 0));
+const maxUses = ref(String(initial?.coupons[0]?.max_uses ?? 0));
+const skus = ref<string[]>([...(initial?.skus ?? [])]);
+const collections = ref<string[]>([...(initial?.collections ?? [])]);
+const channels = ref<string[]>([...(initial?.channels ?? [])]);
+const fulfillmentTypes = ref<string[]>([...(initial?.fulfillment_types ?? [])]);
+const customerSegments = ref<string[]>([...(initial?.customer_segments ?? [])]);
+const birthdayOnly = ref(initial?.birthday_only ?? false);
+const isActive = ref(initial?.is_active ?? true);
 const minValidityDate = localInput(now).slice(0, 10);
 const advancedOpen = ref(false);
 // O `NuxtForm` pede um estado; a validação é a do `canSubmit` (e a do servidor).
@@ -82,6 +84,13 @@ const valueLabel = computed(() => {
   if (type.value === "fixed") return "Desconto em reais";
   return "Teto do frete em reais";
 });
+// A base do `step` nativo é o `min`: percentual com min 0,01 e step 1 só aceitaria
+// 0,01, 1,01, 2,01… e recusaria o 10 que já vem preenchido. Cada tipo tem os seus.
+const valueBounds = computed(() => {
+  if (type.value === "percent") return { min: 1, max: 100, step: 1 };
+  if (type.value === "fixed") return { min: 0.01, max: undefined, step: 0.01 };
+  return { min: 0, max: undefined, step: 0.01 };
+});
 const valueHint = computed(() =>
   type.value === "free_delivery"
     ? "Use 0 para cobrir todo o frete."
@@ -89,7 +98,7 @@ const valueHint = computed(() =>
 );
 const canSubmit = computed(
   () => {
-    const amount = Number(value.value);
+    const amount = decimal(value.value);
     const startsAt = Date.parse(validFrom.value);
     const endsAt = Date.parse(validUntil.value);
     const code = couponCode.value.trim();
@@ -97,7 +106,8 @@ const canSubmit = computed(
       name.value.trim().length > 0 &&
       Number.isFinite(amount) &&
       (type.value === "free_delivery" ? amount >= 0 : amount > 0) &&
-      (type.value !== "percent" || amount <= 100) &&
+      (type.value !== "percent" ||
+        (Number.isInteger(amount) && amount >= 1 && amount <= 100)) &&
       Number.isFinite(startsAt) &&
       Number.isFinite(endsAt) &&
       endsAt > startsAt &&
@@ -109,7 +119,7 @@ const canSubmit = computed(
 const fieldLabels: Record<string, string> = {
   payload: "Cadastro",
   kind: "Tipo de cadastro",
-  name: "Nome para a equipe",
+  name: "Nome que o cliente vê",
   coupon_code: "Código do cupom",
   type: "Tipo de benefício",
   value: "Valor do benefício",
@@ -126,23 +136,53 @@ const fieldLabels: Record<string, string> = {
   is_active: "Ativar ao salvar",
   ref: "Referência",
 };
+// O erro de um campo que tem lugar no formulário mora SOB o campo. O aviso do topo só
+// lista o que não tem onde aparecer; antes o código duplicado do cupom saía três vezes
+// (título, lista e campo) (beta 05/11, ge:MKT-27).
+const INLINE_FIELDS = new Set([
+  "name",
+  "coupon_code",
+  "type",
+  "value",
+  "valid_from",
+  "valid_until",
+]);
 const visibleErrors = computed(() =>
-  Object.entries(props.fieldErrors ?? {}).flatMap(([field, messages]) =>
-    messages.map((message) => ({
-      field,
-      label: fieldLabels[field] ?? field,
-      message,
-    })),
-  ),
+  Object.entries(props.fieldErrors ?? {})
+    .filter(([field]) => !INLINE_FIELDS.has(field))
+    .flatMap(([field, messages]) =>
+      messages.map((message) => ({
+        field,
+        label: fieldLabels[field] ?? field,
+        message,
+      })),
+    ),
+);
+const inlineMessages = computed(() =>
+  Object.entries(props.fieldErrors ?? {})
+    .filter(([field]) => INLINE_FIELDS.has(field))
+    .flatMap(([, messages]) => messages),
+);
+/** O título do aviso não repete a frase que já está sob o campo. */
+const alertTitle = computed(() =>
+  props.globalError && !inlineMessages.value.includes(props.globalError)
+    ? props.globalError
+    : "Revise os campos destacados.",
 );
 
 function fieldError(field: string): string {
   return props.fieldErrors?.[field]?.[0] ?? "";
 }
 
-function cents(raw: string): number {
-  const normalized = raw.trim().replace(",", ".");
-  const parsed = Number(normalized || 0);
+// O `NuxtInput type="number"` devolve número depois que o campo é editado; antes
+// disso o valor ainda é o texto inicial. Os dois caminhos chegam aqui.
+function decimal(raw: string | number | null | undefined): number {
+  const normalized = String(raw ?? "").trim().replace(",", ".");
+  return Number(normalized || 0);
+}
+
+function cents(raw: string | number | null | undefined): number {
+  const parsed = decimal(raw);
   return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
 }
 
@@ -154,11 +194,11 @@ function submit() {
     coupon_code:
       props.kind === "coupon" ? couponCode.value.trim().toUpperCase() : "",
     type: type.value,
-    value: type.value === "percent" ? Number(value.value) : cents(value.value),
+    value: type.value === "percent" ? decimal(value.value) : cents(value.value),
     valid_from: validFrom.value,
     valid_until: validUntil.value,
     min_order_q: cents(minOrder.value),
-    max_uses: props.kind === "coupon" ? Number(maxUses.value || 0) : 0,
+    max_uses: props.kind === "coupon" ? decimal(maxUses.value) : 0,
     skus: skus.value,
     collections: collections.value,
     channels: channels.value,
@@ -181,7 +221,7 @@ function submit() {
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"
-      :title="globalError || 'Revise os campos destacados.'"
+      :title="alertTitle"
       tabindex="-1"
     >
       <template v-if="visibleErrors.length" #description>
@@ -236,7 +276,8 @@ function submit() {
           </NuxtFormField>
 
           <NuxtFormField
-            label="Nome para a equipe"
+            label="Nome que o cliente vê"
+            help="Aparece na loja, na página da oferta e no resumo da sacola."
             :error="fieldError('name') || undefined"
             required
           >
@@ -276,9 +317,9 @@ function submit() {
                 id="marketing-offer-value"
                 v-model="value"
                 type="number"
-                :min="type === 'free_delivery' ? 0 : 0.01"
-                :max="type === 'percent' ? 100 : undefined"
-                :step="type === 'percent' ? 1 : 0.01"
+                :min="valueBounds.min"
+                :max="valueBounds.max"
+                :step="valueBounds.step"
                 class="w-full"
                 required
                 :aria-invalid="Boolean(fieldError('value'))"
@@ -466,7 +507,7 @@ function submit() {
         icon="i-lucide-check"
         :disabled="!canSubmit"
         :loading="busy"
-        :label="kind === 'coupon' ? 'Criar cupom' : 'Criar oferta'"
+        :label="initial ? 'Salvar alterações' : kind === 'coupon' ? 'Criar cupom' : 'Criar oferta'"
       />
     </div>
   </NuxtForm>

@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 # varre a árvore atrás do marcador e reprova quando um arquivo novo nasce fora
 # desta lista. Ao criar um teste ``requires_postgres``, acrescente-o AQUI.
 DEFAULT_RUNTIME_TEST_PATHS = (
+    "shopman/shop/tests/test_directive_claims_postgres.py",
     "packages/stockman/shopman/stockman/tests/test_concurrency.py",
     "packages/stockman/shopman/stockman/tests/test_quantity_invariant.py",
     "packages/payman/shopman/payman/tests/test_concurrency.py",
@@ -42,6 +43,12 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Session anonimizada é um selo irreversível: writers atrasados esperam
     # a trava e não podem restaurar handle, customer/data ou meta pessoal.
     "shopman/shop/tests/test_session_privacy_fence_postgres.py",
+    # Transferência de sacola entre canais (OC-15): o aceite e a edição na origem
+    # disputam a mesma linha; quem trava primeiro decide, sem reserva em dobro.
+    "shopman/shop/tests/test_session_transfer_postgres.py",
+    # A Nice traz a sacola do site (OC-18) enquanto a loja a edita: quem trava a
+    # sacola do site primeiro decide, sem duas sacolas vivas nem reserva em dobro.
+    "shopman/storefront/tests/test_ponte_da_nice_postgres.py",
     # Eventos operacionais continuam depois da retenção do pedido, mas um
     # writer stale não pode recolocar note/reason após a anonimização.
     "shopman/shop/tests/test_order_event_privacy_fence_postgres.py",
@@ -77,10 +84,20 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     # Provas do concierge dependem de locks, conexões independentes e migrações
     # reais; skips do lote SQLite precisam executar neste gate estrito.
     "shopman/storefront/tests/test_concierge_authority.py",
+    # O executor do contrato de efeito do framework conversacional (N6): chave, guarda,
+    # efeito e recibo numa transação, e dois trabalhadores na mesma chave (K08 a K16).
+    "shopman/shop/tests/test_conversational_execute_postgres.py",
+    # O armazenamento do framework conversacional (N8): comparar e gravar com dois
+    # trabalhadores reais (K13), a mesma entrada uma vez (K01) e a caixa de saída sob posse.
+    "shopman/shop/tests/test_conversational_conformance.py",
     "shopman/storefront/tests/test_concierge_commercial_races.py",
     "shopman/storefront/tests/test_concierge_consent_race.py",
     "shopman/storefront/tests/test_concierge_payment_race.py",
     "shopman/storefront/tests/test_concierge_boundary_races.py",
+    # Posse da conversa reconferida no instante do efeito (#2625): a transferência
+    # para a equipe concorre com pedido, desconto, cancelamento e acréscimo, com
+    # barreira entre a conferência e a gravação (K11) e dentro da gravação (K12).
+    "shopman/storefront/tests/test_concierge_posse_no_efeito.py",
     "shopman/storefront/tests/test_concierge_whatsapp_window.py",
     "shopman/storefront/tests/test_concierge_runtime_turns.py",
     "shopman/storefront/tests/test_concierge_runtime_fulfillment.py",
@@ -105,7 +122,6 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/web/test_order_access_security.py",
     "shopman/shop/tests/test_eventstream_permissions.py",
     "shopman/shop/tests/test_payment_webhooks.py",
-    "shopman/shop/tests/test_ifood_webhook.py",
     # Public publications have no audience member. PostgreSQL renders the
     # hydrated ``member__customer`` path as an OUTER JOIN and rejects a broad
     # ``FOR UPDATE``; this regression only exists on the real database.

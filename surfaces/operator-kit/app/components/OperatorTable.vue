@@ -55,13 +55,16 @@ const props = withDefaults(
     pinned?: string;
     /** A coluna presa à direita (o ⋯ da linha numa matriz larga). */
     pinnedEnd?: string;
+    /** Onde mora a seta da linha expansível: no começo (padrão) ou no fim, presa à
+     *  direita para não sair da tela no celular (a lista da Preparação, dono 26/11). */
+    expandAt?: "start" | "end";
     /** A tabela ocupa a altura que sobra e rola por dentro, com o cabeçalho preso. */
     fill?: boolean;
     /** Classe da linha (estado da tela: arrastando, alvo de soltar). */
     rowClass?: (row: T) => string;
     /** A linha do registro aberto ao lado (detalhe que divide a tela). */
     activeKey?: string;
-    /** Abrir a linha (toque ou Enter nela). */
+    /** Abrir a linha (toque, clique ou Enter nela; a tabela também anuncia o gesto pelo cursor). */
     onSelect?: (row: T, event: Event) => void;
     loading?: boolean;
     error?: boolean;
@@ -80,6 +83,7 @@ const props = withDefaults(
     rowLabel: undefined,
     pinned: "",
     pinnedEnd: "",
+    expandAt: "start",
     fill: false,
     rowClass: undefined,
     activeKey: "",
@@ -133,7 +137,8 @@ const tableColumns = computed<TableColumn<T>[]>(() => {
     return { id, size: width, enableHiding: false, enableSorting: false, meta: { style: { th: style, td: style } } };
   };
   if (props.selectable) lead.push(leadColumn("select"));
-  if (hasExpanded.value) lead.push(leadColumn("expand"));
+  const expandAtEnd = props.expandAt === "end";
+  if (hasExpanded.value && !expandAtEnd) lead.push(leadColumn("expand"));
   const own = props.columns.map((column) => {
     const meta = (column.meta ?? {}) as Meta;
     const id = columnId(column as never);
@@ -155,15 +160,19 @@ const tableColumns = computed<TableColumn<T>[]>(() => {
       },
     } as TableColumn<T>;
   });
-  return [...lead, ...own];
+  return [...lead, ...own, ...(hasExpanded.value && expandAtEnd ? [leadColumn("expand")] : [])];
 });
 
-const columnPinning = computed(() => ({
-  left: props.pinned
-    ? [...(props.selectable ? ["select"] : []), ...(hasExpanded.value ? ["expand"] : []), props.pinned]
-    : [],
-  right: props.pinnedEnd ? [props.pinnedEnd] : [],
-}));
+const columnPinning = computed(() => {
+  const expandAtEnd = hasExpanded.value && props.expandAt === "end";
+  const expandAtStart = hasExpanded.value && !expandAtEnd;
+  return {
+    left: props.pinned
+      ? [...(props.selectable ? ["select"] : []), ...(expandAtStart ? ["expand"] : []), props.pinned]
+      : [],
+    right: [...(props.pinnedEnd ? [props.pinnedEnd] : []), ...(expandAtEnd ? ["expand"] : [])],
+  };
+});
 
 // O cabeçalho que ordena: só as colunas que pedem, e só se a tela não desenhou o próprio.
 const sortable = computed(() =>
@@ -185,6 +194,7 @@ const meta = computed(() => ({
     tr: (row: TableRow<T>) =>
       [
         props.rowClass?.(row.original) ?? "",
+        props.onSelect ? "cursor-pointer" : "",
         props.activeKey && props.rowKey(row.original) === props.activeKey
           ? "bg-elevated outline-2 -outline-offset-2 outline-primary"
           : "",

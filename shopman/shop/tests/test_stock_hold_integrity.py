@@ -21,8 +21,10 @@ from django.test import TransactionTestCase as TestCase
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import Channel
+from shopman.shop.tests._payment import with_payment
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
@@ -43,6 +45,7 @@ def _make_session(channel, items):
         channel_ref=channel.ref,
         state="open",
         items=items,
+        data=with_payment(channel),
     )
 
 
@@ -51,6 +54,8 @@ def _commit(session, channel):
         session_key=session.session_key,
         channel_ref=channel.ref,
         idempotency_key=generate_idempotency_key(),
+        seal=seal_for(session.session_key, channel.ref),
+        channel_config={},
     )
 
 
@@ -86,14 +91,15 @@ _AVAIL_OK = {
     "approved": True,
     "sku": "CROIS-01",
     "requested_qty": Decimal("1"),
-    "available_qty": Decimal("999"),
+    "available_qty": None,
+    "orderable_ceiling": None,
+    "is_tracked": False,
     "reason_code": None,
     "is_paused": False,
     "is_planned": False,
     "target_date": None,
     "failed_sku": None,
-    "source": "stock.untracked",
-    "untracked": True,
+    "source": "stock.promise_decision",
 }
 
 

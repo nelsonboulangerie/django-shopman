@@ -94,7 +94,7 @@ def test_taon_collection_dispatches_card_order_without_reserving_house_machine(i
     from shopman.shop.services import courier
 
     pending = order("TAON")
-    pending.data["courier"] = {"id_mch": "synthetic-ride", "status": "E"}
+    pending.data["courier"] = {"ride_ref": "synthetic-ride", "status": "E"}
     pending.save(update_fields=("data",))
     courier.recover_local_status(pending, ride_id="synthetic-ride")
     pending.refresh_from_db()
@@ -239,7 +239,7 @@ def test_reverse_migration_refuses_populated_inventory(inventory):
 
     from django.apps import apps
 
-    migration = importlib.import_module("shopman.backstage.migrations.0061_delivery_device")
+    migration = importlib.import_module("shopman.backstage.migrations.0036_squashed_0066_merge_pos_concierge_identity_alerts")
     with pytest.raises(RuntimeError, match="Preserve"):
-        migration.refuse_populated_inventory_removal(apps, SimpleNamespace(connection=connection))
+        migration.dd61_refuse_populated_inventory_removal(apps, SimpleNamespace(connection=connection))
     assert DeliveryDevice.objects.filter(pk=inventory.pk).exists()

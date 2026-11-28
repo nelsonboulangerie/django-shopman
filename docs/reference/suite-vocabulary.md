@@ -50,27 +50,39 @@ obrigou a escrever, e ela já está aplicada na trava do `operator-kit`:
 | **aparelho** | ⛔ não se usa em superfície de operador. **Fica na loja**, por concessão do dono | 18/09 | exenção escrita da trava para `storefront-nuxt/` |
 | **lote** | o objeto que a Produção planeja, abre e fecha. *Fornada* nomeia o evento do forno | 22/09 | trava (só texto de tela; comentário sobre o forno continua livre) |
 | **fornada** | fica na **loja** e no texto que o **cliente** lê no Marketing | 22/09 | exenção por audiência, escrita na trava |
+| **ficar pronto** | o que acontece com o lote, o produto e as unidades quando a produção termina, em todo texto que o **operador** lê (Admin, apps de operador, aviso do servidor ao operador): "Produto ficou pronto", "O preparo abre quando o lote ficar pronto.", "24 un ficaram prontas às 10h01", "Unidades que não ficaram prontas". O verbo concorda com o que ficou pronto (o lote, as unidades). ⛔ *sair do forno*, em qualquer tempo (*sai*, *saiu*, *saíram*, *saindo do forno*, *saída do forno*). O forno continua tendo nome ("Retirou do forno", "Tempo de forno", "Timer do forno"): o que não se diz é que o produto *sai* dele. **A voz do cliente não é este vocabulário**: a loja e o texto que a casa escreve PARA o cliente (corpo de anúncio, aviso ao cliente) têm a regra e a trava deles (#2791) | dono, 16/11 | trava: `guardrails.vocabulary.test.ts` (texto de tela dos apps de operador) + `test_vocabulario_de_tela.py` (texto de operador do servidor), exceções de voz do cliente declaradas nas duas |
+| **Em lote** · **Na hora** | o **modo de produção** da receita (`Recipe.production_mode`). *Em lote*: planejado e estocado, sai por ordem de produção (pão, creme, recheio, molho). *Na hora*: feito quando vende, vai à estação de Preparo e baixa os insumos na venda (café, chá, croque). Revenda é o produto sem receita, não um modo. ⛔ *fornada* para o modo; ⛔ *inativa*/*Arquivada* para dizer "na hora" (Arquivada é só arquivamento) | 20/10/2026 | ADR-040, "Modo de produção" |
 | **etapa** | a unidade do modo de fazer de uma receita (`Recipe.steps`, `RecipeVersion.steps`) e o avanço dela no lote (evento `step_advanced` = "Etapa avançada"). Decisão do dono: era "Etapas" no modelo e no Admin e "Passos" nas telas de receita. ⛔ **"passo" como nome da etapa de receita ou de produção** ("Passos", "Passos lidos", "Adicionar passo", "Passo 3" da receita). "Passo" continua certo para o que não é etapa: o passo do login, o passo a passo de instalação, "próximo passo" de uma instrução | 01/10 | trava: 3ª regra de `guardrails.vocabulary.test.ts` (texto do `production-nuxt`) + `test_vocabulario_etapa_da_receita.py` (literais do `craftsman` e dos arquivos `recipe`/`production` do backstage) |
-| **Faixa de preço** | fica (conceito de negócio). A *lane* de processamento passa a ser nomeada **plataforma** | ≤22/09 | [`omotenashi-copy.md`](omotenashi-copy.md) §D7b(b) |
+| **Grupo** (de clientes) | o conjunto comercial do cliente (`guestman.PriceTier`: varejo, atacado, staff), o mesmo nome no Gestor, no Marketing, no PDV e no Admin: "Grupo" no filtro e no público, "Exclusiva do grupo" na campanha, "Grupos de clientes" no Admin. Decisão do dono: o Marketing dizia *Faixa de preço* e o Gestor dizia *Grupos* para a mesma coisa; ficou **Grupo** nos dois. ⛔ **"Faixa de preço"** em texto de tela (o `Shop.price_range`, o "$$" do Google, é outra coisa e continua). O identificador `price_tier` fica: é o nome do modelo. A *lane* de processamento continua nomeada **plataforma**, nunca *faixa* | 20/10/2026 (substitui a de ≤22/09) | trava: `surfaces/marketing-nuxt/tests/operatorLanguage.test.ts` ("grupo é o conjunto do cliente") |
+| **hora: "12h45"** | toda hora que alguém LÊ, na suíte inteira (operador e cliente): "12h45", "9h05", "9h". ⛔ "12:45" em tela, aviso, alerta e comprovante. Regra completa na §2.7 | 16/11 | trava: `guardrails.clock.test.ts` (kit, loja e status) + `test_formato_de_hora.py` |
 | **Tela do cliente** | o monitor do balcão do **PDV** | 22/09 | — |
 | **Painel de retirada** | o painel público da **Cozinha** (rota `/pickup` não muda: URL é em inglês) | 22/09 | — |
 | **RevPASH · RFM** | traduzir no texto de tela; identificador, campo e comentário continuam em inglês | 22/09 | — |
 | **Validar** | fica no PDV, com precedente explícito (o Odoo usa assim) | 18/09 | — |
-| **Finalizar** | o último passo do Fechamento, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
-| **Saída** | a estação do **KDS** por onde o pedido pronto sai (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; desde 03/10 a tela de fechamento de lote da Produção se chama **Fechamento**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e a estação do seed passou de `expedicao` para `saida` por migração (`backstage.0076`), com redirect do endereço antigo no kds-nuxt | 26/09 | — |
-| **estação** (navegação da Cozinha) | cada item da navegação da Cozinha é uma estação da casa pelo NOME do cadastro (Cafés, Lanches, Encomendas), levando à sua bancada (`/<ref>`), com "Estação · N pendências"; a lista vem do índice do servidor. A **Saída** leva ao Gestor. O título da bancada é o nome da estação. ⛔ item ou título genérico *Preparo*: estação é um posto específico, não existe estação chamada "Preparo" | 09/10 | `kds-nuxt/tests/sections.test.ts` + `useKdsShell.test.ts` |
+| **Finalizar** | o último passo da Finalização, e só ele. O caminho antes continua em *Confirmar* | 18/09 | — |
+| **Saída** | (sozinha) a estação do **KDS** por onde o pedido pronto sai; o gesto de dinheiro do caixa é a palavra composta **Saída de caixa** (atos do PDV) (entregar no balcão, despachar a entrega). A mesma palavra em dois apps mandava gente para a tela errada; a tela de finalização de lote da Produção se chama **Finalização**, e *Expedição* é só o posto da saída dos pedidos (`workstation_vocabulary.py`). O `type` gravado continua `expedition` (identificador), e o ref da estação do seed é `exit` (`backstage.0094`, 07/11: URL de operador é em inglês) | 26/09 | — |
+| **estação** (navegação da Cozinha) | cada item da navegação da Cozinha é uma estação da casa pelo NOME do cadastro (Cafés, Lanches, Separação), levando à sua bancada (`/<ref>`; o ref é o caminho, então é em inglês: `/coffee`, `/snacks`, `/picking`, sem redirect do nome antigo), com "Estação · N pendências"; a lista vem do índice do servidor. A **Saída** leva ao Gestor. O título da bancada é o nome da estação. ⛔ item ou título genérico *Preparo*: estação é um posto específico, não existe estação chamada "Preparo"; ⛔ estação *Encomendas* (o nome é da lista do Gestor; a de separação é **Separação**, `/picking`, dono 21/11/2026) | 09/10 · 21/11 | `kds-nuxt/tests/sections.test.ts` + `useKdsShell.test.ts` |
 | **Transferir** | a AÇÃO ÚNICA de levar itens de uma comanda para outra (dono, N=1, 13/10/2026), sem modos: some "Outra comanda / Comanda nova / Juntar comandas" e nada de Juntar ou Separar como botão. O diálogo "Transferir" tem um campo, **"Para qual comanda?"**, que recebe o leitor, a digitação e a escolha na lista das comandas em uso; a ação padrão, já escolhida ao abrir, é a comanda nova pré-nomeada (`13-2`, editável ali). Vão os itens marcados, ou todos sem marca. O botão diz o RESULTADO: **"Levar 3 itens para a #12"** · **"Levar tudo para a #12 e liberar a #13"** · **"Separar 2 itens na comanda nova 13-2"** (*Separar* só nessa frase de resultado). A origem que fica vazia é liberada sozinha, com Desfazer (T2=1). A **mesa do Salão** também é destino (M=1): a ocupada leva à comanda dela (**"Levar 3 itens para a Mesa 4 (#12)"**); a livre abre a comanda nova já nela (**"Separar 2 itens na comanda nova 13-2 (Mesa 5)"**), pelas listas "Comandas em uso" e "Mesas livres". O rastro: selo **"Transf. da #13"** na comanda nova, texto inteiro **"Transferida da comanda #13"** na dica e no detalhe do pedido (T1=1). **Dividir conta** é só pagar em partes e mora SÓ no Pagamento; o ⋯ da comanda fica só com Liberar (na folha do tablet e do celular, sem o pé, Transferir segue no ⋯). ⛔ *Juntar comandas*, *Outra comanda / Comanda nova* como modos, *Separada da #13*, *Veio da #13*; ⛔ *dividir* para mover itens; *Mesclar* fora, por técnico demais | 10/10 · 13/10 | `presentation/moveLines.ts`, `tests/presentation.test.ts`, `PosMoveLinesDialog.test.ts` |
 | **Envio: Auto · Manual** | o modo do envio à cozinha no cabeçalho da comanda do PDV: um controle de dois botões ("Envio" + Auto · Manual) que grava o interruptor das estações desta comanda (o mesmo de Ajustes › Envio à cozinha; vale para todas as comandas). O QUANDO do Auto (ao sair da comanda ou depois de 90 s parada) e o alcance moram na dica. ⛔ *envio automático: desligado*, *automático desligado* | 13/10 | `presentation/ticketColumn.ts`, `tests/ticketColumn.test.ts` |
 | **Tudo pronto** | o selo da comanda no quadro do PDV quando a cozinha terminou TUDO o que foi disparado (todo ticket vivo no Pronto; o cancelado não conta). A comanda sobe para o topo e o balcão ouve o toque. Selo `soft` com o sino; no cartão estreito fica só o sino, com "Tudo pronto" na dica e no aria. Só vale para a comanda inteira: parte pronta não tem selo de comanda, e o "Pronto" segue sendo o de cada ticket, no cartão da cozinha da linha. ⛔ *Pronta* | 13/10 | `components/PosTabBoard.vue`, `tests/components/PosTabBoard.test.ts` |
 | **item = unidade** | nunca linha, em nenhuma superfície | deliberado antes, reafirmado 18/09 | — |
-| **Abertura · Fechamento · Qualidade** | as abas do ciclo do lote na Produção (`/`, `/close`, `/quality`), depois de Planejamento e Preparação. Status Planejada · Aberta · Fechada · Cancelada (fonte única: `WorkOrder.Status`); quantidades planejado · previsto · realizado; indicadores perda e aproveitamento. ⛔ *Produzido* como rótulo de `started` ou `finished`; ⛔ *Estornar* para o `void` (é *Cancelar*); ⛔ *Rendimento* como KPI (fica com a ficha e a massa). Fora da Produção, qualificar: *abertura de lote*, *fechamento de lote*. Não mexe na abertura e no fechamento do caixa nem na Saída do KDS | 03/10 | trava: `production-nuxt/tests/lifecycleVocabulary.test.ts` + `test_vocabulario_abertura_fechamento.py` |
-| **Iniciar preparo** (Fila do Gestor) | fica para o pedido sem estação: é esse gesto que cria os tickets do KDS. Nada muda no código | 04/10 | — |
+| **Produção · Finalização · Qualidade** | as abas do ciclo do lote na Produção (`/`, `/close`, `/quality`), depois de Planejamento e Preparação. Status Planejada · Aberta · Fechada · Cancelada (fonte única: `WorkOrder.Status`); quantidades planejado · previsto · realizado; indicadores perda e aproveitamento. ⛔ *Produzido* como rótulo de `started` ou `finished`; ⛔ *Estornar* para o `void` (é *Cancelar*); ⛔ *Rendimento* como KPI (fica com a ficha e a massa). Rótulos de eventos: *Produção* (`started`) e *Finalização* (`finished`). Fora do app, qualificar: *Produção do lote*, *Finalização do lote*. Identificadores internos e rotas permanecem `open`/`started` e `close`/`finish`. Não mexe na abertura e no fechamento do caixa nem na Saída do KDS | 29/10 | trava: `production-nuxt/tests/lifecycleVocabulary.test.ts` + `test_vocabulario_abertura_fechamento.py` |
+| **Iniciar preparo** (Cozinha e Fila do Gestor) | o MESMO ato nos dois lados, e a verdade é da Cozinha (dono, 06/11/2026: "a verdade é da cozinha, o gestor é um alias, um atalho"). O pedido aceito já está na Cozinha, com o ticket esperando "Iniciar preparo" no posto (no canal `prep_start=operator` o pedido segue Aceito até lá). O toque do posto (`kds.start_ticket`) põe o ticket e o pedido em preparo; o do Gestor é atalho para o gerente adiantar e chama o mesmo serviço (`kds.start_order_tickets`) em todos os tickets que esperam, com quem tocou como autor. O Gestor nunca cria ticket: quem cria é o aceite. Pedido sem item de cozinha segue só pela transição. ⛔ "o gesto do Gestor cria os tickets" (regra de 04/10, revogada) | 04/10 · 06/11 | `shop/tests/test_prep_start_operator.py` |
 | **Pronto** (Cozinha) | o ato de terminar o ticket, em todo tamanho: "Pronto W07" no card do tablet e do desktop (`cardActionLabel`) e no polegar do celular (`thumbActionLabel`). O desfazer é **Desfazer o Pronto**, e o aviso de item cancelado manda tocar em **Recebi o cancelamento** para poder marcar Pronto. ⛔ *finalizar* em qualquer flexão (*Finalizar preparo*, *finalizado*, *finalização*) no kds-nuxt e nas mensagens de `services/kds.py`. A Produção mantém o seu *finalizar* de lote | 04/10 | trava: `kds-nuxt/tests/prontoVocabulary.test.ts` + `shop/tests/test_kds_vocabulario_pronto.py` |
 | **+ na barra do celular** (Marketing) | Campanhas e Ofertas mantêm o "+" (Nova campanha, Criar oferta) na barra de 56px, como ação principal da tela. A regra do Atualizar não muda. Nada muda no código | 04/10 | — |
 | **barra lateral** | a navegação do app na lateral, nos três estados (aberta, compacta, oculta): "Compactar a barra lateral", "Ocultar a barra lateral", "Mostrar a barra lateral", também no menu do operador e na ajuda de atalhos. ⛔ **"rail"** em texto de tela ou `aria-label`; no código `rail` continua sendo o nome (`SUITE_RAIL_*`, `data-suite-rail`) | 08/10 | trava: 4ª regra de `guardrails.vocabulary.test.ts` |
 | **gaveta** · **barra inferior** | no celular, a **gaveta** é a barra lateral aberta pelo ☰: o menu COMPLETO do app. A **barra inferior** é o menu RÁPIDO, de 3 a 5 vagas; uma delas é **Mais** (abre a gaveta) só quando sobra seção. Regra única para todo app, exceção só declarada com motivo | 08/10 | `quickBarLayout`/`quickBarProblems` (`operator-kit/app/presentation/suiteChrome.ts`), README do kit, "Barra lateral e barra inferior" |
 | **Seção · N pendências** | a descrição de contagem de uma seção, a MESMA na barra lateral, na gaveta e na barra inferior: "Saída · 2 pendências", "Pedidos · 1 pendência", ou "Seção · estado" ("Canais · 1 desligado"). ⛔ contagem por extenso própria de cada app no item de navegação ("Saída, 2 pedidos na Saída") | 08/10 | `sectionDescription` (`suiteChrome.ts`), testes do kit |
 | **Screen** (código) · **tela** (categoria) | a coisa. `display` é **papel** (`Channel.CommercePolicy.DISPLAY`, `SubjectType.DISPLAY`); `painel` é dashboard; `board` sai do vocabulário de tela | 24/09 | [`WP-TELAS-DE-PAREDE.md`](../plans/WP-TELAS-DE-PAREDE.md) |
+| **Painel · Fila · Tabela** (Gestor de pedidos) | os três modos de ver os pedidos, nesta ordem, só com ícone (Painel: três colunas, `columns-3`; Fila: faixas, `rows-3`; Tabela: `table-2`); o nome fica na dica e no aria. **Painel** é a casa, as três colunas Novos · Em preparo · Prontos; com uma coluna só aberta, os cartões ficam em até duas colunas. ⛔ *Quadro* (o modo), *Lista* (colide com a Fila) | 14/11 | `orders-nuxt/tests/queueV6.test.ts` |
+| **os pedidos** (Gestor de pedidos) | a tela inteira, em toda frase que fala dela: "Falha ao atualizar os pedidos", "Imprimir pedidos", "Mais ações dos pedidos", "Voltar para os pedidos", "Os pedidos mudaram. Atualize antes de chamar a corrida." **Fila** é só o modo (linha acima). ⛔ *fila* para a tela inteira | 19/11 (WP-G09; aguarda a prévia do dono) | — |
+| **Entregar a Ana · Despachar M09** (Gestor de pedidos) | o gesto da saída tem um nome só em toda forma do pedido (Painel, Fila, Tabela, detalhe), e quem nomeia é o servidor (`order_queue._exit_gesture_actions`, no rótulo da ação `advance`): entregar ao cliente no balcão é "Entregar a <primeiro nome>" (sem nome de gente, "Entregar <código>"); despachar a entrega é "Despachar <código>". A tela não troca o rótulo. O polegar do celular acrescenta o código ("Entregar U13 a Ana"), porque ali o cartão não está à vista. ⛔ *Marcar como retirado*, *Marcar saída para entrega*, *Saiu com a maquininha* como nome do botão; ⛔ os verbos próprios da Fila *Saiu*, *Retirou*, *Entregue* (coordenação, 21/11, #2758 item 4) (a maquininha é `dispatch_needs_machine` e o diálogo da saída) | 19/11 (WP-G09; aguarda a prévia do dono) | `backstage/tests/test_order_queue_surface.py`, `orders-nuxt/tests/cardV4.test.ts` |
+| **Estornado** (dinheiro que o gateway devolveu) | uma palavra no resumo do pagamento ("Pix · Estornado"), no cancelado e na linha do tempo ("Pagamento estornado", "Estorno processado"). Dinheiro em espécie é "Devolução em dinheiro registrada no caixa"; maquininha, "Estorno na maquininha registrado". ⛔ *Reembolsado*, *Reembolso* (o reembolso do iFood é operação do portal dele e fica com o nome dele) | 19/11 (WP-G09) | `backstage/tests/test_order_queue_surface.py` |
+| **meta 5 min** (Fila do Gestor, Central) | a meta da etapa leva a unidade, na Fila ("27 min · meta 30 min") e na Central ("Estação Forno · meta 10 min"). ⛔ *meta 5* | 19/11 (WP-G09) | `backstage/tests/test_order_attention.py` |
+| **Corrida A · B · C** (Entregas do Gestor) | corrida se nomeia por **letra** (A, B, C… até Z), em toda tela, aria e mensagem: "Corrida B", "Chamar a corrida A". O **número** só grava (`courier.ride_number`, 1 a 26) e escolhe a letra e a cor (a cor repete a cada 6); nunca se escreve para o operador, e a URL do detalhe leva a chave da corrida (`?ride=<chave>`), não o número. A letra vem de `courier.ride_letter` (servidor) e `rideLetter` (Gestor). O número da **parada** dentro da corrida (1, 2, 3, na ordem do percurso) continua número. O id da corrida na TaOn não é nome: aparece só como referência para achar no painel da central ("número 776753357 na TaOn"). ⛔ *Corrida 2*, *corrida nº 2* | 16/11 | `orders-nuxt/tests/deliveries.test.ts` ("nenhuma tela do Gestor escreve o número da corrida"), `shop/tests/test_courier_service.py` |
+| **Promessa em risco** · **Esperando o lote** · **Resolver** (Gestor de pedidos) | o pedido aceito cuja reserva perdeu o lastro se chama **Promessa em risco**, no selo, no aviso da página e no título do diálogo ("Promessa em risco no pedido W33"); o pedido pago do dia que espera o lote começar diz **Esperando o lote**, com selo neutro (é espera saudável, não bloqueio). A saída é um gesto só, **Resolver**, que abre o diálogo com as escolhas (trocar, remarcar, tirar o item, cancelar) e a mensagem ao cliente. ⛔ três botões soltos de *Avisar o cliente*, *Remarcar no PDV* e *Cancelar pedido* no cartão (o desenho anterior ao diálogo) | 19/11 (WP-G08, "um modal, que tal??", "Sim, faz") | `backstage/tests/test_order_promise.py`, `orders-nuxt/tests/orderPromise.test.ts`, `orders-nuxt/tests/promiseResolution.test.ts` |
+| **Avisar o cliente** · **Vai atrasar** · **Faltou um item** · **Precisamos remarcar** (Gestor de pedidos) | o gesto do ⋯ do pedido que manda a mensagem pela API (WhatsApp da casa, com SMS e e-mail na reserva), com os três avisos por esses nomes, que são também o rótulo do recibo do pedido. A tela diz **Aviso na fila de envio**, nunca *enviado*: quem diz o que o provedor respondeu é o recibo. O recibo que falhou em todos os canais traz **Chamar no WhatsApp**, com o mesmo texto. ⛔ *Enviado* antes do provedor; *Copiar mensagem* como saída principal | 20/11 (WP-G07, decisão 4 do dono, 17/11: "pela API") | `backstage/tests/test_avisar_o_cliente.py`, `orders-nuxt/tests/customerNotice.test.ts` |
+| **Precisava chegar** (recibo dos avisos ao cliente, Gestor) | o selo do aviso que a casa não pode deixar de entregar (link de pagamento, pedido confirmado: `CRITICAL_NOTIFICATION_TEMPLATES`) diz o que significa. ⛔ *crítico*, *Crítico* (jargão: o operador não sabe o que muda com ele) | 21/11 (auditoria da coordenação no WP-G07) | `orders-nuxt/tests/components/OrderNotificationReceipts.test.ts` |
 
 ---
 
@@ -158,6 +170,80 @@ directive, servidor* e os nomes de pacote (*offerman, stockman, craftsman, order
 guestman, doorman, payman, buyman, fiscalman, cashman*). "Projeção" em português fica: é
 a tela de previsão do B.I.
 
+### 2.6 Maiúscula no selo: só a primeira letra da sentença (dono, 16/11/2026)
+
+Selo (o `NuxtBadge` da suíte) é sentença: **só a primeira letra é maiúscula**, como
+qualquer frase da casa. Dono, 16/11/2026: "'Procurando Outro Entregador' ->
+'Procurando outro entregador'. A regra é clara: Maiúscula para primeira letra da
+sentença!", e vale para todo selo. Cada parte de um selo composto (separado por " · ")
+é uma sentença. Nome próprio ("Cozinha", "Diego"), marca e sigla ("iFood", "PDV",
+"NFC-e") e palavra com número ficam como são.
+
+| Certo | Errado |
+|---|---|
+| **Procurando outro entregador** · **Loja online** · **A receber** · **Pagar na retirada** · **Saiu para entrega** · **Pronto pela Cozinha** · **Pix · Não pago** | ⛔ *Procurando Outro Entregador* · *Loja Online* · *A Receber* · *Saiu para Entrega* |
+
+⛔ **Revertido em 16/11/2026**: a regra de 03/11, 04/11 e 07/11/2026 ("Maiúsculas no
+selo: nome tem, frase não") dava maiúscula a cada palavra do selo curto ("Loja Online",
+"A Receber", "Pagar na Retirada") e só a primeira ao selo-frase. Não volta.
+
+Mora num ponto só: `surfaces/operator-kit/app/presentation/badgeCase.ts`, aplicado pelo
+`NuxtBadge` do kit; nenhum app chama à mão. Quem escreve o texto do selo escreve em
+sentença; o kit só garante a primeira maiúscula. A trava é
+`surfaces/operator-kit/tests/badgeCase.test.ts`. A frase que não cabe em selo (o
+detalhe, o motivo) vai fora dele, em texto.
+
+### 2.7 Hora: "12h45" (dono, 16/11/2026)
+
+Toda hora que o operador ou o cliente **lê** se escreve como a casa fala: **"12h45"**. Vale
+para os onze apps de `surfaces/` (a loja incluída: aqui não há voz própria, a decisão foi
+"na suíte inteira"), para o que o servidor escreve (notificação, alerta, projeção,
+comprovante, Admin, a concierge) e para seed e copy configurável.
+
+| Caso | Escreve-se | Não se escreve |
+|---|---|---|
+| hora e minuto | **12h45** · **9h05** | 12:45 · 09h05 · 9h5 |
+| hora cheia | **9h** · **12h** · **0h** | 9h00 · 09h · 9:00 |
+| intervalo | **das 12h às 14h30** · **12h às 14h30** | 12:00 às 14:30 |
+| data e hora | **16/11, 12h45** · **16/11 às 12h45** | 16/11 12:45 |
+| com segundos, só onde o segundo é a informação | **12h45min30s** | 12:45:30 |
+
+Três escolhas de borda, todas tiradas do que a casa já escrevia antes da regra (horário de
+funcionamento da loja, "Aberto até 19h"; a hora combinada na Cozinha, "17h" e "14h30"):
+
+- **Sem zero à esquerda na hora** ("9h05"), minuto sempre com dois dígitos.
+- **Hora cheia sem minuto** ("9h"). É a forma mais curta e não tem segunda leitura: "9h"
+  só pode ser nove horas.
+- **Duração não é hora.** "12 min", "1 h 20 min", "há 3 h" seguem como estão: são quanto
+  tempo, não que horas.
+
+**Um formatador por metade, e mais nada formata hora:**
+
+- servidor: `shopman.utils.formatting.format_clock` (e `format_local` com a marca
+  `{clock}`, para data e hora juntas);
+- apps de operador: `surfaces/operator-kit/app/presentation/clock.ts` (`formatClock`,
+  `formatDateClock`, `formatClockRange`, `formatClockSeconds`);
+- loja e página de status: o módulo **gêmeo**, byte a byte, em `app/utils/clock.ts` de
+  cada uma (não estendem o kit e buildam sozinhas).
+
+**Fica de fora, por decisão escrita:**
+
+- **Formato de máquina.** O `"HH:MM"` que se grava e trafega (`opens_at`, `ready_from`, o
+  ref `"14:00-14:30"`, a janela de campanha), ISO, payload de terceiro, chave de cache e
+  log. Quem lê é código: a tela ordena e calcula com ele, e formata só ao exibir. Cada
+  linha leva o marcador `hora-ok: <motivo>`, e a trava exige o motivo.
+- **Campo de formulário.** O `<input type="time">`, o `UInputTime` e os campos de hora do
+  Admin mostram e aceitam a forma do campo. A mensagem de erro que ensina a digitar
+  ("Use o formato HH:MM. Ex.: 12:00.") acompanha o campo.
+- **Carimbo técnico com segundos.** A coluna de auditoria do Admin, o DANFE (leiaute
+  legal), o backup e o log. Não é hora de relance, é registro.
+- **Migração aplicada** (é história) e **exportação de dado** (CSV é dado, não leitura).
+
+**A trava** reprova o formatador antigo, não a frase: `toLocaleTimeString(`,
+`hour: "2-digit"`, `timeStyle`, `%H:%M`, `"H:i"`, `|time` e a hora montada à mão. O que
+ela não vê é a hora escrita por extenso numa string ("das 20:00 às 08:00"): isso é olho
+de quem escreve e de quem revisa.
+
 ---
 
 ## 3. PDV
@@ -184,6 +270,7 @@ a tela de previsão do B.I.
 | **marcados** | o alvo das ações da comanda (dono, 13/10/2026): tocar um item marca só ele; a caixa soma. O título conta ITENS ("5 itens marcados"), e os botões dizem o alcance: **Enviar marcados**, **Transferir marcados**. Sem nada marcado: **Enviar à cozinha** (com a contagem) e **Transferir itens** valem para a comanda inteira. ⛔ *3 linhas marcadas* |
 | **liberar** | devolve a comanda ao balcão |
 | **fechar caixa** | encerra o turno de custódia |
+| **Saída de caixa · Entrada de caixa** | o gesto de tirar e de pôr dinheiro na gaveta, no botão do PDV, no diálogo do gerente ("Saída de caixa de R$ 50,00 (Troco).") e no comprovante. O nome diz a direção do dinheiro, porque quem confere as filipetas dias depois não estava no balcão (commit `2264c6ad0`, 17/08). No livro do caixa é `cashman.Entry.Kind` `cash_out`/`cash_in`; *sangria*/*suprimento* sobrevivem só como `kind` da API do backstage. ⛔ *Retirada* para o dinheiro que sai (é a forma de receber o pedido); ⛔ *Saída* sozinha (é a estação do KDS). Coordenação, 22/11/2026, #2690. Trava: `operator-kit/tests/guardrails.vocabulary.test.ts` |
 
 ⚠️ **Dívida com endereço:** `PosMoveLinesDialog.vue` tem `|| "Mover itens"` como rótulo de
 reserva — um **quarto verbo** para os três atos acima, e ele aparece exatamente quando o modo
@@ -210,8 +297,8 @@ que deve ser. O que precisa de nome único é só o que os dois **fazem igual** 
 | Camada | Palavras |
 |---|---|
 | objeto | **lote** · **receita** (a ficha) · **etapa** (do modo de fazer; ⛔ nunca "passo", 01/10) · **insumo** · **bancada** · **estação** |
-| atos | **planejar** · **abrir** (o lote, na Abertura) · **continuar** · **finalizar** (só o último passo do Fechamento) · **cancelar** (o lote) · **visto** |
-| ciclo | **Planejamento** · **Preparação** · **Abertura** · **Fechamento** · **Qualidade**; status **Planejada · Aberta · Fechada · Cancelada** |
+| atos | **planejar** · **abrir** (o lote, na Produção) · **continuar** · **finalizar** (só o último passo da Finalização) · **cancelar** (o lote) · **visto** |
+| ciclo | **Planejamento** · **Preparação** · **Produção** · **Finalização** · **Qualidade**; status **Planejada · Aberta · Fechada · Cancelada** |
 | quantidades e indicadores | **planejado** · **previsto** · **realizado** · **perda** · **aproveitamento** (⛔ "rendimento" como KPI) |
 | grandezas | **peça** (unidade) · **quilo** · **lote** — ⛔ nunca somadas num número só |
 
@@ -260,6 +347,54 @@ e em `utils/operationalCopy.ts`.
 pergunta *"Salvar este aparelho?"* e responde *"Dispositivo salvo por 30 dias."* Meia
 superfície com duas palavras é pior do que qualquer uma das duas.
 
+⛔ **O prazo de confirmação da loja ("A loja confirma até 14h34") aparece só na encomenda,
+nunca no pedido do dia** (dono, 19/11 e 20/11/2026; não se reabre). No pedido do dia, o
+acompanhamento mantém as frases do L05 ("Estamos conferindo a disponibilidade. Se não
+conseguirmos confirmar, devolvemos o valor."). Em 19/11 ele recusou a ideia como confusa: "a
+loja não confirma o pedido em até 60 min, esse pode ser o limite para o pagamento… Volte ao
+que estava" e "Mantém o L05". Em 20/11, à pergunta "vale em algum caso? 1) em nenhum; 2) só
+na encomenda; 3) nos dois", respondeu "2". A encomenda que espera a loja continua dizendo o
+prazo (#2770). O PR que levava o prazo ao pedido do dia (#2869) foi fechado como *not
+planned*, e o item 1 do #2749 registra a decisão.
+
+⛔ **Falar com o responsável tem um nome só: "Quero falar com o responsável"** (coordenação,
+22/11/2026, #3257). É o mesmo gesto nas duas portas da ouvidoria do acompanhamento: depois
+de avaliar com nota baixa (`TRACKING_RATING_CONTACT_CTA`) e quando o preparo já começou e
+a cliente queria cancelar (`TRACKING_CANCELLATION_CONTACT_CTA`). O nome antigo da segunda
+porta, *"Pedir contato sobre cancelamento"*, falava em cancelamento logo depois de a tela
+dizer que não há mais cancelamento. No bloco "Quer cancelar?" esse botão é a ação
+principal, e o **Ajuda** (WhatsApp da loja) fica secundário: quem chegou ali quer desistir,
+e o caminho é a ouvidoria, que abre o caso no Gestor.
+
+⛔ **Sobre o PRODUTO, disponibilidade; nunca prontidão** (dono, 24/11/2026, DEV-2026-088). A
+frase que diz quando o produto pode ser pedido fala em **Disponível**, e o estado padrão
+(disponível agora) **não se diz**: a tela só fala quando a disponibilidade difere.
+
+| Onde | Disponível agora | Mais tarde hoje | Outro dia |
+|---|---|---|---|
+| página do produto | (nada) | Disponível a partir das 15h | Disponível amanhã, quarta, a partir das 7h |
+| selo do card do cardápio e das vitrines | (nada) | Disponível a partir das 15h | Disponível amanhã · Disponível na quinta |
+| linha da sacola (o item de fornada) | (nada) | Disponível a partir das 15h | Disponível amanhã, quarta, a partir das 7h |
+
+A frase vem de um lugar só, `shopman/storefront/presentation/promise.py` (o texto) e
+`surfaces/storefront-nuxt/app/presentation/promise.ts` (onde cada pedaço aparece). Saiu o
+"Pronto agora" e saiu o "Fica pronto amanhã" do card.
+
+⛔ **A fronteira: "Disponível" é do PRODUTO; "fica pronto" é do PEDIDO** (dono, 24/11/2026;
+não se reabre). A frase sobre o pedido fica como está: "Seu pedido fica pronto hoje, a
+partir das 15h" no alto da sacola, "Seu pedido fica pronto para retirada hoje…" no checkout
+e "Fica pronto por volta de 12h40" no acompanhamento. A régua é o sujeito da frase. Quando
+o sujeito é o item (página do produto, card, vitrine, linha do item na sacola), a palavra é
+**Disponível**. Quando é o pedido, a palavra é **fica pronto**. Uma mesma tela pode ter as
+duas: na sacola, a linha do item diz "Disponível amanhã, quarta, a partir das 7h", e o alto
+diz "Seu pedido fica pronto amanhã, quarta, a partir das 7h".
+
+⛔ **A linha da loja no produto é curta: "Disponível hoje na Nelson Boulangerie"**, sem
+endereço e sem "Retirada grátis" (dono, 24/11/2026: com uma loja só, o endereço "chega a
+ser hilário de tão inútil"). A linha não sai de vez porque o Google a exige para a
+disponibilidade na loja (#2652): o nome da loja e o estado de hoje, visíveis ao abrir a
+página. O endereço completo o Google só pede quando a cliente abre os detalhes da loja.
+
 ---
 
 ## 6. O que a trava cobra, e o que só olho pega
@@ -272,6 +407,12 @@ irmã em Python sobre 1.951):
   as duas regras é deliberada e está escrita lá: *aparelho* é palavra que a casa não usa;
   *fornada* é palavra certa para o evento do forno, e bani-la do comentário obrigaria a
   mentir sobre o forno para satisfazer uma regra que é sobre o rótulo do botão.
+- `sair do forno` (*sai*, *saiu*, *saíram*, *saindo*, *saída do forno*) **só em texto de tela**
+  nas superfícies de operador, e nos literais de `shopman/backstage` e `shopman/shop` do lado
+  do servidor. A casa diz "ficar pronto" (dono, 16/11/2026). O texto que a casa escreve PARA
+  o cliente fica de fora por exceção declarada, com o motivo, nas duas travas: no kit, as
+  fixtures e o mock visual do Marketing (corpo de anúncio); no servidor, a copy da loja, os
+  avisos ao cliente e as frases que a IA do Marketing precisa reconhecer no anúncio.
 
 **Pode passar a cobrar**, pelo mecanismo de baseline que só encolhe já usado em
 `guardrails.identifiers.test.ts`:

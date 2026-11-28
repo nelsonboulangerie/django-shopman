@@ -44,11 +44,9 @@ const surfaceClass = computed(() =>
 // senão a borda do fade fica visível.
 const fadeFromClass = computed(() => props.surface === 'card' ? 'from-card' : 'from-muted')
 
-// Affordance "tem mais abaixo": um fade no rodapé do corpo rolável, visível só
-// enquanto o fim do conteúdo não está à vista. Um sentinela no fim + Intersection
-// Observer (sem cálculo de scroll; reage a resize/conteúdo dinâmico de graça).
+// "Tem mais abaixo" do corpo rolável: o mesmo `<MoreBelow />` da página, no modo
+// caixa (#2414). A regra de que a folga do fim não conta é dele agora.
 const scrollEl = ref<HTMLElement>()
-const sentinel = ref<HTMLElement>()
 
 // Teclado virtual: o painel é `fixed`, e o teclado do iOS/Android não encolhe o
 // layout viewport ao qual ele se ancora — sem compensar, o sheet fica POR BAIXO
@@ -63,6 +61,9 @@ function revealFocused () {
   if (!import.meta.client) return
   const active = document.activeElement as HTMLElement | null
   if (!active || !scrollEl.value?.contains(active)) return
+  // O toque na dica "tem mais abaixo" foca o botão dela, e trazer ESSE foco à vista
+  // cancelava a rolagem suave até o fim que o próprio toque pediu (#2414).
+  if (active.closest('[data-more-below]')) return
   active.scrollIntoView({ block: 'nearest' })
 }
 function onFocusIn () {
@@ -71,26 +72,6 @@ function onFocusIn () {
 watch(keyboardInset, () => {
   if (import.meta.client) requestAnimationFrame(revealFocused)
 })
-const showBottomFade = ref(false)
-let io: IntersectionObserver | null = null
-function teardownObserver() {
-  io?.disconnect()
-  io = null
-}
-function setupObserver() {
-  teardownObserver()
-  if (!scrollEl.value || !sentinel.value) return
-  io = new IntersectionObserver(
-    entries => { showBottomFade.value = !entries[0]!.isIntersecting },
-    { root: scrollEl.value, threshold: 0.01 }
-  )
-  io.observe(sentinel.value)
-}
-watch(() => props.open, async open => {
-  if (open) { await nextTick(); setupObserver() } else teardownObserver()
-})
-onMounted(() => { if (props.open) nextTick(setupObserver) })
-onBeforeUnmount(teardownObserver)
 </script>
 
 <template>
@@ -100,12 +81,15 @@ onBeforeUnmount(teardownObserver)
       variant="floating"
       :class="['mx-auto flex max-h-[85dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0', maxWidthClass, surfaceClass, contentClass]"
       v-bind="$attrs"
+      data-focus-obstruction
       :style="panelStyle"
       @focusin="onFocusIn"
     >
-      <!-- X sempre visível e bem posicionado (a primitiva renderia um botão vazio). -->
+      <!-- X sempre visível e bem posicionado (a primitiva renderia um botão vazio). O alvo
+           é de 40 px (WCAG 2.5.8): o ícone fica onde sempre esteve, e a área de toque cresce
+           em volta dele (a primitiva desenhava um botão de 16 px). -->
       <template #close>
-        <UiSheetX sr-text="Fechar" />
+        <UiSheetX sr-text="Fechar" class="-mt-3 -mr-3 flex size-10 items-center justify-center" />
       </template>
 
       <!-- Alça de arraste: affirma o idiom de sheet e dá acabamento mobile-native. -->
@@ -131,24 +115,7 @@ onBeforeUnmount(teardownObserver)
       <div class="relative flex min-h-0 flex-1 flex-col">
         <div ref="scrollEl" class="min-h-0 flex-1 overflow-y-auto">
           <slot />
-          <div ref="sentinel" aria-hidden="true" class="h-px w-full" />
-        </div>
-        <!-- Fade de "tem mais abaixo" — some quando o fim do conteúdo aparece. -->
-        <div
-          class="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent transition-opacity duration-200"
-          :class="[fadeFromClass, showBottomFade ? 'opacity-100' : 'opacity-0']"
-          aria-hidden="true"
-        />
-        <!-- Affordance animada "role para ver mais": pill translúcida com chevron,
-             flutuar suave (bounce lento), some junto com o fade. Discreta e limpa. -->
-        <div
-          class="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center transition-opacity duration-300"
-          :class="showBottomFade ? 'opacity-100' : 'opacity-0'"
-          aria-hidden="true"
-        >
-          <span class="flex size-7 animate-bounce items-center justify-center rounded-full bg-background/70 text-muted-foreground shadow-sm ring-1 ring-border backdrop-blur-sm [animation-duration:1.6s]">
-            <Icon name="lucide:chevron-down" class="size-4" />
-          </span>
+          <MoreBelow contained :container="scrollEl" :fade-from="fadeFromClass" />
         </div>
       </div>
 

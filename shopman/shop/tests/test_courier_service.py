@@ -6,6 +6,8 @@ mesmo para webhook e polling, então estes testes cobrem as duas vias.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 from django.core.cache import cache
 from django.test import override_settings
@@ -17,9 +19,10 @@ from shopman.shop.directives import COURIER_DISPATCH, COURIER_SYNC, DELIVERY_AUT
 from shopman.shop.handlers.courier_dispatch import CourierDispatchHandler
 from shopman.shop.handlers.courier_sync import CourierSyncHandler
 from shopman.shop.models import Shop
-from shopman.shop.services import courier
+from shopman.shop.services import courier, courier_position
+from shopman.shop.services.operator_orders import short_ref
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "pdv")]
 
 MOCK_ADAPTER = "shopman.shop.adapters.courier_mock"
 
@@ -116,7 +119,7 @@ def test_house_delivery_calls_courier_from_acceptance_on_pdv_channel(shop, statu
     order = _delivery_order(ref=f"PDV-{status}", status=status, channel_ref="pdv")
     assert courier.request_dispatch(order, actor="test") is not None
     _run_dispatch(order)
-    assert courier.get_block(order)["id_mch"] == f"MOCK-{order.ref}"
+    assert courier.get_block(order)["ride_ref"] == f"MOCK-{order.ref}"
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -150,14 +153,15 @@ def test_dispatch_handler_opens_ride_and_schedules_sync(shop):
     _run_dispatch(order)
 
     block = courier.get_block(order)
-    assert block["id_mch"] == f"MOCK-{order.ref}"
+    assert block["ride_ref"] == f"MOCK-{order.ref}"
     assert block["provider"] == "machine"
+    assert block["service"] == "taon"  # o serviço padrão do Admin (DEV-2026-030, M1)
     assert block["status"] == "D"
-    assert block["estimate"] == {"value_q": 1250, "minutes": 18.0, "km": 4.2}
+    assert block["estimate"] == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     assert Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()
 
     # payload enviado à Machine: partida = loja, parada = cliente
-    ride = courier_mock.rides()[block["id_mch"]]
+    ride = courier_mock.rides()[block["ride_ref"]]
     payload = ride["payload"]
     assert payload["partida"]["endereco"] == "Av. Madre Leônia Milito 446"
     assert payload["paradas"][0]["id_externo"] == order.ref
@@ -170,12 +174,12 @@ def test_dispatch_handler_replay_is_noop(shop):
     order = _delivery_order()
     courier.request_dispatch(order, actor="test")
     _run_dispatch(order)
-    first_id = courier.get_block(order)["id_mch"]
+    first_id = courier.get_block(order)["ride_ref"]
 
     directive = Directive.objects.filter(topic=COURIER_DISPATCH).first()
     CourierDispatchHandler().handle(message=directive, ctx={})  # replay at-least-once
     order.refresh_from_db()
-    assert courier.get_block(order)["id_mch"] == first_id
+    assert courier.get_block(order)["ride_ref"] == first_id
     assert len(courier_mock.rides()) == 1
 
 
@@ -188,7 +192,7 @@ def test_dispatch_handler_skips_cancelled_order(shop):
     directive = Directive.objects.filter(topic=COURIER_DISPATCH).first()
     CourierDispatchHandler().handle(message=directive, ctx={})
     order.refresh_from_db()
-    assert "id_mch" not in courier.get_block(order)
+    assert "ride_ref" not in courier.get_block(order)
     assert not courier_mock.rides()
 
 
@@ -256,6 +260,7 @@ def test_accepted_ride_enriches_driver_and_tracking(shop):
     assert block["status"] == "A"
     assert block["driver"]["name"] == "Entregador Mock"
     assert block["tracking_url"].startswith("https://rastreio.mock/")
+    assert block["tracking_match"] == "single"
     assert order.status == Order.Status.READY  # aceite ainda não é coleta
 
 
@@ -295,13 +300,13 @@ def test_finished_without_observed_pickup_still_delivers(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_not_attended_archives_ride_and_alerts(shop):
     order = _dispatched_order(shop)
-    ride_id = courier.get_block(order)["id_mch"]
+    ride_id = courier.get_block(order)["ride_ref"]
     courier.apply_status(order, "N", source="poll")
     order.refresh_from_db()
 
     block = courier.get_block(order)
     assert not courier.has_active_ride(order)
-    assert block["attempts"][0]["id_mch"] == ride_id
+    assert block["attempts"][0]["ride_ref"] == ride_id
     assert block["attempts"][0]["status"] == "N"
     assert OperatorAlert.objects.filter(type="courier_not_attended", order_ref=order.ref).exists()
     assert order.status == Order.Status.READY  # pedido não trava por causa da corrida
@@ -393,7 +398,7 @@ def test_cancelling_order_before_pickup_cancels_the_ride_once(shop, ride_status)
     from shopman.shop.handlers.courier_cancel import CourierCancelHandler
 
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     if ride_status != "D":
         courier.apply_status(order, ride_status, source="poll")
     _cancel_order(order)
@@ -427,7 +432,7 @@ def test_cancelling_order_after_pickup_warns_operator_once(shop):
     alert = _cancelled_order_alerts(order).get()
     assert alert.message == "O entregador já coletou o pedido A47, que foi cancelado: fale com a central."
     assert not Directive.objects.filter(topic=COURIER_CANCEL).exists()
-    assert courier_mock.rides()[block["id_mch"]]["status"] != "C"
+    assert courier_mock.rides()[block["ride_ref"]]["status"] != "C"
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
@@ -459,7 +464,7 @@ def test_cancelling_order_without_ride_is_silent(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_sync_handler_applies_status_and_reschedules(shop):
     order = _dispatched_order(shop)
-    courier_mock.set_status(courier.get_block(order)["id_mch"], "A")
+    courier_mock.set_status(courier.get_block(order)["ride_ref"], "A")
     directive = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref)
     Directive.objects.filter(pk=directive.pk).update(status=Directive.Status.DONE)
 
@@ -474,7 +479,7 @@ def test_sync_handler_applies_status_and_reschedules(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_sync_handler_stops_on_terminal_status(shop):
     order = _dispatched_order(shop)
-    ride_id = courier.get_block(order)["id_mch"]
+    ride_id = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride_id, "E")
     courier.apply_status(order, "E", source="webhook")
     order.refresh_from_db()
@@ -492,7 +497,14 @@ def test_sync_handler_stops_on_terminal_status(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_sync_handler_respects_poll_disabled(shop):
+def test_poll_disabled_still_keeps_a_slow_heartbeat(shop):
+    """ENT-07: só webhook não é "nunca perguntar". A batida fica lenta, mas existe.
+
+    Antes, com ``courier_poll_seconds = 0`` o despacho não agendava leitura
+    nenhuma: um aviso perdido deixava a corrida aberta na tela para sempre.
+    """
+    from django.utils import timezone
+
     shop.defaults = {"delivery": {"courier_poll_seconds": 0}}
     shop.save()
     from shopman.shop.models.shop import SHOP_CACHE_KEY
@@ -502,8 +514,9 @@ def test_sync_handler_respects_poll_disabled(shop):
     order = _delivery_order()
     courier.request_dispatch(order, actor="test")
     _run_dispatch(order)
-    # com polling desligado o despacho não agenda heartbeat
-    assert not Directive.objects.filter(topic=COURIER_SYNC, payload__order_ref=order.ref).exists()
+    beat = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref)
+    assert courier.sync_interval(courier.get_block(order)) == courier.SLOW_POLL_SECONDS
+    assert beat.available_at > timezone.now()
 
 
 def _beat(order):
@@ -518,14 +531,14 @@ def _beat(order):
 
 def _sync_alerts(order):
     return OperatorAlert.objects.filter(type="integration_failed", order_ref=order.ref,
-                                        message__contains=f"corrida {courier.get_block(order).get('id_mch')}")
+                                        message__contains=f"número {courier.get_block(order).get('ride_ref')} na central")
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_sync_failure_is_not_silent(shop, django_capture_on_commit_callbacks):
     """13/10/2026: a leitura recusou a cada minuto e nem o pedido nem o operador souberam."""
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.fail_reads(ride)
 
     _beat(order)
@@ -540,6 +553,10 @@ def test_sync_failure_is_not_silent(shop, django_capture_on_commit_callbacks):
     assert courier.dispatch_revision(order) == revision  # a batida que falha de novo não gira a revisão
     _beat(order)
     assert _sync_alerts(order).filter(resolved_at__isnull=True).count() == 1
+    # O aviso chama a corrida pela letra; o id da TaOn vai só como referência do painel.
+    message = _sync_alerts(order).get().message
+    assert f"da corrida A do pedido {short_ref(order.ref)} (número {ride} na central)" in message
+    assert f"corrida {ride}" not in message
     assert courier.progress_view(courier.get_block(order))["sync_since"]
 
     _beat(order)
@@ -559,7 +576,7 @@ def test_sync_failure_is_not_silent(shop, django_capture_on_commit_callbacks):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_sync_stores_the_ride_progress_and_the_screen_view(shop):
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "A")
     courier_mock.set_progress(ride, {
         "accepted_at": "2026-10-13T18:42:00+00:00",
@@ -590,7 +607,7 @@ def test_sync_stores_the_ride_progress_and_the_screen_view(shop):
 def test_progress_advances_the_status_when_the_letter_lags(shop):
     """13/10/2026, PDV-261013-L34: a letra ficou em D e o progresso já dizia aceite, coleta e fim."""
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "D")  # a letra não sai de D na corrida inteira
 
     courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z"})
@@ -627,7 +644,7 @@ def test_progress_advances_the_status_when_the_letter_lags(shop):
 def test_finish_read_in_one_beat_passes_through_the_collection(shop):
     """Só o fim apareceu numa batida: a coleta pulada entra antes, com a cobrança da porta."""
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "D")
     courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z",
                                      "picked_up_at": "2026-10-13T19:45:52Z",
@@ -646,13 +663,33 @@ def test_reading_never_moves_the_status_back():
     assert courier.statuses_from_reading("A", "S", progress) == [("S", None)]
     assert courier.statuses_from_reading("D", "D", {}) == [("D", None)]
     assert courier.statuses_from_reading("D", "N", progress) == [("N", None)]
-    assert courier.statuses_from_reading("A", "", {"accepted_at": "x", "cancelled_at": "y"}) == [("C", "y")]
+
+
+def test_reading_only_concludes_cancelled_when_the_letter_is_c():
+    """``cancellation[]`` traz a desistência de um entregador; a corrida segue viva.
+
+    Concluir "cancelada" pela presença de ``cancelled_at`` arquivava a corrida
+    que a TaOn já redistribuía e mandava chamar de novo: duas corridas pagas.
+    """
+    withdrawn = {"accepted_at": "2026-10-13T19:42:38Z", "cancelled_at": "2026-10-13T19:50:00Z"}
+    assert courier.statuses_from_reading("A", "", withdrawn) == []
+    assert courier.statuses_from_reading("A", "D", withdrawn) == []
+    assert courier.statuses_from_reading("D", "D", {"cancelled_at": "2026-10-13T19:50:00Z"}) == [("D", None)]
+    assert courier.statuses_from_reading("A", "C", withdrawn) == [("C", "2026-10-13T19:50:00Z")]
+    assert courier.statuses_from_reading("A", "C", {}) == [("C", None)]
+
+
+def test_a_bare_letter_never_proves_the_ride_went_back():
+    """A via que só devolve a letra pode estar atrasada: não desfaz um aceite."""
+    assert courier.statuses_from_reading("A", "D", {}, letter_only=True) == []
+    assert courier.statuses_from_reading("A", "D", {}) == [("D", None)]
+    assert courier.statuses_from_reading("D", "A", {}, letter_only=True) == [("A", None)]
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_unchanged_reading_does_not_rewrite_the_order(shop):
     order = _dispatched_order(shop)
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     courier_mock.set_status(ride, "A")
     _beat(order)
     revision = courier.dispatch_revision(order)
@@ -661,7 +698,8 @@ def test_unchanged_reading_does_not_rewrite_the_order(shop):
 
 
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
-def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
+def test_sync_slows_down_on_a_ride_older_than_the_cap(shop):
+    """ENT-07: a corrida antiga não perde a batida, só a pressa (antes ela parava de vez)."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -671,9 +709,8 @@ def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
     block["requested_at"] = (timezone.now() - timedelta(hours=courier.MAX_POLL_HOURS + 1)).isoformat()
     courier._save_block(order, block)
     _beat(order)
-    assert not Directive.objects.filter(
-        topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED
-    ).exists()
+    beat = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED)
+    assert beat.available_at >= timezone.now() + timedelta(seconds=courier.SLOW_POLL_SECONDS - 5)
 
 
 # ── cotação ─────────────────────────────────────────────────────────
@@ -682,8 +719,9 @@ def test_sync_gives_up_on_a_ride_older_than_the_cap(shop):
 @override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
 def test_estimate_for_order_caches_and_stores(shop):
     order = _delivery_order()
-    est = courier.estimate_for_order(order, store=True)
-    assert est == {"value_q": 1250, "minutes": 18.0, "km": 4.2}
+    est = courier.estimate_for_order(order)
+    courier.store_estimate(order, est, expected_revision=courier.dispatch_revision(order))
+    assert est == {"value_q": 1250, "minutes": 18.0, "km": 4.2, "with_return": False}
     order.refresh_from_db()
     assert courier.get_block(order)["estimate"] == est
     # segunda chamada vem do cache (adapter não é consultado)
@@ -754,14 +792,32 @@ def test_notification_context_includes_courier_tracking(shop):
     order = _delivery_order(
         courier={
             "provider": "machine",
-            "id_mch": "1",
+            "ride_ref": "1",
             "status": "E",
             "tracking_url": "https://rastreio.mock/pedido/x",
+            "tracking_match": "single",
         }
     )
     ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
     assert ctx["courier_tracking_url"] == "https://rastreio.mock/pedido/x"
     assert ctx["courier_tracking_suffix"] == "\nAcompanhe o entregador: https://rastreio.mock/pedido/x"
+
+
+def test_notification_context_drops_a_link_recorded_without_proof(shop):
+    """Link sem ``tracking_match`` pode ser o da parada de outro cliente: o sufixo some."""
+    from shopman.shop.services.notification import _build_context
+
+    order = _delivery_order(
+        ref="CR-UNPROVEN",
+        courier={
+            "provider": "machine", "ride_ref": "1", "status": "E",
+            "ride_orders": ["CR-OTHER", "CR-UNPROVEN"],
+            "tracking_url": "https://rastreio.mock/pedido/de-outro",
+        },
+    )
+    ctx = _build_context(order, {"order_ref": order.ref}, "order_dispatched")
+    assert ctx["courier_tracking_url"] == ""
+    assert ctx["courier_tracking_suffix"] == ""
 
 
 def test_notification_context_suppresses_suffix_without_ride(shop):
@@ -787,7 +843,7 @@ def test_collection_dispatches_with_cash_at_the_door_without_inventing_custody(s
     from shopman.cashman.models import Entry
 
     order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 10000},
-                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+                            courier={"ride_ref": "LAB-RIDE", "status": "A"})
     courier.apply_status(order, status, source="poll")
     courier.apply_status(order, status, source="poll")  # replay: no-op
     order.refresh_from_db()
@@ -802,7 +858,7 @@ def test_collection_dispatches_with_cash_at_the_door_without_inventing_custody(s
 
 def test_collection_dispatches_card_at_the_door_without_reserving_a_house_machine():
     order = _delivery_order(payment={"method": "credit", "collection": "on_delivery"},
-                            courier={"id_mch": "LAB-CARD", "status": "A"})
+                            courier={"ride_ref": "LAB-CARD", "status": "A"})
     courier.apply_status(order, "E", source="webhook")
     order.refresh_from_db()
     assert order.status == "dispatched"
@@ -817,7 +873,7 @@ def test_operator_dispatch_before_collection_keeps_drawer_change(django_user_mod
     from shopman.shop.services import operator_orders
 
     order = _delivery_order(payment={"method": "cash", "collection": "on_delivery", "change_for_q": 5500},
-                            courier={"id_mch": "LAB-RIDE", "status": "A"})
+                            courier={"ride_ref": "LAB-RIDE", "status": "A"})
     user = django_user_model.objects.create_user(username="custodian")
     shift = cash.open_shift(operator=user, float_q=1000)
     operator_orders.advance_order(order, actor=user.username, change_out_q=500, cash_shift=shift)
@@ -850,10 +906,56 @@ def test_ride_observation_says_what_to_charge_at_the_door(shop, payment, expecte
     assert body["paradas"][0]["id_externo"] == "CR-1"
 
 
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_auto_call_on_ready_waits_for_the_operator_when_the_card_machine_goes(shop):
+    """A maquininha só sai escolhida pelo operador: o pronto automático avisa, não chama."""
+    card = _delivery_order(ref="CR-CARD", payment={"method": "credit", "collection": "on_delivery"})
+    assert courier.request_auto_dispatch(card) is None
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref="CR-CARD").exists()
+    alert = OperatorAlert.objects.get(order_ref="CR-CARD", type="courier_dispatch_failed")
+    assert "maquininha" in alert.message
+
+    paid = _delivery_order(ref="CR-PAID", payment={"method": "pix", "status": "captured"})
+    assert courier.request_auto_dispatch(paid) is not None
+
+
+@pytest.mark.parametrize(("payment", "dispatch", "expected"), [
+    ({"method": "cash", "collection": "on_delivery", "change_for_q": 10000}, {}, True),
+    ({"method": "cash", "collection": "on_delivery"}, {}, True),
+    ({"method": "credit", "collection": "on_delivery"}, {}, True),
+    ({"method": "pix", "status": "captured"}, {}, False),
+    ({"method": "cash", "collection": "on_delivery", "cod_settled_at": "2026-10-13T12:00:00+00:00"}, {}, False),
+    # Pago, mas a maquininha da casa saiu com ele: ela tem de voltar.
+    ({"method": "pix", "status": "captured"}, {"equipment": ["card_machine"]}, True),
+])
+def test_ride_asks_return_when_courier_brings_something_back(shop, payment, dispatch, expected):
+    order = _delivery_order(ref="CR-1", payment=payment, dispatch=dispatch)
+    assert courier.needs_return(order) is expected
+    assert courier.build_machine_payload(order)["retorno"] is expected
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_quote_asks_the_same_return_the_ride_will_ask(shop, monkeypatch):
+    seen = []
+    real = courier_mock.estimate
+
+    def spy(**kwargs):
+        seen.append(kwargs["with_return"])
+        return real(**kwargs)
+
+    monkeypatch.setattr(courier_mock, "estimate", spy)
+    paid = _delivery_order(ref="CR-PAID", payment={"method": "pix", "status": "captured"})
+    door = _delivery_order(ref="CR-DOOR", payment={"method": "cash", "collection": "on_delivery"})
+    assert courier.estimate_for_order(paid)["with_return"] is False
+    # Mesmo destino, outro retorno: o cache não serve a cotação só de ida.
+    assert courier.estimate_for_order(door)["with_return"] is True
+    assert seen == [False, True]
+
+
 def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypatch):
     from shopman.shop.services import operator_orders
 
-    order = _delivery_order(status="dispatched", courier={"id_mch": "LAB-F", "status": "E"})
+    order = _delivery_order(status="dispatched", courier={"ride_ref": "LAB-F", "status": "E"})
     real = operator_orders.confirm_received
     monkeypatch.setattr(operator_orders, "confirm_received", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("local failure")))
     with pytest.raises(RuntimeError, match="local failure"):
@@ -869,12 +971,12 @@ def test_terminal_fact_recovers_local_failure_without_polling_provider(monkeypat
 
 
 def test_old_ride_response_does_not_modify_replacement():
-    order = _delivery_order(courier={"id_mch": "OLD", "status": "A"})
+    order = _delivery_order(courier={"ride_ref": "OLD", "status": "A"})
     stale = Order.objects.get(pk=order.pk)
-    courier._save_block(order, {"id_mch": "NEW", "status": "A"})
+    courier._save_block(order, {"ride_ref": "NEW", "status": "A"})
     courier.apply_status(stale, "F", source="webhook")
     order.refresh_from_db()
-    assert courier.get_block(order) == {"id_mch": "NEW", "status": "A"}
+    assert courier.get_block(order) == {"ride_ref": "NEW", "status": "A"}
     assert order.status == "ready"
     assert not order.events.filter(type="courier_status").exists()
 
@@ -911,7 +1013,7 @@ def test_known_acceptance_recovers_local_failure_without_remote_retry(shop, monk
     original = courier._save_block
 
     def fail_adoption(order, block, **kwargs):
-        if block.get("id_mch"):
+        if block.get("ride_ref"):
             raise RuntimeError("local adoption failed")
         return original(order, block, **kwargs)
 
@@ -1033,7 +1135,7 @@ def test_ensaio_a_seco_despacho_status_e_cancelamento(shop):
     _on_ready(order, ChannelConfig.from_dict({"fulfillment": {"timing": "external", "courier": "auto"}}))
 
     _run_dispatch(order)  # despacho: POST /abrirSolicitacao
-    ride = courier.get_block(order)["id_mch"]
+    ride = courier.get_block(order)["ride_ref"]
     assert ride == "MOCK-ENSAIO-1"
     assert courier.get_block(order)["status"] == "D"
 
@@ -1070,7 +1172,7 @@ def test_ride_keeps_the_observation_it_carried(shop):
     """A corrida guarda a observação que foi à TaOn: é com ela que o entregador cobra."""
     order = _cod_order()
     block = courier.get_block(order)
-    sent = courier_mock.rides()[block["id_mch"]]["payload"]["paradas"][0]["observacao_parada"]
+    sent = courier_mock.rides()[block["ride_ref"]]["payload"]["paradas"][0]["observacao_parada"]
     assert block["door_charge_note"] == sent
     assert "troco para R$ 100,00" in sent
     assert courier.charge_outdated(order) is None
@@ -1121,3 +1223,258 @@ def test_new_call_after_cancel_carries_the_new_charge(shop):
     block = courier.get_block(order)
     assert block["door_charge_note"].endswith("Cobrar R$ 50,00 em dinheiro · sem troco")
     assert courier.charge_outdated(order) is None
+
+
+def test_ride_letter_names_the_ride_as_the_operator_says_it():
+    """Corrida é letra na tela e na mensagem; o número só grava e escolhe a cor."""
+    assert [courier.ride_letter(n) for n in (1, 2, 6, 26)] == ["A", "B", "F", "Z"]
+    assert courier.ride_letter(27) == "A"
+    assert [courier.ride_letter(v) for v in (0, -1, None, "2", True, 1.0)] == [""] * 6
+
+
+# ── desistência do entregador (a TaOn reabre a mesma corrida) ───────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_reopen_keeps_the_ride_and_forgets_only_the_driver(shop):
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["ride_ref"]
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z", "pickup_eta_at": "2026-10-13T19:49:00Z"})
+    courier_mock.set_status(ride, "A")
+    _beat(order)
+    assert courier.get_block(order)["progress"]["accepted_at"]
+
+    assert courier.record_reopen(order, at="2026-10-13T19:50:00Z") == "applied"
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert (block["ride_ref"], block["status"]) == (ride, "D")
+    assert "driver" not in block
+    assert "accepted_at" not in block.get("progress", {}) and "pickup_eta_at" not in block.get("progress", {})
+    assert block["reopens"][0]["driver"] == "Entregador Mock"
+    assert block["reopens"][0]["accepted_at"] == "2026-10-13T19:42:38Z"
+    assert not OperatorAlert.objects.filter(order_ref=order.ref).exists()
+    # A mesma desistência, entregue duas vezes, conta uma.
+    assert courier.record_reopen(order, at="2026-10-13T19:50:00Z") == "noop"
+    order.refresh_from_db()
+    assert len(courier.get_block(order)["reopens"]) == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_reopen_forgets_the_link_and_the_caches_of_the_driver_who_left(shop):
+    """O entregador novo pode ter link novo: o próximo aceite busca de novo."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["ride_ref"]
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    assert courier.proven_tracking(courier.get_block(order))["url"]
+    assert courier_position.store_position(ride, "-23.3", "-51.1", source=courier_position.SOURCE_WEBHOOK)
+    assert cache.get(f"courier:tracking_links:{ride}") is not None
+
+    courier.record_reopen(order, at="2026-10-13T19:50:00Z")
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert not {"tracking_url", "confirmation_code", "tracking_match"} & set(block)
+    assert cache.get(f"courier:tracking_links:{ride}") is None
+    assert courier_position.read(ride) is None
+
+    courier.apply_status(order, "A", source="poll")
+    order.refresh_from_db()
+    assert courier.proven_tracking(courier.get_block(order))["url"]
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_reading_after_the_withdrawal_does_not_bring_the_old_driver_back(shop):
+    """A leitura segue trazendo o aceite e a desistência de quem saiu, com a letra em D."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["ride_ref"]
+    courier.apply_status(order, "A", source="poll")
+    courier.record_reopen(order, at="2026-10-13T19:50:00Z")
+    courier_mock.set_status(ride, "D")
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:42:38Z", "arrived_pickup_at": "2026-10-13T19:46:00Z",
+                                     "cancelled_at": "2026-10-13T19:50:00Z", "cancelled_reason": "Desistência"})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "D"  # nem "aceita" pelo aceite velho, nem "cancelada" pela desistência
+    assert block["ride_ref"] == ride
+    assert "driver" not in block
+    assert "accepted_at" not in block.get("progress", {}) and "arrived_pickup_at" not in block.get("progress", {})
+
+    # O entregador novo aceita: a hora dele é mais nova que a desistência e vale.
+    courier_mock.set_status(ride, "A")
+    courier_mock.set_progress(ride, {"accepted_at": "2026-10-13T19:58:00Z", "arrived_pickup_at": ""})
+    _beat(order)
+    block = courier.get_block(order)
+    assert block["status"] == "A"
+    assert block["status_at"]["A"] == "2026-10-13T19:58:00Z"
+    assert block["progress"]["accepted_at"] == "2026-10-13T19:58:00Z"
+    assert block["driver"]["name"] == "Entregador Mock"
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_polling_sees_the_withdrawal_when_the_webhook_did_not_come(shop):
+    """Leitura completa, em D e sem aceite, depois de aceita: o entregador saiu."""
+    order = _dispatched_order(shop)
+    ride = courier.get_block(order)["ride_ref"]
+    courier_mock.set_status(ride, "A")
+    _beat(order)
+    assert courier.get_block(order)["driver"]["name"] == "Entregador Mock"
+
+    courier_mock.set_status(ride, "D")
+    with patch("shopman.shop.services.courier._return_custody") as returned:
+        _beat(order)
+    block = courier.get_block(order)
+    assert (block["ride_ref"], block["status"]) == (ride, "D")
+    assert "driver" not in block
+    assert block["reopens"][-1]["driver"] == "Entregador Mock"
+    assert courier.reopen_view(block)["driver"] == "Entregador Mock"
+    returned.assert_not_called()
+    assert not OperatorAlert.objects.filter(order_ref=order.ref).exists()
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_status_never_goes_back_after_pickup(shop):
+    order = _dispatched_order(shop)
+    courier.apply_status(order, "A", source="poll")
+    assert courier.apply_status(order, "E", source="poll") == "applied"
+    assert courier.apply_status(order, "A", source="webhook") == "stale"
+    assert courier.apply_status(order, "D", source="poll") == "stale"
+    assert courier.record_reopen(order) == "stale"
+    order.refresh_from_db()
+    block = courier.get_block(order)
+    assert block["status"] == "E"
+    assert "reopens" not in block
+    assert courier.apply_status(order, "E", source="poll") == "noop"
+
+
+# ── HTTP 429: a TaOn limitou as chamadas ────────────────────────────
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_rate_limited_reading_is_not_a_sync_failure(shop):
+    """Limite de chamadas não é "a TaOn parou de informar": sem aviso, e a batida espera o que ela pediu."""
+    from django.utils import timezone
+
+    from shopman.shop.adapters.courier_machine import CourierRateLimited
+
+    order = _dispatched_order(shop)
+    limited = CourierRateLimited("A TaOn limitou as chamadas (HTTP 429).", retry_after=180)
+    before = timezone.now()
+    for _ in range(courier.SYNC_ALERT_AFTER + 1):
+        with patch.object(courier_mock, "read_ride", side_effect=limited):
+            _beat(order)
+    assert "sync" not in courier.get_block(order)
+    assert not _sync_alerts(order).exists()
+    sync = Directive.objects.get(topic=COURIER_SYNC, payload__order_ref=order.ref, status=Directive.Status.QUEUED)
+    assert (sync.available_at - before).total_seconds() >= 179
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_rate_limited_dispatch_waits_and_opens_the_ride_once(shop):
+    """429 na abertura: nada foi aberto. A mesma tarefa espera e abre UMA corrida, sem falha na tela."""
+    from django.utils import timezone
+
+    from shopman.shop.adapters.courier_machine import CourierRateLimited
+
+    order = _delivery_order()
+    courier.request_dispatch(order, actor="test")
+    directive = Directive.objects.get(topic=COURIER_DISPATCH, payload__order_ref=order.ref)
+    limited = CourierRateLimited("A TaOn limitou as chamadas (HTTP 429).", retry_after=45)
+    before = timezone.now()
+    with patch.object(courier_mock, "dispatch", side_effect=limited):
+        CourierDispatchHandler().handle(message=directive, ctx={})
+
+    directive.refresh_from_db()
+    order.refresh_from_db()
+    assert directive.status == Directive.Status.QUEUED
+    assert (directive.available_at - before).total_seconds() >= 44
+    assert directive.payload["dispatch_attempt"]["state"] == "deferred"
+    assert "error" not in courier.get_block(order)
+    assert not OperatorAlert.objects.filter(order_ref=order.ref).exists()
+    assert courier.unresolved_dispatch(order) is None  # nada a conferir na central
+
+    Directive.objects.filter(pk=directive.pk).update(attempts=2)
+    directive.refresh_from_db()
+    CourierDispatchHandler().handle(message=directive, ctx={})
+    order.refresh_from_db()
+    assert courier.has_active_ride(order)
+    assert len(courier_mock.rides()) == 1
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_rate_limited_dispatch_gives_up_loudly_after_too_many_waits(shop):
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    from shopman.shop.adapters.courier_machine import CourierRateLimited
+    from shopman.shop.handlers.courier_dispatch import MAX_RATE_LIMIT_DEFERRALS
+
+    order = _delivery_order()
+    courier.request_dispatch(order, actor="test")
+    directive = Directive.objects.get(topic=COURIER_DISPATCH, payload__order_ref=order.ref)
+    limited = CourierRateLimited("A TaOn limitou as chamadas (HTTP 429).", retry_after=1)
+    with patch.object(courier_mock, "dispatch", side_effect=limited):
+        for _ in range(MAX_RATE_LIMIT_DEFERRALS):
+            CourierDispatchHandler().handle(message=directive, ctx={})
+            directive.refresh_from_db()
+        with pytest.raises(DirectiveTerminalError):
+            CourierDispatchHandler().handle(message=directive, ctx={})
+    assert OperatorAlert.objects.filter(type="courier_dispatch_failed", order_ref=order.ref).exists()
+    assert len(courier_mock.rides()) == 0
+
+
+
+
+# ── ENT-LIM-15: encomenda de outro dia não se chama hoje ─────────────────────
+
+
+def _future(order, days=1):
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    day = timezone.localdate() + timedelta(days=days)
+    order.data = {**order.data, "delivery_date": day.isoformat()}
+    order.save(update_fields=["data"])
+    return day
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_preorder_for_tomorrow_is_refused_with_the_day(shop):
+    from shopman.shop.services.operator_orders import short_ref
+
+    order = _delivery_order(ref="ENC-1")
+    day = _future(order)
+    code = short_ref(order.ref)
+
+    expected = f"A encomenda {code} é para amanhã, {day:%d/%m}. O entregador se chama no dia."
+    assert courier.not_today_refusal(order) == expected
+    assert courier.group_refusal(order) == expected
+    # O lifecycle não chama; a chamada manual recusa com a frase.
+    assert courier.request_dispatch(order, actor="lifecycle.on_ready") is None
+    with pytest.raises(ValueError, match="O entregador se chama no dia"):
+        courier.redispatch(order, actor="operator:ana")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_a_preorder_further_away_names_only_the_date(shop):
+    order = _delivery_order(ref="ENC-2")
+    day = _future(order, days=3)
+    assert courier.not_today_refusal(order).endswith(f"é para {day:%d/%m}. O entregador se chama no dia.")
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_an_order_for_today_or_without_date_is_callable(shop):
+    order = _delivery_order(ref="ENC-3")
+    assert courier.not_today_refusal(order) == ""
+    _future(order, days=0)
+    assert courier.not_today_refusal(order) == ""
+
+
+@override_settings(SHOPMAN_COURIER_ADAPTER=MOCK_ADAPTER)
+def test_the_order_panel_refuses_calling_a_preorder_with_the_same_phrase(shop):
+    from shopman.backstage.projections.order_queue import _courier_block
+
+    order = _delivery_order(ref="ENC-4")
+    _future(order)
+    block = _courier_block(order)
+    assert block["can_dispatch"] is False
+    assert block["not_today"] == courier.not_today_refusal(order)

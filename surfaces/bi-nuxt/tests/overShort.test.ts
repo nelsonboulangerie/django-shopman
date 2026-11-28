@@ -3,8 +3,9 @@
 import { describe, expect, it } from "vitest";
 import type { BIOverShortReport, BIOverShortRow } from "~/types/bi";
 import { BI_SECTIONS, biSections } from "~/presentation/biSections";
-import { cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
+import { averageTicketText, cashAnswer, customersAnswer, salesAnswer } from "~/presentation/bi";
 import {
+  overShortOrdersHref,
   MADE_SOLD_SERIES,
   madeSoldPoints,
   carryContext,
@@ -150,13 +151,13 @@ describe("o dia e a comparação", () => {
 describe("a resposta", () => {
   it("diz onde faltou (e quando acabou) e onde sobrou (e quanto)", () => {
     expect(overShortAnswer(report)).toBe(
-      "Faltou Croissant Manteiga (acabou às 10:40); sobrou Baguette de Tradition (12 un.).",
+      "Faltou Croissant Manteiga (acabou às 10h40); sobrou Baguette de Tradition (12 un.).",
     );
   });
 
   it("agrupa quando são vários", () => {
     const two = { rows: [croissant, row({ sku: "CI", name: "Ciabatta" }), shokupan] };
-    expect(overShortAnswer(two)).toBe("Faltou Croissant Manteiga e mais 1 (acabou às 10:40).");
+    expect(overShortAnswer(two)).toBe("Faltou Croissant Manteiga e mais 1 (acabou às 10h40).");
   });
 
   it("dia sem lote e dia todo na medida têm frase própria", () => {
@@ -248,9 +249,18 @@ describe("as outras respostas", () => {
     );
   });
 
+  it("vendas: a base tem o nome do Comparar com, e o dia em curso diz até quando (ge:BI-05, ge:BI-06)", () => {
+    const report = { orders_total: 15, revenue_total_q: 110000, previous: { revenue_total_q: 550000 } };
+    expect(salesAnswer({ ...report, compare: "year" })).toContain("80% abaixo do mesmo período do ano passado.");
+    expect(salesAnswer({ ...report, previous: { revenue_total_q: 550000, partial_until: "7h25" } })).toContain(
+      "80% abaixo do período anterior até 7h25.",
+    );
+  });
+
   it("caixa (auditoria do Dono)", () => {
     expect(cashAnswer({ shifts_total: 12, closings_missing: 2, difference_total_q: -3500 }).replace(/\u00a0/g, " ")).toBe(
-      "12 turnos fechados; 2 dias sem fechamento; no acumulado, faltou R$ 35,00.",
+      // Turno (a gaveta) e fechamento do dia (DayClosing) são dois fatos (ge:BI-15).
+      "12 turnos fechados; 2 dias sem fechamento do dia; no acumulado, faltou R$ 35,00.",
     );
     expect(cashAnswer({ shifts_total: 1, closings_missing: 0, difference_total_q: 0 })).toBe(
       "1 turno fechado; no acumulado, a contagem bateu.",
@@ -265,16 +275,18 @@ describe("as outras respostas", () => {
 });
 
 describe("seções do rail", () => {
-  it("oito leituras, com os ícones da prévia", () => {
+  it("dez leituras, com os ícones da prévia", () => {
     expect(BI_SECTIONS.map((s) => s.label)).toEqual([
       "Produção",
       "Vendas",
       "Caixa",
       "Clientes",
+      "Entregas",
       "Perfis",
       "Explorar",
       "Projeção",
       "Cenários",
+      "IA",
     ]);
     expect(BI_SECTIONS[0]!.icon).toBe("lucide:chef-hat");
   });
@@ -322,9 +334,9 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
 
   it("canais que saíram do ar no mesmo minuto vão juntos; Me avise conta clientes", () => {
     expect(unavailableText({ at: "10:40", channels: ["iFood", "Meta", "Google"], automatic: true })).toBe(
-      "iFood, Meta e Google indisponíveis às 10:40",
+      "iFood, Meta e Google indisponíveis às 10h40",
     );
-    expect(unavailableText({ at: "11:05", channels: ["Site"], automatic: false })).toBe("Site indisponível às 11:05");
+    expect(unavailableText({ at: "11:05", channels: ["Site"], automatic: false })).toBe("Site indisponível às 11h05");
     expect(clientCount(5)).toBe("5 clientes");
     expect(clientCount(1)).toBe("1 cliente");
   });
@@ -338,11 +350,25 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(lotsLine(row({ lots, planned_lots: 2 }))).toBe("2 lotes · 44 un. feitas");
   });
 
+  it("o link dos pedidos abre o Histórico pelo eixo da venda (ge:BI-03)", () => {
+    expect(overShortOrdersHref("https://gestor.x/", "2026-11-04", "MDLN")).toBe(
+      "https://gestor.x/history?period=custom&from=2026-11-04&to=2026-11-04&sku=MDLN&basis=ordered",
+    );
+  });
+
   it("os caminhos ao registro dizem quantos e o que abrem", () => {
     expect(ordersLinkLabel(44)).toBe("Abrir os 44 pedidos");
     expect(ordersLinkLabel(1)).toBe("Abrir o pedido");
     expect(historyDaysLabel("2026-10-03", 4)).toBe("Os 4 sábados");
     expect(historyDaysLabel("2026-10-03", 1)).toBe("O sábado");
+    // Segunda a sexta são femininas (ge:BI-10).
+    expect(historyDaysLabel("2026-11-04", 4)).toBe("As 4 quartas");
+    expect(historyDaysLabel("2026-11-04", 1)).toBe("A quarta");
+    expect(historyHeading("2026-11-04", ["2026-10-28", "2026-10-21"])).toBe("Nas 2 quartas");
+    expect(historyHeading("2026-11-04", [])).toBe("Nas quartas anteriores");
+    expect(historyHeading("2026-11-08", [])).toBe("Nos domingos anteriores");
+    expect(compareOptions("2026-11-04")[1]!.reach).toBe("uma só");
+    expect(compareOptions("2026-11-08")[1]!.reach).toBe("um só");
     expect(carryLabel("2026-10-10")).toBe("Levar ao plano do próximo sábado");
     expect(carryLabel("2026-10-05")).toBe("Levar ao plano da próxima segunda");
   });
@@ -355,19 +381,28 @@ describe("V6: a resposta agrupada, a comparação escolhida e o que aconteceu de
     expect(carryContext({ summary: { short: 0, over: 1, right: 0 } } as never).value).toBe("1 produto");
   });
 
-  it("as oito leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
+  it("as dez leituras seguem na casca da suíte, na mesma ordem e com a janela na query", () => {
     const sections = biSections("period=28d");
     expect(sections.map((section) => section.label)).toEqual([
       "Produção",
       "Vendas",
       "Caixa",
       "Clientes",
+      "Entregas",
       "Perfis",
       "Explorar",
       "Projeção",
       "Cenários",
+      "IA",
     ]);
     expect(sections.find((section) => section.key === "sales")?.to).toBe("/sales?period=28d");
     expect(biSections("")).toEqual([...BI_SECTIONS]);
+  });
+});
+
+describe("ticket médio sem pedido (ge:BI-14)", () => {
+  it("sem pedido no período diz que não houve pedido, nunca R$ 0,00", () => {
+    expect(averageTicketText(0, 0)).toBe("sem pedidos");
+    expect(averageTicketText(3, 4500).replace(/\u00a0/g, " ")).toBe("R$ 45,00");
   });
 });

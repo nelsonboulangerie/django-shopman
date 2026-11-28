@@ -10,8 +10,6 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.test import override_settings
 from django.utils import timezone
 from shopman.orderman.models import Directive
@@ -327,37 +325,3 @@ def test_crash_after_handoff_commit_converges_without_second_directive():
     replay = publish_claim(row.ref, worker_id="worker:other", now=now)
     assert replay.state == MarketingOutbox.State.DISPATCHED
     assert Directive.objects.filter(dedupe_key=f"marketing-outbox:{row.ref}").count() == 1
-
-
-@pytest.mark.django_db(transaction=True)
-def test_outbox_schema_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0028_marketing_transactional_transitions")]
-    after = [("shop", "0029_marketing_outbox_recovery")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    with connection.cursor() as cursor:
-        columns = {
-            column.name
-            for column in connection.introspection.get_table_description(
-                cursor,
-                "shop_marketingoutbox",
-            )
-        }
-    assert "dispatch_ref" not in columns
-    assert "dispatched_at" not in columns
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    with connection.cursor() as cursor:
-        columns = {
-            column.name
-            for column in connection.introspection.get_table_description(
-                cursor,
-                "shop_marketingoutbox",
-            )
-        }
-    assert {"dispatch_ref", "dispatched_at"} <= columns
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

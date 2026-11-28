@@ -201,7 +201,10 @@ def test_platform_switched_off_says_so_and_never_asks_for_the_adapter(
     assert state.state == "blocked"
     assert state.reason_code == "platform_switched_off"
     assert "desligad" in state.reason
-    assert switch in state.action
+    # O nome da chave de ambiente é do engenheiro (diagnose_marketing o mostra); ao
+    # operador vai o que pedir e a quem (beta 05/11, ge:MKT-10).
+    assert switch not in state.action
+    assert state.action.startswith("Peça ao suporte técnico para ligar o envio pelo ")
     for wrong in ("integração", "credencia", "adapter", "erro"):
         assert wrong not in state.reason.lower(), wrong
 
@@ -616,6 +619,7 @@ def test_the_list_does_not_query_per_campaign(db, django_assert_num_queries):
             platforms=["whatsapp"], is_active=True,
         )
 
-    # 1 campanhas + 1 anúncios. Sem o agrupamento seriam 1 + 5.
-    with django_assert_num_queries(2):
+    # 1 campanhas + 1 anúncios + 1 exclusividade por grupo (todas as campanhas de uma
+    # vez, `campaign_exclusivity.declared_by_campaign`). Sem o agrupamento seriam 1 + 5 + 5.
+    with django_assert_num_queries(3):
         mp.build_rules()

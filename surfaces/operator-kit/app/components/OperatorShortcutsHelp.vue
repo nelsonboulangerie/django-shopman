@@ -3,8 +3,8 @@
 //
 // Nasceu no PDV (`PosShortcutsHelp`) e na Produção (`ProductionShortcutsHelp`), cada um
 // com a sua cópia; os outros seis não tinham painel nenhum, e a v4 põe "Atalhos (?)"
-// no pé do rail de todo app. Aqui ela LISTA o que o teclado faz: o grupo "Em todo o
-// app" sai das seções do rail (Alt 1…9), e a tela que tem teclas próprias entrega os
+// no pé do rail de todo app. Aqui ela LISTA o que o teclado faz: o grupo "em qualquer
+// tela" sai das seções do rail (Alt 1…9), e a tela que tem teclas próprias entrega os
 // grupos dela com `provideOperatorShortcuts`. Só lista: quem executa é o handler de
 // cada tela (e o Alt+N, que é do rail).
 //
@@ -22,7 +22,7 @@ const props = withDefaults(
   defineProps<{
     /** As seções de cima do rail, na ordem (dão o Alt 1…9). */
     sections: readonly OperatorSection[];
-    /** "Gestor", "PDV": o título do grupo comum ("Em todo o Gestor"). */
+    /** "Gestor", "PDV": o título do grupo comum ("Gestor: em qualquer tela"). */
     appLabel?: string;
     /** O app tem o rail de três estados (`OperatorSuiteShell`): a tecla C entra na lista. */
     rail?: boolean;

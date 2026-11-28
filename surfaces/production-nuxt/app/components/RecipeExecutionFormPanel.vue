@@ -1,13 +1,11 @@
 <script setup lang="ts">
 import type { ExecutionPatch, ExecutionSheetProjection } from "~/types/recipeBook";
-import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
-import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
-import { useDirtyForm } from "../../../operator-kit/app/composables/useDirtyForm";
+import { PRODUCTION_MODE_BATCH, PRODUCTION_MODE_HELP, PRODUCTION_MODE_OPTIONS } from "~/presentation/recipeBook";
 
-const props = defineProps<{ open: boolean; execution: ExecutionSheetProjection | null; busy?: boolean }>();
+const props = defineProps<{ execution: ExecutionSheetProjection | null; busy?: boolean }>();
 const emit = defineEmits<{
-  "update:open": [value: boolean];
   save: [payload: ExecutionPatch];
+  "update:dirty": [dirty: boolean];
 }>();
 
 const form = reactive({
@@ -17,14 +15,19 @@ const form = reactive({
   shelfLifeDays: "",
   shelfLifeReviewed: false,
   productionLifecycle: "",
+  productionMode: PRODUCTION_MODE_BATCH,
 });
 const initialShelfLife = ref("");
-const { dirty, changedKeys, capture } = useDirtyForm(() => ({ ...form }));
+const baseline = ref("");
+
+function snapshot(): string {
+  return JSON.stringify(form);
+}
 
 watch(
-  () => [props.open, props.execution?.revision],
+  () => props.execution?.revision,
   () => {
-    if (!props.open || !props.execution) return;
+    if (!props.execution) return;
     form.maxStartedMinutes = props.execution.max_started_minutes == null ? "" : String(props.execution.max_started_minutes);
     form.capacityPerDay = props.execution.capacity_per_day;
     form.requiresBatchTracking = props.execution.requires_batch_tracking;
@@ -32,10 +35,14 @@ watch(
     initialShelfLife.value = form.shelfLifeDays;
     form.shelfLifeReviewed = props.execution.shelf_life_reviewed;
     form.productionLifecycle = props.execution.production_lifecycle;
-    nextTick(capture);
+    form.productionMode = props.execution.production_mode;
+    baseline.value = snapshot();
+    emit("update:dirty", false);
   },
   { immediate: true },
 );
+
+watch(form, () => emit("update:dirty", !!baseline.value && snapshot() !== baseline.value), { deep: true });
 
 watch(
   () => form.shelfLifeDays,
@@ -82,33 +89,35 @@ function save() {
     shelfLifeDays: shelfLife.value,
     shelfLifeReviewed: form.shelfLifeReviewed,
     productionLifecycle: form.productionLifecycle,
+    productionMode: form.productionMode,
   });
 }
+const productionModeOptions = computed(() => props.execution?.production_mode_options ?? [...PRODUCTION_MODE_OPTIONS]);
 </script>
 
 <template>
-  <OperatorFormShell
-    :open="open"
-    title="Operação da ficha"
-    size="wide"
-    description="Como a receita se comporta no planejamento e no chão de produção."
-    :dirty="dirty"
-    :dirty-count="changedKeys.length"
-    :busy="busy"
-    save-label="Salvar operação"
-    save-icon="i-lucide-save"
-    :save-disabled="!valid"
-    :save-disabled-reason="disabledReason"
-    @update:open="emit('update:open', $event)"
-    @save="save"
-  >
-    <OperatorFormSection section-key="planning" title="Planejamento" description="Limites que alimentam atraso e ocupação.">
+  <form class="grid gap-3" @submit.prevent="save">
+    <section class="grid gap-3 rounded-md border bg-card p-3">
+      <div>
+        <h2 class="text-sm font-semibold">Planejamento</h2>
+        <p class="text-xs text-muted-foreground">Como a receita ocupa a produção e quando um lote exige atenção.</p>
+      </div>
       <div class="grid gap-3 sm:grid-cols-2">
+        <NuxtFormField label="Modo de produção" :description="PRODUCTION_MODE_HELP" class="sm:col-span-2">
+          <NuxtRadioGroup
+            v-model="form.productionMode"
+            :items="productionModeOptions"
+            value-key="value"
+            label-key="label"
+            orientation="horizontal"
+            data-testid="execution-production-mode"
+          />
+        </NuxtFormField>
         <NuxtFormField label="Tempo máximo de lote aberto (min)" description="Vazio usa o padrão da loja.">
-          <NuxtInput v-model="form.maxStartedMinutes" inputmode="numeric" class="w-full" />
+          <NuxtInput v-model="form.maxStartedMinutes" inputmode="numeric" class="w-full" :ui="{ base: 'bg-muted' }" />
         </NuxtFormField>
         <NuxtFormField label="Capacidade por dia" description="Vazio deixa a ocupação sem teto próprio.">
-          <NuxtInput v-model="form.capacityPerDay" inputmode="decimal" class="w-full" />
+          <NuxtInput v-model="form.capacityPerDay" inputmode="decimal" class="w-full" :ui="{ base: 'bg-muted' }" />
         </NuxtFormField>
         <NuxtFormField v-if="execution?.lifecycle_options.length" label="Ciclo de produção" class="sm:col-span-2">
           <NuxtSelect
@@ -117,6 +126,7 @@ function save() {
             value-key="value"
             label-key="label"
             class="w-full"
+            :ui="{ base: 'bg-muted' }"
           />
         </NuxtFormField>
         <NuxtCheckbox
@@ -125,12 +135,16 @@ function save() {
           label="Rastrear lote ao concluir a produção"
         />
       </div>
-    </OperatorFormSection>
+    </section>
 
-    <OperatorFormSection section-key="validity" title="Validade do lote" description="Zero significa mesmo dia; vazio não presume prazo.">
+    <section class="grid gap-3 rounded-md border bg-card p-3">
+      <div>
+        <h2 class="text-sm font-semibold">Validade do lote</h2>
+        <p class="text-xs text-muted-foreground">Zero significa mesmo dia; vazio não presume prazo.</p>
+      </div>
       <div class="grid gap-3">
         <NuxtFormField label="Validade (dias)">
-          <NuxtInput v-model="form.shelfLifeDays" inputmode="numeric" class="w-full" />
+          <NuxtInput v-model="form.shelfLifeDays" inputmode="numeric" class="w-full" :ui="{ base: 'bg-muted' }" />
         </NuxtFormField>
         <NuxtCheckbox
           v-model="form.shelfLifeReviewed"
@@ -141,6 +155,17 @@ function save() {
           Última revisão registrada por {{ execution.shelf_life_reviewed_by }}.
         </p>
       </div>
-    </OperatorFormSection>
-  </OperatorFormShell>
+    </section>
+
+    <div class="flex flex-wrap items-center justify-end gap-2">
+      <p v-if="disabledReason" class="mr-auto text-xs text-destructive">{{ disabledReason }}</p>
+      <NuxtButton
+        type="submit"
+        icon="i-lucide-save"
+        label="Salvar configuração"
+        :loading="busy"
+        :disabled="!valid"
+      />
+    </div>
+  </form>
 </template>

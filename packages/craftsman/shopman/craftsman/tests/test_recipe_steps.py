@@ -191,7 +191,7 @@ class TestPublish:
 
     def test_the_item_note_reaches_the_sheet(self):
         formula = flour_formula()
-        formula["items"][0]["note"] = "A farinha do bairro pede 2% mais água."
+        formula["ingredients"][0]["note"] = "A farinha do bairro pede 2% mais água."
         entry = recipe_book.create_entry(ref="massa", name="Massa", kind="bread", output_sku="MASSA")
         version = recipe_book.create_version(entry, formula=formula, yield_quantity="1.7", yield_unit="kg")
 
@@ -217,9 +217,12 @@ class TestPublish:
 
     def test_two_lines_of_the_same_item_carry_both_notes(self):
         formula = flour_formula()
-        formula["items"].append({"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid",
-                                 "quantity": 50, "unit": "g", "note": "Só no fim da sova."})
-        formula["items"][1]["note"] = "Gelada."
+        formula["ingredients"].append({"sku": "AGUA-FILTRADA", "name": "Água da bassinage", "role": "liquid",
+                                       "ref": "water-bassinage",
+                                       "composition": "additional", "quantity": {
+                                           "kind": "fixed", "minimum": 50, "target": 50, "maximum": 50, "unit": "g"},
+                                       "note": "Só no fim da sova."})
+        formula["ingredients"][1]["note"] = "Gelada."
         entry = recipe_book.create_entry(ref="massa", name="Massa", kind="bread", output_sku="MASSA")
         # Rendimento baixo de propósito: a quantidade de SKU repetido na fórmula não é
         # o assunto aqui (a análise indexa a sobra por SKU); a nota é.
@@ -232,11 +235,11 @@ class TestPublish:
 
     def test_a_note_that_is_not_text_is_refused(self):
         formula = flour_formula()
-        formula["items"][0]["note"] = 42
+        formula["ingredients"][0]["note"] = 42
         entry = recipe_book.create_entry(ref="massa", name="Massa", kind="bread", output_sku="MASSA")
         with pytest.raises(RecipeBookError) as exc:
             recipe_book.create_version(entry, formula=formula, yield_quantity="1.7", yield_unit="kg")
-        assert exc.value.data["field"] == "items[0].note"
+        assert exc.value.data["field"] == "ingredients[0].note"
 
 
 # ── A migração dos dados gravados ────────────────────────────────────────────

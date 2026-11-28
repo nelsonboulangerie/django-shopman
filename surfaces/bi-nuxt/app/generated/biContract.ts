@@ -13,6 +13,22 @@ export interface BIOvenTimeRow {
   avg_planned_minutes: string;
 }
 
+/** Custo congelado e receita rastreada de uma fornada fechada. */
+export interface BIProductionBatchMargin {
+  ref: string;
+  recipe: string;
+  date: string;
+  revenue_q: number;
+  total_q: number | null;
+  margin_q: number | null;
+  cost_status: string;
+  gaps: string[];
+  output_quantity: string;
+  traced_quantity: string;
+  lot_status: string;
+  sells_until: string | null;
+}
+
 /** Um dia da série: produção fechada e o mix comercial da qualidade. */
 export interface BIProductionDay {
   date: string;
@@ -36,7 +52,7 @@ export interface BIProductionPrevious {
   finished_by_day: string[];
 }
 
-/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_started_assumed: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious') */
+/** BIProductionReport(date_from: 'str', date_to: 'str', days: 'tuple[BIProductionDay, ...]', oven_time_by_recipe: 'tuple[BIOvenTimeRow, ...]', oven_time_by_oven: 'tuple[BIOvenTimeRow, ...]', batches_finished: 'int', batches_started_assumed: 'int', batches_measured: 'int', oven_coverage_percent: 'int', previous: 'BIProductionPrevious', batch_margins: 'tuple[BIProductionBatchMargin, ...]') */
 export interface BIProductionReport {
   date_from: string;
   date_to: string;
@@ -48,6 +64,7 @@ export interface BIProductionReport {
   batches_measured: number;
   oven_coverage_percent: number;
   previous: BIProductionPrevious;
+  batch_margins: BIProductionBatchMargin[];
 }
 
 /** Um lote fechado do produto no dia: o registro de onde o "fez" saiu. */
@@ -185,6 +202,7 @@ export interface BISalesPrevious {
   revenue_total_q: number;
   average_ticket_q: number;
   revenue_by_day: number[];
+  partial_until: string;
 }
 
 /** Dia em que o nativo venceu e apagou histórico relevante — declarado, não mudo. */
@@ -201,7 +219,16 @@ export interface BISalesDiscountKindRow {
   amount_q: number;
 }
 
-/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]', discount_by_kind: 'tuple[BISalesDiscountKindRow, ...]', discount_kind_total_q: 'int') */
+/** Pedido de retirada que ficou pronto e o cliente não veio (#2698). */
+export interface BISalesNoShow {
+  orders: number;
+  paid_q: number;
+  refund_q: number;
+  retained_q: number;
+  loss_q: number;
+}
+
+/** BISalesReport(date_from: 'str', date_to: 'str', days: 'tuple[BISalesDay, ...]', by_channel: 'tuple[BISalesChannelRow, ...]', top_skus: 'tuple[BITopSkuRow, ...]', orders_by_hour: 'tuple[int, ...]', orders_by_weekday: 'tuple[int, ...]', orders_total: 'int', revenue_total_q: 'int', average_ticket_q: 'int', cancelled_total: 'int', no_show: 'BISalesNoShow', historical_days: 'int', sources: 'tuple[str, ...]', source_conflicts: 'tuple[BISourceConflict, ...]', previous: 'BISalesPrevious', channel: 'str', channels: 'tuple[BISalesChannelOption, ...]', compare: 'str', closed_weekdays: 'tuple[int, ...]', discount_by_kind: 'tuple[BISalesDiscountKindRow, ...]', discount_kind_total_q: 'int') */
 export interface BISalesReport {
   date_from: string;
   date_to: string;
@@ -214,6 +241,7 @@ export interface BISalesReport {
   revenue_total_q: number;
   average_ticket_q: number;
   cancelled_total: number;
+  no_show: BISalesNoShow;
   historical_days: number;
   sources: string[];
   source_conflicts: BISourceConflict[];
@@ -346,6 +374,169 @@ export interface BICustomersReport {
   with_insight: number;
   at_risk: number;
   average_ticket_q: number;
+}
+
+/** Um serviço de entrega no período: corridas, entregas, custo e frete cobrado. */
+export interface BIDeliveryCostService {
+  service: string;
+  name: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  fee_q: number;
+  balance_q: number;
+  cost_per_delivery_q: number;
+}
+
+/** Um dia: corridas, entregas, custo das corridas e frete cobrado. */
+export interface BIDeliveryCostDay {
+  date: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  fee_q: number;
+}
+
+/** BIDeliveryCostReport(date_from: 'str', date_to: 'str', rides: 'int', deliveries: 'int', cost_q: 'int', estimated_rides: 'int', fee_q: 'int', balance_q: 'int', cost_per_delivery_q: 'int', days: 'tuple[BIDeliveryCostDay, ...]', services: 'tuple[BIDeliveryCostService, ...]' = ()) */
+export interface BIDeliveryCostReport {
+  date_from: string;
+  date_to: string;
+  rides: number;
+  deliveries: number;
+  cost_q: number;
+  estimated_rides: number;
+  fee_q: number;
+  balance_q: number;
+  cost_per_delivery_q: number;
+  days: BIDeliveryCostDay[];
+  services: BIDeliveryCostService[];
+}
+
+/** Uma linha do recorte: quantos casos e a mediana, em minutos. */
+export interface BITimingRow {
+  key: string;
+  label: string;
+  samples: number;
+  median_minutes: number;
+}
+
+/** Os tempos das corridas de um serviço: quantas e a mediana de cada trecho, em minutos. */
+export interface BIRideTimingService {
+  service: string;
+  name: string;
+  rides: number;
+  accept_minutes: number | null;
+  pickup_minutes: number | null;
+  street_minutes: number | null;
+  total_minutes: number | null;
+}
+
+/** BIDeliveryTimingReport(date_from: 'str', date_to: 'str', prep_samples: 'int', prep_start_fallbacks: 'int', prep_by_sku: 'tuple[BITimingRow, ...]', prep_by_hour: 'tuple[BITimingRow, ...]', prep_by_weekday: 'tuple[BITimingRow, ...]', rides: 'int', courier_accept_by_hour: 'tuple[BITimingRow, ...]', courier_accept_by_weekday: 'tuple[BITimingRow, ...]', courier_pickup_by_hour: 'tuple[BITimingRow, ...]', courier_pickup_by_weekday: 'tuple[BITimingRow, ...]', services: 'tuple[BIRideTimingService, ...]' = ()) */
+export interface BIDeliveryTimingReport {
+  date_from: string;
+  date_to: string;
+  prep_samples: number;
+  prep_start_fallbacks: number;
+  prep_by_sku: BITimingRow[];
+  prep_by_hour: BITimingRow[];
+  prep_by_weekday: BITimingRow[];
+  rides: number;
+  courier_accept_by_hour: BITimingRow[];
+  courier_accept_by_weekday: BITimingRow[];
+  courier_pickup_by_hour: BITimingRow[];
+  courier_pickup_by_weekday: BITimingRow[];
+  services: BIRideTimingService[];
+}
+
+/** Um papel num modelo: chamadas e gasto no período. */
+export interface BIAiSpendRow {
+  purpose: string;
+  purpose_label: string;
+  model: string;
+  calls: number;
+  errors: number;
+  denied: number;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  estimated: boolean;
+}
+
+/** Um dia: o gasto e a cotação usada para dizê-lo em reais. */
+export interface BIAiSpendDay {
+  date: string;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  rate: string | null;
+  quoted_on: string | null;
+  provisional: boolean;
+}
+
+/** BIAiReason(reason: 'str', label: 'str', count: 'int') */
+export interface BIAiReason {
+  reason: string;
+  label: string;
+  count: number;
+}
+
+/** Uma pergunta que a Concierge passou à equipe, agrupada pelo texto. */
+export interface BIAiGap {
+  question: string;
+  count: number;
+  last_at: string;
+  admin_url: string;
+}
+
+/** Uma resposta reprovada pela conferência, com a fala do cliente redigida. */
+export interface BIAiFallback {
+  at: string;
+  conversation_id: number;
+  customer_text: string;
+  reply_text: string;
+  reasons: string[];
+  admin_url: string;
+}
+
+/** BIAiReport(date_from: 'str', date_to: 'str', conference_mode: 'str', cost_usd_micros: 'int', cost_brl_micros: 'int | None', calls: 'int', errors: 'int', denied: 'int', estimated_calls: 'int', provisional_quotes: 'bool', rows: 'tuple[BIAiSpendRow, ...]', days: 'tuple[BIAiSpendDay, ...]', conferred: 'int', would_fall: 'int', reasons: 'tuple[BIAiReason, ...]', gaps: 'tuple[BIAiGap, ...]', fallbacks: 'tuple[BIAiFallback, ...]') */
+export interface BIAiReport {
+  date_from: string;
+  date_to: string;
+  conference_mode: string;
+  cost_usd_micros: number;
+  cost_brl_micros: number | null;
+  calls: number;
+  errors: number;
+  denied: number;
+  estimated_calls: number;
+  provisional_quotes: boolean;
+  rows: BIAiSpendRow[];
+  days: BIAiSpendDay[];
+  conferred: number;
+  would_fall: number;
+  reasons: BIAiReason[];
+  gaps: BIAiGap[];
+  fallbacks: BIAiFallback[];
+}
+
+/** Uma encomenda: quando chegou à Cozinha, quando começou, quando ficou pronta. */
+export interface BIPreorderKitchenRow {
+  ref: string;
+  released_at: string;
+  started_at: string | null;
+  ready_at: string | null;
+  wait_minutes: number | null;
+  prep_minutes: number | null;
+}
+
+/** BIPreorderKitchenReport(date_from: 'str', date_to: 'str', orders: 'int', started: 'int', ready: 'int', wait_median_minutes: 'float | None', prep_median_minutes: 'float | None', rows: 'tuple[BIPreorderKitchenRow, ...]') */
+export interface BIPreorderKitchenReport {
+  date_from: string;
+  date_to: string;
+  orders: number;
+  started: number;
+  ready: number;
+  wait_median_minutes: number | null;
+  prep_median_minutes: number | null;
+  rows: BIPreorderKitchenRow[];
 }
 
 /** BIExploreRow(key: 'str', label: 'str', key2: 'str', label2: 'str', value: 'float') */
@@ -626,7 +817,7 @@ export interface BIProfilesPrevious {
   estimate: BIProfileEstimate;
 }
 
-/** BIConsumptionProfilesReport(date_from: 'str', date_to: 'str', weekday: 'int | None', hour_band: 'str', readings: 'tuple[BIProfileReading, ...]', bands: 'tuple[BIProfileBand, ...]', profiles: 'tuple[BIProfileRow, ...]', counter_orders: 'int', counter_revenue_q: 'int', delivery_orders: 'int', delivery_revenue_q: 'int', revenue_total_q: 'int', coverage: 'float', days_with_sales: 'int', estimate: 'BIProfileEstimate', sensitivity: 'BIProfileSensitivity', categories: 'tuple[BIProfileCategoryRow, ...]', category_lines_revenue_q: 'int', category_header_gap_q: 'int', beverage: 'BIProfileBeverage', revpash: 'tuple[BIRevpashRow, ...]', seats: 'int', seats_source: 'str', previous: 'BIProfilesPrevious') */
+/** BIConsumptionProfilesReport(date_from: 'str', date_to: 'str', weekday: 'int | None', hour_band: 'str', readings: 'tuple[BIProfileReading, ...]', bands: 'tuple[BIProfileBand, ...]', profiles: 'tuple[BIProfileRow, ...]', counter_orders: 'int', counter_revenue_q: 'int', delivery_orders: 'int', delivery_revenue_q: 'int', revenue_total_q: 'int', coverage: 'float', days_with_sales: 'int', estimate: 'BIProfileEstimate', sensitivity: 'BIProfileSensitivity', categories: 'tuple[BIProfileCategoryRow, ...]', category_lines_revenue_q: 'int', category_header_gap_q: 'int', beverage: 'BIProfileBeverage', revpash: 'tuple[BIRevpashRow, ...]', seats: 'int', seats_source: 'str', previous: 'BIProfilesPrevious', consumption_tags_url: 'str' = '') */
 export interface BIConsumptionProfilesReport {
   date_from: string;
   date_to: string;
@@ -652,6 +843,7 @@ export interface BIConsumptionProfilesReport {
   seats: number;
   seats_source: string;
   previous: BIProfilesPrevious;
+  consumption_tags_url: string;
 }
 
 /** BIScenario(title: 'str', proposal: 'str', basis: 'tuple[str, ...]', unknowns: 'tuple[str, ...]') */

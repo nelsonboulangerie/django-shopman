@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { Material, ReceiptExceptionView, ReceiptLinePreview } from "~/types/purchase";
+import type { Material, ReceiptExceptionView, ReceiptLinePreview, ReceiptPriceCheck } from "~/types/purchase";
 import {
   formatMoney,
   formatShortDate,
+  receiptAutoFacts,
   receiptExpiryShortcuts,
   receiptLineDifference,
   receiptLineLabel,
@@ -16,9 +17,10 @@ import { todayIso as todayIsoDate } from "../../../operator-kit/app/presentation
  * Decisão do dono (03/10/2026): "recebimento por exceção, sim; validade é
  * incontornável". O desenho é o da prévia v4 (`compras-validade4.html`):
  *
- * a. **Tudo bate com a nota**: o que o sistema já sabe, em três fatos com a marca
- *    de automático (de-para, embalagens, preços), e os itens recolhidos em "Ver
- *    os N itens". **Contei os volumes** é o único ato físico; o "Contei N
+ * a. **Tudo bate com a nota**: o que o sistema conferiu sozinho, com a marca de
+ *    automático, só o que foi medido (hoje, o preço contra o custo preferencial
+ *    do fornecedor; ver `receiptAutoFacts`), e os itens recolhidos em "Ver os N
+ *    itens". **Contei os volumes** é o único ato físico; o "Contei N
  *    volumes" mora no polegar (no celular, a barra da página) com "Algo não
  *    bate" logo abaixo. "Bipar cada volume" conta pela câmera.
  * b. **Falta só a validade**: com os volumes contados, o cartão dos volumes
@@ -34,6 +36,8 @@ const props = defineProps<{
   lineCount: number;
   totalCostQ: number;
   declaredVolumes: number;
+  /** O preço conferido contra o custo preferencial; sem ele, nenhuma frase de preço. */
+  priceCheck?: ReceiptPriceCheck | null;
   pending?: boolean;
   /** O anel âmbar de quando o "Confirmar entrada" aponta para a contagem. */
   volumesRing?: string;
@@ -93,12 +97,9 @@ const headline = computed(() =>
   : `${props.view.matched.length} ${props.view.matched.length === 1 ? "bate" : "batem"} · ${props.view.exceptions.length} para resolver`,
 );
 
-// Os três fatos que o sistema conferiu sozinho (v4 a, pino 1).
-const autoFacts = [
-  "Itens reconhecidos pelo de-para",
-  "Embalagens conferem com o cadastro",
-  "Preços dentro do último pago",
-];
+// O que o sistema conferiu sozinho (v4 a, pino 1): só o que foi medido, com o
+// número da medida. Frase fixa aqui era conferência que ninguém fez.
+const autoFacts = computed(() => receiptAutoFacts(props.priceCheck, props.lineCount));
 
 const pendingExpiries = computed(() => props.view.perishables.filter((preview) => !preview.line.expiryDate).length);
 // Os itens que não pedem validade: entram "ok" de cara (v4 b, última linha).
@@ -253,7 +254,7 @@ const matchedNames = computed(() => props.view.matched.map((preview) => receiptL
           </p>
         </div>
       </div>
-      <ul class="mt-3 grid gap-1.5" data-exception-facts>
+      <ul v-if="autoFacts.length" class="mt-3 grid gap-1.5" data-exception-facts>
         <li v-for="fact in autoFacts" :key="fact" class="flex items-center gap-2 text-sm">
           <Icon name="lucide:sparkles" class="size-4 shrink-0 text-muted-foreground" />
           {{ fact }}

@@ -21,6 +21,7 @@ from django.utils import timezone
 from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Directive, Order, Session
 from shopman.orderman.services import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 
 class PreorderCommitTests(TestCase):
@@ -61,6 +62,8 @@ class PreorderCommitTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -79,6 +82,8 @@ class PreorderCommitTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -92,6 +97,8 @@ class PreorderCommitTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -110,6 +117,8 @@ class PreorderCommitTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -126,10 +135,59 @@ class PreorderCommitTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
         self.assertEqual(order.data["transferred_from"], trail)
+
+    def test_commit_carries_the_store_version_and_the_replay_keeps_it(self) -> None:
+        """O pedido sabe de qual versão da loja veio (OC-22), e o replay não a perde."""
+        from shopman.orderman.services.commit import CommitAuthority, CommitSeal
+
+        mark = {"para-quando": {"variant": "b", "generation": 1}}
+        session = self._create_session(experience=mark)
+        key = generate_idempotency_key()
+        seal = seal_for(session.session_key, self.channel.ref)
+
+        first = CommitService.commit(
+            session_key=session.session_key,
+            channel_ref=self.channel.ref,
+            idempotency_key=key,
+            seal=seal,
+            channel_config={},
+        )
+        replay = CommitService.commit(
+            session_key=session.session_key,
+            channel_ref=self.channel.ref,
+            idempotency_key=key,
+            seal=CommitSeal(
+                expected_revision=seal.expected_revision,
+                expected_total_q=seal.expected_total_q,
+                authority=CommitAuthority.SYNTHETIC_DIAGNOSTIC,
+            ),
+            channel_config={},
+        )
+
+        self.assertEqual(replay.order_ref, first.order_ref)
+        self.assertEqual(Order.objects.filter(session_key=session.session_key).count(), 1)
+        order = Order.objects.get(ref=first.order_ref)
+        self.assertEqual(order.data["experience"], mark)
+
+    def test_commit_without_store_version_leaves_the_key_out(self) -> None:
+        """Sem experimento na sacola, o pedido não ganha a chave (ausente = sem experimento)."""
+        session = self._create_session()
+
+        result = CommitService.commit(
+            session_key=session.session_key,
+            channel_ref=self.channel.ref,
+            idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
+        )
+
+        self.assertNotIn("experience", Order.objects.get(ref=result.order_ref).data)
 
 class PreorderReminderDirectiveTests(TestCase):
     """Tests for D-1 reminder directive creation on preorder commit."""
@@ -167,6 +225,8 @@ class PreorderReminderDirectiveTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         # Should have a notification.send directive with template=preorder_reminder
@@ -208,6 +268,8 @@ class PreorderReminderDirectiveTests(TestCase):
             session_key=session.session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session.session_key, self.channel.ref),
+            channel_config={},
         )
 
         reminders = Directive.objects.filter(

@@ -1,158 +1,175 @@
-"""Checkout read-side projections — repricing + stock shortfalls (data).
+"""Checkout read-side projections: operational dates and remembered defaults.
 
-Drained out of ``checkout_context`` (which embedded ``format_money`` and copy).
-Both builders take the cart DATA projection's lines and return semantic data —
-cents, refs, quantities — with no copy or formatting. The storefront
-presentation renders the "preço mudou / Deseja continuar?" and stock messages.
+Builders return semantic data with no copy or formatting. The stock decision
+is not here: it is Stockman's, read by the cart and by the commit
+(``shop.services.availability``).
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import date
-
-from . import checkout_context
+from datetime import date, datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-_REPRICING_TOLERANCE_DEFAULT = 0.05  # 5% — surface a repricing prompt past this drift
-
 
 @dataclass(frozen=True)
-class RepricingChangeProjection:
-    """A cart line whose catalog price drifted past the tolerance — cents only."""
+class AcceptanceWindow:
+    """O prazo que a casa tem para aceitar um pedido enviado AGORA.
 
-    sku: str
-    name: str
-    cart_price_q: int
-    current_price_q: int
+    ``minutes`` é o prazo do pedido (curto no pedido do dia com a casa aberta,
+    longo na encomenda e com a casa fechada); ``deadline`` é quando ele vence,
+    contado em tempo de loja aberta; ``runs_now`` diz que o prazo cabe inteiro
+    no expediente em curso, então "em até N minutos" é verdade. Quando não
+    cabe (casa fechada, ou o fechamento chega antes), só o ``deadline`` é.
+    """
 
-
-@dataclass(frozen=True)
-class StockShortfallProjection:
-    """A cart line whose requested qty exceeds what can be promised now."""
-
-    line_id: str
-    sku: str
-    name: str
-    requested_qty: int
-    available_qty: int
+    minutes: int
+    deadline: datetime
+    runs_now: bool
 
 
-def _repricing_tolerance() -> float:
+def shop_today(*, now: datetime | None = None) -> date:
+    """O "hoje" da loja, no fuso dela: o mesmo de ``availability_dates``.
+
+    A tela do checkout lia o dia do relógio do dispositivo; "hoje", "amanhã" e os
+    limites do calendário passam a sair daqui.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    return fulfillment_window._local_today(now=now)
+
+
+def acceptance_window(
+    channel_ref: str, *, order_date: date | None, now: datetime | None = None,
+) -> AcceptanceWindow | None:
+    """O prazo de aceite de um pedido para ``order_date`` enviado agora.
+
+    Só no modo ``auto_cancel`` (a loja aceita ou o pedido cancela e o valor
+    volta): é o único em que existe um prazo a prometer. A régua é a mesma de
+    ``lifecycle.acceptance_timeout_minutes``: prazo longo na encomenda para
+    outro dia e no pedido que chega com a casa fechada; e o vencimento sai de
+    ``business_calendar.next_operational_deadline``, o mesmo que agenda o
+    cancelamento. ``None`` quando não há prazo a prometer (outro modo, canal
+    sem prazo, casa sem próxima abertura) ou quando a leitura do calendário
+    falha: a tela não promete o que não sabe.
+
+    A configuração do canal é lida FORA do ``try``: canal sem configuração é
+    defeito de instância e falha gritando, nunca vira "sem prazo" em silêncio
+    (``test_instance_runtime_config``).
+    """
+    from django.utils import timezone
+
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.services import business_calendar
+
+    confirmation = ChannelConfig.for_channel(channel_ref).confirmation
+    if confirmation.mode != "auto_cancel":
+        return None
     try:
-        from shopman.shop.models import Shop
-
-        shop = Shop.load()
-        raw = (shop.defaults or {}).get("repricing_tolerance") if shop else None
-        return float(raw) if raw else _REPRICING_TOLERANCE_DEFAULT
+        moment = now or timezone.now()
+        state = business_calendar.current_business_state(now=moment)
+        preorder = order_date is not None and order_date > timezone.localdate(moment)
+        minutes = confirmation.acceptance_timeout_minutes(long_deadline=preorder or state.is_closed)
+        if minutes <= 0:
+            return None
+        timeout = timedelta(minutes=minutes)
+        deadline, _state = business_calendar.next_operational_deadline(timeout=timeout, now=moment)
+        if deadline is None:
+            return None
+        return AcceptanceWindow(
+            minutes=minutes,
+            deadline=deadline,
+            runs_now=state.is_open and deadline - moment <= timeout + timedelta(seconds=1),
+        )
     except Exception:
-        logger.debug("repricing_tolerance degraded; using default", exc_info=True)
-        return _REPRICING_TOLERANCE_DEFAULT
+        logger.debug("checkout_projection_acceptance_window_failed", exc_info=True)
+        return None
 
 
-def repricing_changes(cart_lines) -> tuple[RepricingChangeProjection, ...]:
-    """Lines whose cart price drifted from the current catalog price past the
-    configured tolerance. ``cart_lines`` is the cart projection's ``lines``.
-    """
-    skus = [line.sku for line in cart_lines if line.sku]
-    if not skus:
-        return ()
-
-    from shopman.offerman.models import Product
-
-    products = {
-        p.sku: p
-        for p in Product.objects.filter(sku__in=skus).only("sku", "name", "base_price_q")
-    }
-    tolerance = _repricing_tolerance()
-    changes = []
-    for line in cart_lines:
-        product = products.get(line.sku)
-        if product is None:
-            continue
-        cart_price = int(line.unit_price_q)
-        current_price = int(product.base_price_q)
-        if cart_price <= 0 or current_price <= 0:
-            continue
-        if abs(current_price - cart_price) / current_price > tolerance:
-            changes.append(
-                RepricingChangeProjection(
-                    sku=line.sku,
-                    name=product.name or line.sku,
-                    cart_price_q=cart_price,
-                    current_price_q=current_price,
-                )
-            )
-    return tuple(changes)
-
-
-def cart_stock_shortfalls(
-    *,
-    session_key: str,
-    cart_lines,
-    channel_ref: str,
-    target_date: date | None = None,
-) -> tuple[tuple[StockShortfallProjection, ...], bool]:
-    """Lines whose requested qty exceeds the own-hold-aware promisable qty.
-
-    Returns ``(shortfalls, service_unavailable)``; ``service_unavailable`` is
-    True when the stock service answered for nothing (every lookup skipped).
-    """
-    if not cart_lines:
-        return (), False
-
-    session_held = checkout_context.session_held_qty(session_key, target_date=target_date)
-    shortfalls = []
-    checked = 0
-    skipped = 0
-    for line in cart_lines:
-        avail = checkout_context._availability_for_sku(line.sku, channel_ref=channel_ref, target_date=target_date)
-        if avail is None:
-            skipped += 1
-            continue
-        checked += 1
-        if avail.get("availability_policy") == "demand_ok" and not avail.get("is_paused", False):
-            continue
-        available_qty = int(avail.get("total_promisable", 0)) + session_held.get(line.sku, 0)
-        if line.qty > available_qty:
-            shortfalls.append(
-                StockShortfallProjection(
-                    line_id=line.line_id,
-                    sku=line.sku,
-                    name=line.name or line.sku,
-                    requested_qty=line.qty,
-                    available_qty=available_qty,
-                )
-            )
-
-    service_unavailable = skipped > 0 and checked == 0
-    if service_unavailable:
-        logger.warning("checkout.stock_check_unavailable: %d line(s) skipped", skipped)
-    return tuple(shortfalls), service_unavailable
-
-
-def availability_dates(max_preorder_days: int) -> tuple[tuple[str, ...], tuple[int, ...]]:
-    """Próximas datas operacionais (ISO) + dias da semana fechados.
+def availability_dates(
+    max_preorder_days: int, *, now: datetime | None = None
+) -> tuple[tuple[str, ...], tuple[int, ...], bool]:
+    """Próximas datas operacionais (ISO), dias da semana fechados e ``today_over``.
 
     Fonte: ``business_calendar`` (horário semanal + feriados/férias coletivas) —
     o mesmo serviço read-only que ``shop_status``/``order_tracking`` já consomem
     pelo read-side. Exposto aqui para a presentation ler sem importar o serviço
     (regra R-A). Degrada para vazio se algo falhar — a UI cai no fallback de datas.
+
+    HOJE só entra se ainda tem horário: a grade de hoje (``fulfillment_window
+    .delivery_windows_for``, a mesma da retirada e da entrega) é quem diz. Às
+    17:54 de uma loja que fecha às 18h a meia hora já não cabe, e "Hoje" levaria
+    o cliente a uma lista vazia. ``today_over`` é verdadeiro quando hoje é dia de
+    loja aberta e as retiradas e entregas de hoje já acabaram: a tela diz por que
+    "Hoje" não está entre as opções, em vez de ele sumir calado.
     """
     try:
-        from shopman.shop.services import business_calendar
+        from shopman.shop.services import business_calendar, fulfillment_window
 
-        # Duas é o bastante: a UI mostra "Hoje" (se aberto) + a próxima fornada.
-        dates = business_calendar.available_dates(max_count=2, horizon_days=max_preorder_days)
+        # Três para sobrar duas: a UI mostra "Hoje" (se ainda dá) + a próxima fornada.
+        dates = business_calendar.available_dates(max_count=3, horizon_days=max_preorder_days, now=now)
+        today = fulfillment_window._local_today(now=now)
+        today_over = (
+            business_calendar.is_open_on(today)
+            and business_calendar.selling_hours_for(today) is not None
+            and not fulfillment_window.delivery_windows_for(today, now=now)
+        )
+        if today_over:
+            dates = [day for day in dates if day != today]
         return (
-            tuple(d.isoformat() for d in dates),
+            tuple(d.isoformat() for d in dates[:2]),
             tuple(business_calendar.closed_weekdays()),
+            bool(today_over),
         )
     except Exception:
         logger.debug("checkout_projection_availability_dates_failed", exc_info=True)
-        return (), ()
+        return (), (), False
+
+
+@dataclass(frozen=True)
+class MenuDays:
+    """Os dias que o "Para quando?" do cardápio pode oferecer (OC-33 B1).
+
+    ``today_open``: hoje ainda tem horário de retirada ou entrega (a mesma conta
+    de ``availability_dates``). ``next_days``: os próximos dias em que a casa
+    opera, DEPOIS de hoje, em ordem. ``max_date``: o último dia que a casa aceita
+    encomenda (``max_preorder_days``), teto do "Outro dia".
+    """
+
+    today: date
+    today_open: bool
+    next_days: tuple[date, ...]
+    max_date: date
+    closed_weekdays: tuple[int, ...]
+
+
+def menu_days(max_preorder_days: int, *, count: int = 4, now: datetime | None = None) -> MenuDays | None:
+    """Os dias do "Para quando?": hoje (se ainda dá) e os ``count`` próximos dias operantes.
+
+    Mesmas fontes do checkout: ``business_calendar`` (expediente, feriado,
+    férias) e a grade de hoje (``fulfillment_window``). Só lê. ``None`` se a
+    leitura falhar: a tela não oferece dia que ninguém conferiu.
+    """
+    try:
+        from shopman.shop.services import business_calendar, fulfillment_window
+
+        today = fulfillment_window._local_today(now=now)
+        dates = business_calendar.available_dates(
+            max_count=count + 1, horizon_days=max_preorder_days, now=now,
+        )
+        today_open = today in dates and bool(fulfillment_window.delivery_windows_for(today, now=now))
+        return MenuDays(
+            today=today,
+            today_open=today_open,
+            next_days=tuple(day for day in dates if day > today)[:count],
+            max_date=today + timedelta(days=max(0, max_preorder_days)),
+            closed_weekdays=tuple(business_calendar.closed_weekdays()),
+        )
+    except Exception:
+        logger.debug("checkout_projection_menu_days_failed", exc_info=True)
+        return None
 
 
 def customer_checkout_defaults(customer_ref: str, channel_ref: str) -> dict:
@@ -178,10 +195,6 @@ def customer_checkout_defaults(customer_ref: str, channel_ref: str) -> dict:
 
 
 __all__ = [
-    "RepricingChangeProjection",
-    "StockShortfallProjection",
     "availability_dates",
-    "cart_stock_shortfalls",
     "customer_checkout_defaults",
-    "repricing_changes",
 ]

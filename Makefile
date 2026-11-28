@@ -6,8 +6,11 @@
 #   make admin       → valida tudo de Admin/Unfold
 #   make install     → instala deps + apps em modo editável
 
-# Python: usa venv se existir, senão o do PATH
-PYTHON := $(shell [ -f .venv/bin/python ] && echo $(CURDIR)/.venv/bin/python || echo python)
+# Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
+# principal — nunca o `python` do PATH, cujo pyenv pode ter editable installs de
+# worktrees mortas (CLAUDE.md). Ver o bloco "Worktree" logo abaixo.
+GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
+PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 ADMIN_URL := $(strip $(or $(url),$(URL)))
 ADMIN_SCOPE_ARGS := $(if $(ADMIN_URL),--url $(ADMIN_URL),)
 COMPOSE ?= docker compose
@@ -16,9 +19,23 @@ RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 PWA_SURFACE := $(if $(filter storefront,$(app)),storefront-nuxt,$(app)-nuxt)
 PWA_DIR := surfaces/$(PWA_SURFACE)
-SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman
+SHOPMAN_PYTHONPATH := $(CURDIR):$(CURDIR)/packages/buyman:$(CURDIR)/packages/cashman:$(CURDIR)/packages/craftsman:$(CURDIR)/packages/doorman:$(CURDIR)/packages/fiscalman:$(CURDIR)/packages/guestman:$(CURDIR)/packages/offerman:$(CURDIR)/packages/orderman:$(CURDIR)/packages/payman:$(CURDIR)/packages/refs:$(CURDIR)/packages/stockman:$(CURDIR)/packages/utils:$(CURDIR)/packages/watchman:$(CURDIR)/packages/conversational-commerce
 
-.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow deploy-spec-drift canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+# ── Worktree: testar o código DESTA árvore ────────────────────────────────
+# Os editable installs do .venv apontam para a árvore principal. Medido em
+# 25/11/2026 (DEV-2026-098): numa worktree, `.venv/bin/python -c "import
+# shopman.orderman"` resolvia para o checkout PRINCIPAL — `make test-orderman`
+# passava testando outro código. Com a worktree à frente no PYTHONPATH, todo
+# `shopman.*` e `conversational_commerce` resolvem aqui (`python3
+# scripts/local_ci.py origin` prova). No checkout principal e na CI (onde o
+# checkout É a raiz) nada muda.
+ifneq ($(GIT_MAIN_ROOT),)
+ifneq ($(realpath $(CURDIR)),$(realpath $(GIT_MAIN_ROOT)))
+export PYTHONPATH := $(SHOPMAN_PYTHONPATH)$(if $(PYTHONPATH),:$(PYTHONPATH),)
+endif
+endif
+
+.PHONY: surfaces surfaces-types surfaces-lint test-surface-registry test-operator-components test-operator-ux test-operator-audit-close theme-baselines theme-baselines-accept operator-visual new-surface help install test test-refs test-utils test-watchman test-conversational-commerce test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-shop-heavy test-shop-rest test-backstage-seed test-backstage-heavy test-backstage-rest test-counter-agent test-migrations migrations-pending migrations-plan test-silent-swallow constitution-guards deploy-spec-drift adr-governance docs-governance orchestrator-governance canonical-docs required-checks-drift marketing-capacity marketing-diagnose marketing-docs marketing-drills marketing-simulator test-runtime-preflight test-runtime load-test storefront-e2e pwa test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness production-contract reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -54,33 +71,37 @@ install: ## Instala deps + apps da suite em modo editável
 		"ruff>=0.15,<1.0" \
 		"pytest-xdist>=3.6,<4.0" \
 		phonenumbers pytest pytest-django pytest-cov
-	# Instala cada app em modo editável
-	$(PYTHON) -m pip install -e packages/refs
-	$(PYTHON) -m pip install -e packages/utils
-	$(PYTHON) -m pip install -e packages/watchman
-	$(PYTHON) -m pip install -e packages/offerman
-	$(PYTHON) -m pip install -e packages/stockman
-	$(PYTHON) -m pip install -e packages/craftsman
-	$(PYTHON) -m pip install -e packages/guestman
-	$(PYTHON) -m pip install -e packages/doorman
-	$(PYTHON) -m pip install -e packages/orderman
-	$(PYTHON) -m pip install -e packages/payman
-	$(PYTHON) -m pip install -e packages/buyman
-	$(PYTHON) -m pip install -e packages/fiscalman
-	$(PYTHON) -m pip install -e packages/cashman
-	$(PYTHON) -m pip install -e .
+	# Instala cada app em modo editável, SOB os mesmos pinos: sem `-c` aqui o pip
+	# resolve a dependência transitiva do zero (12/11/2026: o `erpbrasil.edoc` 3.3.0
+	# saiu de manhã, puxou `erpbrasil-assinatura` 1.9 → `pyOpenSSL<24.3`, e o
+	# backtrack tentou compilar PyYAML 6.0 do fonte; todo PR do dia ficou vermelho).
+	$(PYTHON) -m pip install -c constraints.txt -e packages/refs
+	$(PYTHON) -m pip install -c constraints.txt -e packages/utils
+	$(PYTHON) -m pip install -c constraints.txt -e packages/watchman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/offerman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/stockman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/craftsman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/guestman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/doorman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/orderman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/payman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/buyman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/fiscalman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/cashman
+	$(PYTHON) -m pip install -c constraints.txt -e packages/conversational-commerce
+	$(PYTHON) -m pip install -c constraints.txt -e .
 	@echo "✓ Dependências instaladas"
 
 # ── Testes ────────────────────────────────────────────────────────────
 
-# Os 13 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
+# Os 14 pacotes independentes juntos. Existe para a matriz do CI ter um alvo só com
 # tudo que é rápido — na prática ~1 min somado, contra ~12 do framework. Sem
 # ele, ou o CI listava treze entradas de matriz (treze `make install`, cada um
 # custando mais que o teste) ou os cores voltavam a esperar o framework.
-test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman ## Todos os pacotes do Core
+test-cores: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce ## Todos os pacotes do Core
 	@echo "✓ Cores passaram"
 
-test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
+test: test-refs test-utils test-watchman test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-conversational-commerce test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
 # ── Por que NÃO tem `-x` (fail-fast) em nenhum alvo ───────────────────────
@@ -110,6 +131,15 @@ test-utils: ## Testes do shopman.utils
 test-watchman: ## Testes do shopman.watchman
 	@echo "── Watchman ──"
 	cd packages/watchman && $(PYTHON) -m pytest -q
+
+# Pacote puro, sem Django (ADR-049). `PYTHONPATH` fixo no próprio pacote: a
+# `.venv` pode ter uma instalação editável apontando para OUTRO checkout, e a
+# suíte passaria testando o código errado. `-p no:django`: a `.venv` tem
+# pytest-django, e carregá-lo aqui apagaria a prova de que o pacote não precisa
+# de Django. A suíte bloqueia a rede (conftest do pacote).
+test-conversational-commerce: ## Testes do conversational_commerce (sem Django, sem rede)
+	@echo "── Conversational commerce ──"
+	cd packages/conversational-commerce && PYTHONPATH="$(CURDIR)/packages/conversational-commerce" $(PYTHON) -m pytest -q -p no:django
 
 test-offerman: ## Testes do shopman.offering
 	@echo "── Offerman ──"
@@ -245,13 +275,29 @@ SHOP_HEAVY_TESTS := \
 	shopman/shop/tests/test_setup_operators.py \
 	shopman/shop/tests/test_suggestion_stress.py
 
-test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard 1/2 do CI)
+test-shop-heavy: ## Shop — os 15 arquivos mais pesados (shard do CI)
 	@echo "── Shop (arquivos pesados) ──"
 	$(PYTHON) -m pytest $(SHOP_HEAVY_TESTS) -q -n auto
 
-test-shop-rest: ## Shop — todo o resto (shard 2/2 do CI)
+test-shop-rest: ## Shop — todo o resto (todas as partes juntas)
 	@echo "── Shop (resto) ──"
 	$(PYTHON) -m pytest shopman/shop/tests -q -n auto $(addprefix --ignore=,$(SHOP_HEAVY_TESTS))
+
+# ── shop rest partido por PESO MEDIDO (DEV-2026-098) ───────────────────────
+# Com o backstage partido (seed/rest), a vigia de tempo apontou na primeira
+# leitura (25/11) o `Shop rest` como o novo patamar do Runtime Gate: 12,3 min
+# p50 na fila, acima do teto de 12 de scripts/ci-time-budget.json. Mesmo
+# mecanismo do backstage, logo abaixo: scripts/test_shards.py parte o `rest`
+# pelos pesos de scripts/test-shard-weights.json (recursivo: o shop tem testes
+# em subpastas). A CI roda `rest-1..N`; o `test-shop-rest` inteiro segue local.
+# Mudar o número de partes: aqui E na matriz `tests-shop-shards` do
+# runtime-gate.yml E no COVERAGE_SHARDS do Coverage Gate (teste confere).
+SHOP_REST_PARTS := 2
+
+test-shop-rest-%: ## Shop rest, parte K de SHOP_REST_PARTS (CI): make test-shop-rest-1
+	@echo "── Shop (resto) parte $*/$(SHOP_REST_PARTS) ──"
+	@files="$$(python3 scripts/test_shards.py --part $*/$(SHOP_REST_PARTS) shopman/shop/tests $(addprefix --exclude ,$(SHOP_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
@@ -289,8 +335,9 @@ test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 # `test_nelson_seed_operational.py` no mesmo worker.
 #
 # O `test-backstage` acima continua rodando TUDO numa invocação só — é o que
-# `make test` e o desenvolvedor local querem. Os dois alvos abaixo existem para
-# a matriz do CI, onde os jobs correm em paralelo de verdade.
+# `make test` e o desenvolvedor local querem. Os alvos abaixo (hoje três:
+# seed, heavy e rest) existem para a matriz do CI, onde os jobs correm em
+# paralelo de verdade.
 BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_apply_product_measurements_matches_seed.py \
 	shopman/backstage/tests/test_manual_labels_match_piece_weight.py \
@@ -300,13 +347,113 @@ BACKSTAGE_SEED_TESTS := \
 	shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py \
 	shopman/backstage/tests/test_seed_forecast_history.py
 
-test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/2 do CI)
+test-backstage-seed: ## Backstage — só os testes que semeiam o banco (todas as partes juntas)
 	@echo "── Backstage (semeia o banco) ──"
 	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -q -n auto
 
-test-backstage-rest: ## Backstage — todo o resto (shard 2/2 do CI)
+# ── seed e rest partidos por PESO MEDIDO (DEV-2026-098) ────────────────────
+# Benchmark de 25/11 (evidence/ci-dx-098/): com 8 vCPU o passo de teste do
+# `seed` acelerou 1,95x e o do `rest` 1,47x; os outros jobs quase nada. Dois
+# runners grátis de 4 vCPU somam os 8 de um pago: partir esses dois shards dá o
+# mesmo ganho sem custo. A CI roda `seed-1..N` e `rest-1..N` (matriz do
+# runtime-gate.yml); `test-backstage-seed`/`-rest` inteiros seguem para uso local.
+#
+# A partição é do `scripts/test_shards.py`: LPT guloso pelos segundos de
+# `scripts/test-shard-weights.json`, determinístico, união e disjunção por
+# construção, arquivo novo entra com o peso mediano, parte vazia é ERRO (pytest
+# sem argumento rodaria outra suíte). `scripts/check_test_cost.py` (`make
+# test-cost`) reprova shard desequilibrado (> 1,25x), peso de arquivo morto e
+# teste que chama o seed completo fora do `seed`/`heavy`. A vigia agendada
+# (ci-time-watch.yml) compara o relógio real com scripts/ci-time-budget.json.
+# Mudar o número de partes: aqui E na matriz do runtime-gate.yml e na lista do
+# Coverage Gate (scripts/tests/test_local_ci.py confere que os três concordam).
+BACKSTAGE_SEED_PARTS := 2
+BACKSTAGE_REST_PARTS := 2
+SHARD_SPLIT = python3 scripts/test_shards.py
+
+test-backstage-seed-%: ## Backstage seed, parte K de BACKSTAGE_SEED_PARTS (CI): make test-backstage-seed-1
+	@echo "── Backstage (semeia o banco) parte $*/$(BACKSTAGE_SEED_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_SEED_PARTS) $(BACKSTAGE_SEED_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
+
+# ── Terceiro shard do backstage: os pesados do `rest` ─────────────────────
+# Em 06/11/2026 o `rest` estourou o teto de 30 min do step: o job 127686511444
+# (PR #2143) terminou "10225 passed ... in 1792.68s (0:29:52)" e morreu no
+# timeout, e o 127687615016 (fila do #2154) morreu antes de terminar. Tirou o
+# #2154 da fila e derrubaria todo PR que entrasse nela.
+#
+# Critério: TEMPO por arquivo, medido (o mesmo do shop). Uma rodada local do
+# `rest` inteiro com `--junitxml` (06/11, 426 arquivos fora os 7 do seed) somou
+# ~1.832s de teste. Os 24 arquivos abaixo, os mais pesados em ordem, somam
+# ~919s (50,2%); os outros 402 somam ~913s. Não há penhasco: o mais pesado
+# (`test_admin_smoke`, 218 testes) vale 109s, 6%.
+#
+# ⚠️ Arquivo novo cai no `rest` por construção, que é o shard que cresce. Se
+# ele voltar a encostar no teto, meça de novo (a mesma rodada com
+# `--junitxml`) e mova os pesados para cá; olhe o CI para o relógio.
+#
+# ⚠️ União e disjunção continuam por construção: o `heavy` é `<lista>`, o
+# `rest` é `<tudo> --ignore=<seed> --ignore=<heavy>`. Arquivo renomeado ou
+# apagado sem sair da lista reprova ALTO no `heavy`.
+BACKSTAGE_HEAVY_TESTS := \
+	shopman/backstage/tests/test_a11y_keyboard.py \
+	shopman/backstage/tests/test_admin_merge_undo.py \
+	shopman/backstage/tests/test_admin_renders_with_rows.py \
+	shopman/backstage/tests/test_admin_smoke.py \
+	shopman/backstage/tests/test_api_catalog_surface.py \
+	shopman/backstage/tests/test_api_client_pwa_update.py \
+	shopman/backstage/tests/test_api_customers.py \
+	shopman/backstage/tests/test_api_marketing_surface.py \
+	shopman/backstage/tests/test_api_notifications.py \
+	shopman/backstage/tests/test_api_production_surface.py \
+	shopman/backstage/tests/test_api_purchase_count.py \
+	shopman/backstage/tests/test_bi_forecast.py \
+	shopman/backstage/tests/test_catalog_product_components.py \
+	shopman/backstage/tests/test_cenarios_de_bi_aproveitamento.py \
+	shopman/backstage/tests/test_certificate_expiry.py \
+	shopman/backstage/tests/test_ficha_feita_na_hora.py \
+	shopman/backstage/tests/test_import_batch_migration.py \
+	shopman/backstage/tests/test_massa_de_cada_peca.py \
+	shopman/backstage/tests/test_pos_headless_surface_contract.py \
+	shopman/backstage/tests/test_saved_views.py \
+	shopman/backstage/tests/test_seed_bootstrap_recipe_book.py \
+	shopman/backstage/tests/test_seed_liquid_base_unit.py \
+	shopman/backstage/tests/test_seed_preparation_shelf_life.py \
+	shopman/backstage/tests/test_seed_sem_futuro.py
+
+test-backstage-heavy: ## Backstage — os 24 arquivos mais pesados fora do seed (todas as partes juntas)
+	@echo "── Backstage (arquivos pesados) ──"
+	$(PYTHON) -m pytest $(BACKSTAGE_HEAVY_TESTS) -q -n auto
+
+# 25/11 (DEV-2026-098): com seed/rest do backstage e rest do shop partidos, o
+# `heavy` virou o job mais longo do Runtime Gate (12,6 min, run 45688139461).
+# Mesmo mecanismo: partido por peso medido; a CI roda heavy-1..N.
+BACKSTAGE_HEAVY_PARTS := 2
+
+test-backstage-heavy-%: ## Backstage heavy, parte K de BACKSTAGE_HEAVY_PARTS (CI): make test-backstage-heavy-1
+	@echo "── Backstage (arquivos pesados) parte $*/$(BACKSTAGE_HEAVY_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_HEAVY_PARTS) $(BACKSTAGE_HEAVY_TESTS))" && test -n "$$files" && \
+		$(PYTHON) -m pytest $$files -q -n auto
+
+test-backstage-rest: ## Backstage — todo o resto (todas as partes juntas)
 	@echo "── Backstage (resto) ──"
-	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS))
+	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS))
+
+test-backstage-rest-%: ## Backstage rest, parte K de BACKSTAGE_REST_PARTS (CI): make test-backstage-rest-1
+	@echo "── Backstage (resto) parte $*/$(BACKSTAGE_REST_PARTS) ──"
+	@files="$$($(SHARD_SPLIT) --part $*/$(BACKSTAGE_REST_PARTS) shopman/backstage/tests $(addprefix --exclude ,$(BACKSTAGE_SEED_TESTS) $(BACKSTAGE_HEAVY_TESTS)))" && \
+		test -n "$$files" && $(PYTHON) -m pytest $$files -q -n auto
+
+test-cost: ## Gate: seed completo contado, quem semeia no shard certo, shards partidos completos e equilibrados
+	python3 scripts/check_test_cost.py
+
+shard-weights: ## Re-mede os pesos dos shards com o junit de uma fila verde: make shard-weights run=<id do Runtime Gate>
+	@test -n "$(run)" || (echo 'uso: make shard-weights run=<id de um run verde do Runtime Gate no merge_group>' >&2; exit 2)
+	@dir="$$(mktemp -d)" && gh run download $(run) --pattern 'junit-*' -D "$$dir" && \
+		python3 scripts/test_shards.py --measure "$$dir"/*/*.xml && python3 scripts/check_test_cost.py
+
+print-%: ## Imprime uma variável do Makefile (as travas leem as listas daqui: uma fonte só)
+	@echo $($*)
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
@@ -434,10 +581,10 @@ operator-visual: ## Matriz incremental: make operator-visual app=x route=/x scen
 
 # Cria um app de operador em surfaces/ a partir do molde e o registra em todos os
 # lugares que a trava acima confere. O subdomínio é argumento: hostname é do dono.
-new-surface: ## Novo app de operador: make new-surface name=x label="X" subdomain=x group=operator-office perm=app.codename color=#RRGGBB symbol=lucide:nome
-	@test -n "$(name)" -a -n "$(label)" -a -n "$(subdomain)" -a -n "$(group)" -a -n "$(perm)" -a -n "$(color)" -a -n "$(symbol)" || \
-		(echo 'uso: make new-surface name=<id> label="<Rótulo>" subdomain=<rótulo do host> group=<operator-floor|operator-office> perm=<app.codename> color=<#RRGGBB> symbol=<lucide:nome> [article=o|a|as] [dry=1]' >&2; exit 2)
-	$(PYTHON) scripts/new_surface.py --name "$(name)" --label "$(label)" --subdomain "$(subdomain)" \
+new-surface: ## Novo app de operador: make new-surface name=x label="X" role=x-management subdomain=x group=operator-office perm=app.codename color=#RRGGBB symbol=lucide:nome
+	@test -n "$(name)" -a -n "$(label)" -a -n "$(role)" -a -n "$(subdomain)" -a -n "$(group)" -a -n "$(perm)" -a -n "$(color)" -a -n "$(symbol)" || \
+		(echo 'uso: make new-surface name=<id> label="<Rótulo>" role=<trabalho-persona> subdomain=<rótulo do host> group=<operator-floor|operator-office> perm=<app.codename> color=<#RRGGBB> symbol=<lucide:nome> [article=o|a|as] [dry=1]' >&2; exit 2)
+	$(PYTHON) scripts/new_surface.py --name "$(name)" --label "$(label)" --role "$(role)" --subdomain "$(subdomain)" \
 		--group "$(group)" --perm "$(perm)" --color "$(color)" --symbol "$(symbol)" \
 		$(if $(article),--article "$(article)") $(if $(dry),--dry-run)
 
@@ -447,6 +594,22 @@ new-surface: ## Novo app de operador: make new-surface name=x label="X" subdomai
 test-silent-swallow: ## Gate da meia-correção: relato alto + engolimento mudo no MESMO arquivo
 	@echo "── Gate da meia-correção ──"
 	$(PYTHON) scripts/check_silent_swallow.py $(if $(all),--all,) $(if $(json),--json,)
+
+# Guardas da Constituição (C2, C3, C5, C6, C7, C10, C11, ADR-025) + o mapa de guardas.
+# AST, sem Django, contra scripts/constitution-baseline.json: crescer reprova, entrada
+# obsoleta reprova. `strict=1` mostra o estado bruto, sem baseline. Ver docs/reference/guard-map.md.
+constitution-guards: ## Gate: cláusulas pétreas da Constituição + mapa de guardas completo
+	@echo "── Guardas da Constituição ──"
+	$(PYTHON) scripts/constitution_guards.py $(if $(strict),--strict,)
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_constitution_guards.py -q
+
+ai-port: ## Gate: nenhuma chamada a modelo fora da porta de IA (ID3A)
+	$(PYTHON) scripts/check_ai_port.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
+
+experiments: ## Gate: experimento vencido (anotação nas superfícies ou regra semeada) reprova (R4, OC-20)
+	$(PYTHON) scripts/check_experiments.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_experiments.py -q
 
 test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alpha-smoke)
 	$(PYTHON) scripts/check_workflow_budgets.py
@@ -472,7 +635,36 @@ deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; ANTE
 	@echo "── Drift do spec do App Platform ──"
 	$(PYTHON) scripts/check_do_spec_drift.py $(if $(spec),--spec $(spec),) $(if $(context),--context $(context),)
 
-canonical-docs: ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
+adr-governance: ## Gate: número, status e índice canônicos das ADRs
+	@echo "── ADR governance ──"
+	$(PYTHON) scripts/check_adr_governance.py
+
+docs-governance: ## Gate: links vivos, teto histórico e índice completo de planos
+	@echo "── Documentation governance ──"
+	$(PYTHON) scripts/check_docs_governance.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_docs_governance.py -q
+
+orchestrator-governance: ## Gate: inventário físico e unidades semânticas do orquestrador
+	$(PYTHON) scripts/check_orchestrator_units.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
+
+.PHONY: test-instance-descriptors test-instance-contracts experiments
+test-instance-contracts: ## Gate: soberania, composição e evolução de Instância
+	@echo "── Contratos de Instância ──"
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
+		$(READINESS_PYTHON) -m pytest \
+			config/tests/test_instance_sovereignty.py \
+			config/tests/test_instance_composition.py \
+			config/tests/test_instance_evolution.py -q
+
+test-instance-descriptors: test-instance-contracts ## Gate: schema, ownership e descritores de Instância
+	@echo "── Descritores de Instância ──"
+	$(PYTHON) scripts/check_instance_descriptors.py
+	PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 $(PYTHON) -m pytest -p no:django scripts/tests/test_check_instance_descriptors.py -q
+	DATABASE_URL='' DJANGO_SETTINGS_MODULE=config.settings_test PYTHONPATH="$(SHOPMAN_PYTHONPATH)" \
+		$(READINESS_PYTHON) -m pytest config/tests/test_instance_descriptors.py -q
+
+canonical-docs: adr-governance docs-governance orchestrator-governance test-instance-descriptors ## Gate: verdade canônica de go-live acompanha código, workflows e tag ADR-015
 	@echo "── Canonical go-live documentation ──"
 	$(PYTHON) scripts/check_canonical_docs.py
 
@@ -500,6 +692,12 @@ storefront-e2e: $(NUXT_DIR)/node_modules/.package-lock.json ## E2E Playwright: s
 		SHOPMAN_E2E_PORT="$(or $(port),$(PORT),8001)" \
 		SHOPMAN_E2E_NUXT_PORT="$(or $(nuxt_port),3100)" \
 		bash scripts/run_storefront_e2e.sh $(args)
+
+storefront-journeys: ## Jornadas da cliente numa pilha própria (seed qa, Django, worker, proxy lento, loja e Gestor compilados); DATABASE_URL de um banco SÓ de jornada; filtro via args= (ex.: args="j7 --grep J7")
+	PYTHON="$(PYTHON)" bash scripts/run_storefront_journeys.sh $(args)
+
+experience-compare: ## Comparação A/B supervisionada (OC-23): as jornadas do §5.1 para A e B na pilha das jornadas, versão decidida pelo servidor; relatório em surfaces/storefront-nuxt/test-results/experience-compare/; DATABASE_URL de um banco SÓ de jornada
+	PYTHON="$(PYTHON)" bash scripts/run_experience_compare.sh $(args)
 
 pwa: ## PWA opt-in (app=storefront|pos|hub|orders|kds|production|marketing|purchase|bi)
 	@test -n "$(app)" || (echo "uso: make pwa app=<surface opt-in>" >&2; exit 2)
@@ -565,21 +763,73 @@ db-shell: ## psql no Postgres do docker
 	$(COMPOSE) exec postgres sh -c 'psql -U "$${POSTGRES_USER:-shopman}" -d "$${POSTGRES_DB:-shopman}"'
 
 # ── Diagnóstico operacional ─────────────────────────────────────────
+#
+# ⚠️ LOCAIS. `diagnose-*` mede o banco, o cache e os settings do PROCESSO que roda
+# o make: o `.env` desta máquina (ou o `DATABASE_URL` exportado). Não fala com o
+# app vivo, e o script não está na imagem (o Dockerfile não copia `scripts/`).
+# Com `target=1` o alvo NÃO executa nada: imprime o equivalente no app vivo
+# (`shopman-nelson`, contexto `context=`, padrão `shopman-do-app-admin`).
+# Ver docs/runbooks/directive-worker-parado.md e vizinhos.
+LIVE_APP_ID := 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f
+LIVE_CONTEXT = $(or $(context),shopman-do-app-admin)
+LIVE_API_URL := https://api.boulangerie.com.br
+LIVE_DOCTL = doctl --context $(LIVE_CONTEXT) apps
+LIVE_HEADER = ── equivalente no app VIVO shopman-nelson (só impresso: NADA foi executado) ──
+LIVE_DIRECT_DB = DJANGO_DEBUG=true DATABASE_URL="<conexão DIRETA, porta 25060, banco shopman; NUNCA o pool 25061>"
 
-diagnose-runtime: ## Diagnostica DB, Redis/cache, migrations e SSE/eventstream
+diagnose-runtime: ## [LOCAL] DB, Redis/cache, migrations e SSE do .env desta máquina (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/      # database, cache, migrations, queue' \
+	  'curl -s $(LIVE_API_URL)/health/database/' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 200'
+else
 	$(PYTHON) scripts/diagnose_operational.py runtime
+endif
 
-diagnose-worker: ## Diagnostica backlog, retries, stuck e failures de directives
+diagnose-worker: ## [LOCAL] backlog, retries, stuck e failures de directives (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/      # checks.queue: queue_lag quando o worker parou' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run_restarted --tail 200' \
+	  '# diagnóstico completo, só leitura, desta máquina contra o banco vivo:' \
+	  '$(LIVE_DIRECT_DB) make diagnose-worker'
+else
 	$(PYTHON) scripts/diagnose_operational.py worker
+endif
 
-diagnose-payments: ## Diagnostica divergencias entre pedidos, intents e transacoes
+diagnose-payments: ## [LOCAL] divergências entre pedidos, intents e transações (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) console $(LIVE_APP_ID) web-operator' \
+	  '  python manage.py reconcile_payments --since=4h --dry-run      # leitura' \
+	  '  python manage.py reconcile_financial_day --dry-run            # leitura' \
+	  '# sem --dry-run muda o vivo: só com a palavra do incident commander (Pablo)' \
+	  '$(LIVE_DIRECT_DB) make diagnose-payments    # só leitura, desta máquina'
+else
 	$(PYTHON) scripts/diagnose_operational.py payments
+endif
 
-diagnose-webhooks: ## Diagnostica idempotencia, falhas e alertas de webhooks
+diagnose-webhooks: ## [LOCAL] idempotência, falhas e alertas de webhooks (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 500 | grep -i webhook' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) ifood-poll-worker --type run --tail 200' \
+	  '$(LIVE_DIRECT_DB) make diagnose-webhooks    # só leitura, desta máquina'
+else
 	$(PYTHON) scripts/diagnose_operational.py webhooks
+endif
 
-diagnose-health: ## Diagnostica health/readiness, checks Django e configuracao critica
+diagnose-health: ## [LOCAL] health/readiness, checks Django e configuração crítica (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)    # spec vivo + /health/ + /ready/' \
+	  'make deploy-spec-drift context=$(LIVE_CONTEXT)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/'
+else
 	$(PYTHON) scripts/diagnose_operational.py health
+endif
 
 audit-branches: ## Lista branches remotos à frente do main e separa entregues de ⚠️ não mergeados
 	@bash scripts/audit-branches.sh
@@ -589,6 +839,72 @@ coordination: ## Leitura de coordenação só com git: main, fila, PRs abertos, 
 
 inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branches sem PR, PRs verdes fora da fila
 	@bash scripts/inflight.sh
+
+# ── Local primeiro: o que a CI vai reprovar, visto antes do push ──────────
+# DEV-2026-098, plano em docs/plans/CI-DX-LOCAL-FIRST-PLAN.md. Mesma
+# classificação de escopo da CI (scripts/ci_scope.py) e os MESMOS passos dos
+# workflows, lidos do YAML (scripts/local_ci.py). Trava de máquina: duas
+# worktrees não disputam os 8 núcleos; SQLite em memória por worker (como o job
+# de testes da CI) isola o banco. A evidência é chaveada pelo hash da ÁRVORE
+# testada, e o `ready` só enfileira o HEAD cuja árvore tem preflight verde.
+# O que só a CI executa sai listado como remoto, nunca como verde.
+.PHONY: check-fast check-impact preflight ci-local ready ci-plan venv-sync ci-baseline test-cost shard-weights
+
+check-fast: ## Iteração: pinos, origem dos imports, ruff e testes do que mudou (+ unit do app Nuxt tocado)
+	@python3 scripts/local_ci.py run fast
+
+check-impact: ## Paridade com o PR: o que o pull_request vai rodar para este diff
+	@python3 scripts/local_ci.py run impact
+
+preflight: ## Antes de promover: impacto + o pesado da fila que o diff alcança; grava a evidência do `ready`
+	@python3 scripts/local_ci.py run preflight
+
+ci-local: ## Tudo o que é executável nesta máquina, como diff de infraestrutura (lista o que só a CI roda)
+	@python3 scripts/local_ci.py run full
+
+ci-plan: ## Mostra o que cada nível rodaria (level=fast|impact|preflight|full), sem rodar
+	@python3 scripts/local_ci.py plan $(or $(level),preflight)
+
+ready: ## Enfileira com prova: make ready pr=<N> [sem_preflight="motivo"]; exige árvore limpa, push e preflight verde do HEAD
+	@test -n "$(pr)" || (echo 'uso: make ready pr=<N> [sem_preflight="motivo"]' >&2; exit 2)
+	@python3 scripts/local_ci.py ready $(pr) $(if $(sem_preflight),--sem-preflight "$(sem_preflight)",) $(if $(dry_run),--dry-run,)
+
+venv-sync: ## Alinha a .venv compartilhada ao constraints.txt (só os pinos divergentes, com trava de máquina)
+	@python3 scripts/local_ci.py pins --fix
+
+ci-baseline: ## Baseline da CI na API do GitHub (since=YYYY-MM-DD until=YYYY-MM-DD; leitura)
+	@python3 scripts/ci_baseline.py $(if $(since),--since $(since),) $(if $(until),--until $(until),) --cache $(or $(cache),.ci-baseline)
+
+# ── Compromissos: o que o repo deve, com dono, prazo e prova ──────────
+# O ledger é um arquivo por entrada em docs/coordination/commitments/
+# (DEV-AAAA-NNN.json): dois PRs nunca tocam o mesmo arquivo, e o merge de um não
+# deixa o outro CONFLICTING. `intake` registra a fala do dono ANTES do primeiro
+# edit e devolve o ID que o PR cita; o ID pula os que estão em PR aberto, branch
+# local ou worktree, e sem `gh` o intake falha em vez de chutar (offline=1 força).
+# `commitments` mostra o que venceu, incluindo as decisões legadas de
+# DECISIONS.md; `commitments-index` imprime a tabela legível (gerada, nunca
+# commitada).
+dono ?= Engenharia
+tipo ?= solicitacao
+origem ?= chat
+gatilho ?= -
+
+.PHONY: commitments commitments-index intake commitments-pr
+
+commitments: ## O que o repo deve: ledger válido, vencidos e decisões legadas (issues=1 inclui issues com label; não falha por vencido)
+	@echo "── Compromissos ──"
+	$(PYTHON) scripts/check_commitments.py --no-fail-overdue $(if $(issues),--with-issues,)
+
+commitments-index: ## Tabela legível de todas as entradas do ledger (gerada na hora, não se commita)
+	@$(PYTHON) scripts/check_commitments.py --format table
+
+intake: ## Registra a fala do dono e devolve o ID: make intake q="..." [dono=...] [tipo=...] [offline=1]
+	@test -n "$(q)" || (echo 'uso: make intake q="<fala literal do dono>" [dono="Engenharia"] [tipo=solicitacao] [revisar_em=YYYY-MM-DD] [offline=1]' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --add --quote "$(q)" --dono "$(dono)" --tipo "$(tipo)" --origem "$(origem)" --gatilho "$(gatilho)" $(if $(revisar_em),--revisar-em "$(revisar_em)",) $(if $(offline),--offline,)
+
+commitments-pr: ## Gate de nascimento: make commitments-pr body=<arquivo> [created=YYYY-MM-DD] [author=login]
+	@test -n "$(body)" || (echo 'uso: make commitments-pr body=<arquivo>' >&2; exit 2)
+	$(PYTHON) scripts/check_commitments.py --pr-body "$(body)" $(if $(created),--pr-created "$(created)",) $(if $(author),--author "$(author)",)
 
 # Prontidão: roda igual no checkout principal, numa worktree e na CI.
 # - Python: o .venv deste checkout; numa worktree (sem .venv), o .venv da árvore
@@ -603,7 +919,6 @@ inflight: ## O que está em voo e o que está DORMINDO: worktrees sujas, branche
 #   medição honesta de um banco vazio).
 # O ALVO (app vivo) se mede com `make production-readiness target=1`, que não lê
 # nada local: ver scripts/release_readiness_target.py.
-GIT_MAIN_ROOT := $(patsubst %/.git,%,$(shell git rev-parse --path-format=absolute --git-common-dir 2>/dev/null))
 READINESS_PYTHON := $(if $(wildcard .venv/bin/python),$(CURDIR)/.venv/bin/python,$(or $(wildcard $(GIT_MAIN_ROOT)/.venv/bin/python),python))
 READINESS_RUN = if [ ! -f .env ] && [ -z "$${DJANGO_SECRET_KEY:-}" ]; then \
 	export DJANGO_DEBUG=true DJANGO_SECRET_KEY=local-readiness-not-a-secret; \
@@ -636,6 +951,10 @@ smoke-gateways: ## Smoke local EFI/Stripe/iFood com rollback e matriz de sandbox
 smoke-gateways-sandbox: ## Exige credenciais sandbox/staging para smoke externo
 	$(PYTHON) manage.py smoke_gateways --sandbox-only --require-sandbox $(if $(json),--json,)
 
+.PHONY: taon-probe
+taon-probe: ## Sonda da TaOn, só leitura por padrão (homolog=1 pergunta as credenciais de homologação no terminal; args='--ride <id>')
+	@PYTHON_BIN="$(READINESS_PYTHON)" PYTHONPATH="$(SHOPMAN_PYTHONPATH)" bash scripts/taon_probe.sh $(if $(homolog),--homolog,) $(args)
+
 omotenashi-qa: ## Matriz manual QA mobile/tablet/desktop baseada no seed (strict=1 json=1)
 	$(PYTHON) manage.py omotenashi_qa $(if $(strict),--strict,) $(if $(json),--json,)
 
@@ -653,44 +972,107 @@ admin-csp-gate: ## Gate local/CI: Admin com DEBUG=false + Playwright caçando vi
 		SHOPMAN_CSP_PORT="$(or $(port),$(PORT),8001)" \
 		bash scripts/run_admin_csp_gate.sh $(args)
 
-# ── Deploy wrappers (Docker fica encapsulado aqui) ───────────────────
+# ── Deploy wrappers LOCAIS (Docker fica encapsulado aqui) ───────────
+#
+# ⚠️ LOCAIS. `deploy-*` builda e sobe a pilha no docker DESTA máquina (compose,
+# com o `.env` local). Não fala com a DigitalOcean: `make deploy-up` no meio de um
+# incidente NÃO reinicia o app vivo, e `make deploy-logs`/`deploy-ps` mostram os
+# containers locais. O deploy do app vivo é `push no main` (Deploy Images cria UM
+# deployment). Com `target=1` o alvo NÃO executa nada: imprime o equivalente no
+# app vivo e diz quem age. Ver docs/guides/deploy.md e docs/runbooks/.
 
-deploy-env-check: ## Falha se .env ainda estiver em modo dev para deploy
+deploy-env-check: ## [LOCAL docker] Falha se o .env desta máquina ainda estiver em modo dev
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)    # lê o env efetivo de cada componente do spec vivo'
+else
 	@test -f .env || (echo "Crie .env a partir de .env.example antes do deploy." >&2; exit 1)
 	@! grep -Eiq '^DJANGO_DEBUG=(true|1|yes)$$' .env || (echo "DJANGO_DEBUG precisa ser false para deploy." >&2; exit 1)
 	@! grep -Eq '^DJANGO_SECRET_KEY=(change-me-in-production|dev-secret-key-not-for-production)$$' .env || (echo "DJANGO_SECRET_KEY precisa ser um segredo forte para deploy." >&2; exit 1)
 	@! grep -Eq '^DJANGO_ALLOWED_HOSTS=\*$$' .env || (echo "DJANGO_ALLOWED_HOSTS precisa ser explicito para deploy." >&2; exit 1)
 	@echo "✓ .env de deploy passou nos guardrails locais"
+endif
 
-deploy-check: deploy-env-check ## Preflight de deploy no ambiente atual
+deploy-check: $(if $(target),,deploy-env-check) ## [LOCAL docker] Preflight de deploy com o .env desta máquina (target=1 imprime o equivalente no vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# no vivo, o job release de cada deployment já roda check --deploy, migration_safety e migrate' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) release --type deploy --tail 200' \
+	  'make production-readiness target=1 context=$(LIVE_CONTEXT)'
+else
 	$(PYTHON) manage.py check --deploy
 	$(PYTHON) manage.py makemigrations --check --dry-run
 	$(PYTHON) manage.py collectstatic --noinput --dry-run -v 0
 	@echo "✓ Deploy preflight passou"
+endif
 
-deploy-build: deploy-env-check ## Builda a imagem app/worker via compose profile
+deploy-build: $(if $(target),,deploy-env-check) ## [LOCAL docker] Builda a imagem app/worker via compose profile desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# a imagem do vivo nasce no GitHub Actions (workflow Deploy Images), nunca nesta máquina' \
+	  'gh run list --workflow "Deploy Images" --limit 5'
+else
 	$(APP_COMPOSE) build web directive-worker
+endif
 
-deploy-release: deploy-env-check ## Roda check --deploy, migrations e collectstatic em container one-shot
+deploy-release: $(if $(target),,deploy-env-check) ## [LOCAL docker] check --deploy, migrations e collectstatic em container one-shot desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) release --type deploy --tail 200' \
+	  '$(LIVE_DOCTL) list-deployments $(LIVE_APP_ID)'
+else
 	$(COMPOSE) up -d postgres redis
 	@echo "Aguardando Postgres..."
 	@until $(COMPOSE) exec -T postgres sh -c 'pg_isready -U "$${POSTGRES_USER:-shopman}" -d "$${POSTGRES_DB:-shopman}"' >/dev/null 2>&1; do sleep 1; done
 	$(RELEASE_COMPOSE) build release
 	$(RELEASE_COMPOSE) run --rm release
 	@echo "✓ Release checks/migrations/static concluídos"
+endif
 
-deploy-up: deploy-build deploy-release ## Sobe web + directive worker sem exigir comandos Docker manuais
+deploy-up: $(if $(target),,deploy-build deploy-release) ## [LOCAL docker] Sobe web + worker NESTA máquina, não reinicia o vivo (target=1 imprime o restart no vivo e quem age)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# reiniciar o vivo MUDA o ambiente: quem age é o incident commander (Pablo),' \
+	  '# ou um agente com a palavra dele dada no momento, para este restart.' \
+	  '# Painel: App Platform > shopman-nelson > componente (ex.: directive-worker) > Actions > Restart' \
+	  '$(LIVE_DOCTL) restart $(LIVE_APP_ID) --components directive-worker' \
+	  '# depois, conferir: $(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 100'
+else
 	$(APP_COMPOSE) up -d web directive-worker
 	@echo "✓ Shopman app rodando em http://localhost:$${PORT:-8000}"
+endif
 
-deploy-down: ## Para app, worker, Postgres e Redis
+deploy-down: ## [LOCAL docker] Para app, worker, Postgres e Redis desta máquina
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '# não há equivalente: o app vivo não se derruba por comando.' \
+	  '# Fechar a loja ou parar um componente é decisão do dono (go-live-cutover.md, Dia D · dados).'
+else
 	$(COMPOSE) down
+endif
 
-deploy-logs: ## Logs de app/worker
+deploy-logs: ## [LOCAL docker] Logs dos containers desta máquina (target=1 imprime o doctl apps logs do vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-operator --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) web-storefront --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) directive-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) maintenance-worker --type run --tail 200' \
+	  '$(LIVE_DOCTL) logs $(LIVE_APP_ID) ifood-poll-worker --type run --tail 200' \
+	  '# acompanhar ao vivo: acrescente -f; reinício recente: --type run_restarted'
+else
 	$(APP_COMPOSE) logs -f web directive-worker
+endif
 
-deploy-ps: ## Status dos containers
+deploy-ps: ## [LOCAL docker] Status dos containers desta máquina (target=1 imprime o estado do app vivo)
+ifdef target
+	@printf '%s\n' '$(LIVE_HEADER)' \
+	  '$(LIVE_DOCTL) get $(LIVE_APP_ID)                 # fase e deployment ativo' \
+	  '$(LIVE_DOCTL) list-deployments $(LIVE_APP_ID)' \
+	  'curl -s $(LIVE_API_URL)/health/ready/'
+else
 	$(APP_COMPOSE) ps
+endif
 
 # ── Server ────────────────────────────────────────────────────────────
 
@@ -703,7 +1085,6 @@ collectstatic: ## Coleta estáticos para STATIC_ROOT
 	@echo "✓ Static coletado"
 
 run: ## Sobe servidor + tunnel + directive worker (0.0.0.0:8000)
-	-$(PYTHON) manage.py refresh_oven
 	lsof -ti:8000 | xargs kill -9 2>/dev/null || true
 	killall cloudflared 2>/dev/null || true
 	killall ngrok 2>/dev/null || true
@@ -773,11 +1154,12 @@ surfaces-lint: ## ESLint de todas as superfícies + do layer operator-kit
 	@echo "✓ Lint das superfícies"
 
 admin: ## Admin: valida tudo de Admin/Unfold
+	$(PYTHON) scripts/check_admin_surface_boundary.py
 	$(PYTHON) scripts/check_unfold_canonical.py --maturity $(ADMIN_SCOPE_ARGS)
 ifneq ($(ADMIN_URL),)
 	@echo "✓ Admin canônico ($(ADMIN_URL))"
 else
-	$(PYTHON) -m pytest shopman/backstage/tests/test_unfold_canonical_templates.py shopman/backstage/tests/test_admin_operational_integration.py shopman/backstage/tests/test_admin_smoke.py -q
+	$(PYTHON) -m pytest shopman/backstage/tests/test_admin_surface_boundary.py shopman/backstage/tests/test_unfold_canonical_templates.py shopman/backstage/tests/test_admin_operational_integration.py shopman/backstage/tests/test_admin_smoke.py -q
 	@echo "✓ Admin canônico"
 endif
 

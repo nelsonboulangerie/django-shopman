@@ -8,7 +8,7 @@ import shopman.backstage.models.alerts
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("backstage", "0066_merge_pos_concierge_identity_alerts"),
+        ("backstage", "0036_squashed_0066_merge_pos_concierge_identity_alerts"),
     ]
 
     operations = [

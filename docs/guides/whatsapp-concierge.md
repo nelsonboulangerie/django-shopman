@@ -124,13 +124,18 @@ caso diretamente como ingresso **at-least-once**:
    canônico de mensagem e trabalho;
 2. `event_identity_assurance=unavailable` e
    `input_assurance=at_least_once` registram o limite da evidência;
-3. o turno desse lote conversa com o modelo em modo de consulta: pode ler fontes
-   canônicas, mas comandos que alteram estado não são oferecidos ao modelo e
-   continuam recusados pelos guards do servidor;
-4. catálogo público, orientação e handoff permanecem disponíveis;
-5. ferramentas que mutam sacola, pedido, pagamento, identidade ou transferência
-   não recebem autoridade desse ingresso;
-6. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
+3. o turno desse lote tem só a **autoridade de sacola** ([ADR-050](../decisions/adr-050-autoridade-de-compra-sem-id-de-mensagem.md)),
+   e só com cliente verificado e conexão que não seja só leitura: muda a sacola em valor
+   absoluto (`set_item`, `set_fulfillment`, `review_order`), e mensagens idênticas
+   seguidas no mesmo lote valem um comando (nenhuma é descartada);
+4. fechar o pedido (`place_order`) exige o **código do orçamento** que o resumo mostra
+   ("confirmo 4821"): um "sim" sozinho não prova que veio depois do resumo;
+5. catálogo público, orientação e handoff permanecem disponíveis;
+6. acréscimo a pedido já feito, inscrição de aviso, pagamento e identidade não recebem
+   autoridade desse ingresso; o convite para levar a sacola ao site recebe a de sacola
+   (decisão da #3529) só na forma que leva itens e quantidades e não abre sessão no site
+   (ver `whatsapp-access-link.md`, OC-18);
+7. um retry técnico pode ser indistinguível de uma repetição legítima do cliente,
    portanto nenhum hash de contato + timestamp é usado para descartar mensagens.
 
 Não há modo de compatibilidade paralelo. Esse é um estado normal e explícito do
@@ -142,8 +147,8 @@ como candidato não verificado e continua sem autorizar mutações.
 
 ## ACK e processamento
 
-O endpoint autentica, normaliza, grava e agenda o trabalho antes de responder. O
-modelo e o envio rodam depois no worker da fila `Directive`, com payload v3
+O endpoint autentica, normaliza, grava e agenda o trabalho antes de responder. A
+leitura do turno e o envio rodam depois no worker da fila `Directive`, com payload v3
 contendo `conversation_id` e `binding_id`.
 
 O ACK não é mensagem para o cliente e não comprova pedido, pagamento, aceitação
@@ -155,7 +160,7 @@ nem adicionar uma mensagem estática de sucesso no flow.
 | `200 queued` | Recebimento persistido e trabalho agendado. A resposta ao cliente ocorre pela saída do adapter. |
 | `200 duplicate` | Mesmo evento verificado e mesmo payload; o trabalho pode ser reparado sem nova mensagem. Não se aplica ao corpo atual sem ID. |
 | `200 handoff` | Contexto preservado; a conversa continua sob posse humana. |
-| `200 disabled` | Núcleo contido. Verificar `reason`, contrato, switch e credencial do modelo. |
+| `200 disabled` | Núcleo contido. Verificar `reason`: contrato, modo ou switch. A conexão de IA não é motivo: sem ela a Concierge responde pelo caminho sem modelo. |
 | `200 not_allowed` | Subject fora da coorte explícita. Nenhum turno automático. |
 | `200 observed` | Pergunta preservada em modo passivo; nenhuma fila, IA ou resposta. |
 | `200 observation_disabled` | Um gate de observação está fechado; nada foi persistido. O flow normal deve continuar. |
@@ -193,9 +198,39 @@ CONCIERGE_OUTPUT_RETRY_ENABLED=false
 CONCIERGE_TRANSFER_ENABLED=false
 ```
 
-Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY`, de
-`AI_ASSIST_API_KEY` e do worker canônico. A lista de subjects vazia
-fecha a connection. Telefone ou nome no body não substituem essa lista.
+`CONCIERGE_TRANSFER_ENABLED` liga a passagem da sacola entre a loja e a conversa (OC-15 a
+OC-18): o que a Nice diz e o passo para ligar estão em
+[whatsapp-access-link.md](whatsapp-access-link.md), seção "A Nice manda o site e diz onde a sacola está (OC-18)".
+
+Além disso, o ambiente precisa da chave dedicada `CONCIERGE_API_KEY` e do worker
+canônico. A lista de subjects vazia fecha a connection. Telefone ou nome no body
+não substituem essa lista.
+
+### Sem conexão de IA, ela responde mesmo assim
+
+A conexão de IA (Admin → Conexões de IA; ver [ai-connections](../reference/ai-connections.md))
+melhora a leitura, mas não é condição para atender. O turno tem um caminho só (WP-08,
+19/11/2026): a triagem pela regra local e pelo Jev, e a leitura em partes. Sem conexão
+para `intents`, ou com o freio de gasto cortando, a leitura segue sem modelo: porteiro,
+divisão local das partes, executores e uma mensagem só. Não existe mais laço de agente
+com ferramentas, e nenhum modelo escreve a resposta ao cliente. O `check --deploy`
+(`SHOPMAN_W022`) e o `concierge_check` **avisam** "sem leitura por modelo" e não
+reprovam por isso.
+
+### O que vai a um leitor de IA sai redigido
+
+Leitura de partes (`intents`), Jev (`decision`, por `triage.jev_scores`) e pré-rótulo
+(`labeling`, por `MessageIntentSample.redacted_text`) recebem o texto da mensagem
+**redigido** por `observation_privacy.redact_observation_text`: sem nome, documento,
+e-mail, telefone, endereço, pagamento, alergia, doença e referência a menor. É o que
+a frase pública de `/privacidade` promete. O nome sai por duas redes: o padrão de
+quem se apresenta ("aqui é a Maria", "meu nome é", "sou a", assinatura no fim) e os
+nomes que a conversa já conhece (`customer_name`), que o `service.run_turn` liga no
+redator durante o turno (`observation_privacy.bind_known_names`). Nome após palavra de
+produto ("pão Maria") fica. A nota de estado que vai à leitura (`intents.reading_note`)
+não leva número de pedido. O executor de cada parte trabalha sobre o texto
+**original**, que não sai da casa: o trecho que a leitura devolve é levado de volta ao
+original (`intents.original_span`). O cartão da equipe continua lendo o nome.
 
 Para uma homologação autorizada, os dois switches de admissão são independentes:
 
@@ -253,8 +288,8 @@ operacional continua começando pela contenção e conciliação; downgrade exig
 backup, alvo fixado e ensaio G07. Retorno humano, retry de saída e transferência
 continuam fechados até seus gates próprios.
 
-Referências: [plano de excelência operacional](../plans/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
-[fluxo canônico ManyChat](../plans/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
+Referências: [plano de excelência operacional](../plans/completed/CONVERSATIONAL-SALES-OPERATIONAL-EXCELLENCE-PLAN-2026-09-11.md),
+[fluxo canônico ManyChat](../plans/completed/CONCIERGE-MANYCHAT-CANONICAL-FLOW-2026-09-12.md),
 [melhoria supervisionada por conversas](concierge-supervised-improvement.md),
 [relatório da janela](../reports/concierge-whatsapp-window-20260912.md) e
 [evidências de ingresso](../../evidence/conversational/INGRESS.md).

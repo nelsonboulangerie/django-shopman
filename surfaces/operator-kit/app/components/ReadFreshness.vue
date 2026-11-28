@@ -15,10 +15,15 @@
 // `realtimeLabel`: o nome do estado do transporte, dito pelo app ("Ao vivo",
 // "Conectando…"). O kit não decide o vocabulário do tempo real de cada superfície;
 // só diz que a conexão e a leitura são estados distintos.
+//
+// `source` (opt-in): leitura que vem de FORA (o iFood), dita pela fonte e numa linha
+// só: "Lido do iFood às 13h55 (há 9 s)". Hora de relógio e idade não se misturam
+// na mesma grandeza. Sem a prop, a frase de sempre.
 import { computed } from "vue";
 
 import { useNowTick } from "../composables/useNowTick";
 import { STORE_TIME_ZONE } from "../presentation/dates";
+import { formatClock, formatClockSeconds } from "../presentation/clock";
 
 const props = defineProps<{
   /** O carimbo da leitura: `generated_at` em ISO, como as projeções o mandam. */
@@ -27,6 +32,8 @@ const props = defineProps<{
   failed?: boolean;
   realtimeLabel?: string;
   inline?: boolean;
+  /** Fonte externa da leitura, com o artigo: "do iFood". */
+  source?: string;
 }>();
 const now = useNowTick(() => props.metadata?.generated_at ?? "");
 const age = computed(() =>
@@ -41,9 +48,12 @@ const clock = computed(() =>
   props.metadata?.generated_at
     ? // A hora da casa, não a do processo: o SSR (UTC no servidor) e o navegador
       // escreveriam horas diferentes e a hidratação descasaria.
-      new Date(props.metadata.generated_at).toLocaleTimeString("pt-BR", {
-        timeZone: STORE_TIME_ZONE,
-      })
+      formatClockSeconds(props.metadata.generated_at, STORE_TIME_ZONE)
+    : "",
+);
+const sourceClock = computed(() =>
+  props.metadata?.generated_at
+    ? formatClock(props.metadata.generated_at, STORE_TIME_ZONE)
     : "",
 );
 </script>
@@ -52,13 +62,38 @@ const clock = computed(() =>
   <component
     :is="inline ? 'span' : 'p'"
     class="flex flex-wrap gap-x-3 gap-y-1 text-xs font-normal text-muted-foreground"
-    :class="inline ? 'max-w-52 whitespace-normal leading-4' : 'px-4 py-1'"
+    :class="
+      source
+        ? 'leading-4'
+        : inline
+          ? 'max-w-52 whitespace-normal leading-4'
+          : 'px-4 py-1'
+    "
     data-read-freshness
   >
-    <span v-if="metadata?.generated_at"
-      >Última leitura útil:
-      <time :datetime="metadata.generated_at">{{ clock }}</time> · há
-      {{ age }} s<span v-if="failed"> · atualização falhou</span></span
+    <span v-if="source && metadata?.generated_at" data-read-freshness-source
+      >Lido {{ source }} às
+      <time :datetime="metadata.generated_at">{{ sourceClock }}</time> (há
+      {{ age }} s)<span v-if="failed"> · a última consulta falhou</span></span
+    >
+    <!-- Cada bloco é inteiro (#3143): no teto do `inline`, a frase quebra ENTRE a
+         hora, a idade e a falha, nunca dentro de um deles ("há 3 / s"). O bloco é
+         `inline-block`, e não texto que não quebra: desce inteiro para a linha de baixo
+         e só quebra por dentro se sozinho não couber numa linha, então nunca vaza do
+         menu do Gestor (a trava de `orders-nuxt/tests/canonicalPilot.guardrails`). O
+         espaço entre blocos é explícito (`{{ " " }}`): o compilador apaga o espaço que
+         é só quebra de linha entre dois elementos, e sem ele não há onde quebrar. -->
+    <span v-else-if="metadata?.generated_at" data-read-freshness-useful
+      ><span class="inline-block" data-read-freshness-block
+        >Última leitura útil:
+        <time :datetime="metadata.generated_at">{{ clock }}</time></span
+      >{{ " " }}<span class="inline-block" data-read-freshness-block
+        >· há {{ age }} s</span
+      ><template v-if="failed"
+        >{{ " " }}<span class="inline-block" data-read-freshness-block
+          >· atualização falhou</span
+        ></template
+      ></span
     >
     <span v-else>Horário da leitura indisponível</span>
     <span v-if="realtimeLabel">Conexão: {{ realtimeLabel }}</span>

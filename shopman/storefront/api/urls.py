@@ -14,6 +14,7 @@ from .account import (
     AccountDeviceDetailView,
     AccountDeviceListView,
     AccountExportView,
+    AccountNotMeView,
     AccountPasskeyDetailView,
     AccountPasskeyListView,
     AccountStepUpView,
@@ -51,14 +52,17 @@ from .availability import (
     StockAlertManagementView,
     StockAlertSubscribeView,
 )
+from .cart_transfer import CartBringView, CartContinueInConversationView
 from .catalog import CollectionListView, ProductDetailView, ProductListView
 from .continuum import CatalogStructureSnapshotView
 from .conversation import OrderConversationView
 from .fomo import FomoBadgesView
 from .geocode import ReverseGeocodeView
 from .payment import OrderPaymentMockConfirmView
+from .shelf_events import storefront_shelf_events_view
 from .surface import (
     CartCouponView,
+    CartDayView,
     CartLineNotesView,
     CartLineQtyView,
     CartLinesView,
@@ -70,29 +74,37 @@ from .surface import (
     StorefrontCartView,
     StorefrontCatalogView,
     StorefrontCheckoutView,
+    StorefrontExperienceOptOutView,
     StorefrontHomeView,
     StorefrontLegalView,
     StorefrontMenuView,
+    StorefrontProductRecommendationsView,
     StorefrontProductView,
     StorefrontPublicCatalogView,
     StorefrontPublicHomeView,
+    StorefrontPublicProductRecommendationsView,
+    StorefrontPublicProductView,
     StorefrontPublicShellView,
     StorefrontShellView,
     StorefrontSiteView,
-    StorefrontSkuRedirectsView,
 )
-from .telemetry import AddressEventView, ClientErrorView
+from .telemetry import AddressEventView, ClientErrorView, ClientPwaUpdateView
 from .tracking import (
-    OrderCancellationRequestView,
     OrderCancelView,
+    OrderCapabilityAccessView,
     OrderConfirmReceiptView,
+    OrderContactRequestView,
+    OrderPaymentCheckView,
+    OrderPaymentSwitchToPixView,
     OrderRateView,
+    OrderRepaymentPixView,
     OrderTrackingView,
     OrderWaitlistConfirmView,
     order_events_view,
 )
 from .whatsapp_verify import (
     WhatsAppVerifyClaimView,
+    WhatsAppVerifyReleaseView,
     WhatsAppVerifyRevokeView,
     WhatsAppVerifyStartView,
 )
@@ -106,6 +118,11 @@ urlpatterns = [
     # Storefront projections for API-first clients
     path("storefront/home/", StorefrontHomeView.as_view(), name="api-storefront-home"),
     path("storefront/shell/", StorefrontShellView.as_view(), name="api-storefront-shell"),
+    path(
+        "storefront/experience/opt-out/",
+        StorefrontExperienceOptOutView.as_view(),
+        name="api-storefront-experience-opt-out",
+    ),
     path("storefront/site/", StorefrontSiteView.as_view(), name="api-storefront-site"),
     path("storefront/legal/", StorefrontLegalView.as_view(), name="api-storefront-legal"),
     path("storefront/menu/", StorefrontMenuView.as_view(), name="api-storefront-menu"),
@@ -122,10 +139,26 @@ urlpatterns = [
         StorefrontPublicCatalogView.as_view(),
         name="api-storefront-public-catalog-collection",
     ),
+    path(
+        "storefront/public/products/<str:sku>/recommendations/",
+        StorefrontPublicProductRecommendationsView.as_view(),
+        name="api-storefront-public-product-recommendations",
+    ),
+    path("storefront/products/<str:sku>/recommendations/", StorefrontProductRecommendationsView.as_view(), name="api-storefront-product-recommendations"),
+    path(
+        "storefront/public/products/<str:sku>/",
+        StorefrontPublicProductView.as_view(),
+        name="api-storefront-public-product",
+    ),
     path("storefront/products/<str:sku>/", StorefrontProductView.as_view(), name="api-storefront-product"),
-    path("storefront/sku-redirects/", StorefrontSkuRedirectsView.as_view(), name="api-storefront-sku-redirects"),
     path("storefront/cart/", StorefrontCartView.as_view(), name="api-storefront-cart"),
     path("storefront/client-error/", ClientErrorView.as_view(), name="api-storefront-client-error"),
+    # Telemetria — troca de versão da loja instalada (PWA), relatada no boot seguinte (#2379)
+    path(
+        "storefront/client-pwa-update/",
+        ClientPwaUpdateView.as_view(),
+        name="api-storefront-client-pwa-update",
+    ),
     path("storefront/address-event/", AddressEventView.as_view(), name="api-storefront-address-event"),
     path("storefront/checkout/", StorefrontCheckoutView.as_view(), name="api-storefront-checkout"),
     # Auth
@@ -142,16 +175,26 @@ urlpatterns = [
     path("auth/passkey/login/", PasskeyLoginView.as_view(), name="api-auth-passkey-login"),
     path("auth/whatsapp/start/", WhatsAppVerifyStartView.as_view(), name="api-auth-whatsapp-start"),
     path("auth/whatsapp/claim/", WhatsAppVerifyClaimView.as_view(), name="api-auth-whatsapp-claim"),
+    path("auth/whatsapp/release/", WhatsAppVerifyReleaseView.as_view(), name="api-auth-whatsapp-release"),
     path("auth/whatsapp/revoke/", WhatsAppVerifyRevokeView.as_view(), name="api-auth-whatsapp-revoke"),
     path("auth/logout/", LogoutView.as_view(), name="api-auth-logout"),
     # Cart
     path("cart/skus/<str:sku>/", CartSkuQtyView.as_view(), name="api-cart-sku-qty"),
     path("cart/lines/", CartLinesView.as_view(), name="api-cart-lines"),
+    path("cart/day/", CartDayView.as_view(), name="api-cart-day"),
     path("cart/lines/<str:line_id>/", CartLineQtyView.as_view(), name="api-cart-line-qty"),
     path("cart/lines/<str:line_id>/notes/", CartLineNotesView.as_view(), name="api-cart-line-notes"),
     path("cart/coupon/", CartCouponView.as_view(), name="api-cart-coupon"),
+    # A sacola entre a loja e a conversa com a Nice (OC-16)
+    path(
+        "cart/continue-in-conversation/",
+        CartContinueInConversationView.as_view(),
+        name="api-cart-continue-in-conversation",
+    ),
+    path("cart/bring/", CartBringView.as_view(), name="api-cart-bring"),
     # Checkout
     path("checkout/", views.CheckoutView.as_view(), name="api-checkout"),
+    path("checkout/recover/", views.CheckoutRecoverView.as_view(), name="api-checkout-recover"),
     path("checkout/draft/", CheckoutDraftView.as_view(), name="api-checkout-draft"),
     path("checkout/loyalty/", CheckoutLoyaltyView.as_view(), name="api-checkout-loyalty"),
     # Availability
@@ -170,12 +213,19 @@ urlpatterns = [
         {"format-channels": ["fomo-{sku}"]},
         name="api-fomo-events",
     ),
+    # Loja viva (WP-L04, #2784): aviso público de que o estado público de um SKU
+    # mudou, com o SKU. O canal cru de estoque não sai daqui (ADR-018 §5.1): a rota
+    # entrega só ``shelf-update``, e a página refaz a leitura canônica (ADR-016).
+    path("storefront/shelf/events/", storefront_shelf_events_view, name="api-storefront-shelf-events"),
     # Catalog
     path("catalog/products/", ProductListView.as_view(), name="api-catalog-products"),
     path("catalog/products/<str:sku>/", ProductDetailView.as_view(), name="api-catalog-product-detail"),
     path("catalog/collections/", CollectionListView.as_view(), name="api-catalog-collections"),
     # Tracking
     path("tracking/<str:ref>/", OrderTrackingView.as_view(), name="api-tracking"),
+    # O link do aviso (``/pedido/<ref>~<selo>``): a página troca o selo aqui antes de
+    # ler o pedido. Sem login e sem conta: só este pedido (DEV-2026-093).
+    path("tracking/<str:ref>/access/", OrderCapabilityAccessView.as_view(), name="api-tracking-access"),
     # Realtime — push instantâneo do acompanhamento (canal ``order-<ref>``).
     # order_events_view autoriza só o dono/staff (mesmo gate do ShopmanChannelManager)
     # e devolve 404 aos demais, então o EventSource do convidado falha limpo e o
@@ -185,17 +235,24 @@ urlpatterns = [
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
     path(
-        "orders/<str:ref>/cancellation-request/",
-        OrderCancellationRequestView.as_view(),
-        name="api-order-cancellation-request",
-    ),
-    path(
         "orders/<str:ref>/waitlist-confirm/",
         OrderWaitlistConfirmView.as_view(),
         name="api-order-waitlist-confirm",
     ),
     path("orders/<str:ref>/confirm-received/", OrderConfirmReceiptView.as_view(), name="api-order-confirm-received"),
     path("orders/<str:ref>/rate/", OrderRateView.as_view(), name="api-order-rate"),
+    path(
+        "orders/<str:ref>/contact-request/",
+        OrderContactRequestView.as_view(),
+        name="api-order-contact-request",
+    ),
+    path("orders/<str:ref>/payment/check/", OrderPaymentCheckView.as_view(), name="api-order-payment-check"),
+    path(
+        "orders/<str:ref>/payment/switch-to-pix/",
+        OrderPaymentSwitchToPixView.as_view(),
+        name="api-order-payment-switch-to-pix",
+    ),
+    path("orders/<str:ref>/payment/pix/", OrderRepaymentPixView.as_view(), name="api-order-repayment-pix"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
     # A tela de pagamento sumiu (PAYMENT-TRACKING-MERGE): o GET/status foram
     # absorvidos por /tracking/{ref}/ + SSE. Só o gatilho de captura simulada fica.
@@ -230,6 +287,7 @@ urlpatterns = [
     path("account/phone/request/", PhoneChangeRequestView.as_view(), name="api-account-phone-request"),
     path("account/phone/confirm/", PhoneChangeConfirmView.as_view(), name="api-account-phone-confirm"),
     path("account/step-up/", AccountStepUpView.as_view(), name="api-account-step-up"),
+    path("account/not-me/", AccountNotMeView.as_view(), name="api-account-not-me"),
     path("account/export/", AccountExportView.as_view(), name="api-account-export"),
     path("account/delete/", AccountDeleteView.as_view(), name="api-account-delete"),
     # Geocoding (server-side — key stays on the server)

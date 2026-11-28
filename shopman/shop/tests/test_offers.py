@@ -70,7 +70,7 @@ class _Cart:
                 available_qty=0,
                 is_paused=False,
                 substitutes=[],
-                error_code="insufficient_stock",
+                error_code="insufficient_supply",
             )
         self.items.append({"sku": sku, "qty": qty, "unit_price_q": unit_price_q, "name": name})
 

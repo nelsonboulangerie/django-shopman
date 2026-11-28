@@ -279,7 +279,7 @@ mudez estrita — mas o dano é o da faixa):
 
 | Arquivo | Linhas mudas | O que se perde | Estado |
 |---|---|---|---|
-| `packages/doorman/shopman/doorman/services/_user_bridge.py`<br><sub>já grita na linha 104 · except_pass</sub> | `40` | ausência de vínculo é o caminho normal para criar o usuário | ⬜ aberto |
+| `packages/doorman/shopman/doorman/services/_user_bridge.py`<br><sub>já grita na linha 104 · except_pass</sub> | `40` | ausência de vínculo é o caminho normal para criar o usuário | ✅ 10/11 — já declarado (`silêncio-deliberado`, `f018df9d8`); conferido na F4b |
 | `packages/guestman/shopman/guestman/contrib/admin_unfold/admin.py`<br><sub>já grita na linha 92 · except_pass</sub> | `40`, `429`, `720` | registro de admin e colunas opcionais de segmento somem da lista | ⬜ aberto |
 | `packages/guestman/shopman/guestman/contrib/manychat/service.py`<br><sub>já grita na linha 134 · except_pass</sub> | `180`, `199`, `213` | identificador ausente apenas segue para a próxima tentativa de busca | ⬜ aberto |
 | `packages/guestman/shopman/guestman/services/address.py`<br><sub>já grita na linha 100 · except_pass</sub> | `291` | sem contagem de uso, o endereço mais recente já serve de escolha | ⬜ aberto |

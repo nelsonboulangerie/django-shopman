@@ -5,6 +5,16 @@ import time
 from shopman.watchman.contracts import CheckContext, CheckResult, Scope, Status
 
 
+class PassCheck:
+    id = "success"
+    description = "Always passes."
+    scopes = frozenset({Scope.DIAGNOSTIC})
+    timeout_seconds = 0.1
+
+    def run(self, context: CheckContext) -> CheckResult:
+        return CheckResult(id=self.id, status=Status.PASS, summary="synthetic success")
+
+
 class FailCheck:
     id = "failure"
     description = "Always fails."

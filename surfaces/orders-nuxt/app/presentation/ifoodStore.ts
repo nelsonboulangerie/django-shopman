@@ -16,3 +16,8 @@ export function ifoodStatusLine(store: IFoodStoreProjection): string {
 
 /** O ref do canal iFood — o card da aba Canais que carrega o estado da loja. */
 export const IFOOD_CHANNEL_REF = "ifood";
+
+/** O canal tem catálogo externo para revisar vínculos? Hoje só o iFood (GES-09). */
+export function channelHasBindingReview(ref: string): boolean {
+  return ref === IFOOD_CHANNEL_REF;
+}

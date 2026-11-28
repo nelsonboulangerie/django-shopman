@@ -554,6 +554,9 @@ describe("PosCartPanel — acordeão", () => {
             fired: true,
             kitchen_status: "done",
             discount: { value: 10, reason: "cortesia" },
+            // O preço que o servidor deu à linha: o selo mede o desconto nele.
+            list_price_q: 500,
+            charged_price_q: 450,
             authorship: { updated_by: "ana" },
           }),
         ],
@@ -594,6 +597,26 @@ describe("PosCartPanel — quantidade acessível sem expandir", () => {
     ).toBe("true");
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
     expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+  });
+});
+
+describe("PosCartPanel — o botão da quantidade toma o teclado", () => {
+  // Beta test de 05/11/2026 (PDV2-10): com a busca focada, o "5" digitado depois
+  // de tocar na quantidade caía na busca de produtos.
+  it("tira o foco da busca e o dígito vai para a quantidade", async () => {
+    const search = document.createElement("input");
+    search.type = "search";
+    document.body.appendChild(search);
+    const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
+    await open(wrapper, "Pão");
+    search.focus();
+    expect(document.activeElement).toBe(search);
+    await wrapper.find('[aria-label="Editar quantidade de Pão"]').trigger("click");
+    expect(document.activeElement).not.toBe(search);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "5" }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("setQty")?.at(-1)).toEqual(["L-PAO", 5]);
+    search.remove();
   });
 });
 

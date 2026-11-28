@@ -23,7 +23,15 @@ class AlertSpec:
     origin_icon: str
     subject: str
     #: Régua da casa: minutos desde a criação, quando o aviso não traz prazo próprio.
+    #: ``0``: o tipo só interrompe com prazo próprio (``respond_by``); a spec dá a origem
+    #: e o assunto.
     deadline_minutes: int
+    #: O prazo próprio (``respond_by``) vencido FICA na tela, dizendo há quanto passou,
+    #: como a régua da casa: é promessa da casa, não decisão do mundo lá fora.
+    own_deadline_stays: bool = False
+    #: Também no topo da tela (o aviso do cabeçalho do kit, na cor da gravidade), e não
+    #: só no sino: a operação inteira está degradada, não um pedido.
+    on_screen: bool = False
 
 
 ALERT_SPECS: dict[str, AlertSpec] = {
@@ -35,19 +43,41 @@ ALERT_SPECS: dict[str, AlertSpec] = {
     # O aceite saiu daqui e não chegou ao iFood: no fim do prazo dele (``respond_by``)
     # o iFood cancela sozinho, com a cozinha já trabalhando.
     "ifood_accept_not_delivered": AlertSpec("iFood", "i-lucide-bike", "O aceite não chegou ao iFood", 8),
-    # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela.
+    # O iFood cancelou e o pedido segue ativo aqui: parar antes de entregar.
+    "ifood_cancelled_not_applied": AlertSpec("iFood", "i-lucide-bike", "iFood cancelou, pedido segue aqui", 5),
+    # Pedido novo parado sem aceite: no iFood, o próprio iFood cancela. Com prazo de
+    # aceite da casa (``auto_cancel``), o aviso traz ``respond_by`` = o prazo do pedido,
+    # e esta régua só vale para o canal sem prazo (``manual``).
     "stale_new_order": AlertSpec("Pedidos", "i-lucide-clipboard-list", "Pedido novo sem aceite", 5),
     # Cartão autorizado: o Stripe decide sozinho no fim (o aviso traz ``respond_by``
     # nas últimas 24 h; antes disso, fica na caixa de Avisos).
     "card_authorization_expiring": AlertSpec(
         "Loja online", "i-lucide-credit-card", "Cartão autorizado esperando aceite", 60,
     ),
-    # Loja própria: até a cozinha começar ainda dá para cancelar sem desperdício.
-    "customer_cancellation_requested": AlertSpec(
-        "Loja online", "i-lucide-store", "Cliente pediu cancelamento", 10,
-    ),
     # WhatsApp: régua de atendimento de 5 minutos (dono, 08/10/2026).
-    "concierge_handoff": AlertSpec("WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5),
+    # No topo da tela também (dono, 20/11/2026): todo handoff é gente esperando gente.
+    "concierge_handoff": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente esperando atendente", 5, on_screen=True,
+    ),
+    # "Vou verificar": a pergunta que a Concierge levou à equipe. Conta até o prazo que
+    # ela prometeu ao cliente (``respond_by``, contado com a loja aberta, por isso sem
+    # régua da casa) e, vencido, fica na tela: a promessa é da casa.
+    "concierge_verify": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente espera a resposta da equipe", 0, own_deadline_stays=True,
+    ),
+    # A Concierge fez a mudança (a sacola, o pagamento, o pedido) e a resposta segurou: ela disse ao cliente
+    # "já te confirmo", e a equipe confirma até o prazo (``respond_by``). Vencido, fica: a promessa é da casa.
+    "concierge_effect_unconfirmed": AlertSpec(
+        "WhatsApp", "i-lucide-message-circle", "Cliente espera a confirmação da Concierge", 0, own_deadline_stays=True,
+    ),
+    # A Concierge atendendo sem modelo (dono, 19/11/2026): no topo do Gestor, até a causa
+    # passar. Sem régua: não há prazo, há causa.
+    "concierge_no_model": AlertSpec("WhatsApp", "i-lucide-message-circle", "Concierge sem modelo", 0, on_screen=True),
+    # Rascunhos de pergunta frequente vindos de conversa (WP-15): sem prazo, há uma causa
+    # (o rascunho parado). No topo do Gestor até alguém publicar ou apagar.
+    "faq_drafts_waiting": AlertSpec(
+        "Concierge", "i-lucide-circle-help", "Rascunhos de pergunta frequente", 0, on_screen=True,
+    ),
     # Marketing: disparo com problema antes da hora marcada.
     "marketing_outbox_stuck": AlertSpec("Marketing", "i-lucide-megaphone", "Disparo travado na fila", 30),
     "marketing_readiness_stale": AlertSpec("Marketing", "i-lucide-megaphone", "Canal de disparo sem prontidão", 30),
@@ -74,8 +104,10 @@ def spec_for(alert_type: str) -> AlertSpec | None:
 def _house_applies(alert) -> bool:
     from django.utils import timezone
 
+    spec = spec_for(alert.type)
     return (
-        spec_for(alert.type) is not None
+        spec is not None
+        and spec.deadline_minutes > 0
         and alert.created_at is not None
         and timezone.now() - alert.created_at <= HOUSE_DEADLINE_WINDOW
     )
@@ -85,7 +117,8 @@ def deadline_kind(alert) -> str:
     """``external``: quem decide no fim é o mundo lá fora, e o aviso sai com o prazo.
     ``house``: régua da casa; vencida, a causa continua e o aviso fica, atrasado."""
     if alert.respond_by:
-        return "external"
+        spec = spec_for(alert.type)
+        return "house" if spec is not None and spec.own_deadline_stays else "external"
     return "house" if _house_applies(alert) else ""
 
 

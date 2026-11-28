@@ -35,6 +35,9 @@ class OperatorAlert(models.Model):
         # webhook é o lado de entrada; este é o de saída — que até aqui morria
         # em `logger.warning` e ninguém ficava sabendo.
         ("integration_failed", "Integração externa falhou"),
+        # Volume global de códigos de entrada (SMS/WhatsApp) acima do limiar da
+        # hora: sinal de disparo automático pago por mensagem (SMS pumping).
+        ("login_code_volume", "Volume alto de códigos de entrada"),
         # Erro de programação (500) que morria no log do App Platform. O
         # traceback sempre existiu; o que faltava era um caminho até alguém que
         # não seja o cliente reclamando. Dedupe por (exceção + arquivo:linha).
@@ -75,6 +78,10 @@ class OperatorAlert(models.Model):
         ("concierge_identity_conflict", "Concierge encontrou identidade divergente"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
+        # O Pix caiu numa cobrança já encerrada com o pedido ainda vivo (QR velho
+        # ou pago duas vezes). É o financeiro de UM pedido, então é do gerente; o
+        # ``payment_reconciliation_failed`` fica para o livro contra o gateway.
+        ("pix_on_closed_charge", "Pix pago em cobrança encerrada"),
         # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
         # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
         # que existe pedido PAGO esperando decisão do balcão.
@@ -113,7 +120,9 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
-        ("customer_cancellation_requested", "Cliente solicitou cancelamento"),
+        # Informativo: o cliente cancelou sozinho antes do preparo, e o aviso diz
+        # o que aconteceu com o dinheiro. Não pede decisão (dono, 06/11/2026).
+        ("customer_self_cancelled", "Cliente cancelou antes do preparo"),
         ("checkout_convenience_pending", "Conveniência do checkout pendente"),
         # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
         # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
@@ -139,6 +148,10 @@ class OperatorAlert(models.Model):
         ("courier_dispatch_failed", "Corrida não abriu na central"),
         ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
         ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # Entregador da casa: o caso que ele marcou na folha "Problema" do link
+        # (não atendeu, não achou, recusou, pagou de outro jeito, pedido com
+        # problema). O pedido não muda sozinho: a casa liga e decide.
+        ("courier_stop_problem", "Entregador da casa com problema numa entrega"),
         # A maquininha não aparece na tela enquanto está na rua (o card da saída
         # basta). Só quando passa do tempo vira alerta: "Maquininha fora há 2 h".
         ("card_machine_overdue", "Maquininha fora há muito tempo"),
@@ -198,6 +211,9 @@ class OperatorAlert(models.Model):
         # receita perdida que some sem ninguém ver.
         ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
+        # Encomenda fechada com mais do que o plano da data cobre: o que passa
+        # ficou como demanda sem fornada (#2559). Um aviso por pedido e item.
+        ("order_demand_over_plan", "Encomenda acima do plano de produção"),
         ("production_low_yield", "Lote fechado com aproveitamento baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
         # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
@@ -205,6 +221,10 @@ class OperatorAlert(models.Model):
         # pede (sem pré-checagem, ou divergência de concorrência). A fornada não
         # falha, mas o livro de insumo ficou acima do real e precisa gritar.
         ("production_stock_shortfall", "Produção baixou menos insumo que a ficha"),
+        # O mesmo buraco pela VENDA do feito na hora (ADR-040): café, chá e
+        # croque baixam o insumo da ficha quando vendidos. Faltar insumo não
+        # trava a venda, mas o saldo dele ficou acima do real e precisa gritar.
+        ("stock_sale_ingredient_short", "Venda baixou menos insumo que a ficha"),
         # As três faltas de fornada que não são de insumo: a planejada que nunca
         # começou, a começada que nunca fechou (estoque preso em produção) e a
         # fechada sem gravar os lotes — sem lote, some o desconto de validade e
@@ -238,6 +258,10 @@ class OperatorAlert(models.Model):
         # movimento. O sistema resolve sozinho quando o uso volta a ficar folgado.
         ("operator_capacity_critical", "Apps de operação no limite da capacidade"),
         ("low_rating", "Avaliação baixa recebida"),
+        # Ouvidoria: o cliente pediu para falar com o responsável, depois de avaliar
+        # com nota até 3 ou porque queria cancelar com o preparo já começado. Fecha
+        # no "Resolvido" do pedido, com a nota do que foi feito (customer_contact).
+        ("customer_contact_requested", "Cliente pediu para falar com o responsável"),
         ("cash_change_requested", "Troco solicitado no PDV"),
         ("cash_shift_open_at_closing", "Caixa aberto no fechamento do dia"),
         # A venda foi criada e cobrada, mas o turno fechou entre o commit do
@@ -279,6 +303,9 @@ class OperatorAlert(models.Model):
         ("bi_below_baseline", "B.I.: movimento abaixo do esperado"),
         ("bi_source_conflict", "B.I.: pedido nativo apagou histórico"),
         ("bi_cash_variance", "B.I.: quebra de caixa acumulada passou da régua"),
+        # O custo congelado da fornada (ADR-023 §3) saiu com lacuna: um insumo sem
+        # custo preferencial, unidade que não converte, ficha sem rendimento (#2360).
+        ("production_cost_gap", "Fornada fechou sem custo"),
         ("bi_curation_pending", "B.I.: de-para de produto pendente"),
         ("marketing_consent_violation", "Marketing: envio após opt-out/expiração"),
         ("marketing_duplicate_confirmed", "Marketing: efeito duplicado confirmado"),
@@ -297,7 +324,19 @@ class OperatorAlert(models.Model):
         # "outra mesa": operação geral, no Admin, sem acordar o balcão.
         ("concierge_handoff", "WhatsApp: conversa para a equipe"),
         ("concierge_other_desk", "WhatsApp: mensagem para outra mesa"),
+        # "Vou verificar" (WP-05): a parte sem fato que a Concierge perguntou à equipe.
+        # A conversa segue com a Concierge; a equipe responde no cartão e a resposta
+        # volta ao cliente por ela, ou alguém assume a conversa. Sino do Gestor.
+        ("concierge_verify", "WhatsApp: cliente espera a resposta da equipe"),
+        # A Concierge fez a mudança (sacola, pagamento, pedido) e a resposta segurou: ela disse ao cliente
+        # "já te confirmo", e a equipe confirma até o prazo (#3413). Sino do Gestor.
+        ("concierge_effect_unconfirmed", "WhatsApp: cliente espera a confirmação da Concierge"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
+        # A Concierge atendendo sem modelo (dono, 19/11/2026): responde o simples e manda
+        # à equipe o que não entende. Um aviso por causa, no topo do Gestor, cor de erro.
+        ("concierge_no_model", "WhatsApp: Concierge sem modelo"),
+        # Rascunho de pergunta frequente nascido de conversa (WP-15), esperando publicação.
+        ("faq_drafts_waiting", "Concierge: perguntas frequentes esperam publicação"),
         ("concierge_empty_output", "WhatsApp: resposta automática vazia"),
         ("concierge_handoff_sync", "WhatsApp: sincronização do atendimento pendente"),
         ("concierge_output_blocked", "WhatsApp: resposta automática bloqueada"),
@@ -313,6 +352,10 @@ class OperatorAlert(models.Model):
         ("ifood_store_closed_while_open", "iFood fechado com a loja aberta"),
         ("ifood_store_open_while_closed", "iFood aberto com a loja fechada"),
         ("ifood_store_sync_failed", "Pausa ou horário não gravado no iFood"),
+        # O 403 do módulo de loja que o iFood ainda não liberou (homologação do
+        # Merchant, #2618/#2622): aviso, sem e-mail, até o iFood liberar
+        # (coordenação, 21/11/2026). Outro erro segue no ``ifood_store_sync_failed``.
+        ("ifood_store_module_pending", "iFood: módulo de loja ainda não liberado"),
         # A NF-e de compra discorda do cadastro fiscal do produto que ela
         # abastece: NCM, CEST, ou ST na nota × perfil sem ST (e o inverso). O
         # recebimento nunca corrige o cadastro sozinho — fornecedor também erra
@@ -328,6 +371,36 @@ class OperatorAlert(models.Model):
         # do iFood) e a ação mora no pedido: "Tentar de novo". Fecha quando o
         # ``confirm`` passa, quando o iFood confirma ou quando o pedido acaba.
         ("ifood_accept_not_delivered", "iFood não recebeu o aceite"),
+        # Preparo, pronto ou saída esgotaram as tentativas sem chegar ao iFood: o
+        # pedido andou aqui e parou lá (16/11/2026, DEV-2026-041).
+        ("ifood_status_not_delivered", "iFood não recebeu uma etapa do pedido"),
+        # O pedido de cancelamento da loja esgotou as tentativas: o pedido destrava
+        # aqui e continua ativo no iFood.
+        ("ifood_cancellation_not_delivered", "Cancelamento não chegou ao iFood"),
+        # O iFood cancelou um pedido que aqui já estava pronto ou saiu: a transição
+        # não existe no fluxo local, e sem aviso a equipe entregaria um cancelado.
+        ("ifood_cancelled_not_applied", "iFood cancelou pedido que segue ativo aqui"),
+        # O iFood avisou que o pedido andou (confirmou, saiu, concluiu) e aqui ele
+        # ficou para trás por mais de 3 h: o operador encerra (reconcile_ifood_orders).
+        ("ifood_order_behind", "Pedido atrasado aqui em relação ao iFood"),
+        # O gestor fechou no calendário um dia que já tinha pedido em aberto
+        # marcado (encomenda paga, inclusive). Fechar não cancela nem remarca:
+        # o aviso, um por pedido, é para alguém remarcar ou falar com o cliente.
+        ("order_on_closed_day", "Pedido marcado para dia fechado"),
+        # O lote foi cancelado e a reserva de um pedido aceito (encomenda paga,
+        # inclusive) ficou sem lastro (#2547). Um aviso por pedido e item, com o
+        # que fazer: avisar o cliente, remarcar ou cancelar. Nada é automático.
+        ("order_promise_lost", "Pedido ficou sem a produção prometida"),
+        # O freio da IA (ID3A, E1): a 80% do teto diário de gasto chega o aviso; no
+        # teto, a IA paga para até o dia seguinte. O gasto de US$ 1.180 de 28/10 a
+        # 11/11 aconteceu sem nenhum dos dois.
+        ("ai_budget_warning", "IA perto do teto de gasto do dia"),
+        ("ai_budget_stopped", "IA parou: teto de gasto do dia atingido"),
+        # O polling do iFood (``ifood_poll --watch``) não tem resposta do iFood há
+        # mais de 2 min: pedido novo não entra, e o iFood cancela em 8 min o que
+        # ninguém aceitar. Fecha sozinho quando o polling volta a responder
+        # (``check_ifood_polling``, DEV-2026-017).
+        ("ifood_poll_stale", "iFood: pedidos pararam de entrar"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
@@ -341,10 +414,12 @@ class OperatorAlert(models.Model):
         ("operations", "Operação geral"),
     ]
     PRODUCTION_TYPES = {
+        "order_demand_over_plan",
         "production_late",
         "production_low_yield",
         "production_stock_short",
         "production_stock_shortfall",
+        "stock_sale_ingredient_short",
         "production_forgotten",
         "production_unfinished",
         "production_batch_traceability",
@@ -359,18 +434,23 @@ class OperatorAlert(models.Model):
     #: O financeiro de UM pedido (pagamento falhou, abaixo do total, contestação,
     #: pago depois de cancelar) é do gerente e mora em ``ORDER_TYPES``.
     FINANCE_TYPES = {
+        "ai_budget_warning",
+        "ai_budget_stopped",
         "payment_reconciliation_failed",
         "payment_ledger_drift",
         "cash_shift_open_at_closing",
         "cash_sale_after_shift_close",
         "cash_out_of_tolerance",
         "bi_cash_variance",
+        # Custo é financeiro: o gerente não tem permissão financeira (dono, 21/11/2026).
+        "production_cost_gap",
     }
     ORDER_TYPES = {
         "payment_failed",
         "payment_insufficient",
         "payment_disputed",
         "payment_after_cancel",
+        "pix_on_closed_charge",
         "card_authorization_expiring",
         "card_authorization_expired",
         "card_authorization_release_failed",
@@ -379,22 +459,35 @@ class OperatorAlert(models.Model):
         "pos_rejected_unavailable",
         "pos_offline_sale_adjusted",
         "stale_new_order",
-        "customer_cancellation_requested",
+        "customer_self_cancelled",
+        "customer_contact_requested",
         "lifecycle_phase_stuck",
         "handoff_refused",
         "order_production_quality_risk",
         "ifood_store_closed_while_open",
         "ifood_store_open_while_closed",
         "ifood_store_sync_failed",
+        "ifood_store_module_pending",
         "card_machine_overdue",
         "card_machine_refund_due",
         "danfe_print_failed",
         "kitchen_print_failed",
         "concierge_handoff",
+        "concierge_verify",
+        "concierge_effect_unconfirmed",
+        "concierge_no_model",
+        "faq_drafts_waiting",
         "ifood_negotiation_open",
         "ifood_cancellation_refused",
         "ifood_accept_not_delivered",
+        "ifood_status_not_delivered",
+        "ifood_cancellation_not_delivered",
+        "ifood_cancelled_not_applied",
+        "ifood_order_behind",
+        "ifood_poll_stale",
         "fiscal_return_note_due",
+        "order_on_closed_day",
+        "order_promise_lost",
     }
 
     type = models.CharField("tipo", max_length=50, choices=operator_alert_type_choices)

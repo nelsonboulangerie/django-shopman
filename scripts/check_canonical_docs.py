@@ -94,6 +94,9 @@ READINESS_END = "<!-- canonical-readiness:end -->"
 ALLOWED_STATES = {"VERIFICADO", "PENDENTE", "BLOQUEADO", "DESCONHECIDO", "N/A"}
 
 REQUIRED_CHECKS_FILE = Path(".github/required-status-checks.json")
+# A #2094 integrou com o guard do tema vermelho porque seu contexto era opcional.
+# Produzir o check não basta: removê-lo da proteção precisa reprovar o gate.
+MANDATORY_GUARD_CONTEXTS = frozenset({"Versões das superfícies"})
 SURFACE_CONTRACT_FILE = Path("surfaces/contracts.json")
 WORKFLOWS_DIR = Path(".github/workflows")
 # Um check obrigatório tem de existir no PR E na fila de merge: faltar em
@@ -102,6 +105,9 @@ REQUIRED_TRIGGERS = ("pull_request", "merge_group")
 MATRIX_REF_RE = re.compile(r"\$\{\{\s*matrix\.([A-Za-z0-9_-]+)\s*\}\}")
 DYNAMIC_SURFACE_MATRIX_RE = re.compile(
     r"matrix:\s*\$\{\{\s*fromJSON\(needs\.surface-contract\.outputs\.(quality|pwa|audit)\)\s*\}\}"
+)
+INTERNAL_PREVIEW_QUALITY_NAME = (
+    "${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}"
 )
 
 
@@ -403,6 +409,11 @@ def _job_check_names(job_id: str, block: list[str]) -> set[str]:
             or (kind == "pwa" and surface.get("capabilities", {}).get("pwa"))
             or (kind == "audit" and surface.get("capabilities", {}).get("npmAudit"))
         ]
+        if kind == "quality" and name == INTERNAL_PREVIEW_QUALITY_NAME:
+            return {
+                f"Preview interno — {surface['dir']}" if surface["kind"] == "internal" else surface["dir"]
+                for _, surface in selected
+            }
         referenced = MATRIX_REF_RE.findall(name)
         if not referenced:
             raise ValueError(f"job {job_id}: dynamic surface matrix must reference matrix.id or matrix.dir")
@@ -472,6 +483,9 @@ def _required_checks() -> list[str]:
 
 def check_required_status_checks(result: Result) -> None:
     contexts = _required_checks()
+    missing_guards = sorted(MANDATORY_GUARD_CONTEXTS - set(contexts))
+    if missing_guards:
+        result.fail(f"{REQUIRED_CHECKS_FILE}: guards críticos não obrigatórios: {missing_guards}")
     duplicated = sorted({c for c in contexts if contexts.count(c) > 1})
     if duplicated:
         result.fail(f"{REQUIRED_CHECKS_FILE}: duplicated contexts {duplicated}")
@@ -516,6 +530,21 @@ def check_secrets(result: Result) -> None:
     result.ok("no high-confidence literal secret pattern found")
 
 
+def check_semantic_docs(result: Result) -> None:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/check_semantic_docs.py")],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode:
+        details = (completed.stderr or completed.stdout).strip()
+        result.fail(f"semantic documentation gate failed: {details}")
+        return
+    result.ok("semantic map and Constitution anchors match the repository")
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     result = Result(errors=[], passed=[])
@@ -529,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
         check_deploy_contract,
         check_required_status_checks,
         check_secrets,
+        check_semantic_docs,
     )
     if "--live-required-checks" in argv:
         checks += (check_required_status_checks_live,)

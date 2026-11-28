@@ -1,0 +1,965 @@
+{
+  "queried_at": "2026-10-29T17:10:51Z",
+  "alerts": [
+    {
+      "number": 627,
+      "package": "seroval",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 626,
+      "package": "seroval",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 625,
+      "package": "seroval",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 624,
+      "package": "seroval",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 623,
+      "package": "seroval",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 622,
+      "package": "seroval",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 621,
+      "package": "seroval",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 620,
+      "package": "seroval",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 619,
+      "package": "seroval",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 618,
+      "package": "seroval",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 617,
+      "package": "seroval",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 616,
+      "package": "seroval",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 615,
+      "package": "seroval",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 614,
+      "package": "seroval",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 613,
+      "package": "seroval",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 612,
+      "package": "seroval",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 611,
+      "package": "seroval",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 610,
+      "package": "seroval",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 609,
+      "package": "seroval",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 608,
+      "package": "seroval",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 607,
+      "package": "seroval",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 606,
+      "package": "seroval",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 605,
+      "package": "seroval",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-f86p-h4j2-7qgj",
+      "severity": "medium",
+      "range": ">= 1.6.0, < 1.6.11",
+      "patched": "1.6.11"
+    },
+    {
+      "number": 604,
+      "package": "seroval",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-9wx9-5pv9-3349",
+      "severity": "medium",
+      "range": ">= 1.5.5, < 1.6.10",
+      "patched": "1.6.10"
+    },
+    {
+      "number": 603,
+      "package": "deepmerge",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 602,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 600,
+      "package": "fast-uri",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-w74x-v6f9-j3xg",
+      "severity": "medium",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 599,
+      "package": "fast-uri",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-xhq7-xmqj-769h",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 598,
+      "package": "fast-uri",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-wjr9-j795-jxcr",
+      "severity": "medium",
+      "range": ">= 3.1.3, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 597,
+      "package": "fast-uri",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-333x-w4r6-6crp",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 596,
+      "package": "deepmerge",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 595,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 593,
+      "package": "fast-uri",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-w74x-v6f9-j3xg",
+      "severity": "medium",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 592,
+      "package": "fast-uri",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-xhq7-xmqj-769h",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 591,
+      "package": "fast-uri",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-wjr9-j795-jxcr",
+      "severity": "medium",
+      "range": ">= 3.1.3, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 590,
+      "package": "fast-uri",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-333x-w4r6-6crp",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 589,
+      "package": "deepmerge",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 588,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 586,
+      "package": "deepmerge",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 585,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 583,
+      "package": "deepmerge",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 582,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 580,
+      "package": "deepmerge",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 579,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 577,
+      "package": "deepmerge",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 576,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 574,
+      "package": "fast-uri",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-w74x-v6f9-j3xg",
+      "severity": "medium",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 573,
+      "package": "fast-uri",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-xhq7-xmqj-769h",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 572,
+      "package": "fast-uri",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-wjr9-j795-jxcr",
+      "severity": "medium",
+      "range": ">= 3.1.3, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 571,
+      "package": "fast-uri",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-333x-w4r6-6crp",
+      "severity": "low",
+      "range": ">= 3.0.0, < 3.1.9",
+      "patched": "3.1.9"
+    },
+    {
+      "number": 570,
+      "package": "deepmerge",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 569,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 567,
+      "package": "deepmerge",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 566,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 564,
+      "package": "deepmerge",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 563,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 561,
+      "package": "deepmerge",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 560,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 558,
+      "package": "deepmerge",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-gcqx-w48m-w2h4",
+      "severity": "low",
+      "range": ">= 4.2.0, <= 4.3.1",
+      "patched": null
+    },
+    {
+      "number": 557,
+      "package": "serialize-javascript",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-m5mm-p8h7-m29v",
+      "severity": "low",
+      "range": "< 7.1.3",
+      "patched": "7.1.3"
+    },
+    {
+      "number": 555,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 554,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 553,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 552,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 551,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 550,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 549,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 548,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 547,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 546,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 545,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 544,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 543,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 542,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 541,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 540,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 539,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 538,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 537,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 536,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 535,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 534,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 533,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-qxg6-89mg-rqv8",
+      "severity": "medium",
+      "range": ">= 2.1.0-beta.7, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 532,
+      "package": "@vitest/mocker",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-xp26-3454-mjgp",
+      "severity": "medium",
+      "range": ">= 4.1.11, < 4.1.12",
+      "patched": "4.1.12"
+    },
+    {
+      "number": 530,
+      "package": "node-forge",
+      "manifest": "surfaces/status-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 505,
+      "package": "node-forge",
+      "manifest": "surfaces/kitchensink-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 420,
+      "package": "node-forge",
+      "manifest": "surfaces/storefront-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 419,
+      "package": "node-forge",
+      "manifest": "surfaces/purchase-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 418,
+      "package": "node-forge",
+      "manifest": "surfaces/production-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 417,
+      "package": "node-forge",
+      "manifest": "surfaces/pos-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 416,
+      "package": "node-forge",
+      "manifest": "surfaces/orders-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 415,
+      "package": "node-forge",
+      "manifest": "surfaces/operator-kit/package-lock.json",
+      "scope": "development",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 414,
+      "package": "node-forge",
+      "manifest": "surfaces/marketing-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 413,
+      "package": "node-forge",
+      "manifest": "surfaces/kds-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 412,
+      "package": "node-forge",
+      "manifest": "surfaces/hub-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    },
+    {
+      "number": 411,
+      "package": "node-forge",
+      "manifest": "surfaces/bi-nuxt/package-lock.json",
+      "scope": "runtime",
+      "ghsa": "GHSA-86w9-cpqp-85rv",
+      "severity": "high",
+      "range": "<= 1.4.0",
+      "patched": null
+    }
+  ]
+}

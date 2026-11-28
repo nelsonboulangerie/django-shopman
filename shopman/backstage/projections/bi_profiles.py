@@ -1,4 +1,4 @@
-"""B.I. — perfis de consumo do balcão (docs/plans/BI-CONSUMPTION-PROFILES.md).
+"""B.I. — perfis de consumo do balcão (docs/plans/completed/BI-CONSUMPTION-PROFILES.md).
 
 Quem são os clientes de balcão, em três perfis presumidos pela cesta:
 
@@ -29,6 +29,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+
+from django.conf import settings
+from django.urls import reverse
 
 from shopman.backstage.bi.canonical import local_window
 from shopman.backstage.services import consumption as rule
@@ -230,6 +233,7 @@ class BIConsumptionProfilesReport:
     seats: int
     seats_source: str
     previous: BIProfilesPrevious
+    consumption_tags_url: str = ""
 
 
 # ── Construção ───────────────────────────────────────────────────────────────
@@ -276,7 +280,10 @@ def build_bi_consumption_profiles(
     ]
     days_with_sales = len({b.local.date() for b in by_weekday_only})
 
+    admin_host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+    tags_path = reverse("admin:backstage_productconsumptiontag_changelist")
     return BIConsumptionProfilesReport(
+        consumption_tags_url=f"https://{admin_host}{tags_path}" if admin_host else "",
         date_from=date_from.isoformat(),
         date_to=date_to.isoformat(),
         weekday=weekday,

@@ -8,10 +8,13 @@ configurou e o papel sai cortado sem ninguém entender por quê.
 
 from __future__ import annotations
 
+import pytest
 from django.test import TestCase
 from shopman.cashman.models import Terminal
 
 from shopman.backstage.services.pos_terminal import printer_geometry, runtime_profile
+
+pytestmark = pytest.mark.channels("pdv")
 
 
 def _printer_health(terminal):

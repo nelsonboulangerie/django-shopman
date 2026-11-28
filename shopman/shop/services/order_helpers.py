@@ -246,6 +246,92 @@ def get_commitment_date(source) -> date | None:
     return parse_commitment_date(data.get("delivery_date"))
 
 
+def agreed_day(data: dict | None, created_at) -> date:
+    """O dia do pedido: o combinado (``data.delivery_date``), ou o da venda.
+
+    É a régua única do "dia" de um pedido para quem soma vendas por dia (B.I.).
+    A encomenda criada na quinta para sábado é venda de sábado, o dia em que a
+    fornada a atende; sem data combinada é venda imediata, do dia local da
+    criação. O reagendamento regrava ``delivery_date``, e o dia acompanha. Caixa
+    e pagamento perguntam outra coisa (quando o dinheiro entrou) e não usam esta
+    régua.
+    """
+    return get_commitment_date(data or {}) or timezone.localdate(created_at)
+
+
+def in_agreed_days(orders, window):
+    """Os pedidos cujo :func:`agreed_day` cai na janela ``[início, fim)``.
+
+    A forma de consulta da mesma régua: a data combinada (``data.delivery_date``)
+    quando há, senão o dia da criação. Quem soma pelo dia do pedido (o B.I.) e
+    quem abre os pedidos que ele contou (o Histórico, ``date_basis=ordered``)
+    perguntam aqui, e por isso contam os mesmos (#3427).
+    """
+    from datetime import timedelta
+
+    from django.db.models import Q, TextField
+    from django.db.models.fields.json import KeyTextTransform
+    from django.db.models.functions import Cast
+
+    start, end = window
+    first = timezone.localdate(start).isoformat()
+    last = timezone.localdate(end - timedelta(microseconds=1)).isoformat()
+    # Texto puro: sem o Cast, o valor volta pelo decodificador de JSON do campo.
+    orders = orders.annotate(_agreed_day=Cast(KeyTextTransform("delivery_date", "data"), TextField()))
+    return orders.filter(
+        Q(_agreed_day__gte=first, _agreed_day__lte=last)
+        | ((Q(_agreed_day__isnull=True) | Q(_agreed_day="")) & Q(created_at__gte=start, created_at__lt=end))
+    )
+
+
+# ── "É encomenda?": uma régua só, duas perguntas (#3163, F-8 e F-9) ─────────
+#
+# Antes havia quatro réguas: o carimbo do commit (``data.is_preorder``, a data
+# depois do dia da venda), o Gestor (data depois de HOJE, na leitura), a Cozinha
+# (feito antes do dia combinado) e a fila de espera (o carimbo). O reagendamento
+# regravava o carimbo como "depois de hoje", e a encomenda não paga trazida para
+# hoje voltava a ser fila (fermata). São duas perguntas diferentes, cada uma com
+# o seu nome, e todo mundo pergunta aqui.
+
+
+def is_preorder(source) -> bool:
+    """Encomenda: feita ANTES do dia combinado.
+
+    No PEDIDO a resposta é o carimbo ``data.is_preorder``: o commit grava "a data
+    é depois do dia da venda", e o reagendamento regrava "foi feito antes do novo
+    dia" (:mod:`services.reschedule`). É o carimbo que separa a encomenda do pedido
+    da fila de espera para a fornada de amanhã, que também tem data futura e não é
+    encomenda. Na SESSÃO (a comanda da Cozinha, sem carimbo), a mesma pergunta
+    pelas datas: ``created_at`` antes de ``data.delivery_date``.
+    """
+    from django.utils import timezone
+
+    data = getattr(source, "data", None) or {}
+    # O pedido pelo model do Django, sem importar o Orderman aqui (quem chama já
+    # tem o pedido na mão; a sessão é o outro caso).
+    if getattr(getattr(source, "_meta", None), "model_name", "") == "order":
+        return bool(data.get("is_preorder"))
+    commitment = get_commitment_date(source)
+    created_at = getattr(source, "created_at", None)
+    if commitment is None or created_at is None:
+        return False
+    return timezone.localdate(created_at) < commitment
+
+
+def is_for_a_later_day(source, *, today: date | None = None) -> bool:
+    """A data combinada é DEPOIS de hoje (o pedido ainda não é trabalho do dia).
+
+    É outra pergunta: a encomenda de hoje responde não aqui e sim em
+    :func:`is_preorder`. ``today`` é o dia da leitura de quem chama: quem pergunta
+    mais de uma vez na mesma leitura passa o mesmo dia, senão a leitura que cruza
+    a meia-noite responde "amanhã" numa lista e "hoje" na outra.
+    """
+    from django.utils import timezone
+
+    commitment = get_commitment_date(source)
+    return commitment is not None and commitment > (today or timezone.localdate())
+
+
 def is_counter_takeaway(order) -> bool:
     """Venda de balcão por NATUREZA: o cliente leva a mercadoria agora?
 

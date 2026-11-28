@@ -150,6 +150,9 @@ class PaymentIntent(models.Model):
         ordering = ["-created_at"]
         verbose_name = _("cobrança")
         verbose_name_plural = _("cobranças")
+        # Estornar não é editar (a cobrança não se edita à mão) nem ver: é dar
+        # dinheiro de volta. Permissão própria, concedida pelo descritor da Instância.
+        permissions = [("refund_paymentintent", _("Pode estornar cobrança"))]
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(amount_q__gt=0),
@@ -172,7 +175,10 @@ class PaymentIntent(models.Model):
         self._original_status = self.status
 
     def __str__(self) -> str:
-        return f"{self.ref} ({self.method}/{self.status})"
+        # O título da tela no Admin. Sem o status: ele mora no campo, onde o
+        # estorno parcial é dito por inteiro, e o código cru ("pix/refunded") não
+        # é palavra de gestor.
+        return f"{self.ref} ({self.get_method_display()})"
 
     @property
     def is_terminal(self) -> bool:

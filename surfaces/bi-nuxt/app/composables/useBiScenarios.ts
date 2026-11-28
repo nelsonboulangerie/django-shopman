@@ -21,7 +21,7 @@ export function useBiScenarios() {
       });
       await refresh();
       if (response.bi.status === "failed") {
-        useSonner.error("A IA não respondeu no formato esperado; o registro ficou salvo com o motivo.");
+        useSonner.error("Não foi possível gerar os cenários. A rodada ficou salva; tente novamente.");
       } else {
         useSonner.success("Cenários gerados.");
       }

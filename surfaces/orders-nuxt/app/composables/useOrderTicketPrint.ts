@@ -52,8 +52,10 @@ export function createOrderTicketPrinter(
     try {
       let job: OrderTicketResponse;
       try {
+        // POST: compor é emitir a via, e o servidor carimba a primeira.
         job = await $fetch<OrderTicketResponse>(
           `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/ticket-escpos/`,
+          { method: "POST" },
         );
       } catch (error) {
         useSonner.error(
@@ -81,7 +83,7 @@ export function createOrderTicketPrinter(
   return { agent: deviceAgent, isPrinting, print };
 }
 
-/** A tela que conhece a impressora da estação (o quadro, o detalhe) oferece o gesto. */
+/** A tela que conhece a impressora da estação (o painel, o detalhe) oferece o gesto. */
 export function provideOrderTicketPrinter(
   deviceAgent: ComputedRef<StationDeviceAgent | null>,
 ): OrderTicketPrinter {

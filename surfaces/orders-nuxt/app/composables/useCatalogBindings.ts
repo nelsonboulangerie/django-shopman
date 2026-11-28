@@ -55,11 +55,13 @@ export function useCatalogBindings(channel: string) {
       pending.value ||
       Boolean(
         selected.value &&
-          String(board.value?.selected_snapshot?.id ?? "") !== selected.value,
+        String(board.value?.selected_snapshot?.id ?? "") !== selected.value,
       ),
   );
   const busy = ref(false);
   const message = ref("");
+  // Recusa (vermelho, com a resposta do iFood) ou confirmação (neutro).
+  const messageFailed = ref(false);
   const intentions = useOrderIntention();
 
   async function execute(
@@ -67,10 +69,12 @@ export function useCatalogBindings(channel: string) {
     path: string,
     action: CatalogBindingReviewProjection["import_action"] | undefined,
     body: Record<string, unknown>,
+    successMessage = "Gravação local confirmada. Nenhuma alteração enviada à plataforma.",
   ) {
     if (busy.value || stale.value || !board.value) return false;
     busy.value = true;
     message.value = "";
+    messageFailed.value = false;
     try {
       const result = await intentions.executePath(resource, path, action, body);
       const snapshotId = (result as { snapshot_id?: unknown }).snapshot_id;
@@ -79,8 +83,7 @@ export function useCatalogBindings(channel: string) {
         typeof snapshotId === "number"
       )
         selected.value = String(snapshotId);
-      message.value =
-        "Gravação local confirmada. Nenhuma alteração enviada à plataforma.";
+      if (successMessage) message.value = successMessage;
       try {
         await refresh();
       } catch {
@@ -89,6 +92,7 @@ export function useCatalogBindings(channel: string) {
       }
       return true;
     } catch (failure) {
+      messageFailed.value = true;
       message.value = httpErrorMessage(
         failure,
         failure instanceof Error
@@ -131,6 +135,18 @@ export function useCatalogBindings(channel: string) {
       },
     );
   }
+  function changeCategory(body: Record<string, unknown>) {
+    const categoryRef = String(body.category_ref || "category");
+    return execute(
+      `catalog-category:${channel}:${categoryRef}`,
+      `${base}/categories/`,
+      board.value?.category_action,
+      body,
+      // A confirmação de categoria aparece no próprio cartão (selo com a hora),
+      // não numa faixa no topo da página.
+      "",
+    );
+  }
   return {
     board,
     pending,
@@ -142,7 +158,9 @@ export function useCatalogBindings(channel: string) {
     selected,
     busy,
     message,
+    messageFailed,
     importSnapshot,
     bind,
+    changeCategory,
   };
 }

@@ -34,11 +34,62 @@ const podeSimular = computed(() => canSimulatePayment({
   mock_payment_enabled: props.mockEnabled,
 }))
 
-async function copyPix () {
-  if (!props.promise.pix_copy_paste || !import.meta.client) return
-  await navigator.clipboard.writeText(props.promise.pix_copy_paste)
-  useSonner.success(props.copy.pix_copied)
+// Copia e cola (laudo 23/10, U4). A Clipboard API falha de verdade: navegador
+// embutido do Instagram/WhatsApp, permissão negada, página fora de HTTPS. Antes a
+// falha virava exceção solta e o cliente tocava num botão que não fazia nada, com
+// o código cortado por reticências. Agora o código aparece INTEIRO num campo
+// somente leitura; copiar tenta a API, depois o copiar do próprio navegador sobre
+// o texto selecionado, e se nada der o código fica selecionado com a instrução.
+type CopyState = 'idle' | 'copied' | 'failed'
+const copyState = ref<CopyState>('idle')
+const pixField = ref<{ $el?: HTMLTextAreaElement } | null>(null)
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
+
+function selectPixCode (): HTMLTextAreaElement | null {
+  const el = pixField.value?.$el
+  if (!el || typeof el.select !== 'function') return null
+  el.focus()
+  el.select()
+  el.setSelectionRange?.(0, el.value.length)
+  return el
 }
+
+async function writeToClipboard (text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // segue para o copiar do navegador
+  }
+  try {
+    return selectPixCode() !== null && document.execCommand('copy')
+  } catch {
+    return false
+  }
+}
+
+async function copyPix () {
+  const code = props.promise.pix_copy_paste
+  if (!code || !import.meta.client) return
+  if (copiedTimer) clearTimeout(copiedTimer)
+  if (await writeToClipboard(code)) {
+    copyState.value = 'copied'
+    useSonner.success(props.copy.pix_copied)
+    copiedTimer = setTimeout(() => { copyState.value = 'idle' }, 4000)
+    return
+  }
+  copyState.value = 'failed'
+  selectPixCode()
+}
+
+onBeforeUnmount(() => { if (copiedTimer) clearTimeout(copiedTimer) })
+
+// QR recolhido no celular (WP-L07). Só recolhe quando há código para copiar:
+// sem copia-e-cola, o QR é o único caminho e fica à vista em qualquer largura.
+const qrAberto = ref(false)
+const qrRecolhido = computed(() => Boolean(props.promise.pix_copy_paste) && !qrAberto.value)
 </script>
 
 <template>
@@ -70,37 +121,73 @@ async function copyPix () {
         <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
           <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
         </div>
-        <p class="shop-meta text-center">{{ copy.pix_pending_note }}</p>
+        <p class="shop-meta text-center" data-decisive="state">{{ copy.pix_pending_note }}</p>
       </div>
 
-      <!-- Pix com código: QR + copia-e-cola. O countdown do prazo já é mostrado
-           no painel de status (promise.deadline_at). -->
-      <div v-if="hasPixCode" class="shop-stack-block">
-        <div v-if="promise.pix_qr_code" class="flex flex-col items-center gap-3">
-          <div class="rounded-lg border bg-white p-4">
-            <img :src="promise.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
-          </div>
-          <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
-        </div>
-
-        <div v-if="promise.pix_copy_paste" class="shop-stack-tight">
+      <!-- Pix com código (WP-L07, P1-09). O countdown do prazo já é mostrado no
+           painel de status (promise.deadline_at), logo acima deste cartão.
+           Celular: o QR não serve no próprio aparelho, então o primeiro gesto é
+           copiar o código; o QR fica recolhido em "Mostrar QR Code". Computador
+           (md+): o QR vem primeiro e sempre à vista, para ler com o celular.
+           A ordem é CSS (md:order-first), não JS: o SSR já sai certo nas duas. -->
+      <div v-if="hasPixCode" class="flex flex-col gap-4" data-pix-block>
+        <div v-if="promise.pix_copy_paste" class="flex flex-col gap-2" data-pix-copy>
           <p class="shop-meta">{{ copy.pix_copy_label }}</p>
-          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <p
-              class="min-w-0 flex-1 cursor-pointer truncate rounded-lg border bg-muted px-3 py-2 font-mono text-xs"
-              role="button"
-              tabindex="0"
-              aria-label="Copiar código Pix"
-              :title="promise.pix_copy_paste"
-              @click="copyPix"
-              @keydown.enter.prevent="copyPix"
-              @keydown.space.prevent="copyPix"
-            >{{ promise.pix_copy_paste }}</p>
-            <UiButton variant="outline" icon="lucide:copy" class="shrink-0" @click="copyPix">{{ copy.pix_copy_btn }}</UiButton>
+          <UiButton
+            size="lg"
+            :icon="copyState === 'copied' ? 'lucide:check' : 'lucide:copy'"
+            class="w-full md:w-auto md:self-start"
+            data-pix-copy-button
+            @click="copyPix"
+          >
+            {{ copyState === 'copied' ? 'Copiado' : copy.pix_copy_btn }}
+          </UiButton>
+          <!-- O código inteiro, sempre: é o plano B quando copiar não funciona. -->
+          <UiTextarea
+            id="pix-copy-paste"
+            ref="pixField"
+            :model-value="promise.pix_copy_paste"
+            readonly
+            :rows="4"
+            spellcheck="false"
+            aria-label="Código Pix copia e cola"
+            class="min-h-0 resize-none break-all bg-muted font-mono text-xs leading-relaxed md:text-xs"
+            data-pix-copy-field
+            @focus="selectPixCode"
+          />
+          <p v-if="copyState === 'failed'" class="shop-meta text-foreground" role="status" data-pix-copy-fallback data-decisive="error">
+            Não deu para copiar por aqui. O código acima já está selecionado: toque e segure nele e escolha Copiar.
+          </p>
+          <p v-else class="sr-only" role="status">{{ copyState === 'copied' ? copy.pix_copied : '' }}</p>
+        </div>
+
+        <div v-if="promise.pix_qr_code" class="flex flex-col items-center gap-3 md:order-first" data-pix-qr>
+          <UiButton
+            v-if="promise.pix_copy_paste"
+            variant="outline"
+            :icon="qrAberto ? 'lucide:chevron-up' : 'lucide:qr-code'"
+            class="w-full md:hidden"
+            :aria-expanded="qrAberto"
+            aria-controls="pix-qr-code"
+            data-pix-qr-toggle
+            @click="qrAberto = !qrAberto"
+          >
+            {{ qrAberto ? 'Esconder QR Code' : 'Mostrar QR Code' }}
+          </UiButton>
+          <div
+            id="pix-qr-code"
+            :class="qrRecolhido ? 'hidden md:flex' : 'flex'"
+            class="flex-col items-center gap-3"
+            data-pix-qr-content
+          >
+            <div class="rounded-lg border bg-white p-4">
+              <img :src="promise.pix_qr_code" alt="QR Code Pix" class="size-48 max-w-full" />
+            </div>
+            <p class="shop-muted text-center">{{ copy.pix_instruction }}</p>
           </div>
         </div>
 
-        <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>
+        <p class="shop-meta" data-decisive="state">{{ copy.pix_auto_update_note }}</p>
       </div>
 
       <!-- Cartão sem página do gateway (payment_mock): sem isto o bloco ficaria

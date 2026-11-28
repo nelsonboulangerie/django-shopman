@@ -5,7 +5,7 @@ Re-exports:
     from shopman.orderman.services import ModifyService, CommitService, ...
 """
 
-from .commit import CommitService  # noqa: F401
+from .commit import CommitAuthority, CommitSeal, CommitService  # noqa: F401
 from .history import CustomerOrderHistoryService  # noqa: F401
 from .modify import ModifyService  # noqa: F401
 from .resolve import ResolveService  # noqa: F401

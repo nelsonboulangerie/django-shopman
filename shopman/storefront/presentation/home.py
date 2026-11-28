@@ -8,7 +8,7 @@ status, opening hours, and a small set of featured items for "Direto do Forno".
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from django.http import HttpRequest
 
@@ -18,12 +18,21 @@ from shopman.shop.address_location_config import (
 )
 from shopman.shop.projections.types import Action
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF, get_default_ddd
-from shopman.storefront.presentation.catalog import CatalogItemProjection, build_featured_items
-from shopman.storefront.presentation.public_information import FAQItemProjection, build_public_faq
+from shopman.storefront.presentation.catalog import (
+    CatalogItemProjection,
+    build_featured_items,
+    build_ordering,
+    fresh_from_oven_skus,
+)
+from shopman.storefront.presentation.promise import ORDERING_NONE, OrderingProjection
+from shopman.storefront.presentation.public_information import HOME_FAQ_LIMIT, FAQItemProjection, build_public_faq
 from shopman.storefront.presentation.shop import ShopProjection, build_shop_projection
 from shopman.storefront.presentation.shop_status import _format_opening_hours, _shop_status
 
 logger = logging.getLogger(__name__)
+
+#: A superfície nos experimentos de experiência (``ExperienceRule.params["surface"]``).
+STOREFRONT_SURFACE = "storefront"
 
 
 @dataclass(frozen=True)
@@ -53,6 +62,9 @@ class ShopStatusProjection:
     is_open: bool
     label: str
     message: str | None
+    # Loja fechada: a próxima abertura já em frase ("amanhã às 9h", "quinta às
+    # 9h", "às 9h"); None aberta ou sem abertura conhecida.
+    next_opening: str | None
     opens_at: str | None
     closes_at: str | None
 
@@ -135,6 +147,7 @@ class AuthCopyProjection:
     wa_why: CopyEntryProjection
     wa_steps: CopyEntryProjection
     wa_waiting: CopyEntryProjection
+    wa_waiting_phone: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -239,6 +252,74 @@ def _environment_notice() -> str:
 
 
 @dataclass(frozen=True)
+class ExperienceProjection:
+    """Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+
+    Quem decide é o servidor (``shopman.shop.services.experience.resolve``). Só
+    ``ref`` e ``variant`` saem: coorte, motivo e dono nunca chegam à loja.
+    """
+
+    ref: str
+    variant: str
+
+
+#: O nome de gente de cada novidade em teste, por ``ref`` do experimento (o selo da
+#: equipe, DEV-2026-096). Mora aqui, junto da loja que desenha as versões: experimento
+#: novo já chega com código, e o nome entra no mesmo PR. Sem nome, a frase genérica.
+TEAM_PREVIEW_FEATURES = {
+    "cardapio-dia-primeiro": "escolher o dia antes de montar a sacola",
+    "home-recompra-no-topo": "repetir o último pedido no topo do início",
+    "duvida-no-ponto": "dúvidas respondidas na sacola",
+}
+TEAM_PREVIEW_UNNAMED_FEATURE = "uma novidade em teste"
+
+
+@dataclass(frozen=True)
+class TeamPreviewProjection:
+    """O selo da versão de teste da equipe (DEV-2026-096).
+
+    Só existe para quem vê (ou veria, sem ter pedido a versão de sempre) alguma
+    versão fora do padrão POR SER DA EQUIPE. Sem códigos de experimento nem de
+    variante: a frase e a lista em linguagem de gente, e o rótulo do gesto que troca.
+    """
+
+    opted_out: bool
+    message: str
+    features: tuple[str, ...]
+    action_label: str
+
+
+def _join_pt(items: tuple[str, ...]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    return f"{', '.join(items[:-1])} e {items[-1]}"
+
+
+def build_team_preview(refs, *, opted_out: bool) -> TeamPreviewProjection | None:
+    """O selo, a partir dos experimentos em que a pessoa é da equipe. Sem nenhum, ``None``."""
+    features: list[str] = []
+    for ref in refs or ():
+        label = TEAM_PREVIEW_FEATURES.get(ref, TEAM_PREVIEW_UNNAMED_FEATURE)
+        if label not in features:
+            features.append(label)
+    if not features:
+        return None
+    if opted_out:
+        return TeamPreviewProjection(
+            opted_out=True,
+            message="Você está vendo a versão de sempre, sem as novidades em teste da equipe.",
+            features=tuple(features),
+            action_label="Voltar à versão de teste",
+        )
+    return TeamPreviewProjection(
+        opted_out=False,
+        message=f"Você está vendo a versão de teste da equipe: {_join_pt(tuple(features))}.",
+        features=tuple(features),
+        action_label="Ver a versão de sempre",
+    )
+
+
+@dataclass(frozen=True)
 class StorefrontShellProjection:
     """Projeção global leve, sem catálogo nem histórico de pedidos.
 
@@ -256,6 +337,13 @@ class StorefrontShellProjection:
     faq: tuple[FAQItemProjection, ...]
     origin_channel: str | None
     public_config: PublicConfigProjection
+    # Lista, não mapa: cada item tem a forma {ref, variant} que o contrato do
+    # release fixou, a ordem é estável (por ref) e o item pode ganhar campo sem
+    # mudar o tipo do valor. Experimento desligado não aparece: ausente = padrão.
+    experience: tuple[ExperienceProjection, ...] = ()
+    # O selo da equipe. ``None`` sai do JSON (a view tira a chave): cliente comum e
+    # anônimo nunca recebem o campo.
+    team_preview: TeamPreviewProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -276,18 +364,27 @@ class HomeProjection:
     featured_items: tuple[CatalogItemProjection, ...]
     origin_channel: str | None
     public_config: PublicConfigProjection
+    # Dá para pedir agora, e para quando (OC-04): a frase do topo com a loja
+    # fechada sai daqui, nunca de uma constante. Ver ``OrderingProjection``.
+    ordering: OrderingProjection
 
 
 def build_shell(
     request: HttpRequest,
     *,
     cart_has_items: bool | None = None,
+    experience=None,
+    team_preview: TeamPreviewProjection | None = None,
 ) -> StorefrontShellProjection:
     """Build only the state shared by every storefront route.
 
     Deliberately excludes ``build_featured_items`` and ``_reorder_context``. Those are
     home-page concerns and are orders of magnitude more expensive than the
     identity, brand, operational status and copy needed by the global shell.
+
+    ``experience`` são as versões já resolvidas pela view
+    (``shopman.shop.services.experience.resolve``): a apresentação só lê e não
+    conversa com serviço. Sem elas, o shell sai sem experimento (todos no padrão).
     """
     from shopman.shop.google_maps_credentials import browser_api_key
     from shopman.shop.models import Shop
@@ -313,6 +410,7 @@ def build_shell(
         is_open=bool(status_dict.get("is_open", False)),
         label=status_dict.get("label") or ("Aberto agora" if status_dict.get("is_open") else "Fechado agora"),
         message=status_dict.get("message"),
+        next_opening=status_dict.get("next_opening"),
         opens_at=status_dict.get("opens_at"),
         closes_at=status_dict.get("closes_at"),
     )
@@ -388,20 +486,45 @@ def build_shell(
         ),
         origin_channel=origin_channel,
         public_config=public_config,
+        experience=tuple(
+            ExperienceProjection(ref=a.ref, variant=a.variant) for a in (experience or ())
+        ),
+        team_preview=team_preview,
     )
 
 
 def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> HomeProjection:
     shell = build_shell(request, cart_has_items=cart_has_items)
     last_ref, last_items = _reorder_context(request)
-    featured = build_featured_items(channel_ref=STOREFRONT_CHANNEL_REF, request=request, limit=3)
+    fresh = fresh_from_oven_skus(STOREFRONT_CHANNEL_REF)
+    catalog_ordering = build_ordering(channel_ref=STOREFRONT_CHANNEL_REF, request=request)
+    featured = build_featured_items(
+        channel_ref=STOREFRONT_CHANNEL_REF,
+        request=request,
+        limit=3,
+        prefer_skus=fresh,
+        orderable_skus=catalog_ordering.orderable_skus,
+    )
+    # O título diz o que o rail mostra: "Direto do forno" só com fornada recente nele;
+    # "Os mais pedidos" só com um mais pedido nele; sem nenhum dos dois, o rail é a
+    # ordem do cardápio e o título diz isso (nem forno nem "mais pedidos" mentindo).
+    if any(item.sku in fresh for item in featured):
+        rail_heading_key = "HOME_AVAILABILITY_HEADING"
+    elif any(item.is_featured for item in featured):
+        rail_heading_key = "HOME_FEATURED_HEADING"
+    else:
+        rail_heading_key = "HOME_MENU_RAIL_HEADING"
 
     return HomeProjection(
         omotenashi=shell.omotenashi,
         hero_copy=_home_hero_copy(shell.omotenashi),
-        sections_copy=_home_sections_copy(
-            shell.omotenashi,
-            default_city=shell.shop.default_city,
+        sections_copy=_without_preorder_offer(
+            _home_sections_copy(
+                shell.omotenashi,
+                default_city=shell.shop.default_city,
+                rail_heading_key=rail_heading_key,
+            ),
+            ordering=catalog_ordering.ordering,
         ),
         auth_copy=shell.auth_copy,
         pwa_copy=shell.pwa_copy,
@@ -409,13 +532,30 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_status=shell.shop_status,
         notices=shell.notices,
         opening_hours=shell.opening_hours,
-        faq=shell.faq,
+        faq=shell.faq[:HOME_FAQ_LIMIT],
         last_order_ref=last_ref,
         last_order_items=last_items,
         actions=_home_actions(last_ref),
         featured_items=featured,
         origin_channel=shell.origin_channel,
         public_config=shell.public_config,
+        ordering=catalog_ordering.ordering,
+    )
+
+
+def _without_preorder_offer(
+    sections: HomeSectionsCopyProjection, *, ordering: OrderingProjection
+) -> HomeSectionsCopyProjection:
+    """Sem nada encomendável, a faceta de encomenda sai de "Como funciona" (OC-04, X1).
+
+    "Encomendas com até 30 dias de antecedência" convida a encomendar; o laudo da Etapa II (U1) a mediu na home
+    às 22h, com 0 de 31 itens podendo ir à sacola. Com ``ordering.state ==
+    "none"`` ela some; com algo encomendável, fica como está.
+    """
+    if ordering.state != ORDERING_NONE:
+        return sections
+    return replace(
+        sections, how_facets=tuple(f for f in sections.how_facets if f.ref != "preorder")
     )
 
 
@@ -592,10 +732,13 @@ def _pwa_copy(omotenashi: OmotenashiProjection) -> PwaCopyProjection:
 
 
 def _home_sections_copy(
-    omotenashi: OmotenashiProjection, *, default_city: str = ""
+    omotenashi: OmotenashiProjection,
+    *,
+    default_city: str = "",
+    rail_heading_key: str = "HOME_AVAILABILITY_HEADING",
 ) -> HomeSectionsCopyProjection:
     return HomeSectionsCopyProjection(
-        availability_heading=_copy_entry("HOME_AVAILABILITY_HEADING", omotenashi=omotenashi),
+        availability_heading=_copy_entry(rail_heading_key, omotenashi=omotenashi),
         full_menu_cta=_copy_entry("HOME_FULL_MENU_CTA", omotenashi=omotenashi),
         how_it_works_heading=_copy_entry("HOME_HOW_IT_WORKS_HEADING", omotenashi=omotenashi),
         how_it_works_intro=_copy_entry("HOW_IT_WORKS_INTRO", omotenashi=omotenashi),
@@ -617,10 +760,56 @@ def _home_sections_copy(
         how_facets=_home_facets(omotenashi, default_city=default_city),
         tomorrow_label=_copy_entry("HOME_TOMORROW_LABEL", omotenashi=omotenashi),
         tomorrow_hook=_copy_entry("TRACKING_TOMORROW_HOOK", omotenashi=omotenashi),
-        whatsapp_cta=_copy_entry("HOME_WHATSAPP_CTA", omotenashi=omotenashi),
+        whatsapp_cta=_copy_entry(
+            "HOME_WHATSAPP_CTA_CONCIERGE" if _concierge_answers_whatsapp() else "HOME_WHATSAPP_CTA",
+            omotenashi=omotenashi,
+        ),
         whatsapp_cta_label=_copy_entry("HOME_WHATSAPP_CTA_LABEL", omotenashi=omotenashi),
         faq_heading=_copy_entry("HOME_FAQ_HEADING", omotenashi=omotenashi),
     )
+
+
+def _concierge_answers_whatsapp() -> bool:
+    """A Concierge responde TODO visitante no WhatsApp da casa?
+
+    A frase da home só promete o que é verdade para quem lê (X1 do plano da Etapa
+    II). Por isso não basta a Concierge estar ligada: com coorte fechada
+    (``allowed_subjects`` da conexão), quem está fora dela continua atendido como
+    antes, e para esse visitante "de pessoa para pessoa" é a verdade.
+
+    A pergunta vai à mesma admissão do runtime: ``service.is_enabled`` (contrato,
+    modo ``assist``, chave ligada) e ``service.is_allowed`` para um visitante que
+    não está em lista nenhuma, numa conexão ativa do canal WhatsApp. Hoje nenhuma
+    configuração admite esse visitante (lista vazia fecha a conexão), então a home
+    mantém o texto de sempre; quando abrir a coorte ganhar mecanismo na admissão
+    (#3430), esta função passa a valer sem mudar. É estado do deployment, igual
+    para todo visitante: a home pública pode ficar em cache sem vazar nada.
+    """
+    from types import SimpleNamespace
+
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import service, transport
+
+    if not service.is_enabled():
+        return False
+    for connection in transport.configured_connections():
+        if connection.channel != "whatsapp":
+            continue
+        unknown_visitor = SimpleNamespace(
+            provider=connection.provider,
+            account=connection.account,
+            transport_channel=connection.channel,
+            subject=_UNLISTED_VISITOR,
+            connection_key=connection.key,
+            status=ConversationBinding.Status.ACTIVE,
+        )
+        if service.is_allowed(unknown_visitor):
+            return True
+    return False
+
+
+#: Assinante que nenhuma lista contém: quem a home tem diante de si.
+_UNLISTED_VISITOR = "home:visitante-fora-de-qualquer-lista"
 
 
 def _home_facets(
@@ -646,11 +835,28 @@ def _home_facets(
 
     facets = (
         HomeFacetProjection(ref="delivery", message=delivery),
-        HomeFacetProjection(ref="preorder", message=_msg("HOW_PREORDER_MESSAGE")),
+        HomeFacetProjection(ref="preorder", message=_preorder_facet_message(_msg("HOW_PREORDER_MESSAGE"))),
         HomeFacetProjection(ref="quality", message=_msg("HOW_QUALITY_MESSAGE")),
         HomeFacetProjection(ref="tracking", message=_msg("HOW_TRACKING_MESSAGE")),
     )
     return tuple(facet for facet in facets if facet.message)
+
+
+def _preorder_facet_message(template: str) -> str:
+    """Faceta de encomenda com a janela configurada no lugar de ``{window}``.
+
+    O número não mora na copy: vem de ``max_preorder_days``, o mesmo teto do
+    calendário do checkout e da recusa no servidor. Canal sem encomenda (ou
+    janela zero) não promete encomenda: a faceta cai fora.
+    """
+    from shopman.storefront.presentation.public_information import preorder_window
+
+    if "{window}" not in template:
+        return template
+    window = preorder_window(STOREFRONT_CHANNEL_REF)
+    if window is None:
+        return ""
+    return template.replace("{window}", window)
 
 
 def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
@@ -661,6 +867,7 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         wa_why=_copy_entry("LOGIN_WA_WHY", omotenashi=omotenashi),
         wa_steps=_copy_entry("LOGIN_WA_STEPS", omotenashi=omotenashi),
         wa_waiting=_copy_entry("LOGIN_WA_WAITING", omotenashi=omotenashi),
+        wa_waiting_phone=_copy_entry("LOGIN_WA_WAITING_PHONE", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),
@@ -676,11 +883,11 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         name_subtitle=_copy_entry("LOGIN_NAME_SUBTITLE", omotenashi=omotenashi),
         name_cta=_copy_entry("LOGIN_NAME_CTA", omotenashi=omotenashi),
         auth_confirmed=_copy_entry("LOGIN_AUTH_CONFIRMED", omotenashi=omotenashi),
-        device_trust_prompt=_copy_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi),
-        device_trust_cta=_copy_entry("DEVICE_TRUST_CTA", omotenashi=omotenashi),
+        device_trust_prompt=_device_trust_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi),
+        device_trust_cta=_device_trust_entry("DEVICE_TRUST_CTA", omotenashi=omotenashi),
         device_trust_skip_cta=_copy_entry("DEVICE_TRUST_SKIP_CTA", omotenashi=omotenashi),
         device_trust_redirecting=_copy_entry("DEVICE_TRUST_REDIRECTING", omotenashi=omotenashi),
-        device_trust_saved=_copy_entry("DEVICE_TRUST_SAVED", omotenashi=omotenashi),
+        device_trust_saved=_device_trust_entry("DEVICE_TRUST_SAVED", omotenashi=omotenashi),
     )
 
 
@@ -689,6 +896,18 @@ def _copy_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProje
 
     entry = resolve_copy(key, moment=omotenashi.moment, audience=omotenashi.audience)
     return CopyEntryProjection(title=entry.title, message=entry.message)
+
+
+def _device_trust_entry(key: str, *, omotenashi: OmotenashiProjection) -> CopyEntryProjection:
+    """Copy da confiança do aparelho com ``{period}`` trocado pelo prazo real do doorman."""
+    from shopman.shop.projections.storefront_context import device_trust_period
+
+    entry = _copy_entry(key, omotenashi=omotenashi)
+    period = device_trust_period()
+    return CopyEntryProjection(
+        title=entry.title.replace("{period}", period),
+        message=entry.message.replace("{period}", period),
+    )
 
 
 def _marketing_prompt_pending(request: HttpRequest) -> bool:
@@ -725,7 +944,7 @@ def _reorder_context(request: HttpRequest) -> tuple[str | None, tuple[LastOrderI
         from shopman.storefront.services import orders as order_service
 
         ref, items = order_service.last_reorder_context(
-            customer_uuid=customer_info.uuid,
+            customer_uuid=customer_info.subject_id,
             min_days=0,
         )
         projections = tuple(

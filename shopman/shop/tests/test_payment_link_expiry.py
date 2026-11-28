@@ -24,15 +24,12 @@ régua do Stripe (30 min a 24 h − 1 min). Aqui se prova:
 
 from __future__ import annotations
 
-import ast
 from datetime import datetime, timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.conf import settings as django_settings
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
@@ -234,12 +231,13 @@ class TestServiceCutoff:
 
 
 def _seed_pos_config() -> dict:
-    """O ``_pos_config`` do seed, lido por AST — sem rodar o seed."""
-    source = Path(django_settings.BASE_DIR) / "config" / "management" / "commands" / "seed.py"
-    for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
-        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_pos_config" for t in node.targets):
-            return ast.literal_eval(node.value)
-    raise AssertionError("`_pos_config` não encontrado em config/management/commands/seed.py")
+    """Configuração do PDV na fonte versionada da Instância, sem tocar no DB."""
+    from config.instance_descriptors import load_descriptor
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR
+
+    descriptor = load_descriptor(NELSON_INSTANCE_DESCRIPTOR)
+    channel = next(item for item in descriptor["bootstrap"]["channels"] if item["ref"] == "pdv")
+    return channel["config"]["overrides"]
 
 
 class TestChannelWindow:
@@ -365,9 +363,10 @@ def test_stripe_link_without_config_still_expires_on_the_default_window():
 
 
 @override_settings(SHOPMAN_STRIPE=STRIPE_SETTINGS)
-def test_stripe_card_keeps_no_deadline():
-    """O cartão da loja online não ganha prazo: lá o cliente está na tela, e o
-    abandono tem a própria rede (``reconcile_with_gateway_if_due``)."""
+def test_stripe_card_expires_on_the_channel_payment_window_with_stripe_floor():
+    """O cartão da loja online tem prazo (beta 06/11, F2): recusado ou abandonado,
+    o pedido vence e devolve o estoque. A janela é a do canal (10 min no web),
+    presa ao piso de 30 min do Stripe, e o MESMO instante vai ao Payman e ao Stripe."""
     stripe = _stripe_double("cs_test_card")
     with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
         intent = payment_stripe.create_intent(
@@ -375,11 +374,43 @@ def test_stripe_card_keeps_no_deadline():
             amount_q=1000,
             method="card",
             metadata={"method": "card"},
+            card_timeout_minutes=10,
         )
 
-    assert intent.expires_at is None
-    assert "expires_at" not in stripe.checkout.Session.create.call_args.kwargs
-    assert PaymanIntent.objects.get(ref=intent.intent_ref).expires_at is None
+    remaining = intent.expires_at - timezone.now()
+    assert timedelta(minutes=29) < remaining <= _payment_link.LINK_TTL_MIN
+    assert stripe.checkout.Session.create.call_args.kwargs["expires_at"] == int(intent.expires_at.timestamp())
+    assert PaymanIntent.objects.get(ref=intent.intent_ref).expires_at == intent.expires_at
+
+
+@override_settings(SHOPMAN_STRIPE=STRIPE_SETTINGS)
+def test_stripe_card_without_config_still_has_a_deadline():
+    """``_adapter_config`` falhou: o cartão não nasce sem prazo."""
+    stripe = _stripe_double("cs_test_card_nocfg")
+    with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+        intent = payment_stripe.create_intent(
+            order_ref="WEB-CARD-NOCFG",
+            amount_q=1000,
+            method="card",
+            metadata={"method": "card"},
+        )
+
+    assert intent.expires_at is not None
+    assert "expires_at" in stripe.checkout.Session.create.call_args.kwargs
+
+
+def test_card_adapter_config_carries_the_channel_payment_window():
+    Channel.objects.create(
+        ref="web-card-window",
+        name="Loja",
+        is_active=True,
+        config={"payment": {"method": ["pix", "card"], "timeout_minutes": 45}},
+    )
+    order = SimpleNamespace(channel_ref="web-card-window", data={})
+
+    config = payment_service._adapter_config(order, method="card")
+
+    assert config["card_timeout_minutes"] == 45
 
 
 @override_settings(SHOPMAN_STRIPE=STRIPE_SETTINGS)

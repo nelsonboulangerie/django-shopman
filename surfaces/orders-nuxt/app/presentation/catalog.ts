@@ -11,7 +11,12 @@ import type {
 } from "~/types/catalog";
 import { readingCsvMoney, readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
 
-export type CellState = "available" | "paused" | "unpublished" | "absent";
+export type CellState =
+  | "available"
+  | "paused"
+  | "unpublished"
+  | "archived"
+  | "absent";
 
 export interface CellView {
   state: CellState;
@@ -37,12 +42,18 @@ export function filterRows(
 
 // ── cell semantics ─────────────────────────────────────────────────────────────
 
+/** O balcão (PDV): o canal que fica de pé quando se pausam os remotos. */
+export const COUNTER_SURFACES: ReadonlySet<string> = new Set(["pdv", "pos", "balcao"]);
+
 export function cellState(
   row: CatalogRowProjection,
   cell: SurfaceCellProjection,
 ): CellState {
   if (!cell.in_listing) return "absent";
+  if (!row.is_active) return "archived";
   // Product-level switches gate every surface; listing-level gates this one.
+  // "Ocultar no catálogo" vale para TODOS os canais, PDV incluído (decisão do
+  // dono, beta 05/11, GES-10): a grade do PDV também exige o produto publicado.
   const published = row.is_published && cell.is_published;
   const sellable = row.is_sellable && cell.is_sellable;
   if (published && sellable) return "available";
@@ -54,6 +65,7 @@ const CELL_TONES: Record<CellState, string> = {
   available: "border-success/40 bg-success/10 text-success",
   paused: "border-warning/40 bg-warning/10 text-warning",
   unpublished: "border-border bg-muted text-muted-foreground",
+  archived: "border-border bg-muted text-muted-foreground",
   absent: "border-dashed border-border bg-transparent text-muted-foreground/60",
 };
 
@@ -61,6 +73,7 @@ const CELL_LABELS: Record<CellState, string> = {
   available: "Disponível",
   paused: "Pausado",
   unpublished: "Oculto",
+  archived: "Arquivado",
   absent: "Não ofertado",
 };
 
@@ -89,9 +102,39 @@ export interface RowStatus {
   hint: string; // frase inteira do selo (title) — vazia quando o rótulo se explica
 }
 
+/** O vínculo do balcão está publicado e vendendo? */
+export function sellsAtCounter(row: CatalogRowProjection): boolean {
+  return row.cells.some(
+    (cell) =>
+      COUNTER_SURFACES.has(cell.surface_ref) &&
+      cell.in_listing &&
+      cell.is_published &&
+      cell.is_sellable,
+  );
+}
+
+/**
+ * Vende só no balcão: o PDV vende e os canais remotos onde o produto está
+ * ficaram todos pausados. É assim que se vende só no balcão desde a decisão do
+ * dono de 05/11 ("Ocultar" tira de TODOS os canais), e é como nasce o item do
+ * "Permitir revenda" (beta 05/11, CMP-08).
+ */
+export function sellsOnlyAtCounter(row: CatalogRowProjection): boolean {
+  const remote = row.cells.filter(
+    (cell) => !COUNTER_SURFACES.has(cell.surface_ref) && cell.in_listing,
+  );
+  return (
+    sellsAtCounter(row) &&
+    remote.length > 0 &&
+    remote.every((cell) => !(cell.is_published && cell.is_sellable))
+  );
+}
+
 // Escala de estados "fora", do mais deliberado ao mais urgente:
 // Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
+  if (!row.is_active)
+    return { off: true, label: "Arquivado", tone: "muted", hint: "" };
   if (!row.is_published)
     return { off: true, label: "Oculto", tone: "muted", hint: "" };
   if (!row.is_sellable)
@@ -118,6 +161,15 @@ export function rowStatus(row: CatalogRowProjection): RowStatus {
   const listed = row.cells.some((c) => c.in_listing);
   if (listed && !availableAnywhere(row)) {
     return { off: true, label: "Indisponível", tone: "amber", hint: "" };
+  }
+  // Vendendo, mas só no PDV: não esmaece, só conta (CMP-08).
+  if (sellsOnlyAtCounter(row)) {
+    return {
+      off: false,
+      label: "Só no balcão",
+      tone: "muted",
+      hint: "Só no balcão: vende no PDV. Os outros canais estão pausados até você ligar.",
+    };
   }
   return { off: false, label: "", tone: "", hint: "" };
 }
@@ -340,8 +392,8 @@ export function letterTile(name: string): { letter: string } {
 }
 
 // ── Exportar (⋯ do cabeçalho, v3) ────────────────────────────────────────────
-// O recorte da tela como está: produto, SKU, preço, coleção e o estado em cada coluna
-// visível ("à venda", "pausado"…), na ordem da matriz.
+// O recorte da página atual. As cinco primeiras colunas formam o contrato editável
+// da importação; coleção e canais são contexto explícito, não comandos de escrita.
 export function catalogCsv(
   rows: CatalogRowProjection[],
   surfaces: SurfaceProjection[],
@@ -349,13 +401,23 @@ export function catalogCsv(
   // Escrito pelo kit (`readingCsvText`): ";" entre colunas e BOM, como a planilha em
   // português lê; o preço sai como número em reais ("18,00"), para a planilha somar.
   return readingCsvText({
-    header: ["Produto", "SKU", "Preço (R$)", "Coleção", ...surfaces.map((s) => s.name)],
+    header: [
+      "SKU",
+      "Produto",
+      "Preço (R$)",
+      "Publicado",
+      "À venda",
+      "Coleção (informativa)",
+      ...surfaces.map((s) => `Canal: ${s.name}`),
+    ],
     rows: rows.map((row) => {
       const bySurface = new Map(row.cells.map((cell) => [cell.surface_ref, cell]));
       return [
-        row.name,
         row.sku,
+        row.name,
         readingCsvMoney(row.base_price_q / 100),
+        row.is_published ? "Sim" : "Não",
+        row.is_sellable ? "Sim" : "Não",
         row.primary_collection_name ?? "",
         ...surfaces.map((s) => {
           const cell = bySurface.get(s.ref);
@@ -364,4 +426,175 @@ export function catalogCsv(
       ];
     }),
   });
+}
+
+/** Vigência pertence ao canal; não altera a disponibilidade por conta própria. */
+export function cellValidity(
+  cell: Pick<SurfaceCellProjection, "valid_from" | "valid_until">,
+): string {
+  const date = (value: string) => value.split("-").reverse().join("/");
+  if (cell.valid_from && cell.valid_until)
+    return `Vale de ${date(cell.valid_from)} até ${date(cell.valid_until)}`;
+  if (cell.valid_from) return `Vale a partir de ${date(cell.valid_from)}`;
+  if (cell.valid_until) return `Vale até ${date(cell.valid_until)}`;
+  return "";
+}
+
+
+/** Canais com a mesma janela compartilham um selo na linha do produto. */
+export function rowValidities(row: CatalogRowProjection, surfaces: SurfaceProjection[]) {
+  const groups = new Map<string, { label: string; channels: string[] }>();
+  for (const cell of row.cells) {
+    const label = cellValidity(cell);
+    if (!cell.in_listing || !label) continue;
+    const surface = surfaces.find((surface) => surface.ref === cell.surface_ref);
+    if (!surface?.transactional) continue;
+    const group = groups.get(label) ?? { label, channels: [] };
+    group.channels.push(surface.short_name || surface.name);
+    groups.set(label, group);
+  }
+  return Array.from(groups.values(), (group) => ({
+    label: group.label,
+    channels: group.channels.join(", "),
+  }));
+}
+
+// ── disponibilidade nos canais (painel do produto, aba Geral) ─────────────────
+// A linha de cada canal vem do servidor com a mesma fonte da aba Vínculos e do
+// Tabelão (beta 05/11, GES-03): `not_listed` é canal onde o produto não está, e não
+// conta nem como "à venda" nem como falta. O selo do bloco só diz "À venda em
+// todos" quando TODA linha está à venda.
+
+export type ChannelAvailabilityState =
+  | "available"
+  | "sold_out"
+  | "paused"
+  | "not_listed";
+
+export interface AvailabilityRowLike {
+  readonly state: ChannelAvailabilityState;
+  readonly since: string;
+}
+
+export interface AvailabilitySummary {
+  color: "success" | "error" | "neutral";
+  label: string;
+}
+
+export function availabilitySummary(
+  rows: readonly AvailabilityRowLike[],
+): AvailabilitySummary {
+  const listed = rows.filter((row) => row.state !== "not_listed");
+  const off = listed.filter((row) => row.state !== "available");
+  if (off.length) {
+    const word = off.some((row) => row.state === "paused") ? "Pausado" : "Esgotado";
+    const since = off.map((row) => row.since).filter(Boolean).sort()[0] ?? "";
+    const where = off.length === rows.length ? "" : ` em ${off.length} de ${rows.length}`;
+    return { color: "error", label: `${word}${where}${since ? ` desde ${since}` : ""}` };
+  }
+  if (!listed.length) return { color: "neutral", label: "Fora de todos os canais" };
+  if (listed.length < rows.length)
+    return { color: "neutral", label: `À venda em ${listed.length} de ${rows.length}` };
+  return { color: "success", label: "À venda em todos" };
+}
+
+/** O que a linha do canal diz, na voz da tela. */
+export function availabilityRowLabel(row: {
+  state: ChannelAvailabilityState;
+  kind: "sale" | "display";
+}): string {
+  if (row.state === "available") return "À venda";
+  if (row.state === "not_listed") return "Não incluído";
+  if (row.state === "paused") return "Pausado";
+  return row.kind === "display" ? "Fora de estoque" : "Esgotado";
+}
+
+// ── Vendido por peso: o que acontece com os canais remotos ao salvar (GES-02) ──
+// Ligar pausa a Loja online, o iFood e o WhatsApp (o preço sai da balança); desligar
+// religa o que a regra pausou. A tela avisa ANTES de salvar, com o nome dos canais.
+
+function joinNames(names: string[]): string {
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} e ${names.at(-1)}`;
+}
+
+export function weighedChannelsNotice(input: {
+  /** A unidade gravada (antes de salvar) e a do rascunho. */
+  savedUnit: string;
+  draftUnit: string;
+  /** Os canais de venda remotos onde o produto está hoje (nome). */
+  remoteChannels: readonly string[];
+}): string {
+  const saved = input.savedUnit.trim().toLowerCase() === "kg";
+  const draft = input.draftUnit.trim().toLowerCase() === "kg";
+  if (draft && !saved) {
+    const names = joinNames([...input.remoteChannels]);
+    return names
+      ? `Vendido só no balcão: o preço final sai da balança. Ao salvar, sai de ${names}; desmarcar depois traz de volta.`
+      : "Vendido só no balcão: o preço final sai da balança.";
+  }
+  if (draft) return "Vendido só no balcão: o preço final sai da balança.";
+  if (saved)
+    return "Ao salvar, volta para os canais de onde saiu por ser vendido por peso.";
+  return "";
+}
+
+// ── o canal na linha do produto, no celular (GES-19) ─────────────────────────
+// No celular as colunas de canal somem (`meta.supporting`): a tabela tinha 1008 px
+// num cartão de 343 px, e só a coluna do PDV aparecia, sem preço. A linha do
+// produto passa a dizer, em pílulas, onde ele está e por quanto.
+
+export interface PhoneChannelChip {
+  ref: string;
+  label: string;
+  tone: "success" | "warning" | "neutral";
+}
+
+export function phoneChannelChips(
+  row: CatalogRowProjection,
+  surfaces: readonly SurfaceProjection[],
+): PhoneChannelChip[] {
+  return surfaces
+    .filter((surface) => surface.transactional)
+    .flatMap((surface) => {
+      const cell = row.cells.find((item) => item.surface_ref === surface.ref);
+      if (!cell?.in_listing) return [];
+      const view = cellView(row, cell);
+      const price = cell.price_display ? ` ${cell.price_display}` : "";
+      const label =
+        view.state === "available"
+          ? `${surface.short_name}${price}`
+          : `${surface.short_name} ${view.label.toLocaleLowerCase("pt-BR")}`;
+      const tone =
+        view.state === "available"
+          ? "success"
+          : view.state === "paused"
+            ? "warning"
+            : "neutral";
+      return [{ ref: surface.ref, label, tone } as PhoneChannelChip];
+    });
+}
+
+// ── preço por canal: maior que zero, dito no campo (GES-05) ──────────────────
+// O PDV trata preço zero como "Sem preço" e não vende; o servidor recusa. A tela
+// diz o porquê no campo, antes de enviar (negativo deixava o botão inerte, calado).
+
+/** Centavos do texto digitado ("12,50" → 1250); `null` se não é número. */
+export function parseChannelPrice(text: string): number | null {
+  const cleaned = text
+    .replace(/[^0-9,.-]/g, "")
+    .replace(/\./g, "")
+    .replace(",", ".");
+  if (!cleaned) return null;
+  const value = Number.parseFloat(cleaned);
+  return Number.isFinite(value) ? Math.round(value * 100) : null;
+}
+
+/** A recusa do campo, ou vazio quando o preço serve. */
+export function channelPriceError(text: string): string {
+  const price = parseChannelPrice(text);
+  if (price === null) return "Informe o preço em reais, como 12,50.";
+  if (price <= 0) return "O preço precisa ser maior que zero.";
+  return "";
 }

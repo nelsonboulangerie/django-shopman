@@ -94,7 +94,7 @@ class Command(BaseCommand):
         from shopman.stockman import stock
         from shopman.stockman.models import Batch, Position, Quant
 
-        from shopman.shop.models import Shop
+        from config.instance_descriptors import ShopSingletonViolation, the_shop
 
         hoje = timezone.localdate()  # a ÚNICA âncora de relógio deste comando
         acoes: list[str] = []
@@ -102,9 +102,10 @@ class Command(BaseCommand):
         self.stdout.write(f"🕰️  Rejuvenescimento relativo a {hoje.isoformat()} — {modo}")
 
         # ── 1. Feriados de fechamento: sempre à frente de hoje ──────────────
-        shop = Shop.objects.filter(pk=1).first()
-        if shop is None:
-            raise CommandError("Shop pk=1 não existe — este banco não foi semeado.")
+        try:
+            shop = the_shop()
+        except ShopSingletonViolation as exc:
+            raise CommandError(f"{exc} (este banco foi semeado?)") from exc
         defaults = dict(shop.defaults or {})
         closed = list(defaults.get("closed_dates") or [])
         mudou_feriado = False

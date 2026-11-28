@@ -10,8 +10,8 @@ do catálogo). Nada aqui grava alias; o piloto só mede.
 - ``jev``: o modelo de decisão da TypeSafe. Recebe os K candidatos mais
   parecidos (a mesma lista curta do fuzzy) mais a opção ``other`` e devolve
   uma escolha com probabilidade. Cobra só entrada.
-- ``llm:<modelo>``: o mesmo pedido a um modelo da Anthropic (credencial de
-  ``AI_ASSIST_*``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
+- ``llm:<modelo>``: o mesmo pedido a um modelo no formato Anthropic (conexão de
+  IA do propósito ``benchmark``), com resposta em JSON — o do dia e o Haiku, lado a lado. É a
   linha de base que o Jev promete bater em custo e tempo.
 - ``embed``: embeddings locais (``fastembed``), o produto mais próximo em
   significado no catálogo inteiro. Custo zero, nada sai da casa.
@@ -33,8 +33,6 @@ import re
 import statistics
 import time
 from dataclasses import dataclass, field
-
-from django.conf import settings
 
 from shopman.backstage.bi.mapping import DEFAULT_MIN_SCORE, normalize_name
 from shopman.shop.services.ai_pricing import Price
@@ -155,11 +153,13 @@ class JevMatcher:
     name = "jev"
 
     def __init__(self, *, timeout: float = 15.0, session=None):
-        self.api_key = (getattr(settings, "JEV_API_KEY", "") or "").strip()
-        if not self.api_key:
-            raise MatcherNotConfigured("Jev não configurado. Defina JEV_API_KEY.")
-        self.url = settings.JEV_API_URL
-        self.model = settings.JEV_MODEL
+        from shopman.shop import ai
+
+        try:
+            # Só nome de produto sai da casa: sem texto de cliente.
+            self.url, self.api_key, self.model = ai.jev_endpoint(customer_text=False)
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"Jev não configurado: {exc}.") from exc
         self.timeout = timeout
         if session is None:
             import requests
@@ -180,11 +180,10 @@ class JevMatcher:
         keyed = _choice_keys(candidates)
         started = time.perf_counter()
         body = self.build_request(case, keyed)
-        response = self.session.post(
-            self.url,
-            json=body,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            timeout=self.timeout,
+        from shopman.shop import ai
+
+        response = ai.jev_post(
+            self.session, self.url, self.api_key, body, timeout=self.timeout, model=self.model
         )
         latency_ms = (time.perf_counter() - started) * 1000
         if response.status_code >= 400:
@@ -252,7 +251,7 @@ _JSON_OBJECT = re.compile(r"\{.*\}", re.S)
 
 
 class LLMMatcher:
-    """Um modelo da Anthropic (credencial de ``AI_ASSIST_*``) respondendo a escolha em JSON.
+    """Um modelo no formato Anthropic (conexão de IA ``benchmark``) respondendo a escolha em JSON.
 
     Chama o SDK direto, e não ``copy_assist.suggest``, porque o piloto precisa do
     ``usage`` (tokens) que o transporte de texto descarta. Um concorrente por
@@ -262,15 +261,17 @@ class LLMMatcher:
     """
 
     def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
-        api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        if client is None and not api_key:
-            raise MatcherNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
-        if client is None:
-            import anthropic
+        from shopman.shop import ai
 
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        try:
+            if client is None:
+                client, default_model = ai.anthropic_client("benchmark", timeout=timeout)
+            else:
+                default_model = "" if model else ai.resolve("benchmark").model
+        except ai.AINotConfigured as exc:
+            raise MatcherNotConfigured(f"LLM não configurado: {exc}.") from exc
         self.client = client
-        self.model = model or settings.AI_ASSIST_MODEL
+        self.model = model or default_model
         self.name = f"llm:{self.model}"
 
     def build_prompt(self, case: Case, keyed: dict[str, CatalogEntry]) -> str:
@@ -435,6 +436,12 @@ class BenchmarkResult:
     shortlist_hits: int  # casos com produto em que o certo estava entre os K
     cases_with_product: int
     boards: list[Scoreboard]
+    #: Vazio quando mediu tudo; senão, por que parou antes (teto de gasto).
+    stopped: str = ""
+
+    @property
+    def cost_usd(self) -> float:
+        return sum(board.cost_usd for board in self.boards)
 
 
 def run(
@@ -445,14 +452,30 @@ def run(
     prices: dict[str, Price],
     shortlist_size: int = DEFAULT_SHORTLIST,
     accept_at: float = 0.9,
+    budget_usd: float | None = None,
 ) -> BenchmarkResult:
-    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para a medição."""
+    """Cada caso, para cada concorrente, com a mesma lista curta. Erro de um caso não para a medição.
+
+    ``budget_usd`` é o teto de gasto estimado (tokens × tabela de preço) da medição
+    inteira: antes de cada caso, se o gasto já chegou nele, a medição para ali e o
+    resultado diz por quê. ``None`` = sem teto (só para quem roda à mão e sabe).
+    """
     boards = [Scoreboard(matcher=m.name, price=prices.get(m.name, Price()), accept_at=accept_at) for m in matchers]
     for matcher in matchers:
         if hasattr(matcher, "prepare"):
             matcher.prepare(catalog)
-    shortlist_hits = cases_with_product = 0
+    shortlist_hits = cases_with_product = measured = 0
+    stopped = ""
     for case in cases:
+        spent = sum(board.cost_usd for board in boards)
+        if budget_usd is not None and spent >= budget_usd:
+            stopped = (
+                f"parou no teto de gasto: US$ {spent:.2f} de US$ {budget_usd:.2f} "
+                f"depois de {measured} de {len(cases)} casos"
+            )
+            logger.warning("bi.matcher_benchmark: %s", stopped)
+            break
+        measured += 1
         candidates = shortlist(case.external_name, catalog, shortlist_size)
         if case.expected_pk is not None:
             cases_with_product += 1
@@ -467,11 +490,12 @@ def run(
                 verdict = Verdict(product_pk=None, confidence=0.0, error=f"{type(exc).__name__}: {exc}"[:300])
             board.add(case, verdict)
     return BenchmarkResult(
-        cases=len(cases),
+        cases=measured,
         shortlist_size=shortlist_size,
         shortlist_hits=shortlist_hits,
         cases_with_product=cases_with_product,
         boards=boards,
+        stopped=stopped,
     )
 
 
@@ -514,6 +538,9 @@ def render_report(result: BenchmarkResult, *, source: str, accept_at: float) -> 
         "\"Dos quais errados\" é o erro que passaria sem ninguém ver: o número que decide se um "
         "concorrente pode confirmar sozinho. Critério em docs/plans/BI-JEV-PILOT.md."
     )
+    lines.append(f"Gasto estimado desta medição: US$ {result.cost_usd:.2f}.")
+    if result.stopped:
+        lines.insert(0, f"⚠ Medição incompleta: {result.stopped}.")
     return "\n".join(lines)
 
 
@@ -548,12 +575,12 @@ def build_matchers(names, *, llm_models=None, min_score: int = DEFAULT_MIN_SCORE
 
 def prices_for(matchers, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042, jev_price_out=0.0):
     """({nome: Price}, [modelos sem preço na tabela])."""
-    from shopman.shop.services.ai_pricing import LLM_PRICES
+    from shopman.shop.services.ai_pricing import model_prices
 
     prices, unpriced = {"jev": Price(jev_price_in, jev_price_out)}, []
     for matcher in matchers:
         if isinstance(matcher, LLMMatcher):
-            table_in, table_out = LLM_PRICES.get(matcher.model, (None, None))
+            table_in, table_out = model_prices(matcher.model) or (None, None)
             price_in = llm_price_in if llm_price_in is not None else table_in
             price_out = llm_price_out if llm_price_out is not None else table_out
             if price_in is None or price_out is None:
@@ -562,11 +589,38 @@ def prices_for(matchers, *, llm_price_in=None, llm_price_out=None, jev_price_in=
     return prices, unpriced
 
 
-def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: float = 0.9):
+#: Tetos de uma medição. São constantes de código, e não settings, de propósito: nenhuma
+#: variável de ambiente religa o gasto. Quem quer mais passa a flag no comando manual.
+MAX_CASES = 60
+BUDGET_USD = 1.0
+
+
+def maybe_measure(
+    *,
+    source: str = "yooga",
+    force: bool = False,
+    accept_at: float = 0.9,
+    paid: bool = False,
+    max_cases: int = MAX_CASES,
+    budget_usd: float = BUDGET_USD,
+):
     """Mede e guarda o placar (``AliasBenchmarkReport``) quando há gabarito e o último está velho.
 
     Devolve ``(relatório ou None, motivo)``. Só nome de produto sai da casa;
     concorrente sem credencial ou pacote fica de fora e o placar diz por quê.
+
+    Travas de custo (argumentos, nunca settings: env nenhum religa o gasto):
+
+    - Concorrente pago (LLM, Jev) só entra com ``paid=True`` (``--paid`` no comando).
+      Credencial presente não liga nada. Modelo sem preço na tabela fica de fora: sem
+      preço, o teto não o enxergaria.
+    - No máximo ``max_cases`` casos por medição (default ``MAX_CASES``).
+    - Teto de gasto estimado ``budget_usd`` (default ``BUDGET_USD``; vale até com ``force``).
+    - A vaga da semana é RESERVADA antes de medir. Antes, o placar só era gravado
+      no fim. Cada deploy reiniciava o worker no meio de uma medição longa e ela
+      recomeçava do zero, para sempre (28/10 a 11/11/2026, cerca de US$ 1.180). Agora,
+      medição interrompida também conta para a semana, e o placar fica marcado como
+      interrompido no Admin.
     """
     from datetime import timedelta
 
@@ -582,14 +636,44 @@ def maybe_measure(*, source: str = "yooga", force: bool = False, accept_at: floa
     last = AliasBenchmarkReport.objects.filter(source=source).order_by("-created_at").first()
     if last and not force and timezone.now() - last.created_at < timedelta(days=MEASURE_EVERY_DAYS):
         return None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até {MEASURE_EVERY_DAYS} dias"
-    matchers, skipped = build_matchers(("fuzzy", "embed", "llm", "jev"), llm_models=list(DEFAULT_LLM_MODELS))
-    prices, _unpriced = prices_for(matchers)
-    result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at)
+
+    max_cases = max(1, int(max_cases))
+    total_gold = len(cases)
+    cases = cases[:max_cases]
+
+    names = ("fuzzy", "embed", "llm", "jev") if paid else ("fuzzy", "embed")
+    matchers, skipped = build_matchers(names, llm_models=list(DEFAULT_LLM_MODELS))
+    if not paid:
+        off = "concorrente pago desligado (rode à mão com --paid para incluí-lo)"
+        skipped += [("llm", off), ("jev", off)]
+    prices, unpriced = prices_for(matchers)
+    if unpriced:
+        matchers = [m for m in matchers if not (isinstance(m, LLMMatcher) and m.model in unpriced)]
+        skipped += [(f"llm:{model}", "sem preço na tabela; o teto de gasto não o enxergaria") for model in unpriced]
+
+    # Reserva a vaga ANTES de gastar: se o processo morrer no meio, a semana já conta.
     report = AliasBenchmarkReport.objects.create(
         source=source,
-        cases=result.cases,
-        contenders=", ".join(board.matcher for board in result.boards)[:240],
+        cases=len(cases),
+        contenders=", ".join(m.name for m in matchers)[:240],
         skipped="\n".join(f"{name}: {reason}" for name, reason in skipped),
-        report=render_report(result, source=source, accept_at=accept_at),
+        report=INTERRUPTED_REPORT,
     )
-    return report, "medido"
+    result = run(cases, load_catalog(), matchers, prices=prices, accept_at=accept_at, budget_usd=budget_usd)
+    text = render_report(result, source=source, accept_at=accept_at)
+    if total_gold > len(cases):
+        text += f"\nAmostra: {len(cases)} dos {total_gold} de-paras confirmados (teto de {max_cases} por medição)."
+    report.cases = result.cases
+    report.contenders = ", ".join(board.matcher for board in result.boards)[:240]
+    report.report = text
+    report.save(update_fields=["cases", "contenders", "report"])
+    return report, "medido" if not result.stopped else f"medido em parte ({result.stopped})"
+
+
+#: O texto que fica no placar reservado enquanto mede. Se ele continuar lá depois, a
+#: medição morreu no meio (deploy, restart) e só volta na semana seguinte.
+INTERRUPTED_REPORT = (
+    "Medição interrompida antes de terminar (o processo reiniciou no meio). "
+    "A próxima medição só sai depois do prazo semanal; para medir já, rode à mão: "
+    "manage.py run_alias_benchmark --now"
+)

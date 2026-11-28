@@ -90,7 +90,8 @@ export default defineNuxtConfig({
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }
       ],
       link: [
-        { rel: 'manifest', href: '/manifest.webmanifest?v=7' },
+        // `key`: a página das rotas do entregador troca pelo manifesto dela (`/rota/`).
+        { key: 'manifest', rel: 'manifest', href: '/manifest.webmanifest?v=7' },
         { rel: 'icon', href: '/pwa/favicon.svg?v=7', type: 'image/svg+xml' },
         { rel: 'icon', href: '/pwa/favicon.ico?v=7', sizes: 'any' },
         { rel: 'apple-touch-icon', href: '/pwa/apple-touch-icon-180x180.png?v=7' },
@@ -255,6 +256,10 @@ export default defineNuxtConfig({
   },
 
   css: ['~/assets/css/tailwind.css'],
+
+  // O servidor usa só parte da biblioteca. O bundle final elimina os exports
+  // não usados, em vez de importar o índice externo inteiro no primeiro SSR.
+  nitro: { externals: { inline: ['reka-ui'] } },
 
   vite: {
     plugins: [tailwindcss()],

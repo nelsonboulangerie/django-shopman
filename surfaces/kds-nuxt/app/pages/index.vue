@@ -33,7 +33,9 @@ function typeIcon(type: string): string {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- No celular, a linha do chão do kit (selo, sino e ⋮), como nas bancadas. -->
+    <OperatorCompactBar title="Estações" :search="false" />
     <OperatorPageHeader title="Estações" />
 
     <!-- O shell não rola: a região de conteúdo rola sozinha, sob o cabeçalho fixo. -->
@@ -72,7 +74,7 @@ function typeIcon(type: string): string {
                   {{ isExit(inst) && exitUrl ? "Saída · no Gestor" : inst.type_display }}
                 </span>
                 <span class="block text-xl font-bold leading-tight break-words">{{ inst.name }}</span>
-                <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">a deste dispositivo</span>
+                <span v-if="inst.ref === station.ref" class="block op-micro text-muted-foreground">Estação deste dispositivo</span>
               </span>
               <NuxtBadge
                 v-if="inst.active_count"

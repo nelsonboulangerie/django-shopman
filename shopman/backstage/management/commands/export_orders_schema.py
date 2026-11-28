@@ -32,8 +32,10 @@ from shopman.backstage.projections.catalog import (
 )
 from shopman.backstage.projections.catalog_bindings import (
     CatalogBindingReviewProjection,
+    CatalogCollectionCategory,
     CatalogCurrentBinding,
     CatalogProductOption,
+    CatalogRemoteCategory,
     CatalogReviewItem,
     CatalogSnapshotSummary,
 )
@@ -43,6 +45,7 @@ from shopman.backstage.projections.channel_health import (
     ChannelHealthLink,
     ChannelHealthProjection,
 )
+from shopman.backstage.projections.courier_position import DeliveryCourierPositionProjection
 from shopman.backstage.projections.customer_groups import (
     CustomerGroupAdvantageProjection,
     CustomerGroupFormOptionsProjection,
@@ -70,6 +73,17 @@ from shopman.backstage.projections.customers import (
     MergePreviewProjection,
     MergeSideProjection,
 )
+from shopman.backstage.projections.deliveries import (
+    DeliveriesProjection,
+    DeliveryDriverProjection,
+    DeliveryPointProjection,
+    DeliveryRideProjection,
+    DeliveryServiceOptionProjection,
+    DeliveryStopProjection,
+    FailedRideProjection,
+    RidePlanProjection,
+    RideSuggestionProjection,
+)
 from shopman.backstage.projections.feeds import (
     CatalogChannelProjection,
     ChannelPeriodOption,
@@ -81,7 +95,12 @@ from shopman.backstage.projections.feeds import (
     ManagerOptionProjection,
     MenuboardAutomaticProjection,
 )
-from shopman.backstage.projections.ifood_handshake import IFoodNegotiationProjection
+from shopman.backstage.projections.house_rides import DeliveryHouseRideProjection, HouseStopActionProjection
+from shopman.backstage.projections.ifood_handshake import (
+    IFoodNegotiationAlternative,
+    IFoodNegotiationChoice,
+    IFoodNegotiationProjection,
+)
 from shopman.backstage.projections.notification_receipts import (
     NotificationAttemptProjection,
     NotificationReceiptProjection,
@@ -98,10 +117,29 @@ from shopman.backstage.projections.order_history import (
     OrderHistoryProjection,
     OrderHistoryRowProjection,
 )
+from shopman.backstage.projections.order_pending import (
+    CancelledMoneyProjection,
+    OrderPendingActionProjection,
+    OrderPendingProjection,
+)
+from shopman.backstage.projections.order_pricing import OrderDiscountLineProjection
+from shopman.backstage.projections.order_promise import (
+    OrderPromiseAlternativeProjection,
+    OrderPromiseItemProjection,
+    OrderPromiseProjection,
+)
+from shopman.backstage.projections.order_promise_resolution import (
+    OrderPromiseChoiceProjection,
+    OrderPromiseConcludeProjection,
+    OrderPromiseContactProjection,
+    OrderPromiseEditLineProjection,
+    OrderPromiseNoticeProjection,
+    OrderPromiseResolutionProjection,
+)
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
-    CancellationPresetGroupProjection,
     CancelReasonProjection,
+    ContactRequestProjection,
     CustomerProfileProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
@@ -109,7 +147,7 @@ from shopman.backstage.projections.order_queue import (
     KitchenStationProjection,
     OperatorOrderProjection,
     OrderCardProjection,
-    OrderQueueProjection,
+    RideCandidateProjection,
     TwoZoneQueueProjection,
     UndoProjection,
 )
@@ -135,10 +173,14 @@ CONTRACT_DATACLASSES = (
     CatalogPublicationSkip,
     CatalogPublicationPreview,
     Action,
+    IFoodNegotiationChoice,
+    IFoodNegotiationAlternative,
     IFoodNegotiationProjection,
     CatalogSnapshotSummary,
     CatalogProductOption,
     CatalogCurrentBinding,
+    CatalogRemoteCategory,
+    CatalogCollectionCategory,
     CatalogReviewItem,
     CatalogBindingReviewProjection,
     FeedCollectionRef,
@@ -155,19 +197,30 @@ CONTRACT_DATACLASSES = (
     ChannelHealthProjection,
     ChannelHealthBoardProjection,
     OrderItemProjection,
+    OrderDiscountLineProjection,
     TimelineEventProjection,
     NotificationAttemptProjection,
     NotificationReceiptProjection,
     AwaitingWorkOrderProjection,
     CancelReasonProjection,
-    CancellationPresetGroupProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
+    RideCandidateProjection,
+    ContactRequestProjection,
     CustomerProfileProjection,
     UndoProjection,
     KitchenStationProjection,
     KitchenProgressProjection,
     CourierReminderProjection,
+    OrderPromiseAlternativeProjection,
+    OrderPromiseItemProjection,
+    OrderPromiseProjection,
+    OrderPromiseContactProjection,
+    OrderPromiseNoticeProjection,
+    OrderPromiseEditLineProjection,
+    OrderPromiseConcludeProjection,
+    OrderPromiseChoiceProjection,
+    OrderPromiseResolutionProjection,
     OrderCardProjection,
     PreorderCardProjection,
     PreorderHandOverProjection,
@@ -175,8 +228,10 @@ CONTRACT_DATACLASSES = (
     PreorderRescheduleProjection,
     PreorderEditProjection,
     CounterOrderProjection,
+    OrderPendingActionProjection,
+    OrderPendingProjection,
+    CancelledMoneyProjection,
     OperatorOrderProjection,
-    OrderQueueProjection,
     SystemActionProjection,
     MenuOutageProjection,
     MenuChannelProjection,
@@ -209,6 +264,18 @@ CONTRACT_DATACLASSES = (
     HistoryFacet,
     OrderHistoryRowProjection,
     OrderHistoryProjection,
+    DeliveryPointProjection,
+    DeliveryStopProjection,
+    DeliveryDriverProjection,
+    DeliveryCourierPositionProjection,
+    HouseStopActionProjection,
+    DeliveryHouseRideProjection,
+    DeliveryRideProjection,
+    RideSuggestionProjection,
+    DeliveryServiceOptionProjection,
+    RidePlanProjection,
+    FailedRideProjection,
+    DeliveriesProjection,
 )
 
 
@@ -227,6 +294,11 @@ def render_orders_contract_ts() -> str:
             " + shopman/backstage/projections/notification_receipts.py"
             " + shopman/backstage/projections/order_history.py"
             " + shopman/backstage/projections/order_attention.py"
+            " + shopman/backstage/projections/deliveries.py"
+            " + shopman/backstage/projections/house_rides.py"
+            " + shopman/backstage/projections/order_pending.py"
+            " + shopman/backstage/projections/order_promise.py"
+            " + shopman/backstage/projections/order_promise_resolution.py"
         ),
         command="export_orders_schema",
         dataclasses=CONTRACT_DATACLASSES,

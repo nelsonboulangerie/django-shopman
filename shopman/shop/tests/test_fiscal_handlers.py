@@ -18,6 +18,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.backstage.models import OperatorAlert
 from shopman.shop.handlers.fiscal import NFCeCancelHandler, NFCeEmitHandler
 from shopman.shop.models import Channel
+from shopman.shop.tests.fiscal_document_support import authorized_note
 
 pytestmark = pytest.mark.django_db
 
@@ -88,10 +89,37 @@ def test_5xx_is_transient_and_4xx_is_terminal(order):
         NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_503"))).handle(
             message=_emit_directive(order), ctx={}
         )
+    # O 503 deixou a linha ``pending`` (o POST pode ter chegado): o envio
+    # seguinte consulta antes de reenviar, e só reenvia porque a consulta diz
+    # que não há nota.
     with pytest.raises(DirectiveTerminalError):
-        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_400"))).handle(
-            message=_emit_directive(order), ctx={}
+        NFCeEmitHandler(
+            FakeBackend(emit_result=_error("focus_nfe_http_400"), query_result=_error("focus_nfe_http_404"))
+        ).handle(message=_emit_directive(order), ctx={})
+
+
+def test_recusa_grava_a_resposta_do_emissor_num_campo(order):
+    """O Gestor lê o motivo de ``emitter_answer``, não de um prefixo de ``last_error`` (#2705)."""
+    directive = _emit_directive(order)
+    with pytest.raises(DirectiveTerminalError) as refused:
+        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_400", "Rejeição 778: NCM inexistente"))).handle(
+            message=directive, ctx={}
         )
+    directive.refresh_from_db()
+    assert directive.payload["emitter_answer"] == "Rejeição 778: NCM inexistente"
+    # O payload de emissão continua inteiro, e o log segue com a frase completa.
+    # É ela que o worker grava em ``last_error``, com o código na frente
+    # ("[terminal] NFC-e emission failed: …"): o recorte pelo prefixo nunca casava.
+    assert directive.payload["order_ref"] == order.ref
+    assert str(refused.value) == "[terminal] NFC-e emission failed: Rejeição 778: NCM inexistente"
+
+
+def test_transiente_nao_grava_resposta_do_emissor(order):
+    directive = _emit_directive(order)
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(FakeBackend(emit_result=_error("focus_nfe_http_503"))).handle(message=directive, ctx={})
+    directive.refresh_from_db()
+    assert "emitter_answer" not in directive.payload
 
 
 def test_first_emit_does_not_query_status(order):
@@ -118,6 +146,52 @@ def test_retry_queries_before_reposting_and_adopts_orphan(order):
     order.refresh_from_db()
     assert order.data["nfce_access_key"] == AUTHORIZED.access_key
     assert order.data["nfce_status"] == "authorized"
+
+
+def test_live_order_retry_while_note_processing_keeps_asking_without_reposting(order):
+    # Laudo 23/10 (F1): a consulta do retry dizia "processando" e o handler
+    # re-POSTava a mesma ref; a Focus respondia 422 (referência já utilizada),
+    # a nova consulta dizia "processando" de novo e a directive virava falha
+    # TERMINAL com a nota viva na SEFAZ e o pedido sem chave.
+    processing = FiscalDocumentResult(success=False, status="processing", error_code="focus_nfe_processing")
+    backend = FakeBackend(query_result=processing, emit_result=_error("focus_nfe_http_422", "ja processada"))
+
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+
+    assert backend.query_calls == 1
+    assert backend.emit_calls == 0
+
+
+@pytest.mark.parametrize("code", ["focus_nfe_http_503", "focus_nfe_http_error", "focus_nfe_http_429"])
+def test_live_order_retry_with_focus_unreachable_keeps_asking_without_reposting(order, code):
+    backend = FakeBackend(query_result=_error(code), emit_result=AUTHORIZED)
+
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+
+    assert backend.emit_calls == 0
+
+
+@pytest.mark.parametrize("code", ["focus_nfe_http_404", "sefaz_778"])
+def test_live_order_retry_reposts_only_when_the_query_proves_no_note(order, code):
+    # Não encontrada, ou rejeitada (nota rejeitada não fica na SEFAZ e a Focus
+    # aceita o reenvio da ref): aí, e só aí, o retry reenvia.
+    backend = FakeBackend(query_result=_error(code), emit_result=AUTHORIZED)
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order, attempts=2), ctx={})
+
+    assert backend.emit_calls == 1
+    order.refresh_from_db()
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key
+
+
+def test_reference_conflict_with_note_still_processing_is_transient(order):
+    processing = FiscalDocumentResult(success=False, status="processing", error_code="focus_nfe_processing")
+    backend = FakeBackend(emit_result=_error("focus_nfe_http_422"), query_result=processing)
+
+    with pytest.raises(DirectiveTransientError):
+        NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
 
 
 def test_reference_conflict_falls_back_to_query(order):
@@ -257,8 +331,7 @@ def test_cancel_leaves_emission_that_never_tried_alone(order, fiscal_backend_con
 
 
 def test_existing_access_key_is_noop(order):
-    order.data["nfce_access_key"] = "existing"
-    order.save(update_fields=["data"])
+    authorized_note(order, access_key="4" * 44)
     backend = FakeBackend(emit_result=AUTHORIZED)
 
     NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
@@ -323,8 +396,7 @@ def test_note_emitted_by_another_path_still_gets_its_promised_email(order):
     ninguém enviando: a directive nunca mais chega ao ``_send_receipt_email``.
     """
     _wants_email(order)
-    order.data["nfce_access_key"] = "ja-existia"
-    order.save(update_fields=["data"])
+    authorized_note(order, access_key="5" * 44)
     backend = EmailingBackend(emit_result=AUTHORIZED)
 
     NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
@@ -377,6 +449,7 @@ def test_processing_status_is_transient(order):
 
 
 def _cancel_directive(order):
+    authorized_note(order, access_key=AUTHORIZED.access_key)
     return Directive.objects.create(
         topic="fiscal.cancel_nfce",
         payload={"order_ref": order.ref, "reason": "cancelamento de teste com justificativa"},
@@ -480,3 +553,31 @@ def test_live_order_failing_on_first_attempt_still_pages_the_operator(order):
     NFCeEmitHandler(FakeBackend()).on_terminal_failure(message=_failed_emit(order, attempts=1))
 
     assert OperatorAlert.objects.filter(type="fiscal_emit_failed", order_ref=order.ref).exists()
+
+
+def test_cancel_does_not_clobber_what_another_writer_saved_meanwhile(order, fiscal_backend_configured):
+    """Laudo 23/10 (F3): o cancelamento salvava o ``order.data`` lido ANTES da
+    chamada à Focus e apagava o que outro escritor gravou no meio (estorno)."""
+    from unittest import mock
+
+    from shopman.shop.services import fiscal as fiscal_service
+
+    data = dict(order.data)
+    data["nfce_access_key"] = AUTHORIZED.access_key
+    Order.objects.filter(pk=order.pk).update(data=data, status=Order.Status.CANCELLED)
+
+    class BackendThatRacesWithRefund(FakeBackend):
+        def cancel(self, *, reference, reason):
+            concurrent = Order.objects.get(pk=order.pk)
+            concurrent.data["payment"] = {"refund_status": "refunded"}
+            concurrent.save(update_fields=["data"])
+            return FiscalCancellationResult(success=True, protocol_number="P1")
+
+    with mock.patch.object(fiscal_service, "cancellation_path", return_value={"path": "cancel"}):
+        NFCeCancelHandler(BackendThatRacesWithRefund()).handle(message=_cancel_directive(order), ctx={})
+
+    order.refresh_from_db()
+    assert order.data["nfce_cancelled"] is True
+    assert order.data["nfce_cancellation_protocol"] == "P1"
+    assert order.data["payment"] == {"refund_status": "refunded"}
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key

@@ -40,6 +40,9 @@ from decimal import Decimal
 import pytest
 from django.conf import settings
 from django.test import TestCase, TransactionTestCase
+from shopman.orderman.tests.commit_support import seal_for
+
+from shopman.shop.tests._payment import with_payment
 
 requires_postgres = pytest.mark.skipif(
     "sqlite" in settings.DATABASES["default"]["ENGINE"],
@@ -130,7 +133,7 @@ def _open_session(
         state="open",
         rev=1,
         items=items,
-        data=data or {},
+        data=with_payment(channel_ref, data),
     )
 
 
@@ -141,6 +144,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 
@@ -190,7 +195,7 @@ class HappyPathWebLifecycleTests(TestCase):
             channel_ref=self.channel.ref,
         )
         self.assertTrue(reserved["ok"])
-        cart_hold_id = reserved["hold_id"]
+        [cart_hold_id] = reserved["hold_ids"]
         self.assertEqual(_available(self.SKU), Decimal("3"))
 
         _open_session(self.channel.ref, "STRESS-WEB-SS-001", self.SKU, qty=2)
@@ -305,7 +310,7 @@ class InsufficientStockCommitTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-GATE-SS-001", self.channel.ref, "STRESS-GATE-KEY-001")
 
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         # Transação inteira desfeita: nada de pedido órfão nem reserva vazada.
         self.assertEqual(Order.objects.filter(channel_ref=self.channel.ref).count(), 0)
         self.assertEqual(_active_holds(self.SKU).count(), 0)
@@ -339,7 +344,7 @@ class InsufficientStockCommitTests(TestCase):
         with self.assertRaises(ValidationError):
             _commit("STRESS-GATE-SS-002", self.channel.ref, "STRESS-GATE-KEY-002")
 
-        hold = Hold.objects.get(pk=int(reserved["hold_id"].split(":")[1]))
+        hold = Hold.objects.get(pk=int(reserved["hold_ids"][0].split(":")[1]))
         self.assertEqual(hold.metadata.get("reference"), "STRESS-GATE-SS-002")
         self.assertEqual(hold.quantity, Decimal("1"))
         self.assertEqual(_active_holds(self.SKU).count(), 1)
@@ -414,10 +419,10 @@ class OversellRaceTests(TransactionTestCase):
         self.assertEqual(order_count, len(successes))
         self.assertEqual(order_count, 3)
 
-        # Perdedores falharam LIMPO (insufficient_stock) — nunca erro cru de DB.
+        # Perdedores falharam LIMPO (insufficient_supply) — nunca erro cru de DB.
         for _, _, exc in failures:
             self.assertIsInstance(exc, ValidationError)
-            self.assertEqual(exc.code, "insufficient_stock")
+            self.assertEqual(exc.code, "insufficient_supply")
 
         # Reservas ativas pertencem SÓ aos vencedores; nada preso dos perdedores.
         active = list(_active_holds(self.SKU))
@@ -471,7 +476,7 @@ class PositionExclusionTests(TestCase):
             channel_ref=self.remote.ref,
         )
         self.assertFalse(result["ok"])
-        self.assertIsNone(result["hold_id"])
+        self.assertEqual(result["hold_ids"], [])
         self.assertEqual(_active_holds(self.SKU).count(), 0)
 
     def test_remote_commit_cannot_consume_excluded_but_balcao_can(self) -> None:
@@ -483,7 +488,7 @@ class PositionExclusionTests(TestCase):
         _open_session(self.remote.ref, "STRESS-SCOPE-SS-002", self.SKU, qty=1)
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-SCOPE-SS-002", self.remote.ref, "STRESS-SCOPE-KEY-002")
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(Order.objects.count(), 0)
 
         # Balcão (sem exclusão) vende o mesmo saldo normalmente.
@@ -588,7 +593,7 @@ class PreorderPlannedStockTests(TestCase):
         )
         with self.assertRaises(ValidationError) as ctx:
             _commit("STRESS-PRE-SS-002", self.no_preorder.ref, "STRESS-PRE-KEY-002")
-        self.assertEqual(ctx.exception.code, "insufficient_stock")
+        self.assertEqual(ctx.exception.code, "insufficient_supply")
         self.assertEqual(Order.objects.count(), 0)
         self.assertEqual(_active_holds(self.SKU).count(), 0)
 
@@ -791,7 +796,8 @@ class MalformedSessionTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         entries = order.data.get("hold_ids", [])
         self.assertEqual(len(entries), 1)
-        self.assertTrue(entries[0].get("untracked"))
+        self.assertIs(entries[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", entries[0])
         self.assertIsNone(entries[0].get("hold_id"))
         self.assertEqual(_active_holds().count(), 0)
 
@@ -853,10 +859,12 @@ class RepricingAndCouponTests(TestCase):
         _receive(5, self.SKU, _make_position("stress-vitrine"))
 
     def test_commit_seals_cart_price_even_if_catalog_repriced(self) -> None:
-        """Comportamento documentado: o commit NÃO reprecifica — vende pelo preço
-        selado na sessão. Drift >5% entre carrinho e catálogo é responsabilidade
-        do aviso não-bloqueante do storefront (``projections.checkout.
-        repricing_changes``), nunca de um recálculo silencioso no commit."""
+        """O kernel sela a sessão recebida; recotar é papel do orquestrador.
+
+        O checkout composto sempre executa os modifiers antes do commit. Esta
+        chamada direta prova apenas a fronteira do Orderman: ele não consulta o
+        catálogo nem reimplementa a decisão canônica do Offerman.
+        """
         from shopman.orderman.models import Order
 
         _open_session(

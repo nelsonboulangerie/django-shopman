@@ -15,14 +15,14 @@ export const machines = {
 /** Um pedido de entrega pronto para sair (cartão na porta, por padrão). */
 export function readyCard(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
-    ref: "DLV-0420", status: "ready", status_label: "Pronto", status_color: "", channel_ref: "web", channel_icon: "language",
-    customer_name: "Carla", created_at_display: "", created_at_iso: "", server_now_iso: "", elapsed_seconds: 60, timer_class: "timer-ok",
-    items_summary: "2× Croissant", items_count: 2, total_display: "R$ 38,00", fulfillment_icon: "truck", fulfillment_label: "Entrega",
-    fulfillment_type: "delivery", delivery_address: "", delivery_instructions: "", can_confirm: false, can_advance: true,
-    next_status: "dispatched", next_action_label: "Saiu com a maquininha", payment_method: "credit", payment_method_label: "Cartão na entrega",
-    change_out_suggested_q: 0, change_label: "", equipment_options: machines.oneFree, equipment_out: [], equipment_label: "",
+    ref: "DLV-0420", status: "ready", status_label: "Pronto", channel_ref: "web", channel_name: "Loja online", channel_icon: "language",
+    customer_name: "Carla", created_at_iso: "", server_now_iso: "", elapsed_seconds: 60, timer_class: "timer-ok",
+    items_summary: "2× Croissant", items_count: 2, total_display: "R$ 38,00", fulfillment_label: "Entrega",
+    fulfillment_type: "delivery", delivery_address: "", can_confirm: false, can_advance: true,
+    next_status: "dispatched", payment_method: "credit", payment_method_label: "Cartão na entrega",
+    change_out_suggested_q: 0, change_label: "", equipment_options: machines.oneFree, equipment_label: "",
     equipment_back_pending: false, dispatch_needs_machine: true, trip_with: [], courier_return_orders: [], courier_return_lines: [],
-    actions: fixtureActions({ can_advance: true, next_action_label: "Saiu com a maquininha" }),
+    actions: fixtureActions({ can_advance: true, advance_label: "Despachar 0420" }),
     ...over,
   } as OrderCardProjection;
 }

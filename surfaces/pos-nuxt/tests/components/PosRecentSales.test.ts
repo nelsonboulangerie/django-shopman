@@ -34,6 +34,12 @@ function sale(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// A lista tem DOIS diálogos de gerente (cancelar a venda e emitir a nota), os dois
+// o `OperatorManagerAuth` canônico. O da emissão se acha pelo ato que ele assina.
+function emitFiscalAuth(w: Awaited<ReturnType<typeof mountSuspended>>) {
+  return w.findAllComponents({ name: "OperatorManagerAuth" }).find((c) => c.props("action") === "emit_fiscal")!;
+}
+
 async function montar(sales: Record<string, unknown>[]) {
   fetchMock.mockResolvedValue({ sales });
   // A lista carrega ao ABRIR (watcher de `open`), como na tela.
@@ -59,7 +65,7 @@ describe("PosRecentSales — o chip fiscal segue `fiscal_state` quando existe", 
       sale({ order_ref: "D", fiscal_state: "failed" }),
       sale({ order_ref: "E", fiscal_state: "not_expected" }),
     ]);
-    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e em emissão", "NFC-e sai quando o pagamento confirmar", "NFC-e não autorizada", "Emissão não estabelecida"]);
+    expect(chips()).toEqual(["NFC-e autorizada", "NFC-e em emissão", "NFC-e sai quando o pagamento confirmar", "NFC-e não autorizada", "NFC-e não solicitada"]);
     w.unmount();
   });
 
@@ -112,8 +118,8 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("o toque pede o gerente; a assinatura vai no corpo do POST", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    expect(emitButton()?.textContent?.trim()).toBe("Estabelecer emissão…");
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    expect(emitButton()?.textContent?.trim()).toBe("Solicitar NFC-e…");
+    const auth = emitFiscalAuth(w);
     expect(auth.props("open")).toBe(false);
 
     emitButton()!.click();
@@ -134,7 +140,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("PIN recusado fica no diálogo, que continua aberto", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    const auth = emitFiscalAuth(w);
     emitButton()!.click();
     await vi.waitFor(() => expect(auth.props("open")).toBe(true));
 
@@ -149,7 +155,7 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
 
   it("recusa de negócio (venda antiga) fecha o diálogo e diz o porquê", async () => {
     const w = await montar([sale({ fiscal_state: "not_expected", can_emit_fiscal: true })]);
-    const auth = w.findComponent({ name: "OperatorManagerAuth" });
+    const auth = emitFiscalAuth(w);
     emitButton()!.click();
     await vi.waitFor(() => expect(auth.props("open")).toBe(true));
 
@@ -159,6 +165,61 @@ describe("PosRecentSales — emitir a NFC-e que a regra não emitiu", () => {
     auth.vm.$emit("authorize", "pablo", "4321");
     await vi.waitFor(() => expect(auth.props("open")).toBe(false));
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("mesmo dia"));
+    w.unmount();
+  });
+});
+
+/**
+ * Pedir os bytes é emitir a via: o servidor carimba a primeira, então a tela
+ * pede por POST. Um GET nunca gasta a primeira via (A8-1).
+ */
+describe("PosRecentSales — reimprimir a DANFE é um comando", () => {
+  it("o toque em DANFE pede os bytes por POST", async () => {
+    const w = await montar([sale({ fiscal_state: "authorized", can_print_danfe: true })]);
+    fetchMock.mockResolvedValueOnce({ ok: true, payload_b64: "REFORkU=", title: "danfe:PDV-042", reprint: true });
+    const button = Array.from(document.body.querySelectorAll("button")).find((el) => el.textContent?.trim() === "DANFE");
+    button!.click();
+
+    const danfeCall = () => fetchMock.mock.calls.find(([url]) => String(url).includes("/pos/orders/PDV-042/danfe-escpos/"));
+    await vi.waitFor(() => expect(danfeCall()).toBeTruthy());
+    expect(danfeCall()?.[1]).toMatchObject({ method: "POST", credentials: "include" });
+    w.unmount();
+  });
+});
+
+/**
+ * Cancelar pela lista (beta 07/11): o servidor exige `client_request_id` em toda
+ * mutação de dinheiro, e a lista mandava o POST sem ele: 422 "Identifique a
+ * tentativa antes de registrar" em TODO cancelamento, mesmo com o gerente.
+ */
+describe("PosRecentSales — cancelar a venda manda a chave da tentativa", () => {
+  const cancelCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("/pos/sale/recent/cancel/"));
+  const cancelDialog = (w: Awaited<ReturnType<typeof mountSuspended>>) => w.findComponent({ name: "PosCancelSaleDialog" });
+  const cancelButton = () =>
+    Array.from(document.body.querySelectorAll<HTMLButtonElement>("button")).find((b) => b.textContent?.trim() === "Cancelar venda");
+
+  it("o POST leva `client_request_id`, e o PIN corrigido reusa a mesma chave", async () => {
+    fetchMock.mockReset();
+    const w = await montar([sale({ can_cancel: true })]);
+    cancelButton()!.click();
+    await vi.waitFor(() => expect(cancelDialog(w).props("open")).toBe(true));
+
+    // 1ª tentativa: PIN errado. O erro fica no diálogo.
+    fetchMock.mockRejectedValueOnce(Object.assign(new Error("pin"), { data: { error: { message: "PIN incorreto." } } }));
+    cancelDialog(w).vm.$emit("confirm", "joyce", "0000");
+    await vi.waitFor(() => expect(cancelCalls()).toHaveLength(1));
+    await vi.waitFor(() => expect(cancelDialog(w).props("error")).toBe("PIN incorreto."));
+
+    // 2ª tentativa: o mesmo cancelamento, a mesma chave.
+    fetchMock.mockResolvedValueOnce({ ok: true });
+    fetchMock.mockResolvedValue({ sales: [] });
+    cancelDialog(w).vm.$emit("confirm", "joyce", "1234");
+    await vi.waitFor(() => expect(cancelCalls()).toHaveLength(2));
+
+    const [first, second] = cancelCalls().map(([, init]) => (init as { body: Record<string, unknown> }).body);
+    expect(first).toMatchObject({ order_ref: "PDV-042", manager_approval: { username: "joyce", pin: "0000" } });
+    expect(String(first!.client_request_id)).toMatch(/^pos:.+/);
+    expect(second!.client_request_id).toBe(first!.client_request_id);
     w.unmount();
   });
 });

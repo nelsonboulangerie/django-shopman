@@ -3,8 +3,8 @@
 
 {% block title %}Crachá do operador | {{ site_title|default:_('Django site admin') }}{% endblock %}
 
-{# Sem este bloco a página custom perde a marca e o ícone do topo. O
-   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. #}
+{% comment %} Sem este bloco a página custom perde a marca e o ícone do topo. O
+   `admin/base.html` não os desenha sozinho: cada tela declara, como o dashboard. {% endcomment %}
 {% block branding %}
     {% include "unfold/helpers/site_branding.html" %}
 {% endblock %}
@@ -71,10 +71,10 @@
               {{ badge.operator_name }}
             {% endcomponent %}
             <div>{{ badge.barcode_svg|safe }}</div>
-            {# Só as pontas. O crachá fica pendurado à vista do balcão inteiro, e
+            {% comment %} Só as pontas. O crachá fica pendurado à vista do balcão inteiro, e
                token legível ali é crachá que alguém copia num papel e reproduz
                depois sem tocar no original. As pontas bastam para reconhecer que
-               é o crachá certo, e que foi reemitido. #}
+               é o crachá certo, e que foi reemitido. {% endcomment %}
             {% component "unfold/components/text.html" with class="font-mono text-xs tracking-widest" %}
               {{ badge.token_masked }}
             {% endcomponent %}

@@ -18,9 +18,7 @@ MACHINE = {
     "password": "pass-1",
     "api_key": "key-1",
     "forma_pagamento": "F",
-    "retorno": False,
     "timeout": 5,
-    "cancel_reason_id": 1,
 }
 
 
@@ -67,7 +65,7 @@ def test_estimate_returns_centavos_and_metrics():
     assert est.km == 4.05
     kwargs = mock_request.call_args.kwargs
     assert kwargs["auth"] == ("user-1", "pass-1")
-    assert kwargs["headers"] == {"api-key": "key-1", "User-Agent": courier_machine.USER_AGENT}
+    assert kwargs["headers"] == {"api-key": "key-1", "User-Agent": courier_machine.user_agent()}
     assert kwargs["params"]["lat_partida"] == "-23.30"
     assert kwargs["params"]["lng_desejado"] == "-51.17"
 
@@ -101,6 +99,38 @@ def test_estimate_sends_the_address_the_delivery_api_requires():
         "cidade_desejado": "Londrina",
         "estado_desejado": "PR",
     }
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_estimate_with_return_asks_the_round_trip_price():
+    """``com_retorno`` é o retorno da cotação; sem ele a central cota só a ida."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"estimativa_valor": 18.0}),
+    ) as mock_request:
+        courier_machine.estimate(pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.31", "lng": "-51.16"})
+        assert "com_retorno" not in mock_request.call_args.kwargs["params"]
+        courier_machine.estimate(
+            pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.31", "lng": "-51.16"}, with_return=True,
+        )
+        assert mock_request.call_args.kwargs["params"]["com_retorno"] == "true"
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_estimate_with_stops_sends_them_before_the_destination():
+    """A corrida com várias paradas: as do meio vão em ``latlng_paradas``, a última é o destino."""
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_ok({"estimativa_valor": 26.0, "estimativa_km": 7.1}),
+    ) as mock_request:
+        result = courier_machine.estimate(
+            pickup={"lat": "-23.34", "lng": "-51.15"}, dropoff={"lat": "-23.25", "lng": "-51.17"},
+            stops=[{"lat": "-23.33", "lng": "-51.15"}, {"lat": "-23.30", "lng": "-51.16"}],
+        )
+    params = mock_request.call_args.kwargs["params"]
+    assert params["latlng_paradas"] == "-23.33,-51.15|-23.30,-51.16"
+    assert (params["lat_desejado"], params["lng_desejado"]) == ("-23.25", "-51.17")
+    assert result.value_q == 2600
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
@@ -174,9 +204,26 @@ def test_api_refusal_is_terminal_with_error_detail():
         return_value=_FakeResponse(400, refusal),
     ):
         with pytest.raises(CourierError) as exc:
-            courier_machine.cancel("999")
+            courier_machine.cancel("999", reason_id=10)
     assert exc.value.transient is False
     assert "Solicitação não encontrada" in str(exc.value)
+    # O código do erro sobe com a exceção: é por ele que o cancelamento reconhece o 102.
+    assert exc.value.codes == (25,)
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_cancel_reason_refused_surfaces_code_102():
+    """Motivo da fase errada: a central devolve 102, e o handler relê a letra e reenvia."""
+    refusal = {"success": False, "errors": [{"code": "102", "message": "Motivo de cancelamento inválido."}]}
+    with patch(
+        "shopman.shop.adapters.courier_machine.requests.request",
+        return_value=_FakeResponse(400, refusal),
+    ) as request:
+        with pytest.raises(CourierError) as exc:
+            courier_machine.cancel("77", reason_id=12)
+    assert exc.value.codes == (courier_machine.CANCEL_REASON_REFUSED_CODE,)
+    assert exc.value.outcome_unknown is False
+    assert request.call_args.kwargs["json"] == {"id_mch": "77", "motivo_id": 12}
 
 
 @override_settings(DEBUG=False, SHOPMAN_MACHINE={**MACHINE, "username": ""})
@@ -266,7 +313,7 @@ def test_inert_in_debug_makes_no_network_call():
         assert courier_machine.get_status("1") == ""
         assert courier_machine.estimate(pickup={"lat": 1, "lng": 1}, dropoff={"lat": 2, "lng": 2}) is None
         assert courier_machine.get_position("1") is None
-        assert courier_machine.cancel("1") is True
+        assert courier_machine.cancel("1", reason_id=10) is True
 
 
 @override_settings(DEBUG=True, SHOPMAN_MACHINE=MACHINE, SHOPMAN_MACHINE_ALLOW_IN_DEBUG=True)
@@ -292,7 +339,7 @@ def test_mock_adapter_dispatch_and_status_cycle():
     assert courier_mock.get_position("MOCK-ORD-9") is not None
     courier_mock.set_status("MOCK-ORD-9", "F")
     with pytest.raises(CourierError):
-        courier_mock.cancel("MOCK-ORD-9")
+        courier_mock.cancel("MOCK-ORD-9", reason_id=10)
     courier_mock.reset()
     with pytest.raises(CourierError):
         courier_mock.get_status("MOCK-ORD-9")
@@ -377,14 +424,21 @@ def test_each_call_hits_the_documented_v1_path(call, args, kwargs, method, url, 
     assert (called_method, called_url) == (method, f"{PRODUCTION_BASE}{url}")
     assert sent["params"] == query
     assert sent["json"] == body
-    assert sent["headers"] == {"api-key": "k", "User-Agent": courier_machine.USER_AGENT}
+    assert sent["headers"] == {"api-key": "k", "User-Agent": courier_machine.user_agent()}
     assert sent["auth"] == ("u", "p")
 
 
 def test_user_agent_is_never_the_requests_default():
     """A borda da Machine devolve 403 em HTML para `python-requests/x.y` (01/10/2026)."""
-    assert not courier_machine.USER_AGENT.lower().startswith("python-requests")
-    assert courier_machine.USER_AGENT.strip()
+    assert not courier_machine.user_agent().lower().startswith("python-requests")
+    assert courier_machine.user_agent().strip()
+
+
+def test_user_agent_points_to_this_store_not_to_a_written_domain(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example"
+    assert courier_machine.user_agent() == "Shopman/1.0 (+https://loja.example)"
+    settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+    assert courier_machine.user_agent() == "Shopman/1.0"
 
 
 # ── leitura da corrida (read_ride) ──────────────────────────────────
@@ -510,3 +564,69 @@ def test_read_ride_only_reads(_clear_read_via):
         with pytest.raises(CourierError):
             courier_machine.read_ride("1")
     assert {call.args[0] for call in mock_request.call_args_list} == {"GET"}
+
+
+# ── desistência não é cancelamento ──────────────────────────────────
+
+
+def test_details_snapshot_never_concludes_cancelled_from_the_cancellation_list():
+    """``cancellation[]`` guarda a desistência de um entregador; a corrida segue viva.
+
+    Antes, um código de evento com a lista preenchida virava ``C``: a corrida
+    que a TaOn já redistribuía era arquivada e o operador mandado chamar outra.
+    """
+    withdrawn = {**DETAILS_ACCEPTED, "short_code": "AP", "full_code": "ARRIVED_AT_LOCATION",
+                 "cancellation": [{"cancelled_at": "2026-10-13T18:50:00Z", "cancelled_reason": "Desistência"}]}
+    snap = courier_machine.snapshot_from_details(withdrawn)
+    assert snap["status"] == ""  # sem letra não há conclusão: outra via responde
+    assert snap["progress"]["cancelled_at"] == "2026-10-13T18:50:00Z"
+
+    searching = {**withdrawn, "short_code": "D", "full_code": "DISTRIBUTING"}
+    assert courier_machine.snapshot_from_details(searching)["status"] == "D"
+    cancelled = {**withdrawn, "short_code": "C", "full_code": "CANCELLED"}
+    assert courier_machine.snapshot_from_details(cancelled)["status"] == "C"
+
+
+# ── HTTP 429: a TaOn limitou as chamadas ────────────────────────────
+
+
+class _RateLimited(_FakeResponse):
+    def __init__(self, headers=None):
+        super().__init__(429, {"success": False, "errors": [{"code": 429, "message": "Too Many Requests"}]})
+        self.headers = headers or {}
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_429_is_a_known_transient_refusal_with_the_wait_the_provider_asked():
+    limited = _RateLimited({"Retry-After": "42", "X-RateLimit-Remaining": "0"})
+    with patch("shopman.shop.adapters.courier_machine.requests.request", return_value=limited):
+        with pytest.raises(courier_machine.CourierRateLimited) as raised:
+            courier_machine.dispatch({"paradas": []})
+    assert raised.value.retry_after == 42
+    assert raised.value.transient is True
+    # Nada foi aplicado do lado de lá: repetir a chamada não arrisca corrida em dobro.
+    assert raised.value.outcome_unknown is False
+    assert isinstance(raised.value, CourierError)
+
+
+@pytest.mark.parametrize(("header", "expected"), [
+    (None, courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("", courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("não é número", courier_machine.RATE_LIMIT_DEFAULT_SECONDS),
+    ("0", 1),
+    ("7.6", 7),
+    ("86400", courier_machine.RATE_LIMIT_MAX_SECONDS),
+    ("Wed, 21 Oct 2015 07:28:00 GMT", 1),  # data no passado: tenta logo
+])
+def test_retry_after_is_read_and_bounded(header, expected):
+    assert courier_machine._retry_after_seconds(header) == expected
+
+
+@override_settings(DEBUG=False, SHOPMAN_MACHINE=MACHINE)
+def test_read_ride_under_rate_limit_does_not_try_the_other_vias(_clear_read_via):
+    """Sob limite, bater nas outras duas vias só gasta mais cota."""
+    with patch("shopman.shop.adapters.courier_machine.requests.request",
+               return_value=_RateLimited({"Retry-After": "20"})) as mock_request:
+        with pytest.raises(courier_machine.CourierRateLimited):
+            courier_machine.read_ride("1")
+    assert mock_request.call_count == 1

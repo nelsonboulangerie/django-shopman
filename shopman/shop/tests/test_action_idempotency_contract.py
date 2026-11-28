@@ -42,15 +42,15 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 IDEMPOTENT_BY_NATURE = {
     "review_sale": "calcula a previa do checkout e nao grava nada — POST so por causa do tamanho do payload",
     "reverse_geocode": "leitura pura: resolve lat/lng em endereco",
-    "customer_lookup": "GET",
-    "customer_search": "GET",
+    "retry_payment": "conferencia do pagamento: pergunta ao gateway com throttle e payment.initiate e idempotente por chave; repetir nao cria segunda cobranca",
+    "customer_lookup": "leitura pura: POST so para o telefone viajar no corpo, fora do log de acesso",
+    "customer_search": "leitura pura: POST so para o termo (nome, telefone, CPF, e-mail) viajar no corpo, fora do log de acesso",
     "open_tab": "abre a comanda pelo ref — abrir duas vezes deixa a mesma comanda aberta",
     "save_tab": "grava a lista inteira da comanda (replace por session_key), nao acumula",
     "rename_tab": "renomear para X duas vezes deixa o nome X",
     "clear_tab": "DELETE por session_key — o segundo disparo nao acha o que liberar",
     "unfire_tab": "cancela o envio de line_ids nomeados; repetir nao desfaz nada a mais",
     "move_tab_lines": "move line_ids nomeados; na segunda vez eles ja nao estao na origem",
-    "cancel_recent_sale": "cancela um order_ref nomeado; a venda ja cancelada nao cancela de novo",
     "emit_fiscal": "emite a NFC-e de um order_ref nomeado; com a nota em andamento o segundo POST e recusado (409), a Directive e dedupe por nfce:<ref>",
     "drawer_open": "abre a gaveta fisica — repetir abre a gaveta de novo, e cada abertura e um fato proprio no livro (drawer_open), nao uma duplicata",
     "drawer_unlock_attempt": "telemetria da tela de PIN",
@@ -61,6 +61,8 @@ IDEMPOTENT_BY_NATURE = {
     "create_tab": "cria a comanda pelo tab_ref informado — o segundo POST esbarra no ref que ja existe",
     "set_available_qty": "PUT que fixa a qty num valor CONSTANTE do payload — repetir deixa a mesma qty",
     "notify_when_available": "a assinatura de aviso dedupe por (sku, alert_type, alvo) em stock_alerts.subscribe",
+    "continue_in_conversation": "so oferece: guarda a oferta sob um codigo NB novo e nao toca a sacola; o aceite na conversa e idempotente pelo recibo (session_transfer.accept)",
+    "bring_cart": "oferta e aceite no mesmo gesto; repetir acha a origem ja abandonada (no_cart) ou o recibo gravado da mesma oferta, nunca soma de novo",
 }
 
 # ── Divida nomeada: mutacao de dinheiro ainda sem chave ────────────────────

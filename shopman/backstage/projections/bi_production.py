@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.utils import timezone
 
@@ -80,6 +80,37 @@ class BIProductionPrevious:
 
 
 @dataclass(frozen=True)
+class BIProductionBatchMargin:
+    """Custo congelado e receita rastreada de uma fornada fechada.
+
+    A margem é da FORNADA INTEIRA (decisão do dono, 11/11/2026): a receita que a
+    baixa do lote identifica, do fechamento até o lote encerrar, menos o custo
+    congelado total (sobra e perda incluídas). Quem diz quando o lote encerra é
+    a validade dele (``Batch.expiry_date``, da ``shelf_life_days`` da ficha), ou
+    o estoque zerado, se esgotar antes. Lote ainda em venda não tem margem.
+    """
+
+    ref: str
+    recipe: str
+    date: str
+    revenue_q: int
+    total_q: int | None
+    margin_q: int | None
+    cost_status: str
+    gaps: tuple[str, ...]
+    #: Unidades que a fornada produziu (soma das saídas).
+    output_quantity: str
+    #: Unidades vendidas cuja baixa identifica o lote desta fornada, até agora.
+    traced_quantity: str
+    #: ``closed`` (venceu ou esgotou) · ``open`` (ainda em venda) ·
+    #: ``untraceable`` (o estoque não separa esta fornada: lote diário,
+    #: compartilhado ou sem lote).
+    lot_status: str
+    #: Último dia de venda do lote (a validade), quando o lote tem uma.
+    sells_until: str | None
+
+
+@dataclass(frozen=True)
 class BIProductionReport:
     date_from: str
     date_to: str
@@ -92,6 +123,7 @@ class BIProductionReport:
     batches_measured: int
     oven_coverage_percent: int
     previous: BIProductionPrevious
+    batch_margins: tuple[BIProductionBatchMargin, ...]
 
 
 def build_bi_production(
@@ -111,6 +143,7 @@ def build_bi_production(
             ).select_related("recipe")
         )
     )
+    work_orders = _counted_in_units(work_orders)
 
     days = _daily_series(work_orders, date_from=date_from, date_to=date_to)
 
@@ -140,7 +173,7 @@ def build_bi_production(
         date_to=date_to.isoformat(),
         days=days,
         oven_time_by_recipe=_oven_rows(runs, wo_by_ref, group="recipe"),
-        oven_time_by_oven=_oven_rows(runs, wo_by_ref, group="oven"),
+        oven_time_by_oven=_oven_rows(runs, wo_by_ref, group="oven", names=_position_names(runs)),
         batches_finished=batches_finished,
         batches_started_assumed=sum(1 for wo in work_orders if _wo_started_assumed(wo)),
         batches_measured=batches_measured,
@@ -148,7 +181,210 @@ def build_bi_production(
             round(batches_measured * 100 / batches_finished) if batches_finished else 0
         ),
         previous=_production_previous(date_from, date_to),
+        batch_margins=_batch_margins(date_from, date_to),
     )
+
+
+# Motivo gravado por StockPlanning.realize na entrada física do Craftsman.
+_PRODUCTION_RECEIPT = "Recebido de produção: Finalização do lote: "
+
+
+def _batch_margins(date_from: date, date_to: date) -> tuple[BIProductionBatchMargin, ...]:
+    from django.db.models import Q
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.backstage.bi.canonical import local_window
+
+    start, end = local_window(date_from, date_to)
+    work_orders = list(
+        WorkOrder.objects.filter(status=WorkOrder.Status.FINISHED)
+        .filter(
+            Q(finished_at__gte=start, finished_at__lt=end)
+            | Q(finished_at__isnull=True, target_date__range=(date_from, date_to))
+        )
+        .select_related("recipe")
+        .order_by("-finished_at", "-target_date", "-pk")
+    )
+    batch_owners = _stock_batch_owners(work_orders)
+    lots = _lot_state(batch_owners)
+    today = timezone.localdate()
+    # A receita é a das baixas dos lotes da fornada, venda criada quando for: a
+    # margem da mesma fornada não muda com o filtro de datas (#3427).
+    revenue, traced = _batch_revenue(batch_owners) if batch_owners else ({}, {})
+
+    rows = []
+    for wo in work_orders:
+        snapshot = (wo.meta or {}).get("cost_snapshot")
+        total_q = snapshot["total_q"] if snapshot is not None else None
+        revenue_q = revenue.get(wo.ref, 0)
+        traced_qty = traced.get(wo.ref, Decimal(0))
+        cost_status = "complete"
+        if snapshot is None:
+            cost_status = "missing"
+        elif total_q is None:
+            cost_status = "incomplete"
+        sells_until = None
+        if wo.ref not in lots:
+            lot_status = "untraceable"
+        else:
+            balance, sells_until = lots[wo.ref]
+            expired = sells_until is not None and sells_until < today
+            lot_status = "closed" if expired or balance <= 0 else "open"
+        rows.append(
+            BIProductionBatchMargin(
+                ref=wo.ref,
+                recipe=wo.recipe.name,
+                date=(timezone.localdate(wo.finished_at) if wo.finished_at else wo.target_date).isoformat(),
+                revenue_q=revenue_q,
+                total_q=total_q,
+                margin_q=revenue_q - total_q if total_q is not None and lot_status == "closed" else None,
+                cost_status=cost_status,
+                gaps=tuple(snapshot["gaps"]) if snapshot is not None else (),
+                output_quantity=_qty(Decimal(wo.finished or 0)),
+                traced_quantity=_qty(traced_qty),
+                lot_status=lot_status,
+                sells_until=sells_until.isoformat() if sells_until else None,
+            )
+        )
+    return tuple(rows)
+
+
+def _lot_state(batch_owners: dict[str, str]) -> dict[str, tuple[Decimal, date | None]]:
+    """Por fornada: o saldo que ainda resta nos lotes dela e a validade mais longa."""
+    from django.db.models import Sum
+    from shopman.stockman.models import Batch, Quant
+
+    if not batch_owners:
+        return {}
+    balance: dict[str, Decimal] = defaultdict(Decimal)
+    for batch, quantity in (
+        Quant.objects.filter(batch__in=batch_owners).values("batch").annotate(total=Sum("_quantity"))
+        .values_list("batch", "total")
+    ):
+        balance[batch_owners[batch]] += quantity or Decimal(0)
+    known = dict(Batch.objects.filter(ref__in=batch_owners).values_list("ref", "expiry_date"))
+    expiries: dict[str, list[date | None]] = defaultdict(list)
+    for batch, ref in batch_owners.items():
+        expiries[ref].append(known.get(batch))
+    # Lote sem validade deixa a fornada sem validade (só encerra esgotando);
+    # com várias, vale a mais longa: a fornada vende até o último lote dela vencer.
+    expiry = {ref: None if None in dates else max(dates) for ref, dates in expiries.items()}
+    return {ref: (balance.get(ref, Decimal(0)), expiry[ref]) for ref in expiry}
+
+
+def _stock_batch_owners(work_orders) -> dict[str, str]:
+    """Só atribui lote de estoque com origem única, inclusive fora da janela."""
+    from shopman.stockman.models import Move
+
+    if not work_orders:
+        return {}
+
+    receipts = Move.objects.filter(kind=Move.Kind.MAKE, delta__gt=0).exclude(quant__batch="")
+    refs_by_reason = {_PRODUCTION_RECEIPT + wo.ref: wo.ref for wo in work_orders}
+    candidates = receipts.filter(reason__in=refs_by_reason).order_by().values("quant__batch")
+    reasons_by_batch: dict[str, set[str]] = defaultdict(set)
+    for batch, reason in receipts.filter(quant__batch__in=candidates).order_by().values_list(
+        "quant__batch", "reason"
+    ).distinct():
+        reasons_by_batch[batch].add(reason)
+    return {
+        batch: refs_by_reason[reason]
+        for batch, reasons in reasons_by_batch.items()
+        for reason in reasons
+        if len(reasons) == 1 and reason in refs_by_reason
+    }
+
+
+def _batch_revenue(batch_owners: dict[str, str]) -> tuple[dict[str, int], dict[str, Decimal]]:
+    """Rateia a linha conciliada pela quantidade baixada de cada lote.
+
+    Parte das baixas dos lotes (o hold cumprido no lote de estoque da fornada) e
+    só delas acha os pedidos e as linhas de venda. Antes partia dos pedidos
+    CRIADOS na janela, e a margem da mesma fornada mudava com o filtro: a
+    encomenda de quinta atendida pela fornada de sábado sumia filtrando sábado
+    (#3427).
+
+    Devolve a receita e as unidades rastreadas por fornada; uma linha que não
+    fecha (baixa maior que o vendido) não entra em nenhuma das duas.
+    """
+    from shopman.orderman.models import Order
+    from shopman.stockman import Hold, HoldStatus
+
+    from shopman.backstage.bi.sources import orderman
+
+    holds = list(Hold.objects.filter(
+        metadata__reference__startswith="order:",
+        status=HoldStatus.FULFILLED,
+        quant__batch__in=batch_owners,
+    ).values_list("pk", "sku", "quant__batch", "metadata__reference"))
+    if not holds:
+        return {}, {}
+
+    refs = {str(reference).removeprefix("order:") for _, _, _, reference in holds}
+    order_by_reference: dict[str, int] = {}
+    holds_by_order = {}
+    for order_id, ref, entries in Order.objects.filter(ref__in=refs).values_list("pk", "ref", "data__hold_ids"):
+        order_by_reference[f"order:{ref}"] = order_id
+        holds_by_order[order_id] = {
+            entry["hold_id"]: Decimal(str(entry["qty"]))
+            for entry in entries or ()
+            if entry.get("hold_id") and entry.get("qty") is not None
+        }
+
+    quantities: dict[tuple[int, str], dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+    for hold_id, sku, batch, reference in holds:
+        order_id = order_by_reference.get(reference)
+        if order_id is None:
+            continue
+        quantity = holds_by_order.get(order_id, {}).get(f"hold:{hold_id}", Decimal(0))
+        if quantity > 0:
+            quantities[order_id, sku][batch_owners[batch]] += quantity
+
+    totals: dict[tuple[int, str], tuple[Decimal, int]] = defaultdict(lambda: (Decimal(0), 0))
+    for line in orderman.read_lines_for_refs(refs):
+        key = (line.sale_key, line.product_ref)
+        if key in quantities:
+            qty, total_q = totals[key]
+            totals[key] = qty + line.qty, total_q + line.line_total_q
+
+    revenue: dict[str, int] = defaultdict(int)
+    traced: dict[str, Decimal] = defaultdict(Decimal)
+    for key, (qty, total_q) in totals.items():
+        allocated = quantities[key]
+        if qty <= 0 or sum(allocated.values()) > qty:
+            continue
+        cumulative = Decimal(0)
+        previous_q = 0
+        for ref, quantity in sorted(allocated.items()):
+            cumulative += quantity
+            cumulative_q = int((total_q * cumulative / qty).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+            revenue[ref] += cumulative_q - previous_q
+            traced[ref] += quantity
+            previous_q = cumulative_q
+    return revenue, traced
+
+
+def _counted_in_units(work_orders: list) -> list:
+    """Só os lotes cuja saída se conta em peça: a leitura de produção é em unidades.
+
+    Preparo (massa, levain, autolisada) e produto vendido por peso declaram a saída
+    em massa (``Recipe._declared_output_unit``: o catálogo, ou ``meta.output_unit``
+    do pré-preparo). Somá-los com a peça que vai à vitrine dava "159.758 un." num
+    dia de ~300 (grandezas somadas, beta 05/11, ge:BI-12). Saída sem unidade
+    declarada conta como peça, como sempre contou.
+    """
+    from shopman.utils import units
+
+    by_recipe: dict[int, bool] = {}
+    kept = []
+    for wo in work_orders:
+        counted = by_recipe.get(wo.recipe_id)
+        if counted is None:
+            counted = units.dimension(wo.recipe._declared_output_unit()) in ("", units.COUNT)
+            by_recipe[wo.recipe_id] = counted
+        if counted:
+            kept.append(wo)
+    return kept
 
 
 def _production_previous(date_from: date, date_to: date) -> BIProductionPrevious:
@@ -160,9 +396,10 @@ def _production_previous(date_from: date, date_to: date) -> BIProductionPrevious
             WorkOrder.objects.filter(
                 target_date__range=(prev_from, prev_to),
                 status=WorkOrder.Status.FINISHED,
-            )
+            ).select_related("recipe")
         )
     )
+    work_orders = _counted_in_units(work_orders)
     finished_by_day: dict[date, Decimal] = defaultdict(Decimal)
     started_total = Decimal(0)
     finished_total = Decimal(0)
@@ -206,6 +443,11 @@ def _normalize_window(date_from: date | None, date_to: date | None) -> tuple[dat
     date_from = date_from or date_to - timedelta(days=DEFAULT_WINDOW_DAYS - 1)
     if date_from > date_to:
         date_from, date_to = date_to, date_from
+    # O B.I. lê o que aconteceu; o futuro é da Projeção. Um período depois de hoje
+    # (colado na URL) cai no último dia lido, em vez de responder "nenhuma venda"
+    # como se o dia tivesse passado vazio (ge:BI-14).
+    date_to = min(date_to, today)
+    date_from = min(date_from, date_to)
     if (date_to - date_from).days >= MAX_WINDOW_DAYS:
         date_from = date_to - timedelta(days=MAX_WINDOW_DAYS - 1)
     return date_from, date_to
@@ -298,7 +540,15 @@ def _measured_runs(*, date_from: date, date_to: date, oven_run_model):
     )
 
 
-def _oven_rows(runs, wo_by_ref, *, group: str) -> tuple[BIOvenTimeRow, ...]:
+def _position_names(runs) -> dict[str, str]:
+    """O nome da posição de cada forno: o gestor lê "Forno", não o ref "producao"."""
+    from shopman.stockman.models import Position
+
+    refs = {run.oven_ref for run in runs if run.oven_ref}
+    return dict(Position.objects.filter(ref__in=refs).values_list("ref", "name")) if refs else {}
+
+
+def _oven_rows(runs, wo_by_ref, *, group: str, names: dict[str, str] | None = None) -> tuple[BIOvenTimeRow, ...]:
     grouped: dict[tuple[str, str], list] = defaultdict(list)
     for run in runs:
         wo = wo_by_ref.get(run.work_order_ref)
@@ -310,7 +560,7 @@ def _oven_rows(runs, wo_by_ref, *, group: str) -> tuple[BIOvenTimeRow, ...]:
             oven = run.oven_ref or ""
             if not oven:
                 continue  # sem forno atribuído: a cobertura já declara o buraco
-            key = (oven, oven)
+            key = (oven, (names or {}).get(oven) or oven)
         grouped[key].append(run)
 
     rows = []

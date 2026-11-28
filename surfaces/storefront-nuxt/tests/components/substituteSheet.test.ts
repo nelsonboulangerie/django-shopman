@@ -20,7 +20,7 @@ async function setIssue (issue: unknown) {
 }
 
 const OUT_OF_STOCK = {
-  title: 'Esgotou', detail: 'x', error_code: 'insufficient_stock',
+  title: 'Esgotou', detail: 'x', error_code: 'insufficient_supply',
   sku: 'CROISSANT', name: 'Croissant', requested_qty: 2, available_qty: 0,
   is_paused: false, is_planned: false, actions: [], items: [],
   substitutes: [{ sku: 'PAO', name: 'Pão', price_q: 400, price_display: 'R$ 4,00', image_url: null, available_qty: 5, can_order: true, target_qty: 2, reason: undefined }]
@@ -48,6 +48,38 @@ describe('SubstituteSheet', () => {
     expect(body).toContain('Pão')
   })
 
+  it('sem nada para levar, diz "indisponível" uma vez só e a frase leva direto à lista (#2907)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, substitutes_intro: 'Que tal um destes no lugar de Croissant?' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const sheet = document.querySelector('[data-substitute-sheet]')!
+    const text = sheet.textContent || ''
+    expect(text.match(/indisponível/gi)).toHaveLength(1)
+    expect(text).toContain('Que tal um destes no lugar de Croissant?')
+    expect(text).not.toContain('Veja boas alternativas')
+    expect(text).not.toContain('Ou troque por:')
+    // A frase aparece uma vez: a lista não ganha rótulo próprio.
+    expect(text.split('Que tal um destes').length - 1).toBe(1)
+  })
+
+  it('sem a frase do servidor, a folha monta a mesma com o nome do item', async () => {
+    await setIssue({ ...OUT_OF_STOCK, substitutes_intro: '' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    expect(document.querySelector('[data-substitute-sheet]')?.textContent).toContain('Que tal um destes no lugar de Croissant?')
+  })
+
+  it('com algo para levar, a troca segue como alternativa ao "Levar N"', async () => {
+    await setIssue({ ...OUT_OF_STOCK, available_qty: 1, substitutes_intro: 'Que tal um destes no lugar de Croissant?' })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const text = document.querySelector('[data-substitute-sheet]')?.textContent || ''
+    expect(text).toContain('Agora temos 1 unidade de Croissant.')
+    expect(text).toContain('Levar 1 unidade')
+    expect(text).toContain('Ou troque por:')
+    expect(text).not.toContain('Que tal um destes')
+  })
+
   it('offers "adjust quantity" copy when there is still available stock', async () => {
     await setIssue({ ...OUT_OF_STOCK, available_qty: 3, substitutes: [] })
     await mountSuspended(SubstituteSheet)
@@ -59,12 +91,34 @@ describe('SubstituteSheet', () => {
 
   it('adjust refusal shows the line ceiling as a total, not the free delta', async () => {
     // Fornada de 4, sacola com 2, pediu 6.
-    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, line_qty: 2, is_planned: true, planned_offer_title: 'Já vem quentinho', planned_offer_message: 'Sai fresquinho no próximo lote.', substitutes: [] })
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, line_qty: 2, is_planned: true, planned_offer_title: 'Disponível amanhã, quarta, a partir das 7h', planned_offer_message: '', substitutes: [] })
     await mountSuspended(SubstituteSheet)
     await nextTick()
     const body = document.body.textContent || ''
-    expect(body).toContain('Pré-reservar 4 unidades no total')
-    expect(body).not.toContain('Pré-reservar 2')
+    expect(body).toContain('Reservar 4 no total')
+    expect(body).not.toContain('Reservar 2')
+  })
+
+  it('o próximo lote diz quando fica disponível e oferece Reservar, sem outra frase (dono, 24/11/2026)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 6, available_qty: 4, is_planned: true, planned_offer_title: 'Disponível a partir das 15h', planned_offer_message: '', substitutes: [] })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const body = document.body.textContent || ''
+    expect(body).toContain('Disponível a partir das 15h')
+    // O lote cobre MENOS do que ela pediu (6): o número é a verdade que ela precisa ver.
+    expect(body).toContain('Reservar 4')
+    expect(body).not.toContain('unidades')
+    expect(body).not.toContain('Agora temos')
+    expect(body).not.toMatch(/pront/i)
+  })
+
+  it('quando o lote cobre o que ela pediu, o botão é só "Reservar" (dono, 24/11/2026)', async () => {
+    await setIssue({ ...OUT_OF_STOCK, requested_qty: 3, available_qty: 4, is_planned: true, planned_offer_title: 'Disponível a partir das 15h', planned_offer_message: '', substitutes: [] })
+    await mountSuspended(SubstituteSheet)
+    await nextTick()
+    const labels = [...document.body.querySelectorAll('button')].map(button => (button.textContent || '').trim())
+    expect(labels).toContain('Reservar')
+    expect(labels.some(label => /^Reservar \d/.test(label))).toBe(false)
   })
 
   it('a line already at its ceiling is told so, with no button that shrinks it', async () => {

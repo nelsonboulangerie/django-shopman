@@ -1,5 +1,7 @@
 import { normalizeSearchText, formatCount } from '~/utils/display'
 import type { CatalogItemProjection, CatalogProjection, CatalogSection } from '~/types/shopman'
+import { quotePriceDisplay } from '~/presentation/priceQuote'
+import { promiseBadgeLabel } from '~/presentation/promise'
 
 // Transforms puros do cardápio: busca com scoring, filtros multi-select e
 // badges de disponibilidade. Nenhum estado de UI aqui — a página orquestra.
@@ -37,14 +39,14 @@ export const FILTERED_SECTION_VALUE = 'filtered'
 
 const COLLECTION_LABEL_BY_REF: Record<string, string> = {
   featured: 'Destaques',
-  fresh_from_oven: 'Recém saídos do forno',
+  fresh_from_oven: 'Acabaram de ficar prontos',
   new_arrivals: 'Novidades',
   favorites: 'Seus favoritos'
 }
 
 const PUBLIC_DYNAMIC_SECTION_SLUG_BY_REF: Record<string, string> = {
   featured: 'destaques',
-  fresh_from_oven: 'recem-saidos-do-forno',
+  fresh_from_oven: 'acabaram-de-ficar-prontos',
   new_arrivals: 'novidades',
   favorites: 'favoritos'
 }
@@ -97,8 +99,26 @@ function allSearchTokensMatchText (tokens: string[], text: string): boolean {
     if (text.includes(candidate)) return true
     if (candidate.length < 5) return false
     const maxDistance = candidate.length >= 9 ? 2 : 1
-    return haystackTokens.some(haystackToken => editDistanceWithin(candidate, haystackToken, maxDistance))
+    return haystackTokens.some(haystackToken =>
+      editDistanceWithin(candidate, haystackToken, maxDistance) || missingLettersOnly(candidate, haystackToken)
+    )
   }))
+}
+
+// Letra que faltou é o erro mais comum de quem digita no celular: "crosant" é
+// "croissant" sem o "i" e um "s". Até duas letras a menos, na ordem certa, acham o
+// produto; trocar letra continua no limite da distância de edição, que é o que
+// segura "crocante" longe de "crosant" (beta 05/11, LOJA-12).
+function missingLettersOnly (typed: string, word: string): boolean {
+  if (typed.length < 6) return false
+  const missing = word.length - typed.length
+  if (missing < 1 || missing > 2) return false
+  let cursor = 0
+  for (const letter of word) {
+    if (letter === typed[cursor]) cursor += 1
+    if (cursor === typed.length) return true
+  }
+  return false
 }
 
 export function searchTextMatches (search: string, text: string): boolean {
@@ -215,9 +235,17 @@ export function collectionTargetForSearchOption (option: SearchListOption): stri
 // Aceita qualquer projeção com estado de disponibilidade (item de catálogo, PDP).
 // `unavailable` tem UM rótulo só (AVAILABILITY-PLAN §2): esgotado, pausado pela
 // casa e fora do canal chegam ao cliente iguais — o motivo é assunto do operador.
-export function tileBadge (item: Pick<CatalogItemProjection, 'availability' | 'availability_label'>): TileBadge | null {
+//
+// O item que espera fornada (`planned_ok`) diz QUANDO fica pronto, pela promessa
+// do servidor (WP-L02): "Fica pronto amanhã", "Fica pronto hoje às 15h". O
+// rótulo antigo ("Lista de espera") só sobra quando a promessa não veio.
+export function tileBadge (
+  item: Pick<CatalogItemProjection, 'availability' | 'availability_label'> & Partial<Pick<CatalogItemProjection, 'promise'>>
+): TileBadge | null {
   if (item.availability === 'low_stock') return { label: item.availability_label, variant: 'warning' }
-  if (item.availability === 'planned_ok') return { label: item.availability_label, variant: 'outline' }
+  if (item.availability === 'planned_ok') {
+    return { label: promiseBadgeLabel(item.promise) || item.availability_label, variant: 'outline' }
+  }
   if (item.availability === 'unavailable') return { label: item.availability_label, variant: 'destructive' }
   return null
 }
@@ -490,13 +518,27 @@ export function productSearchOptions (
       kind: 'product' as const,
       value: result.item.sku,
       label: result.item.name,
-      meta: result.item.price_display,
+      meta: quotePriceDisplay(result.item.quote),
       icon: 'lucide:utensils',
       imageUrl: result.item.image_url || undefined,
       item: result.item,
       section: result.section
     }))
     .slice(0, 12)
+}
+
+// O filtro de palavra-chave é uma AÇÃO de busca, e diz isso: "Buscar por “folhado”".
+// Com o nome solto, "folhado" ficava ao lado da coleção "Folhados", os dois com a mesma
+// contagem e levando a lugares diferentes (#3253). A coleção mantém o nome do cadastro.
+export function keywordSearchActionLabel (keyword: string): string {
+  return `Buscar por “${keyword}”`
+}
+
+// O ícone da coleção é o do cadastro (`metadata.icon`, nome Lucide sem prefixo, o mesmo
+// do card de produto sem foto); sem ícone no cadastro, o padrão da lista (#3253).
+export function collectionListIcon (section: Pick<CatalogSection, 'icon'>): string {
+  const icon = (section.icon || '').trim()
+  return icon ? `lucide:${icon}` : 'lucide:rows-3'
 }
 
 export function keywordSearchOptions (
@@ -518,7 +560,7 @@ export function keywordSearchOptions (
           key,
           kind: 'keyword',
           value: keyword,
-          label: keyword,
+          label: keywordSearchActionLabel(keyword),
           meta: '0 itens',
           icon: 'lucide:tag',
           section,
@@ -536,25 +578,6 @@ export function keywordSearchOptions (
     .sort((a, b) => (b.count || 0) - (a.count || 0) || a.label.localeCompare(b.label))
     .map(({ skus: _skus, ...option }) => option)
     .slice(0, 8)
-}
-
-// Chips dos filtros já aplicados — visíveis ao reabrir a busca, para
-// desempilhar ou conferir o que está ativo.
-export function appliedFilterChips (
-  keys: string[],
-  sections: ReadonlyArray<CatalogSection>
-): Array<{ key: string, label: string }> {
-  return keys
-    .map(key => {
-      const parsed = parseFilterKey(key)
-      if (!parsed) return null
-      if (parsed.kind === 'collection') {
-        const section = sections.find(s => s.ref === parsed.value)
-        return { key, label: section ? collectionDisplayLabel(section) : COLLECTION_LABEL_BY_REF[parsed.value] || humanizeRefLabel(parsed.value) }
-      }
-      return { key, label: parsed.value }
-    })
-    .filter((chip): chip is { key: string, label: string } => chip !== null)
 }
 
 export function searchPanelView (input: {
@@ -578,7 +601,7 @@ export function searchPanelView (input: {
           label,
           meta: formatCount(count, 'item', 'itens'),
           count,
-          icon: !!favoriteRef && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef) ? 'lucide:heart' : 'lucide:rows-3',
+          icon: !!favoriteRef && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef) ? 'lucide:heart' : collectionListIcon(section),
           section
         }
       }),
@@ -646,12 +669,13 @@ export function choiceGroupsByName (
 
 export function choiceGroupCard (name: string, options: CatalogItemProjection[]): ChoiceGroupCard {
   const orderable = options.filter(option => option.availability !== 'unavailable')
-  const priced = options.filter(option => option.price_display && option.base_price_q > 0)
+  const priced = options.filter(option => option.quote.final_unit_price_q > 0)
   let priceLabel = ''
   if (priced.length) {
-    const cheapest = priced.reduce((min, option) => option.base_price_q < min.base_price_q ? option : min)
-    const samePrice = priced.every(option => option.base_price_q === cheapest.base_price_q)
-    priceLabel = samePrice ? cheapest.price_display : `a partir de ${cheapest.price_display}`
+    const cheapest = priced.reduce((min, option) => option.quote.final_unit_price_q < min.quote.final_unit_price_q ? option : min)
+    const samePrice = priced.every(option => option.quote.final_unit_price_q === cheapest.quote.final_unit_price_q)
+    const display = quotePriceDisplay(cheapest.quote)
+    priceLabel = samePrice ? display : `a partir de ${display}`
   }
   const cover = orderable.find(option => option.image_url)
     || options.find(option => option.image_url)

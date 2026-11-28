@@ -25,7 +25,7 @@ from django.core.cache import cache
 from django.db import transaction
 from django.utils import timezone
 
-from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult, pix_timeout_minutes_from
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,12 @@ _EFI_TOKEN_TTL = 3300  # 55 min — EFI tokens last 1h
 _EFI_TOKEN_LOCK_TTL = 35
 _EFI_TOKEN_LOCK_WAIT_SECONDS = 31.0
 _EFI_TOKEN_LOCK_POLL_SECONDS = 0.05
+
+# A borda da Efí (Cloudflare) recusa o User-Agent padrão do urllib
+# ("Python-urllib/x.y") com 403 e corpo "error code: 1010", antes de olhar
+# certificado ou credencial. Medido em 04/11/2026: o mesmo certificado e as
+# mesmas credenciais tiram token com qualquer outro nome.
+_EFI_USER_AGENT = "shopman-efi/1.0"
 
 
 def _brl_to_q(amount: str | float) -> int:
@@ -128,6 +134,7 @@ def _request_access_token(config: dict) -> str:
         headers={
             "Authorization": f"Basic {auth}",
             "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": _EFI_USER_AGENT,
         },
         method="POST",
     )
@@ -207,6 +214,7 @@ def _request(
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
+        "User-Agent": _EFI_USER_AGENT,
     }
     headers.update(extra_headers or {})
     request = Request(
@@ -337,11 +345,7 @@ def create_intent(
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     efi_config = _get_config()
-    pix_timeout_minutes = config.get("pix_timeout_minutes")
-    if pix_timeout_minutes:
-        pix_expiry_seconds = int(pix_timeout_minutes) * 60
-    else:
-        pix_expiry_seconds = getattr(settings, "SHOPMAN_PIX_EXPIRY_SECONDS", 3600)
+    pix_expiry_seconds = pix_timeout_minutes_from(config) * 60
     expires_at = timezone.now() + timedelta(seconds=pix_expiry_seconds)
 
     candidate_txid = (
@@ -701,25 +705,45 @@ def refund(
         )
 
     try:
-        cob = _request("GET", f"/v2/cob/{txid}")
+        # O Pix que pagou tem identidade própria (`e2e_id`), gravada no intent
+        # quando o webhook confirmou. Ela é a que a Efí pede para devolver, e
+        # vale mesmo quando a cobrança já não está CONCLUIDA (cobrança removida
+        # depois de um cancelamento, Pix que chegou tarde). O `pix[0]` da
+        # cobrança é só o plano B: com dois Pix na mesma cobrança ele devolvia o
+        # primeiro, não o que o Payman registrou.
+        e2eid = str((intent.gateway_data or {}).get("e2e_id") or "").strip()
+        if e2eid:
+            if amount_q:
+                amount = f"{amount_q / 100:.2f}"
+            else:
+                balance_q = PaymentService.captured_total(intent_ref) - PaymentService.refunded_total(intent_ref)
+                if balance_q <= 0:
+                    return PaymentResult(
+                        success=False,
+                        error_code="already_refunded",
+                        message="Não há saldo do Pix a devolver",
+                    )
+                amount = f"{balance_q / 100:.2f}"
+        else:
+            cob = _request("GET", f"/v2/cob/{txid}")
 
-        if cob.get("status") != "CONCLUIDA":
-            return PaymentResult(
-                success=False,
-                error_code="not_paid",
-                message="Cobrança não foi paga",
-            )
+            if cob.get("status") != "CONCLUIDA":
+                return PaymentResult(
+                    success=False,
+                    error_code="not_paid",
+                    message="Cobrança não foi paga",
+                )
 
-        pix_list = cob.get("pix", [])
-        if not pix_list:
-            return PaymentResult(
-                success=False,
-                error_code="no_payment",
-                message="Pagamento não encontrado",
-            )
+            pix_list = cob.get("pix", [])
+            if not pix_list:
+                return PaymentResult(
+                    success=False,
+                    error_code="no_payment",
+                    message="Pagamento não encontrado",
+                )
 
-        e2eid = pix_list[0].get("endToEndId", "")
-        amount = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
+            e2eid = pix_list[0].get("endToEndId", "")
+            amount = f"{amount_q / 100:.2f}" if amount_q else cob["valor"]["original"]
         if idempotency_key:
             dev_id = hashlib.sha256(idempotency_key.encode()).hexdigest()[:35]
         else:

@@ -223,7 +223,8 @@ def create(
             **kwargs,
         )
 
-    customer_created.send(sender=Customer, customer=cust)
+    # ADR-025: anúncio depois do COMMIT de quem chamou (o atomic local é aninhável).
+    transaction.on_commit(lambda: customer_created.send(sender=Customer, customer=cust))
     return cust
 
 
@@ -283,7 +284,10 @@ def update(ref: str, **fields) -> Customer | None:
                 changes["price_tiers"] = {"old": old_refs, "new": new_refs}
             cust.price_tiers.set(price_tiers)
     if changes:
-        customer_updated.send(sender=Customer, customer=cust, changes=changes)
+        # ADR-025: anúncio depois do COMMIT de quem chamou.
+        transaction.on_commit(
+            lambda: customer_updated.send(sender=Customer, customer=cust, changes=changes)
+        )
     return cust
 
 

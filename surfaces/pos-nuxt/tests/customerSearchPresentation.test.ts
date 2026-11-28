@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   cpfHint,
   cpfTail,
+  customerSearchPlaceholder,
   digitsOnly,
   enterAction,
   enterActionCaveat,
   enterActionLabel,
   formatCpf,
+  formatPhoneDisplay,
   isNumericQuery,
   isValidCpf,
   maskQueryIfCpf,
@@ -194,5 +196,33 @@ describe("moveHighlight — combobox com volta pelas pontas", () => {
   it("sem destaque anterior, ↓ vai ao primeiro e ↑ ao último", () => {
     expect(moveHighlight(-1, 1, 3)).toBe(0);
     expect(moveHighlight(-1, -1, 3)).toBe(2);
+  });
+});
+
+describe("formatPhoneDisplay — o telefone como se fala no balcão", () => {
+  it("E.164 brasileiro vira (DD) número", () => {
+    expect(formatPhoneDisplay("+5543991111111")).toBe("(43) 99111-1111");
+    expect(formatPhoneDisplay("+554333334444")).toBe("(43) 3333-4444");
+    expect(formatPhoneDisplay("43991111111")).toBe("(43) 99111-1111");
+  });
+
+  it("número de fora ou sem tamanho de telefone sai como veio", () => {
+    expect(formatPhoneDisplay("+351912345678")).toBe("+351912345678");
+    expect(formatPhoneDisplay("123")).toBe("123");
+    expect(formatPhoneDisplay("")).toBe("");
+  });
+});
+
+// #2885: no celular (375 px) o campo da busca de cliente tem 311 px, e a frase longa
+// saía cortada ("Buscar por nome, telefone, CPF ou e…").
+describe("customerSearchPlaceholder", () => {
+  it("campo estreito ganha a frase curta, que cabe", () => {
+    expect(customerSearchPlaceholder(311)).toBe("Nome, telefone, CPF ou e-mail");
+  });
+  it("campo largo (o diálogo do balcão, 464 px) diz a frase inteira, como sempre", () => {
+    expect(customerSearchPlaceholder(464)).toBe("Buscar por nome, telefone, CPF ou e-mail");
+  });
+  it("antes de medir, a longa", () => {
+    expect(customerSearchPlaceholder(0)).toBe("Buscar por nome, telefone, CPF ou e-mail");
   });
 });

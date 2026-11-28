@@ -9,16 +9,22 @@ const props = withDefaults(
     largeFields?: boolean;
     reloadOnSuccess?: boolean;
     heading?: boolean;
+    /** Campos a mais no corpo do POST (a trava manda o `perm` da superfície). */
+    extraBody?: Record<string, string>;
   }>(),
   {
     iconSrc: "",
     largeFields: false,
     reloadOnSuccess: true,
     heading: false,
+    extraBody: () => ({}),
   },
 );
 
 const emit = defineEmits<{ success: [] }>();
+
+const LOGIN_TIMEOUT_MESSAGE = "O sistema demorou para responder e você não entrou. Tente entrar de novo.";
+const LOGIN_NO_ANSWER_MESSAGE = "O sistema não respondeu e você não entrou. Tente entrar de novo.";
 // Alvo de toque do `main` (44 px; 48 em tablet touch) só nas páginas que vestem a
 // suíte (`suite-page:`, os sete apps não migrados): o Gestor fica no tamanho oficial.
 // Os campos ganham o mesmo envelope pelo `app.config` (input `lg`/`xl`); o botão, aqui.
@@ -29,21 +35,40 @@ const username = ref("");
 const password = ref("");
 const pending = ref(false);
 const error = ref("");
+// Qual campo a recusa marca. A senha errada é dos dois (não se sabe qual errou);
+// o campo que ficou em branco é só dele.
+const invalid = ref<{ username: boolean; password: boolean }>({ username: false, password: false });
 const usernameInput = ref<{ inputRef?: HTMLInputElement } | null>(null);
-const { reset: resetSession } = useOperatorSession();
+const { reset: resetSession, rememberSignedIn } = useOperatorSession();
 
 onMounted(() => nextTick(() => usernameInput.value?.inputRef?.focus()));
 
+// O Entrar não fica apagado esperando os dois campos: apagado, o toque não dizia
+// nada e a pessoa não sabia o que faltava (beta 05/11, CEN-15). O toque diz.
+function missingFields(): string {
+  const semUsuario = !username.value.trim();
+  const semSenha = !password.value;
+  invalid.value = { username: semUsuario, password: semSenha };
+  if (semUsuario && semSenha) return "Informe usuário e senha.";
+  if (semUsuario) return "Informe o usuário.";
+  if (semSenha) return "Informe a senha.";
+  return "";
+}
+
 async function submit() {
   if (pending.value) return;
-  error.value = "";
+  error.value = missingFields();
+  if (error.value) return;
   pending.value = true;
   try {
     await $fetch(props.loginUrl, {
       method: "POST",
       credentials: "same-origin",
-      body: { username: username.value.trim(), password: password.value },
+      body: { ...props.extraBody, username: username.value.trim(), password: password.value },
     });
+    // Antes do reload: se a sessão cair logo depois de entrar, o login que voltar
+    // diz que ela terminou, em vez de abrir vazio (#3194).
+    rememberSignedIn();
     await refreshNuxtData("operator-session");
     resetSession();
     emit("success");
@@ -53,10 +78,19 @@ async function submit() {
       pending.value = false;
     }
   } catch (cause) {
-    error.value = httpErrorMessage(
-      cause,
-      "Não foi possível entrar. Confira usuário e senha.",
-    );
+    // Falha de TRANSPORTE (sem resposta, o BFF sem o Django) não é culpa do que
+    // foi digitado: os campos não ficam vermelhos. E a demora tem frase de login:
+    // a do BFF ("Confira se a operação aconteceu antes de repetir") é de quem
+    // grava dinheiro; entrar de novo é sempre seguro (#3194, P2-15).
+    const transport = isTransientError(cause);
+    invalid.value = { username: !transport, password: !transport };
+    error.value =
+      httpErrorCode(cause) === "upstream_timeout"
+        ? LOGIN_TIMEOUT_MESSAGE
+        : httpErrorMessage(
+            cause,
+            transport ? LOGIN_NO_ANSWER_MESSAGE : "Não foi possível entrar. Confira usuário e senha.",
+          );
     pending.value = false;
   }
 }
@@ -80,7 +114,7 @@ async function submit() {
              o slot `#error` dá ao leitor de tela o texto que o descreve. O texto visível
              e anunciado é um só, o Alert abaixo (região viva assertiva, o mesmo anúncio de
              um papel de alerta, sem recriar papel ARIA sobre o componente oficial). -->
-        <NuxtFormField label="Usuário" :error="Boolean(error)">
+        <NuxtFormField label="Usuário" :error="Boolean(error) && invalid.username">
           <NuxtInput
             id="operator-login-username"
             ref="usernameInput"
@@ -98,7 +132,7 @@ async function submit() {
             <span class="sr-only">{{ error }}</span>
           </template>
         </NuxtFormField>
-        <NuxtFormField label="Senha" :error="Boolean(error)">
+        <NuxtFormField label="Senha" :error="Boolean(error) && invalid.password">
           <NuxtInput
             id="operator-login-password"
             v-model="password"
@@ -132,7 +166,7 @@ async function submit() {
         :size="largeFields ? 'xl' : 'lg'"
         :class="touchAction"
         :loading="pending"
-        :disabled="pending || !username.trim() || !password"
+        :disabled="pending"
         :label="pending ? 'Entrando…' : 'Entrar'"
       />
     </div>

@@ -10,6 +10,7 @@ sessões (as linhas da página vêm no prefetch, não uma consulta por sessão).
 
 from __future__ import annotations
 
+import itertools
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -21,9 +22,24 @@ from shopman.orderman.ids import generate_idempotency_key
 from shopman.orderman.models import Session
 from shopman.orderman.services import CommitService
 from shopman.orderman.signals import order_changed
+from shopman.orderman.tests.commit_support import seal_for
 
 CHANNEL_REF = "qc-budget"
 ITEMS_PER_SESSION = 3
+
+# O código curto do pedido é SORTEADO (1 letra + 2 dígitos: 2.400 por dia) e
+# conferido no banco (``ids._day_code_taken``); se o sorteio repete um código já
+# dado no dia, ``generate_order_ref`` sorteia de novo, e cada sorteio a mais custa
+# consultas. Com dois commits seguidos no mesmo teste, o segundo repete o código do
+# primeiro uma vez em 2.400 execuções, e a contagem dava 39 contra 38 sem N+1
+# nenhum (CI de 19/11/2026, PR #2820). Aqui o candidato é fixo e sempre novo: a
+# conferência no banco continua rodando (e contando) igual nos dois commits, e o
+# teste mede só o que quer medir, o INSERT dos itens.
+_REF_CODES = itertools.count(1)
+
+
+def _fresh_ref_candidate(channel_ref: str, business_day) -> str:
+    return f"{channel_ref}-{business_day.strftime('%y%m%d')}-Q{next(_REF_CODES):02d}"
 
 
 def _line(i: int) -> dict:
@@ -56,12 +72,16 @@ class CommitQueryBudgetTests(TestCase):
         # O fan-out de order_changed (estoque, notificação) consulta por item e
         # também cresce com N, mas é outro caminho: aqui o alvo é o INSERT dos
         # OrderItem dentro do CommitService, então o sinal é isolado.
-        with mock.patch.object(order_changed, "send"):
+        with mock.patch.object(order_changed, "send"), mock.patch(
+            "shopman.orderman.ids._order_ref_candidate", side_effect=_fresh_ref_candidate,
+        ):
             with CaptureQueriesContext(connection) as ctx:
                 CommitService.commit(
                     session_key=session.session_key,
                     channel_ref=CHANNEL_REF,
                     idempotency_key=generate_idempotency_key(),
+                    seal=seal_for(session.session_key, CHANNEL_REF),
+                    channel_config={},
                 )
         return len(ctx), [q["sql"] for q in ctx.captured_queries]
 

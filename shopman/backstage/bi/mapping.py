@@ -86,7 +86,7 @@ def suggest_products(source: str, *, min_score: int = DEFAULT_MIN_SCORE, dry_run
 
     catalog = {
         sku: (name, normalize_name(name), pk)
-        for pk, sku, name in Product.objects.values_list("id", "sku", "name")
+        for pk, sku, name in Product.objects.active().values_list("id", "sku", "name")
     }
     catalog_by_sku_ci = {sku.lower(): sku for sku in catalog}
     sku_by_pk = {pk: sku for sku, (_name, _normalized, pk) in catalog.items()}

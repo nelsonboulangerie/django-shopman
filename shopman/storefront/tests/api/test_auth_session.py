@@ -15,16 +15,10 @@ def _disable_request_rate_limits(settings):
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
+    from shopman.guestman.adapters.auth import IdentityResolver
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
-        name=customer.name,
-        phone=customer.phone,
-        email=getattr(customer, "email", None) or None,
-        is_active=True,
-    )
+    info = IdentityResolver().get(customer.uuid, purpose="session")
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
     return user
@@ -402,13 +396,11 @@ def test_auth_request_code_NAO_expoe_o_otp_so_por_ser_staging(monkeypatch, setti
         return SimpleNamespace(
             success=True,
             delivery_method="whatsapp",
-            debug_code="123456",
             expires_at="2026-05-18T13:00:00+00:00",
         )
 
     settings.DEBUG = False
     settings.SHOPMAN_ENVIRONMENT = "staging"
-    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
     monkeypatch.setattr(auth_api, "HAS_AUTH", True)
     monkeypatch.setattr(auth_api.auth_service, "request_code", fake_request_code)
 
@@ -429,7 +421,6 @@ def _fake_result():
     return SimpleNamespace(
         success=True,
         delivery_method="whatsapp",
-        debug_code="123456",
         expires_at="2026-05-18T13:00:00+00:00",
     )
 
@@ -443,13 +434,10 @@ def _pedir_codigo(client: Client, **extra):
     )
 
 
-def _armar(monkeypatch, settings, *, token: str):
+def _armar(monkeypatch, settings):
     from shopman.storefront.api import auth as auth_api
 
     settings.DEBUG = False
-    settings.SHOPMAN_ENVIRONMENT = "staging"
-    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
-    settings.SHOPMAN_DEBUG_OTP_TOKEN = token
     monkeypatch.setattr(auth_api, "HAS_AUTH", True)
     monkeypatch.setattr(
         auth_api.auth_service, "request_code",
@@ -457,51 +445,15 @@ def _armar(monkeypatch, settings, *, token: str):
     )
 
 
-def test_o_segredo_no_cabecalho_libera_o_codigo_para_a_E2E(monkeypatch, settings, client: Client):
-    """A suíte E2E contra o ambiente vivo continua funcionando — com o segredo.
-
-    É isto que separa "testável" de "exposto", e é o que dispensa virar chave
-    nenhuma no go-live: o MESMO ambiente é seguro e testável.
-    """
-    _armar(monkeypatch, settings, token="segredo-da-suite")
-
-    data = _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="segredo-da-suite").json()
-
-    assert data["debug_otp_code"] == "123456"
-
-
-def test_sem_o_cabecalho_o_publico_nao_ve_o_codigo(monkeypatch, settings, client: Client):
-    _armar(monkeypatch, settings, token="segredo-da-suite")
-
-    assert "debug_otp_code" not in _pedir_codigo(client).json()
-
-
-def test_cabecalho_ERRADO_nao_libera(monkeypatch, settings, client: Client):
-    _armar(monkeypatch, settings, token="segredo-da-suite")
-
-    data = _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="chute").json()
-
-    assert "debug_otp_code" not in data
-
-
-def test_cabecalho_vazio_nao_casa_com_token_vazio(monkeypatch, settings, client: Client):
-    """Sem token configurado a porta fica FECHADA, e "" não abre "".
-
-    Comparar dois vazios com `==` teria feito qualquer requisição sem cabeçalho
-    passar exatamente no ambiente que ainda não foi configurado.
-    """
-    _armar(monkeypatch, settings, token="")
-
-    assert "debug_otp_code" not in _pedir_codigo(client).json()
-    assert "debug_otp_code" not in _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="").json()
-
-
-def test_em_DEBUG_local_continua_saindo_sem_configurar_nada(monkeypatch, settings, client: Client):
-    """O dev local não pode precisar de segredo para ver o próprio código."""
-    _armar(monkeypatch, settings, token="")
+def test_http_never_exposes_otp_even_in_debug(monkeypatch, settings, client: Client):
+    """Raw OTP belongs exclusively to the explicitly configured dev sender."""
+    _armar(monkeypatch, settings)
     settings.DEBUG = True
 
-    assert _pedir_codigo(client).json()["debug_otp_code"] == "123456"
+    assert "debug_otp_code" not in _pedir_codigo(
+        client,
+        HTTP_X_SHOPMAN_DEBUG_OTP="segredo-obsoleto",
+    ).json()
 
 
 def test_auth_request_code_never_exposes_debug_otp_in_production(monkeypatch, settings, client: Client):
@@ -511,13 +463,11 @@ def test_auth_request_code_never_exposes_debug_otp_in_production(monkeypatch, se
         return SimpleNamespace(
             success=True,
             delivery_method="whatsapp",
-            debug_code="123456",
             expires_at="2026-05-18T13:00:00+00:00",
         )
 
     settings.DEBUG = False
     settings.SHOPMAN_ENVIRONMENT = "production"
-    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
     monkeypatch.setattr(auth_api, "HAS_AUTH", True)
     monkeypatch.setattr(auth_api.auth_service, "request_code", fake_request_code)
 
@@ -576,10 +526,14 @@ def test_auth_device_check_trusted_cookie_creates_json_session(client: Client):
     from shopman.doorman import TrustedDevice
     from shopman.doorman.conf import doorman_settings
 
-    customer = Customer.objects.create(
-        ref="CUS-AUTH-DEVICE",
-        first_name="Dora",
-        phone="+5543999990012",
+    from shopman.storefront.tests.identity_fakes import proven
+
+    customer = proven(
+        Customer.objects.create(
+            ref="CUS-AUTH-DEVICE",
+            first_name="Dora",
+            phone="+5543999990012",
+        )
     )
     _, raw_token = TrustedDevice.create_for("customer", customer.uuid,
         user_agent="Mozilla/5.0 Test",
@@ -777,7 +731,7 @@ def test_a_espera_do_reenviar_vem_do_gate_do_servidor(monkeypatch, settings, cli
     """
     from shopman.doorman.conf import doorman_settings
 
-    _armar(monkeypatch, settings, token="")
+    _armar(monkeypatch, settings)
     monkeypatch.setattr(doorman_settings, "ACCESS_CODE_COOLDOWN_SECONDS", 75)
 
     data = _pedir_codigo(client).json()
@@ -795,7 +749,7 @@ def test_falha_de_envio_nao_culpa_o_numero_e_oferece_saida(monkeypatch, settings
 
     from shopman.storefront.api import auth as auth_api
 
-    _armar(monkeypatch, settings, token="")
+    _armar(monkeypatch, settings)
     monkeypatch.setattr(
         auth_api.auth_service, "request_code",
         lambda *, phone, delivery_method, ip_address: SimpleNamespace(
@@ -809,3 +763,119 @@ def test_falha_de_envio_nao_culpa_o_numero_e_oferece_saida(monkeypatch, settings
     detail = response.json()["detail"]
     assert "Verifique o número" not in detail
     assert "WhatsApp" in detail
+
+
+# ── beta 06/11: espera entre envios, código morto e prazo do aparelho ──────
+
+
+def test_espera_entre_envios_diz_quanto_falta_e_devolve_o_codigo_que_vale(monkeypatch, settings, client: Client):
+    """SMS-08: recarregar no passo do código e pedir de novo não pode cair num
+    "Aguarde" sem número e sem onde digitar o código que já chegou."""
+    from shopman.doorman.error_codes import ErrorCode
+
+    from shopman.storefront.api import auth as auth_api
+
+    _armar(monkeypatch, settings)
+    monkeypatch.setattr(
+        auth_api.auth_service, "request_code",
+        lambda *, phone, delivery_method, ip_address: SimpleNamespace(
+            success=False,
+            error="Please wait before requesting a new code.",
+            error_code=ErrorCode.COOLDOWN,
+            retry_after_seconds=45,
+            expires_at="2026-11-06T05:24:00+00:00",
+            delivery_method="sms",
+        ),
+    )
+
+    response = _pedir_codigo(client)
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["error_code"] == "cooldown"
+    assert data["retry_after_seconds"] == 45
+    assert data["code_expires_at"] == "2026-11-06T05:24:00+00:00"
+    assert data["delivery_label"] == "SMS"
+    assert data["phone"]
+    assert "45 segundos" in data["detail"]
+
+
+def test_espera_sem_codigo_valido_nao_promete_passo_do_codigo(monkeypatch, settings, client: Client):
+    from shopman.doorman.error_codes import ErrorCode
+
+    from shopman.storefront.api import auth as auth_api
+
+    _armar(monkeypatch, settings)
+    monkeypatch.setattr(
+        auth_api.auth_service, "request_code",
+        lambda *, phone, delivery_method, ip_address: SimpleNamespace(
+            success=False,
+            error="Please wait before requesting a new code.",
+            error_code=ErrorCode.COOLDOWN,
+            retry_after_seconds=1,
+            expires_at=None,
+            delivery_method=None,
+        ),
+    )
+
+    data = _pedir_codigo(client).json()
+
+    assert data["code_expires_at"] == ""
+    assert "delivery_label" not in data
+    assert "1 segundo." in data["detail"]
+
+
+def test_codigo_morto_por_tentativas_tem_resposta_propria(monkeypatch, client: Client):
+    """SMS-07: a 5a tentativa errada (e o código certo depois dela) não diz
+    "incorreto" nem "expirado": diz que o código deixou de valer e o que fazer."""
+    from shopman.doorman.conf import doorman_settings
+    from shopman.doorman.error_codes import ErrorCode
+
+    from shopman.storefront.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api, "HAS_AUTH", True)
+    monkeypatch.setattr(
+        auth_api.auth_service, "verify_for_login",
+        lambda *, phone, code_input, request: SimpleNamespace(
+            success=False,
+            error="Too many incorrect attempts. Please request a new code.",
+            error_code=ErrorCode.CODE_MAX_ATTEMPTS,
+            attempts_remaining=0,
+        ),
+    )
+
+    response = client.post(
+        "/api/v1/auth/verify-code/",
+        data={"phone": "43999998888", "code": "123456"},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["error_code"] == "code_max_attempts"
+    assert data["field"] == "code"
+    assert f"errou o código {doorman_settings.ACCESS_CODE_MAX_ATTEMPTS} vezes" in data["detail"]
+    assert "expirado" not in data["detail"].lower()
+
+
+@pytest.mark.django_db
+def test_prazo_do_aparelho_salvo_vem_do_doorman(monkeypatch):
+    """SMS-09: a copy dizia 30 dias fixos; a confiança dura DEVICE_TRUST_TTL_DAYS
+    (180) contados do último uso. O número sai do doorman, não da copy."""
+    from shopman.doorman.conf import doorman_settings
+
+    from shopman.storefront.presentation.home import _device_trust_entry
+
+    omotenashi = SimpleNamespace(moment="*", audience="*")
+
+    prompt = _device_trust_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi)
+    saved = _device_trust_entry("DEVICE_TRUST_SAVED", omotenashi=omotenashi)
+    assert "6 meses" in prompt.message
+    assert "6 meses" in saved.message
+    assert "renova" in saved.message
+    for text in (prompt.title, prompt.message, saved.message):
+        assert "30 dias" not in text
+        assert "{period}" not in text
+
+    monkeypatch.setattr(doorman_settings, "DEVICE_TRUST_TTL_DAYS", 90)
+    assert "3 meses" in _device_trust_entry("DEVICE_TRUST_PROMPT", omotenashi=omotenashi).message

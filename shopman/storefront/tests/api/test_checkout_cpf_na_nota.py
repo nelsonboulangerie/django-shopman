@@ -22,9 +22,9 @@ from shopman.guestman.models import Customer
 from shopman.orderman.models import Order
 
 from shopman.shop.services import fiscal
-from shopman.storefront.services.pickup_slots import get_slots
 from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
+from shopman.storefront.tests._pickup_today import today_pickup_slot
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -57,7 +57,7 @@ def _post(client, **over):
         "phone": "+5543999990001",
         "fulfillment_type": "pickup",
         "delivery_date": timezone.localdate().isoformat(),
-        "delivery_time_slot": get_slots()[-1]["ref"],
+        "delivery_time_slot": today_pickup_slot(),
         "payment_method": "cash",
     }
     payload.update(over)

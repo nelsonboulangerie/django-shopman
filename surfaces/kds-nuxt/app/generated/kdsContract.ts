@@ -38,6 +38,7 @@ export interface KDSTicketProjection {
   completed_at_display: string;
   kitchen_note: string;
   customer_note: string;
+  service_label: string;
   test_order_label: string;
   finish_block_label: string;
   finish_block_reason: string;
@@ -53,6 +54,8 @@ export interface KDSTicketProjection {
   seen: boolean;
   changes: KDSChangeProjection[];
   change_ticket_pks: number[];
+  order_created_at_display: string;
+  order_elapsed_seconds: number | null;
 }
 
 /** A KDS instance in the index (station selector). */

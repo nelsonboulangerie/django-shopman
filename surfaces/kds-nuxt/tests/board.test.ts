@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   allDayCounts,
+  fitAllDayChips,
+  barNeedsArmDelay,
   cardScale,
   fulfillmentLabel,
   boardView,
@@ -14,6 +16,8 @@ import {
   ticketAction,
   ticketOverline,
   ticketStartLine,
+  orderWaitLabel,
+  ticketArrivalLine,
   lucideIcon,
   slaPercent,
   sortByUrgency,
@@ -92,7 +96,8 @@ describe("kds board presentation", () => {
   it("maps timer class to a functional tone", () => {
     expect(ticketTone("timer-late")).toBe("late");
     expect(ticketTone("timer-warning")).toBe("warning");
-    expect(ticketTone("timer-ok")).toBe("ok");
+    expect(ticketTone("timer-ok")).toBe("neutral");
+    expect(ticketTone("timer-late", "done")).toBe("ready");
   });
 
   it("shapes the board view + counts", () => {
@@ -157,12 +162,37 @@ describe("kds board presentation", () => {
     expect(ticketOverline(ticket({ is_preorder: true, customer_name: "(43) 99333-3333" }))).toBe("Encomenda");
   });
 
+  it("#3193: a venda de balcão diz o que o PDV marcou, no lugar de Retirada", () => {
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "Para levar" }))).toBe("Para levar");
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "Consumir aqui" }))).toBe("Consumir aqui");
+    // O balcão que não disse segue Retirada; a encomenda segue Encomenda.
+    expect(ticketOverline(ticket({ fulfillment_icon: "storefront", service_label: "" }))).toBe("Retirada");
+    expect(ticketOverline(ticket({ is_preorder: true, service_label: "Para levar" }))).toBe("Encomenda · Ana");
+  });
+
   it("v4 nota 7: iniciado por e a hora combinada numa linha", () => {
     expect(ticketStartLine(ticket({ started_by: "Rafael", started_at_display: "21:56", due_time_display: "retira às 22:30" }))).toBe(
-      "iniciado por Rafael às 21:56 · retira às 22:30",
+      "Iniciado por Rafael às 21:56 · retira às 22:30",
     );
-    expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("entrega às 11:00");
+    expect(ticketStartLine(ticket({ due_time_display: "entrega às 11:00" }))).toBe("Entrega às 11:00");
     expect(ticketStartLine(ticket())).toBe("");
+  });
+
+  it("a idade do pedido aparece quando ele chegou à cozinha bem depois de entrar (beta 05/11, KDS-04)", () => {
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 33 * 60 })).toBe("pedido há 33m");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 120 })).toBe("");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: 33 * 60, due_clock_display: "17h" })).toBe("");
+    expect(orderWaitLabel({ elapsed_seconds: 60, order_elapsed_seconds: null })).toBe("");
+    expect(ticketStartLine(ticket({ started_by: "Diofer", started_at_display: "06:16", elapsed_seconds: 60, order_elapsed_seconds: 1980 }))).toBe(
+      "Pedido há 33m · iniciado por Diofer às 06:16",
+    );
+  });
+
+  it("o sobrescrito do detalhe separa a chegada à cozinha da hora do pedido, sem o prefixo do código (KDS-04, KDS-16)", () => {
+    expect(ticketArrivalLine(ticket({ created_at_display: "05/11 às 06:15" }))).toBe("Na cozinha desde 05/11 às 06:15");
+    expect(
+      ticketArrivalLine(ticket({ created_at_display: "05/11 às 06:15", elapsed_seconds: 60, order_elapsed_seconds: 1980, order_created_at_display: "05:43" })),
+    ).toBe("Na cozinha desde 05/11 às 06:15 · pedido às 05:43");
   });
 
   it("o card do tablet e do desktop diz Pronto com o código, como o celular (dono, 04/10/2026)", () => {
@@ -217,23 +247,25 @@ describe("kds board presentation", () => {
   it("maps tone to a solid bar fill and a tonal timer chip", () => {
     expect(toneBar("late")).toContain("red");
     expect(toneBar("warning")).toContain("amber");
-    expect(toneBar("ok")).not.toMatch(/red|amber|green/); // no prazo = cinza calmo
+    expect(toneBar("neutral")).not.toMatch(/red|amber|green/); // no prazo = cinza calmo
+    expect(toneBar("ready")).toContain("success");
     expect(toneTimer("late")).toContain("red");
-    expect(toneTimer("ok")).toContain("muted-foreground");
+    expect(toneTimer("neutral")).toContain("muted-foreground");
   });
 
   it("pinta o próximo no tom do próprio semáforo (v4: borda de 2px, tinta e halo)", () => {
     expect(toneNextSurface("late")).toContain("border-destructive");
     expect(toneNextSurface("warning")).toContain("border-warning");
-    expect(toneNextSurface("ok")).toContain("border-primary");
-    expect(toneNextSurface("ok")).not.toMatch(/destructive|warning/);
+    expect(toneNextSurface("neutral")).toContain("border-border");
+    expect(toneNextSurface("neutral")).not.toMatch(/destructive|warning|success/);
   });
 
   it("o relógio do card: atrasado é o único sólido; perto da meta, âmbar; no prazo, neutro", () => {
     expect(toneTimerChip("late")).toContain("bg-destructive");
     expect(toneTimerChip("warning")).toContain("text-warning");
     expect(toneTimerChip("warning")).not.toContain("bg-");
-    expect(toneTimerChip("ok")).toContain("border-border");
+    expect(toneTimerChip("neutral")).toContain("border-border");
+    expect(toneTimerChip("ready")).toContain("success");
   });
 
   it("a pílula do card diz o estado num estilo só", () => {
@@ -242,13 +274,15 @@ describe("kds board presentation", () => {
     // O de agora no prazo diz o estado, nunca "Próximo" (a posição está no rótulo "Agora").
     expect(ticketPill(ticket({ status: "pending" }), { next: true })).toEqual({ label: "Novo", tone: "info" });
     expect(ticketPill(ticket({ status: "pending" }), {})).toEqual({ label: "Novo", tone: "info" });
+    // Relógio vermelho fora do "Agora" também diz Atrasado, nunca "Novo" (beta 05/11, KDS-15).
+    expect(ticketPill(ticket({ status: "pending", timer_class: "timer-late" }), {})).toEqual({ label: "Atrasado", tone: "destructive" });
     expect(ticketPill(ticket({ status: "in_progress" }), {})).toEqual({ label: "Em preparo", tone: "primary" });
     expect(ticketPill(ticket({ status: "in_progress" }), { blocked: true })?.label).toBe("Bloqueado");
   });
 
   it("destaque do próximo é borda + tint: ring fica reservado ao foco de teclado", () => {
     // Canon do kit (operator-base.css, "SELEÇÃO / ATIVO").
-    for (const tone of ["late", "warning", "ok"] as const) {
+    for (const tone of ["late", "warning", "neutral", "ready"] as const) {
       expect(toneNextSurface(tone)).not.toContain("ring");
       expect(toneNextSurface(tone)).toContain("border-");
     }
@@ -363,6 +397,23 @@ it("soma quantidades decimais sem concatenar strings nem arredondar unidades", (
   const second = ticket();
   second.items[0]!.qty = "0.2";
   expect(allDayCounts([first, second])).toEqual([{ name: "Pão", qty: 0.3 }]);
+});
+
+describe("A fazer: quais chips cabem na linha (beta 05/11, KDS-08)", () => {
+  const room = { reserve: 94, more: 104, gap: 8 };
+
+  it("um nome longo que não cabe não esconde os curtos que vêm depois", () => {
+    // 2× Croissant Presunto e Queijo (330) cabe; o longo seguinte (400) não; os curtos sim.
+    expect(fitAllDayChips([330, 400, 90, 80, 300], 800, room)).toEqual([0, 2, 3]);
+  });
+
+  it("tudo cabendo, mostra todos e não reserva o +N", () => {
+    expect(fitAllDayChips([100, 100], 320, room)).toEqual([0, 1]);
+  });
+
+  it("sem medida ainda (largura 0), mostra todos", () => {
+    expect(fitAllDayChips([500, 500], 0, room)).toEqual([0, 1]);
+  });
 });
 
 describe("o botão do card", () => {
@@ -568,4 +619,24 @@ describe("a fila do cozinheiro (v4: 4 a 6 em foco, o resto vira +N)", () => {
     expect(queueLine(ticket({ items: items(1) }))).toBe("1× Item 0");
     expect(queueLine(ticket({ items: items(3) }))).toBe("1× Item 0 +2");
   });
+});
+
+describe("barNeedsArmDelay", () => {
+  it("espera ao iniciar o mesmo pedido, para o toque que iniciou não marcar Pronto", () => {
+    expect(barNeedsArmDelay({ pk: 1, status: "pending" }, { pk: 1, status: "in_progress" })).toBe(true);
+  });
+  it("espera quando o pedido em foco troca: o toque atrasado do Desfazer não marca o seguinte", () => {
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 138, status: "in_progress" })).toBe(true);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 138, status: "pending" })).toBe(true);
+  });
+  it("o primeiro foco da tela e o mesmo pedido sem início nascem armados", () => {
+    expect(barNeedsArmDelay({}, { pk: 131, status: "in_progress" })).toBe(false);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, { pk: 131, status: "in_progress" })).toBe(false);
+    expect(barNeedsArmDelay({ pk: 131, status: "in_progress" }, {})).toBe(false);
+  });
+});
+
+it("idades de vários dias não viram centenas de horas", () => {
+  expect(elapsedLabel(1046 * 3600)).toBe("43d 14h");
+  expect(elapsedLabel(24 * 3600)).toBe("1d");
 });

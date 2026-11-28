@@ -6,6 +6,17 @@ conexão e sincroniza na volta. Quedas são comuns em dia chuvoso de movimento. 
 é o desenho da terceira camada. A implementação do que não depende de decisão está na PR da
 fila (ver §8).
 
+> **Chave da loja (dono, 03/11/2026):** "Não teremos contingência offline ainda." A venda
+> sem conexão existe atrás de uma chave por loja, **Venda sem conexão**
+> (`Shop.pos_offline_sale_enabled`, Admin em Ponto de venda), que nasce **desligada**.
+> Ligar depende da NFC-e em contingência (tpEmis 9), que ainda não existe: sem ela, a
+> nota da venda sem conexão sai só no envio, com a hora do envio. Desligada, o PDV sem rede
+> não cobra nem guarda venda, e `close_sale` recusa com 409 `offline_sale_disabled`
+> (`{detail, field, errors}`) qualquer corpo com `offline_captured_at`/`offline_prices_at`;
+> a venda já guardada num dispositivo segue listada na fila, recusada com o motivo, e o
+> reenvio de uma venda que já fechou segue devolvendo o pedido. Ligada, tudo o que este
+> documento descreve vale sem mudança.
+
 > **ADR-013 §1** ("POS não faz commit offline") fica superado por esta decisão. Os
 > pré-requisitos que o próprio ADR exigia para o dia em que houvesse venda offline (fila com
 > `client_request_id`, reenvio idempotente, fechamento de caixa barrado com fila pendente,
@@ -20,7 +31,7 @@ fila (ver §8).
 | Abrir comanda | `POST pos/tabs/<ref>/open/` (cria `Session`) | **Não abre no servidor.** A comanda livre abre só na tela (§3.4). |
 | Salvar comanda (autosave) | `POST pos/tabs/save/` com `expected_revision` (`@tab_command`) | Falha; a tela marca "não salvo". O fechamento leva os itens inteiros (§3.3). |
 | Total da venda | `POST pos/sale/review/`; com comanda, `tabs/save/?review=1` (#1627) | Total montado na tela pela última leitura (§4). |
-| Fechar | `POST pos/sale/close/` (`close_sale`, `require_expected_total=True`) | Vai para a fila local (§3). |
+| Fechar | `POST pos/sale/close/` (`close_sale`; total revisado sempre obrigatório) | Vai para a fila local (§3). |
 | Enviar à cozinha | `POST pos/tabs/fire/` (ledger por `line_id`) | Não envia. Cozinha avisada de voz. |
 | Pagamento | `settle_terminal_tenders` (dinheiro, crédito/débito atestados, `external`); `initiate` para Pix/link/cartão online | Dinheiro e maquininha seguem. **Pix, link e cartão online param.** |
 | NFC-e | `fiscal.emit_on_payment` → Directive `FISCAL_EMIT_NFCE` → Focus NFe (nuvem) | Não emite. Ver §5. |
@@ -214,10 +225,13 @@ PC Windows ligado no nobreak, ativação com o suporte da Focus e confirmação 
 
 ## 8. Riscos e o que fica de fora
 
-- **Recarregar a tela sem internet** cai no `offline.html` do PWA (navegação é `NetworkOnly`). A
-  fila sobrevive (IndexedDB) e sobe quando a tela volta com rede, mas a venda para até lá. Próximo
-  passo: casco offline para `/` no PDV (cache da última navegação), que mexe no `operator-kit` e no
-  que fica guardado no dispositivo (lista de operadores e gerentes no HTML).
+- **Recarregar a tela sem internet** (resolvido em 19/10/2026): a navegação da venda (`/`) vai à
+  rede primeiro e, sem rede, abre o último HTML que a rede devolveu a este dispositivo
+  (`offlineShellPaths` do `operator-kit`, cache de runtime `pos-shell`), com a leitura que veio nele;
+  a fila segue. O HTML só é guardado e só é usado se for da mesma build do service worker (versão
+  nova ou rollback não reabrem HTML velho). O que fica no dispositivo é o que já estava na tela:
+  catálogo, comandas, nomes e usuários de operadores e gerentes, sem PIN nem segredo. O resto do PDV
+  segue no `offline.html`.
 - **Gaveta sem rede abre sem registro prévio** (no Balcão já era assim na venda em dinheiro: chuta e
   registra depois). O registro vem com a venda.
 - **Preço trocado durante a queda**: vale o cobrado (§3.3). O preço do catálogo ainda é o de agora

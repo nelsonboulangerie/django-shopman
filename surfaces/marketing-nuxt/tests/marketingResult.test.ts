@@ -43,6 +43,26 @@ describe("Marketing result presentation", () => {
     });
   });
 
+  it("does not call provider acceptance a confirmed delivery in either summary or platform", () => {
+    const counts = { ...emptyCounts, accepted: 1 };
+    expect(deliveryStatePresentation("succeeded", "published", counts)).toMatchObject({
+      label: "Aguardando confirmação de entrega",
+      tone: "attention",
+    });
+    expect(deliveryStatePresentation("succeeded", "published", {
+      ...counts, confirmed: 2,
+    }).label).toBe("Aguardando confirmação de entrega");
+    expect(platformDeliveryLabel({ state: "succeeded", counts }, false)).toBe(
+      "Aguardando confirmação de entrega",
+    );
+    expect(deliveryStatePresentation("succeeded", "published", {
+      ...emptyCounts, confirmed: 1,
+    }).label).toBe("Entrega confirmada");
+    expect(deliveryStatePresentation("succeeded", "published", {
+      ...emptyCounts, suppressed: 1,
+    }).label).toBe("Envio encerrado");
+  });
+
   it("separates provider acceptance, confirmation, retryable failure and unknown", () => {
     const items = deliveryCountItems({
       ...emptyCounts,

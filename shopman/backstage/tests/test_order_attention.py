@@ -16,19 +16,20 @@ from django.urls import reverse
 from django.utils import timezone
 from shopman.offerman.models import Product
 from shopman.orderman.models import Order, OrderEvent, OrderItem
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.models import KDSInstance, KDSTicket, OutageReason, ShelfOutage
 from shopman.backstage.projections.order_queue import build_two_zone_queue
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import kds as kds_core
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood")]
 
 
 @pytest.fixture
 def shop(db):
     Shop.objects.create(name="Loja")
-    Channel.objects.create(ref="web", name="Loja online", config={})
+    Channel.objects.update_or_create(ref='web', defaults={'name': 'Loja online', 'config': {}})[0]
     return None
 
 
@@ -62,7 +63,7 @@ def test_new_order_needs_a_decision_with_the_confirmation_goal(operator):
     card = cards["ATT-NEW"]
     assert card.attention == "confirm"
     assert card.goal_minutes == 5
-    assert card.goal_label == "meta 5"
+    assert card.goal_label == "meta 5 min"
     assert card.attention_since_iso
 
 
@@ -82,7 +83,7 @@ def test_ready_delivery_waits_the_dispatch_against_the_whole_promise(operator):
     _, cards = _cards(operator)
     card = cards[order.ref]
     assert card.attention == "dispatch"
-    assert card.goal_label == "meta 30"
+    assert card.goal_label == "meta 30 min"
     assert card.attention_since_iso == order.created_at.isoformat()
 
 
@@ -104,7 +105,7 @@ def test_station_goal_on_the_card_is_fifteen_by_default(operator):
     card = cards[preparing.ref]
     assert card.attention == "mark_ready"
     assert card.goal_minutes == 15
-    assert card.goal_label == "meta 15"
+    assert card.goal_label == "meta 15 min"
 
 
 def test_channel_overrides_one_stage_goal_and_inherits_the_rest(operator):
@@ -118,7 +119,7 @@ def test_channel_overrides_one_stage_goal_and_inherits_the_rest(operator):
     ready = _order("ATT-GOAL-RDY", status=Order.Status.READY)
     _, cards = _cards(operator)
     assert cards[delivery.ref].goal_minutes == 40
-    assert cards[delivery.ref].goal_label == "meta 40"
+    assert cards[delivery.ref].goal_label == "meta 40 min"
     assert cards[preparing.ref].goal_minutes == 25
     assert cards[ready.ref].goal_minutes == 10
 
@@ -179,7 +180,7 @@ def test_system_did_ignores_what_a_person_did_and_old_events(operator):
 
 def test_menu_lists_open_outages_one_per_product(operator):
     Product.objects.create(sku="BICHON", name="Bichon au Citron", base_price_q=1200)
-    Channel.objects.create(ref="ifood", name="iFood", config={})
+    Channel.objects.update_or_create(ref='ifood', defaults={'name': 'iFood', 'config': {}})[0]
     now = timezone.now()
     ShelfOutage.objects.create(sku="BICHON", channel_ref="web", reason=OutageReason.SOLD_OUT, started_at=now - timedelta(minutes=5))
     ShelfOutage.objects.create(sku="BICHON", channel_ref="ifood", reason=OutageReason.SOLD_OUT, started_at=now - timedelta(minutes=4))
@@ -204,10 +205,16 @@ def test_board_endpoint_carries_the_awareness_block(client, operator):
 
 
 def test_product_detail_says_where_it_can_be_bought_now(shop):
+    from shopman.offerman.models import Listing, ListingItem
+
     from shopman.backstage.services.catalog import get_product_detail
 
-    Product.objects.create(sku="CROISSANT", name="Croissant Manteiga", base_price_q=1300)
-    Channel.objects.create(ref="ifood", name="iFood", config={})
+    croissant = Product.objects.create(sku="CROISSANT", name="Croissant Manteiga", base_price_q=1300)
+    Channel.objects.update_or_create(ref='ifood', defaults={'name': 'iFood', 'config': {}})[0]
+    # Só está à venda onde está listado (beta 05/11, GES-03): sem vínculo é ``not_listed``.
+    for ref in ("web", "ifood"):
+        listing, _ = Listing.objects.get_or_create(ref=ref, defaults={"name": ref, "is_active": True})
+        ListingItem.objects.create(listing=listing, product=croissant, price_q=1300)
     ShelfOutage.objects.create(sku="CROISSANT", channel_ref="ifood", reason=OutageReason.SOLD_OUT, started_at=timezone.now())
 
     rows = {row["ref"]: row for row in get_product_detail("CROISSANT")["channel_availability"]}
@@ -251,7 +258,7 @@ def test_open_ifood_negotiation_is_what_the_order_waits_even_after_delivery(oper
     # entre a criação e a conferência, "17:43" viraria "17:44" e o teste mentiria.
     raw_expires = order.data["ifood"]["handshakes"]["dispute-1"]["raw"]["expiresAt"]
     expires = timezone.localtime(datetime.fromisoformat(raw_expires))
-    assert card.goal_label == f"responder até {expires:%H:%M}"
+    assert card.goal_label == f"responder até {format_clock(expires)}"
     assert card.attention_since_iso
 
 
@@ -264,3 +271,233 @@ def test_answered_ifood_negotiation_waits_nobody(operator):
     queue = build_two_zone_queue(user=operator)
     card = next(card for card in queue.ifood_negotiation_orders if card.ref == order.ref)
     assert card.attention != "negotiation"
+
+
+# ── Prazo de aceite: 5 min no dia, 60 na encomenda (dono, 09/11/2026) ───────
+
+
+_WEB_PAYS_AT_ORDER = {
+    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 5, "preorder_timeout_minutes": 60},
+    "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
+}
+
+
+def _paid_pix(order: Order) -> Order:
+    """O Pix caiu: é ele que abre o prazo de aceite (``_on_paid``), e só com ele o
+    pedido pede alguém (DEV-2026-091: sem dinheiro, nada a aceitar)."""
+    from shopman.payman import PaymentService
+
+    intent = PaymentService.create_intent(order_ref=order.ref, amount_q=order.total_q, method="pix")
+    order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+    order.save(update_fields=["data", "updated_at"])
+    PaymentService.authorize(intent.ref, gateway_id=f"gw-{order.ref}")
+    PaymentService.capture(intent.ref)
+    order.refresh_from_db()
+    return order
+
+
+def _accept_deadline_order(ref: str, *, delivery_date=None) -> Order:
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.lifecycle import _schedule_confirmation_timeout
+
+    Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
+    order = _paid_pix(_order(ref, payment={"method": "pix"}))
+    if delivery_date is not None:
+        order.data["delivery_date"] = delivery_date.isoformat()
+        order.save(update_fields=["data"])
+    _schedule_confirmation_timeout(order, ChannelConfig.for_channel("web"), action="cancel", source="payment_confirmed")
+    return order
+
+
+def test_relogio_do_pedido_do_dia_conta_5_minutos(operator):
+    before = timezone.now()
+    order = _accept_deadline_order("ATT-DIA")
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.confirmation_action == "cancel"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert before + timedelta(minutes=5) <= deadline <= timezone.now() + timedelta(minutes=5)
+    assert card.goal_minutes == 5
+
+
+def test_relogio_da_encomenda_conta_60_minutos(operator):
+    before = timezone.now()
+    order = _accept_deadline_order("ATT-ENC", delivery_date=timezone.localdate() + timedelta(days=1))
+    queue = build_two_zone_queue(user=operator)
+    # A encomenda NOVA espera aceite na Entrada, não em "Agendados" (beta 09/11).
+    card = next(card for card in queue.intake if card.ref == order.ref)
+    assert order.ref not in {card.ref for card in queue.preorders}
+
+    assert card.confirmation_action == "cancel"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert before + timedelta(minutes=60) <= deadline <= timezone.now() + timedelta(minutes=60)
+    assert card.attention == "confirm"
+    assert card.goal_minutes == 60
+
+
+def test_pix_pago_aos_7_minutos_nao_nasce_atrasado(operator):
+    """A meta conta do prazo agendado, não da criação: o prazo acabou de começar."""
+    Channel.objects.filter(ref="web").update(config=_WEB_PAYS_AT_ORDER)
+    order = _paid_pix(_order("ATT-PIX7", payment={"method": "pix"}))
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=7))
+    order.refresh_from_db()
+    from shopman.shop.config import ChannelConfig
+    from shopman.shop.lifecycle import _schedule_confirmation_timeout
+
+    paid_at = timezone.now()
+    _schedule_confirmation_timeout(order, ChannelConfig.for_channel("web"), action="cancel", source="payment_confirmed")
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    since = datetime.fromisoformat(card.attention_since_iso)
+    assert card.goal_minutes == 5
+    assert since >= paid_at
+    # O número do card chega à meta junto com o "cancela sozinho em".
+    assert since + timedelta(minutes=card.goal_minutes) == datetime.fromisoformat(card.confirmation_deadline_iso)
+    elapsed = (timezone.now() - since).total_seconds()
+    assert elapsed / (card.goal_minutes * 60) < 0.8
+
+
+def test_meta_da_encomenda_agendada_na_vespera_continua_60_no_dia(operator):
+    """O timer contou 60 na véspera; lido no dia combinado, o card não vira "meta 5 min"."""
+    from unittest.mock import patch
+
+    yesterday_night = timezone.now() - timedelta(days=1)
+    with patch("django.utils.timezone.now", return_value=yesterday_night):
+        order = _accept_deadline_order("ATT-VESP", delivery_date=timezone.localdate() + timedelta(days=1))
+    assert order.data["delivery_date"] == timezone.localdate().isoformat()
+
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.goal_minutes == 60
+    assert card.goal_label == "meta 60 min"
+    deadline = datetime.fromisoformat(card.confirmation_deadline_iso)
+    assert datetime.fromisoformat(card.attention_since_iso) == deadline - timedelta(minutes=60)
+
+
+def test_encomenda_nova_aos_10_minutos_nao_fica_urgente(operator):
+    """O tom do aceite conta o prazo do timer (60 min), não 5 min da criação."""
+    from unittest.mock import patch
+
+    order = _accept_deadline_order("ATT-ENC10", delivery_date=timezone.localdate() + timedelta(days=2))
+    with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=10)):
+        _, cards = _cards(operator)
+    assert cards[order.ref].timer_class == "timer-ok"
+    # Passou da metade do prazo: atenção, como o iFood (dono, 13/11/2026).
+    with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=32)):
+        _, cards = _cards(operator)
+    assert cards[order.ref].timer_class == "timer-warning"
+    with patch("django.utils.timezone.now", return_value=timezone.now() + timedelta(minutes=50)):
+        _, cards = _cards(operator)
+    assert cards[order.ref].timer_class == "timer-urgent"
+
+
+def test_pedido_do_dia_sem_timer_segue_urgente_aos_4_minutos(operator):
+    order = _order("ATT-DIA4")
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=4, seconds=5))
+    _, cards = _cards(operator)
+    assert cards[order.ref].timer_class == "timer-urgent"
+
+
+def _agreed(ref: str, *, status, at: datetime, fulfillment="pickup") -> Order:
+    """Pedido de hoje com hora combinada (a meia hora do expediente)."""
+    order = _order(ref, status=status, fulfillment=fulfillment)
+    local = timezone.localtime(at)
+    if local.date() != timezone.localdate() or local.hour >= 23:
+        pytest.skip("perto da meia-noite a hora combinada cairia em outro dia")
+    end = local + timedelta(minutes=30)
+    order.data["delivery_date"] = local.date().isoformat()
+    order.data["delivery_time_slot"] = f"{local:%H:%M}-{end:%H:%M}"
+    order.save(update_fields=["data"])
+    return order
+
+
+def test_hora_combinada_mede_o_inicio_contra_o_combinado(operator):
+    """Aceito há 20 min para daqui a 30: iniciar mede contra o combinado, não contra o aceite.
+
+    O combinado fica perto o bastante para o pedido já estar no quadro: com mais
+    folga que preparo + antecedência, o pedido de hoje com hora combinada espera a
+    hora da Cozinha na lista "Encomendas" e não pede início (#2548).
+    """
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    order = _agreed("ATT-HC-START", status=Order.Status.ACCEPTED, at=timezone.now() + timedelta(minutes=30))
+    Order.objects.filter(pk=order.pk).update(accepted_at=timezone.now() - timedelta(minutes=20))
+    order.refresh_from_db()
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+    promised = promised_at(order)
+
+    assert card.attention == "start"
+    since = datetime.fromisoformat(card.attention_since_iso)
+    # A meta chega ao combinado menos o preparo (meta da estação, 15).
+    assert abs((since + timedelta(minutes=card.goal_minutes)) - (promised - timedelta(minutes=15))) < timedelta(minutes=1)
+    assert card.goal_label == f"combinado para as {format_clock(promised)}"
+    assert (timezone.now() - since).total_seconds() / (card.goal_minutes * 60) < 0.8
+
+
+def test_hora_combinada_vencida_fica_atrasada(operator):
+    order = _agreed("ATT-HC-LATE", status=Order.Status.READY, fulfillment="delivery",
+                    at=timezone.now() - timedelta(minutes=10))
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=20))
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.attention == "dispatch"
+    since = datetime.fromisoformat(card.attention_since_iso)
+    # Chegou há 20 min, combinado há 10: passou da meta (que é o combinado).
+    assert (timezone.now() - since).total_seconds() >= card.goal_minutes * 60
+
+
+def test_hora_combinada_da_entrega_nao_estoura_aos_30_min(operator):
+    order = _agreed("ATT-HC-DLV", status=Order.Status.READY, fulfillment="delivery",
+                    at=timezone.now() + timedelta(hours=2))
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(minutes=40))
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.attention == "dispatch"
+    assert card.goal_minutes > 150
+    assert card.goal_label.startswith("combinado para as ")
+
+
+def test_combinado_de_outro_dia_diz_o_dia_como_o_selo(operator):
+    """A meta e o selo do mesmo pedido não discordam sobre o dia (WP-G01)."""
+    ontem = timezone.localdate() - timedelta(days=1)
+    order = _order("ATT-HC-ONTEM", status=Order.Status.READY, fulfillment="delivery")
+    order.data["delivery_date"] = ontem.isoformat()
+    order.data["delivery_time_slot"] = "15:00-15:30"
+    order.save(update_fields=["data"])
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.attention == "dispatch"
+    assert card.goal_label.startswith("combinado para ontem às 15h")
+    assert card.schedule_label.startswith("Era para ontem · ")
+
+
+def test_pronto_antes_da_hora_combinada_nao_e_atraso_no_balcao(operator):
+    order = _agreed("ATT-HC-BAL", status=Order.Status.PREPARING, at=timezone.now() + timedelta(hours=1))
+    order.transition_status(Order.Status.READY)
+    _, cards = _cards(operator)
+    card = cards[order.ref]
+
+    assert card.attention == "handoff"
+    assert card.goal_label == "no balcão"
+    # A meta do balcão (10) conta do combinado: uma hora mais a meta.
+    assert card.goal_minutes >= 69
+
+
+def test_previsao_de_pronto_respeita_a_hora_combinada(operator):
+    from shopman.shop.services.fulfillment_window import promised_at
+    from shopman.shop.services.kitchen_eta import PrepExpectation, ready_eta
+
+    order = _agreed("ATT-HC-ETA", status=Order.Status.ACCEPTED, at=timezone.now() + timedelta(hours=2))
+    now = timezone.now()
+    eta = ready_eta(order, PrepExpectation(minutes=None, samples=0), now=now)
+    assert eta == promised_at(order)
+
+    immediate = _order("ATT-ETA-NOW", status=Order.Status.ACCEPTED)
+    assert ready_eta(immediate, PrepExpectation(minutes=None, samples=0), now=now) == now + timedelta(minutes=30)  # a promessa, #3178

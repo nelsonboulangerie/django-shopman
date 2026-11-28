@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-097",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "#3623, teste instável do Gestor de pedidos (courierCustody.spec.ts:25 Separar de novo, boundingBox().height = 0 logo após toHaveText). Já derrubou a fila 2× hoje",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "-",
+  "estado": "FEITO",
+  "prova": "PR #3625"
+}

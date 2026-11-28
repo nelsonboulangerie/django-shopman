@@ -37,7 +37,7 @@ describe("presentation/catalog — cartão de escolha", () => {
     const tile = entries[0];
     if (tile?.kind !== "group") throw new Error("esperava o tile do grupo");
     expect(tile.group.options.map((option) => option.sku)).toEqual(["CHCAM", "CHHIB", "CHROU"]);
-    expect(tile.group.priceLabel).toBe("a partir de R$ 14,00");
+    expect(tile.group).toMatchObject({ price: "R$ 14,00", priceFrom: true });
   });
 
   it("com categoria ativa, o tile abre o grupo inteiro do catálogo", () => {
@@ -66,6 +66,6 @@ describe("presentation/catalog — cartão de escolha", () => {
     const out = (p: POSProductProjection) => ({ ...p, sold_out: true });
     expect(choiceGroup(GROUP, [out(camille), rouge]).allBlocked).toBe(false);
     expect(choiceGroup(GROUP, [out(camille), out(rouge)]).allBlocked).toBe(true);
-    expect(choiceGroup(GROUP, [camille, rouge]).priceLabel).toBe("R$ 14,00");
+    expect(choiceGroup(GROUP, [camille, rouge])).toMatchObject({ price: "R$ 14,00", priceFrom: false });
   });
 });

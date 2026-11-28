@@ -42,6 +42,9 @@ export interface CheckoutDateBounds {
   todayValue: string
   tomorrowValue: string
   maxDateValue: string
+  /** Primeira data que o pedido pode ter: hoje, ou a fornada da sacola quando
+   *  ela sai depois de hoje (um pedido, uma data). */
+  floorValue: string
 }
 
 export interface CheckoutQuickDateOption {
@@ -101,26 +104,56 @@ export function parseLocalDate (value: string): Date | null {
   return date
 }
 
+/**
+ * O "agora" do checkout: a meia-noite do HOJE DA LOJA (`checkout.today`, escrito pelo
+ * servidor no fuso dela). "Hoje", "Amanhã" e os limites do calendário saem daqui. O
+ * relógio do aparelho só entra quando a projeção ainda não chegou ou veio sem a data:
+ * aparelho com o relógio errado, ou em outro fuso, mostrava "Hoje" no dia errado, e a
+ * cliente só descobria no envio (plano EXCELENCIA-STOREFRONT, P2-08).
+ */
+export function checkoutNow (checkout?: Pick<CheckoutProjection, 'today'> | null): Date {
+  return (checkout?.today ? parseLocalDate(checkout.today) : null) || new Date()
+}
+
+/** O hoje da loja em ISO (`AAAA-MM-DD`), para as contas de data da sacola. */
+export function checkoutTodayValue (checkout?: Pick<CheckoutProjection, 'today'> | null): string {
+  return localDateValue(startOfCheckoutDay(checkoutNow(checkout)))
+}
+
 export function startOfCheckoutDay (now = new Date()): Date {
   const date = new Date(now)
   date.setHours(0, 0, 0, 0)
   return date
 }
 
-export function checkoutDateBounds (checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined, now = new Date()): CheckoutDateBounds {
-  const minDate = startOfCheckoutDay(now)
-  const maxDate = new Date(minDate)
-  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 30))
+export function checkoutDateBounds (
+  checkout: Pick<CheckoutProjection, 'max_preorder_days'> | null | undefined,
+  now = new Date(),
+  cartFloorValue = ''
+): CheckoutDateBounds {
+  const today = startOfCheckoutDay(now)
+  const todayValue = localDateValue(today)
+  // A sacola presa a uma fornada futura não vira pedido de antes dela: o
+  // calendário começa no dia da fornada. Piso no passado (ou ilegível) não
+  // conta: hoje continua sendo o começo.
+  const floorDate = cartFloorValue > todayValue ? parseLocalDate(cartFloorValue) : null
+  const minDate = floorDate || today
+  const maxDate = new Date(today)
+  // A janela é a da casa (`max_preorder_days`, o mesmo teto que o servidor
+  // confere no commit e que a home promete). Sem a projection, o calendário não
+  // inventa número: só o dia de hoje.
+  maxDate.setDate(maxDate.getDate() + (checkout?.max_preorder_days ?? 0))
 
-  const tomorrowDate = new Date(minDate)
+  const tomorrowDate = new Date(today)
   tomorrowDate.setDate(tomorrowDate.getDate() + 1)
 
   return {
     minDate,
     maxDate,
-    todayValue: localDateValue(minDate),
+    todayValue,
     tomorrowValue: localDateValue(tomorrowDate),
-    maxDateValue: localDateValue(maxDate)
+    maxDateValue: localDateValue(maxDate),
+    floorValue: floorDate ? localDateValue(floorDate) : todayValue
   }
 }
 
@@ -142,7 +175,8 @@ export function parseClosedDateEntries (closedDatesJson: string | null | undefin
 
 export function datepickerDisabledDates (
   entries: ClosedDateEntry[],
-  closedWeekdays: number[] | readonly number[] = []
+  closedWeekdays: number[] | readonly number[] = [],
+  endedDate = ''
 ): Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> {
   const out: Array<DatepickerDisabledDate | { repeat: { weekdays: number[] } }> = entries
     .map(entry => {
@@ -157,6 +191,8 @@ export function datepickerDisabledDates (
       return null
     })
     .filter((entry): entry is DatepickerDisabledDate => !!entry)
+  const ended = parseLocalDate(endedDate)
+  if (ended) out.push(ended)
   // v-calendar usa 1=domingo…7=sábado; converte do índice Python (0=seg…6=dom).
   if (closedWeekdays.length) {
     out.push({ repeat: { weekdays: closedWeekdays.map(index => (index + 1) % 7 + 1) } })
@@ -164,8 +200,11 @@ export function datepickerDisabledDates (
   return out
 }
 
-export function isDateWithinPreorderRange (value: string, bounds: Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'>): boolean {
-  return value >= bounds.todayValue && value <= bounds.maxDateValue
+type DateRangeBounds = Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'> & Partial<Pick<CheckoutDateBounds, 'floorValue'>>
+
+export function isDateWithinPreorderRange (value: string, bounds: DateRangeBounds): boolean {
+  const floor = bounds.floorValue && bounds.floorValue > bounds.todayValue ? bounds.floorValue : bounds.todayValue
+  return value >= floor && value <= bounds.maxDateValue
 }
 
 export function isClosedDateValue (value: string, entries: ClosedDateEntry[]): boolean {
@@ -191,7 +230,7 @@ export function isClosedWeekday (value: string, closedWeekdays: number[] | reado
 
 export function isCheckoutDateUnavailable (
   value: string,
-  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'maxDateValue'>,
+  bounds: DateRangeBounds,
   entries: ClosedDateEntry[],
   closedWeekdays: number[] | readonly number[] = []
 ): boolean {
@@ -201,7 +240,7 @@ export function isCheckoutDateUnavailable (
 }
 
 export function quickCheckoutDateOptions (
-  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'>,
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'> & Partial<Pick<CheckoutDateBounds, 'floorValue'>>,
   entries: ClosedDateEntry[],
   closedWeekdays: number[] | readonly number[] = []
 ): CheckoutQuickDateOption[] {
@@ -212,6 +251,62 @@ export function quickCheckoutDateOptions (
     ...option,
     disabled: isCheckoutDateUnavailable(option.value, bounds, entries, closedWeekdays)
   }))
+}
+
+export interface CheckoutDateChoice {
+  value: string
+  title: string
+  disabled: boolean
+}
+
+/**
+ * As caixas de data a partir das datas que a casa opera (`available_dates`):
+ * "Hoje" (quando hoje opera) + a próxima data. Com a sacola presa a uma
+ * fornada futura (`bounds.floorValue`), o que vem antes dela aparece
+ * DESABILITADO, nunca some calado (a frase do motivo sai acima das caixas), e
+ * o dia da fornada entra como caixa própria quando não for uma delas.
+ */
+export function checkoutDateChoices (
+  available: string[],
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  titleFor: (value: string) => string
+): CheckoutDateChoice[] {
+  const [firstDate, secondDate] = available
+  const out: CheckoutDateChoice[] = []
+  if (!firstDate) return out
+  const floor = bounds.floorValue > bounds.todayValue ? bounds.floorValue : bounds.todayValue
+  const push = (value: string, title: string) => out.push({ value, title, disabled: value < floor })
+  if (firstDate === bounds.todayValue) {
+    push(firstDate, 'Hoje')
+    if (secondDate) push(secondDate, titleFor(secondDate))
+  } else {
+    // Hoje está fechado → a opção mais próxima JÁ é a próxima data disponível
+    // ("Amanhã" se for o dia seguinte; senão "Próxima fornada").
+    push(firstDate, titleFor(firstDate))
+  }
+  if (floor > bounds.todayValue && !out.some(option => option.value === floor)) {
+    const floorOption = available.find(value => value >= floor) || floor
+    if (!out.some(option => option.value === floorOption)) push(floorOption, titleFor(floorOption))
+  }
+  return out
+}
+
+/**
+ * A data com que o Quando abre: a lembrada, se ainda vale; senão a primeira
+ * que a casa opera a partir do piso (nunca "Hoje" quando a sacola espera uma
+ * fornada de outro dia).
+ */
+export function initialCheckoutDate (
+  restored: string,
+  restoredValid: boolean,
+  available: string[],
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  fallback: string
+): string {
+  if (restored && restoredValid) return restored
+  const floor = bounds.floorValue > bounds.todayValue ? bounds.floorValue : ''
+  if (floor) return available.find(value => value >= floor) || floor
+  return available[0] || fallback
 }
 
 export function displayCheckoutDate (value: string, now = new Date(), long = false): string {
@@ -245,6 +340,35 @@ export function weekdayDateLabel (value: string): string {
   const date = new Date(year, month - 1, day)
   const label = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' }).format(date)
   return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/**
+ * A data do pedido mudou sem a cliente escolher (#2411): a sacola passou a esperar
+ * uma fornada depois da data que ela tinha (outra aba pôs um item de amanhã, por
+ * exemplo), e o checkout levou a data para o novo piso. Antes, a tela dizia só "Sua
+ * sacola mudou" e a data trocava calada: ela podia enviar para um dia que não
+ * escolheu sem perceber. A frase diz o dia novo, no meio da frase:
+ * "amanhã, domingo, 22/11", "segunda-feira, 23/11".
+ *
+ * Só fala quando quem mudou a data foi a SACOLA: a data anterior era de hoje em diante
+ * e ficou antes do piso da fornada (`bounds.floorValue`). A data de ontem num
+ * rascunho velho, ou o dia que o calendário fechou, também mudam, mas aí "Sua sacola
+ * mudou" seria mentira. Vazio também sem data anterior (a primeira escolha é da
+ * tela) ou com a mesma data.
+ */
+export function orderDateMovedNotice (
+  before: string,
+  after: string,
+  bounds: Pick<CheckoutDateBounds, 'todayValue' | 'floorValue'>,
+  now = new Date()
+): string {
+  if (!before || !after || before === after) return ''
+  if (before < bounds.todayValue || before >= bounds.floorValue) return ''
+  const relative = displayCheckoutDate(after, now)
+  const full = weekdayDateLabel(after).toLowerCase()
+  if (!full) return ''
+  const day = relative === 'Hoje' ? `hoje, ${full}` : relative === 'Amanhã' ? `amanhã, ${full}` : full
+  return `Sua sacola mudou, e o pedido passou para ${day}. Confira os itens e a data antes de enviar.`
 }
 
 export function isCustomCheckoutDate (deliveryDate: string, quickOptions: Array<Pick<CheckoutQuickDateOption, 'value'>>): boolean {
@@ -487,4 +611,163 @@ export function notesToggleState (open: boolean, notes: string, stashed: string)
   const kept = notes.trim() ? notes : stashed
   if (open) return { notes: kept, stashed: '' }
   return { notes: '', stashed: kept }
+}
+
+// Recusa de zona (beta SMS-05/06). Entrega num endereço que a loja ainda não
+// atende não sai do passo do endereço: nem pelo `confirmed` do picker, nem pelo
+// "Continuar", nem pela revisão. O aviso (com "Mudar para retirada" quando a
+// loja tem retirada) é o próximo foco, nunca um texto no topo que ninguém vê.
+export interface DeliveryZoneRefusalInput {
+  fulfillmentType: FulfillmentType | string
+  pickupSwapOffer: boolean
+  deliveryUncovered: boolean
+  zoneError?: boolean | null
+}
+
+export function deliveryZoneRefused ({ fulfillmentType, pickupSwapOffer, deliveryUncovered, zoneError }: DeliveryZoneRefusalInput): boolean {
+  return fulfillmentType === 'delivery' && (pickupSwapOffer || deliveryUncovered || !!zoneError)
+}
+
+// A recusa de área (com ou sem a troca por retirada) é alvo do próximo foco: o
+// `data-focus-target` traz a régua (`scroll-margin-top`), e o aviso para inteiro
+// abaixo do cabeçalho fixo, com título, frase e gesto à vista (#3281).
+export const DELIVERY_ZONE_REFUSAL_FOCUS = 'zone-refusal'
+
+// Observação e "Lembrar destas escolhas" falam do pedido que a pessoa está
+// fazendo (beta PIXEXP-12, SMS-21). Na retirada não há interfone nem endereço;
+// troco tem campo próprio no pagamento em dinheiro e não entra em nenhum dos dois.
+export interface CheckoutNotesCopy {
+  description: string
+  placeholder: string
+}
+
+export function checkoutNotesCopy (isPickup: boolean): CheckoutNotesCopy {
+  if (isPickup) {
+    return {
+      description: 'Algum recado para quem vai preparar.',
+      placeholder: 'Ex: quem vai retirar é outra pessoa, sem sacola…'
+    }
+  }
+  return {
+    description: 'Ponto de referência, interfone…',
+    placeholder: 'Ex: tocar o interfone, ponto de referência…'
+  }
+}
+
+export function rememberChoicesDescription (isPickup: boolean): string {
+  return isPickup ? 'Pagamento e horário.' : 'Endereço, pagamento e horário.'
+}
+
+// Cupom que ficou na sacola mas não descontou nada (beta SMS-04): o cartão não
+// pode dizer "aplicado" ao lado de um total que não mudou. O MOTIVO vem do
+// servidor (beta 06/11): adivinhar aqui dizia "nenhum item recebe" a quem só
+// não tinha chegado ao pedido mínimo.
+export type CouponZeroReason =
+  | ''
+  | 'unavailable'
+  | 'customer'
+  | 'fulfillment'
+  | 'minimum'
+  | 'items'
+  | 'already_discounted'
+
+export interface CouponCardInput {
+  coupon_code?: string | null
+  coupon_discount_q?: number | null
+  coupon_discount_display?: string | null
+  coupon_zero_reason?: CouponZeroReason | string | null
+  coupon_missing_display?: string | null
+  coupon_fulfillment_types?: readonly string[] | null
+}
+
+export interface CouponCardState {
+  status: 'none' | 'applied' | 'no_discount'
+  description: string
+}
+
+function couponFulfillmentCopy (types: readonly string[] | null | undefined): string {
+  const only = types?.length === 1 ? types[0] : ''
+  if (only === 'delivery') return 'Este cupom vale só para entrega.'
+  if (only === 'pickup') return 'Este cupom vale só para retirada.'
+  return 'Este cupom não vale para esta forma de receber o pedido.'
+}
+
+export function couponZeroDescription (cart: CouponCardInput): string {
+  switch (cart.coupon_zero_reason) {
+    case 'minimum':
+      return cart.coupon_missing_display
+        ? `Faltam ${cart.coupon_missing_display} para usar este cupom.`
+        : 'Esta sacola ainda não chegou ao pedido mínimo deste cupom.'
+    case 'fulfillment':
+      return couponFulfillmentCopy(cart.coupon_fulfillment_types)
+    case 'customer':
+      return 'Este cupom não vale para esta conta.'
+    case 'items':
+      return 'Nenhum item desta sacola recebe o desconto dele.'
+    case 'already_discounted':
+      return 'Os itens deste cupom já têm um desconto igual ou maior, e os descontos não se somam.'
+    case 'unavailable':
+      return 'Este cupom não está mais disponível.'
+    default:
+      return ''
+  }
+}
+
+export function couponCardState (cart: CouponCardInput | null | undefined): CouponCardState {
+  if (!cart?.coupon_code) return { status: 'none', description: '' }
+  if ((cart.coupon_discount_q ?? 0) > 0) {
+    return { status: 'applied', description: cart.coupon_discount_display ? `Desconto de ${cart.coupon_discount_display}` : '' }
+  }
+  return { status: 'no_discount', description: couponZeroDescription(cart) }
+}
+
+export function couponAppliedToast (cart: CouponCardInput | null | undefined): { kind: 'success' | 'info', message: string } {
+  const state = couponCardState(cart)
+  if (state.status === 'applied') return { kind: 'success', message: 'Cupom aplicado.' }
+  return { kind: 'info', message: state.description || 'Este cupom não dá desconto nesta sacola.' }
+}
+
+// O motivo da janela riscada é um só nas duas grades: o item que segura o
+// pedido ("Brioche sai às 15:00."). Sai UMA vez acima dos horários, como na
+// entrega (beta SMS-10). Horário que já passou não chega aqui: a grade de hoje
+// só traz o que ainda dá.
+export function checkoutWindowsReason (slots: Array<Pick<PickupSlotProjection, 'enabled' | 'reason'>>): string {
+  const reason = slots.find(slot => !slot.enabled && slot.reason)?.reason || ''
+  if (!reason) return ''
+  return slots.some(slot => slot.enabled) ? `${reason} Antes disso, os horários ficam riscados.` : reason
+}
+
+/**
+ * Grade compacta de meias horas: a entrega sempre, e a retirada de HOJE (as
+ * meias horas que ainda dão até o fechamento). A retirada de encomenda é lista
+ * de turnos da casa ("A partir das 9h").
+ */
+export function usesWindowGrid (
+  checkout: Pick<CheckoutProjection, 'pickup_grid'> | null | undefined,
+  fulfillmentType: FulfillmentType
+): boolean {
+  if (fulfillmentType === 'delivery') return true
+  return checkout?.pickup_grid === 'half_hour'
+}
+
+/**
+ * Por que "Hoje" não está entre as datas: a loja abriu hoje, e as retiradas e
+ * entregas de hoje já acabaram (`today_over`, decidido pela grade do servidor).
+ * Sem esta frase, "Hoje" some às 18h e o cliente não sabe se a tela travou.
+ */
+export function todayOverMessage (fulfillmentType: FulfillmentType): string {
+  return fulfillmentType === 'delivery'
+    ? 'Hoje já encerramos as entregas.'
+    : 'Hoje já encerramos as retiradas.'
+}
+
+/**
+ * A frase do dia sem horário nenhum. Hoje: o expediente já não comporta mais
+ * um horário. Outro dia: a loja não abre.
+ */
+export function noWindowsMessage (fulfillmentType: FulfillmentType, isToday = false): string {
+  if (isToday) return `${todayOverMessage(fulfillmentType)} Escolha outra data.`
+  return fulfillmentType === 'delivery'
+    ? 'Não há horário de entrega nesse dia. Escolha outra data.'
+    : 'Não há horário de retirada nesse dia. Escolha outra data.'
 }

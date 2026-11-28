@@ -16,7 +16,7 @@ from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
@@ -56,8 +56,8 @@ def test_o_detalhe_do_pedido_diz_se_esta_estacao_imprime(client, gestor, pedido)
 
 def test_o_gestor_imprime_a_via_pedido_pela_rota_do_pdv(client, gestor, pedido):
     client.force_login(gestor)
-    first = client.get(reverse("api-backstage-order-ticket-escpos", args=[pedido.ref]))
-    second = client.get(reverse("api-backstage-order-ticket-escpos", args=[pedido.ref]))
+    first = client.post(reverse("api-backstage-order-ticket-escpos", args=[pedido.ref]))
+    second = client.post(reverse("api-backstage-order-ticket-escpos", args=[pedido.ref]))
     assert first.status_code == 200 and second.status_code == 200
     assert first.json()["payload_b64"]
     assert first.json()["reprint"] is False

@@ -101,6 +101,10 @@ describe('surface UX guardrails', () => {
     expect(read('app/pages/index.vue')).not.toContain("label: isOpen ? 'Aberto agora' : 'Fechado agora'")
     expect(read('app/pages/index.vue')).not.toContain('v-if="operationalStatus.message"')
     expect(read('app/components/HomeHeroThing.vue')).not.toContain('omo.shop_hint')
+    // Loja fechada: o CTA sai do `ordering` (OC-04): "Fazer pedido" quando há o
+    // que pedir (a casa confere na abertura), nunca "para depois" (beta 06/11).
+    expect(read('app/pages/index.vue')).toContain(':closed-cta-label="closedHeroCtaLabel(home.ordering)"')
+    expect(read('app/pages/index.vue')).not.toContain('para depois')
     expect(omotenashiType).not.toMatch(/\b(is_open|opens_at|closes_at)\b/)
   })
 
@@ -113,12 +117,11 @@ describe('surface UX guardrails', () => {
     expect(offenders).toEqual([])
   })
 
-  it('keeps search on its own full page, menu only links to it', () => {
+  it('keeps search in the overlay, menu only opens it', () => {
     const menu = read('app/pages/menu.vue')
-    const searchPage = read('app/pages/busca.vue')
 
     // O cardápio não tem campo de busca próprio: a lupa ABRE o overlay de busca
-    // (mesma tela → foco/teclado confiável no iOS). A página /busca segue como fallback.
+    // (mesma tela → foco/teclado confiável no iOS). Não há página de busca.
     expect(menu).not.toContain('<UiCommandInput')
     expect(menu).not.toContain('<UiCommand')
     expect(menu).not.toContain('<UiInput')
@@ -131,16 +134,7 @@ describe('surface UX guardrails', () => {
     expect(menu).toContain('uniqueItemsBySku')
     expect(menu).toContain('sectionsBySku')
     expect(menu).toContain("from '~/presentation/menu'")
-    // A página de busca é a dona da experiência (a la iFood).
-    expect(searchPage).toContain('placeholder="Buscar no cardápio"')
-    expect(searchPage).toContain('<UiInputGroup')
-    expect(searchPage).toContain('searchPanelView')
-    expect(searchPage).toContain('data-busca-collections')
-    expect(searchPage).toContain('data-busca-filter-chips')
-    expect(searchPage).toContain('data-busca-results')
-    expect(searchPage).toContain('<ProductListItem')
-    expect(searchPage).toContain(':aria-pressed="chip.kind === \'collection\' ? undefined : chipApplied(chip)"')
-    // Overlay de busca (mesma tela) reusa a mesma experiência/projeção da página.
+    // O overlay de busca (mesma tela) é a dona da experiência (a la iFood).
     const overlay = read('app/components/SearchOverlay.vue')
     expect(overlay).toContain('useSearchOverlay')
     expect(overlay).toContain('searchPanelView')
@@ -242,7 +236,7 @@ describe('surface UX guardrails', () => {
     expect(productTile).toContain("import { tileBadge } from '~/presentation/menu'")
     // Indisponível = etiqueta neutra na foto (P&B); demais estados seguem tileBadge.
     expect(productTile).toContain('v-if="item.availability === \'unavailable\'"')
-    expect(productTile).toContain('v-else-if="badge"')
+    expect(productTile).toContain('v-else-if="badge || fomo.length"')
     expect(productTile).not.toContain('<UiPopover')
     expect(productTile).not.toContain('availabilityVariant')
     expect(productTile).not.toContain('item.allergens.length || item.available_qty')
@@ -280,19 +274,25 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('const slides = computed<HeroSlide[]>')
     expect(hero).toContain("ref: 'birthday'")
     expect(hero).toContain("ref: 'order'")
-    expect(hero).toContain("ref: 'reorder'")
+    // A recompra mora só no cartão da home (OC-32): slide de recompra repetia a
+    // mesma pergunta na mesma tela.
+    expect(hero).not.toContain("ref: 'reorder'")
     expect(hero).toContain("ref: 'handmade'")
     expect(hero).toMatch(/ref: 'greeting',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
-    expect(hero).toMatch(/ref: 'greeting-return',\n\s+titleLines: \[greetingTitle\],\n\s+image/)
+    // Saudação uma vez só: o slide que a repetia saiu com as fotos dele (#3496).
+    expect(hero).not.toContain("ref: 'greeting-return'")
+    expect(hero).not.toContain('/img/home/facade4.webp')
+    expect(hero).not.toContain('/img/home/interior.webp')
     // Foto da casa, e uma por formato: o herói é faixa larga no computador e
     // tela cheia em pé no celular — uma foto só perde metade do assunto num
     // dos dois. Banco de imagem aqui é padaria de outra gente na nossa vitrine.
     expect(hero).not.toContain('images.unsplash.com')
     expect(hero).toContain('<source media="(min-width: 640px)"')
-    for (const foto of ['facade6', 'facade2', 'selfservice', 'facade4', 'interior', 'baguette']) {
+    for (const foto of ['facade6', 'facade2', 'selfservice', 'baguette']) {
       expect(hero).toContain(`/img/home/${foto}.webp`)
     }
-    expect(hero).toContain('copy.reorder_title_prefix')
+    expect(hero).not.toContain('copy.reorder_title_prefix')
+    expect(home).toContain('copy?.reorder_title_prefix')
     expect(hero).toContain('copy.handmade_title_prefix')
     expect(hero).toContain('data-home-hero-carousel')
     expect(hero).toContain('aria-roledescription="carousel"')
@@ -306,8 +306,8 @@ describe('surface UX guardrails', () => {
     expect(hero).toContain('UiButton')
     expect(home).toContain('<main class="bg-background">')
     expect(home).toContain('<section class="shop-section-cta bg-background pb-6 pt-0 sm:py-8 lg:py-10">')
-    expect(home).toContain(':reorder-action="reorderAction"')
-    expect(home).toContain('@reorder="handleReorder"')
+    expect(home).not.toContain(':reorder-action="reorderAction"')
+    expect(home).not.toContain('@reorder="handleReorder"')
     expect(home).toContain('sectionsCopy.availability_heading.title')
     expect(home).toContain('sectionsCopy.how_it_works_heading.title')
     expect(home).toContain('sectionsCopy.whatsapp_cta.title')
@@ -318,7 +318,7 @@ describe('surface UX guardrails', () => {
     expect(home).not.toContain('v-if="operationalStatus.message"')
     expect(home).toContain('data-home-reorder-card')
     expect(home).toContain('const quickReorderImageItem = computed')
-    expect(home).toContain('<UiCard v-if="reorderAction || quickReorderItems.length" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
+    expect(home).toContain('<UiCard v-if="!reorderOnTop && (reorderAction || quickReorderItems.length)" class="gap-0 overflow-hidden py-0" data-home-reorder-card>')
     expect(home).toContain('<div class="grid grid-cols-1 md:grid-cols-2">')
     expect(home).toContain('<UiAspectRatio :ratio="16 / 9" class="overflow-hidden bg-muted md:h-full">')
     expect(home).not.toContain('class="mx-auto max-w-3xl"')
@@ -377,10 +377,15 @@ describe('surface UX guardrails', () => {
     expect(checkout).not.toContain('<AddressLabelSheet')
     expect(checkout).not.toContain('findNewlySavedAddress')
     expect(checkout).toContain('fieldErrors.delivery_date')
-    // Default = primeira data disponível do backend (nunca um "hoje" local
-    // escolhido antes da projection lazy terminar).
+    // Default = primeira data disponível do backend a partir da fornada que a
+    // sacola espera (nunca um "hoje" local escolhido antes da projection lazy
+    // terminar, nem "Hoje" para o pão de quarta: `initialCheckoutDate`).
     expect(checkout).toContain('if (!checkout.value) return')
-    expect(checkout).toContain('checkout.value.available_dates?.[0]')
+    expect(checkout).toContain('initialCheckoutDate(')
+    expect(checkout).toContain('checkout.value.available_dates || []')
+    // O motivo do "Hoje" apagado é lido junto com as caixas de data.
+    expect(checkout).toContain('id="checkout-batch-floor"')
+    expect(checkout).toContain(":aria-describedby=\"batchFloorNotice ? 'checkout-batch-floor' : undefined\"")
     expect(checkout).toContain("watch(checkout, initializeDeliveryDate, { flush: 'post' })")
     expect(checkout).toContain('closed_weekdays')
     expect(checkout).not.toContain("type Step = 'identity'")
@@ -426,7 +431,7 @@ describe('surface UX guardrails', () => {
     expect(checkout).toContain('paymentMethodLabel')
     expect(checkout).toContain('fulfillmentSummary')
     expect(checkout).toContain('data-checkout-live-summary')
-    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart" :cart="cart" compact />')
+    expect(checkout).toContain('<CartSummaryBreakdown v-if="cart && !draftSyncing && !deliveryDraftFailed" :cart="cart" compact />')
     // O CHECKOUT USA O CARD SUSPENSO — o mesmo da sacola e da página de produto,
     // e o mesmo mecanismo (`.shop-action-dock` + card ink). Duas correções
     // moram nesta linha. A primeira: a barra `fixed bottom-0 z-40` que vivia
@@ -489,7 +494,8 @@ describe('surface UX guardrails', () => {
     expect(header).not.toContain("label: 'Finalizar'")
     expect(header).not.toContain("to: '/finalizar'")
     expect(header).toContain('to="/sacola"')
-    expect(header).toContain('aria-label="Ver sacola"')
+    // O nome do link é o da barra de baixo, com a contagem (#2609).
+    expect(header).toContain(':aria-label="cartLinkName(cart)"')
     expect(header).toContain('cartPulse')
     // Logo centralizado: sacola (badge) sempre visível à direita — não mais só no desktop.
     expect(header).toContain('lucide:shopping-bag')
@@ -591,6 +597,10 @@ describe('surface UX guardrails', () => {
     expect(app).toContain('id="main-content"')
     expect(app).toContain('Pular para o conteúdo')
     expect(read('app/components/ShopHeader.vue')).toContain('bg-ink text-ink-foreground')
+    // Status bar recolhida sai da tela: `inert` tira do leitor E do Tab. Só
+    // `aria-hidden` deixava o "Ligar" focável e invisível (axe aria-hidden-focus).
+    expect(read('app/components/ShopHeader.vue')).toContain(':inert="scrolled ? true : undefined"')
+    expect(read('app/components/ShopHeader.vue')).not.toContain(':aria-hidden="scrolled')
     expect(footer).toContain('session.shop.value')
     expect(footer).toContain('session.openingHours.value')
     expect(footer).not.toContain('openingHours.slice')
@@ -675,7 +685,7 @@ describe('surface UX guardrails', () => {
     expect(waPanel).not.toContain('bg-bottomnav')
     expect(waPanel).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-whatsapp-manual/)
     expect(login).toMatch(/class="shop-surface-faubourg[^"]*"\s+data-login-sms-form/)
-    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
+    expect(login).toContain('v-if="supportUrl && (step === \'code\' || waWaiting) && !authErrorOffersSupport(error)" class="rounded-lg border bg-transparent p-4 text-center" data-login-support')
     // AA do texto secundário sobre o Faubourg não pode depender do tema: a
     // superfície remapeia o muted a partir do próprio texto.
     expect(read('app/assets/css/tailwind.css')).toContain('--muted-foreground: color-mix(in srgb, var(--foreground) 78%, var(--shop-bottomnav));')
@@ -684,7 +694,9 @@ describe('surface UX guardrails', () => {
     expect(waPanel).toContain('size="icon-lg"')
     expect(waPanel).toContain('variant="link"')
     expect(login).not.toContain('Entrar com o rosto ou a digital')
-    expect(login).not.toContain('passkeySignIn')
+    // A entrada pela chave existe, mas só onde a chave mora: nunca um botão para todos.
+    expect(login).toContain('passkeyHere.value = passkeySupported() && passkeyRememberedHere()')
+    expect(login).toContain('v-if="passkeyHere && !waWaiting"')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain('Gerando link')
     expect(read('app/components/WhatsappVerifyPanel.vue')).toContain(':aria-busy="isStarting && !canOpenWhatsApp"')
     expect(login).toContain('<UiFieldLabel for="trusted-device" class="w-full">')
@@ -692,9 +704,8 @@ describe('surface UX guardrails', () => {
     expect(login).not.toContain('max-w-xl')
     expect(login).not.toContain('class="rounded-md border p-3"')
     expect(login).toContain('response.dev_console_hint')
-    expect(login).toContain('response.debug_otp_code')
-    expect(login).toContain('data-testid="debug-otp-alert"')
-    expect(login).toContain('debugOtpCode = ref')
+    expect(login).not.toContain('debug_otp_code')
+    expect(login).not.toContain('data-testid="debug-otp-alert"')
     expect(login).toContain('Código no terminal local')
     // Login editorial: passos direto no background (sem card), h1 semântico,
     // máquina de passos/erros em presentation/auth.ts.
@@ -721,6 +732,9 @@ describe('surface UX guardrails', () => {
     // rolagem/foco escritos à mão na página.
     expect(login).toContain('useNextFocus(step)')
     expect(login).toContain(':data-focus-target="step"')
+    // O título do passo para na linha de foco COM respiro: 16px do bloco
+    // (`-mt-4 pt-4`, o mesmo py-4 do passo do checkout), sem encostar no fio.
+    expect(login).toContain('<section :data-focus-target="step" class="shop-stack-block -mt-4 pt-4 outline-none" tabindex="-1">')
     expect(login).not.toContain('scrollTo(')
     expect(login).not.toContain('.focus(')
     expect(login).toContain('data-login-moment')
@@ -762,7 +776,8 @@ describe('surface UX guardrails', () => {
     const sheet = read('app/components/MarketingPromptSheet.vue')
     expect(read('app/app.vue')).toContain('<MarketingPromptSheet />')
     expect(sheet).toContain('<BottomSheet')
-    expect(sheet).toContain('isMarketingPromptRouteExcluded(route.path)')
+    expect(sheet).toContain('isShopInviteRouteExcluded(route.path)')
+    expect(sheet).toContain('orderSecured.value')
     expect(sheet).toContain('session.welcomeAsksMarketing.value')
     expect(sheet).toContain('<UiSwitch')
     expect(sheet).toContain('id="marketing-prompt-whatsapp"')
@@ -804,11 +819,11 @@ describe('surface UX guardrails', () => {
     expect(surfaceVueFiles).not.toContain('app/components/PasskeyInviteCard.vue')
     expect(checkout).not.toContain('PasskeyInviteCard')
     expect(account).not.toContain('PasskeyInviteCard')
-    // A ENTRADA pela chave ainda não existe (`usePasskey().signIn()` não é chamado em
-    // lugar nenhum, e /entrar só oferece WhatsApp e SMS). Enquanto a porta não nascer, a
-    // tela guarda a chave e não promete entrar com ela.
-    expect(security).toContain('Guardar uma chave deste aparelho')
-    expect(security).not.toContain('Entrar com uma chave deste aparelho')
+    // A entrada pela chave existe (/entrar chama `signIn`), então a Segurança promete
+    // entrar com ela, e o ativar marca o navegador para a porta aparecer.
+    expect(security).toContain('Com a chave deste aparelho, você entra num toque')
+    expect(read('app/pages/entrar.vue')).toContain('Entrar com a chave deste aparelho')
+    expect(passkey).toContain('rememberPasskeyHere()')
     expect(security).toContain('lucide:key-round')
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
@@ -876,10 +891,10 @@ describe('surface UX guardrails', () => {
     // Acordeão full-width no mobile: hairlines ponta a ponta; trigger alinhado
     // ao título e interior aberto com recuo extra (+16px sobre o trigger).
     expect(productRoute).toContain('class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4"')
-    expect(productRoute).toContain('data-product-cross-sell')
+    expect(productRoute).toContain('<ProductRecommendations :sku="sku"')
     // Título do cross-sell vem do registro omotenashi (PRODUCT_CROSS_SELL_HEADING).
-    expect(productRoute).toContain('cross_sell_heading')
-    expect(productRoute).toContain('<ProductListItem')
+    expect(read('app/components/ProductRecommendations.vue')).toContain('recommendations.heading')
+    expect(read('app/components/ProductRecommendations.vue')).toContain('<ProductListItem')
     expect(productRoute).toContain('% VD')
     expect(upsellRail).toContain('<UiItem variant="outline" size="sm" class="w-full items-stretch gap-3 rounded-none border-0 bg-card p-3">')
     expect(upsellRail).toContain('<UiItemHeader>')
@@ -910,32 +925,62 @@ describe('surface UX guardrails', () => {
     expect(cartPage).toContain(':aria-label="`Remover ${line.name}`"')
     // Lixeira sempre viva: mutações otimistas não bloqueiam remoção.
     expect(cartPage).not.toContain(':disabled="cart.summary_pending"')
-    expect(cartPage).toContain('{{ line.qty }} × {{ line.price_display }} cada')
-    expect(cartPage).toContain('{{ line.total_display }}')
+    // Preço da linha na dupla do cardápio (beta 06/11), com a decisão do dono 1
+    // de 16/11/2026: o unitário e o total falam o preço com desconto, cada um
+    // com o cheio riscado ao lado e a palavra "antes" (risco mudo não se ouve).
+    expect(cartPage).toContain('data-cart-line-price')
+    expect(cartPage).toContain('cada, antes <span class="line-through">{{ linePrice(line).original }}</span>')
+    expect(cartPage).toContain('{{ linePrice(line).current }}')
+    expect(cartPage).toContain('<CartLineTotal :line="line" stacked')
+    expect(cartPage).not.toContain('line.total_display')
+    const lineTotal = read('app/components/CartLineTotal.vue')
+    expect(lineTotal).toContain('antes <span class="line-through">{{ total.original }}</span>')
+    // Quando fica pronto: a promessa do servidor na linha de fornada e, no alto,
+    // para quando fica o pedido (WP-L03). "Previsto para" saiu da sacola.
+    expect(cartPage).toContain('data-cart-line-promise')
+    expect(cartPage).toContain('data-cart-ready-line')
+    expect(cartPage).not.toContain('plannedForNotice')
     expect(cartPage).toContain('<CartUpsellRail v-if="cart.upsell"')
     // Planned-hold transparente: badges por linha + banner com countdown.
     expect(cartPage).toContain('data-cart-line-awaiting')
     expect(cartPage).toContain('data-cart-line-ready')
     expect(cartPage).toContain('data-cart-hold-banner')
-    expect(cartPage).toContain('Lista de espera')
+    // O selo antigo só sobra quando a promessa não veio. O aviso de prioridade da
+    // linha em espera é decisão do dono de 14/07/2026 e continua na sacola.
+    // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+    // A linha da sacola datada (B) só traz a hora que difere da do pedido; em A, `linePromise` é o `cartLinePromise` de sempre.
+    expect(cartPage).toContain('<UiBadge v-if="!linePromise(line)"')
+    expect(cartPage).toContain('cart.awaiting_confirmation_notice')
+    // "Continuar comprando" uma vez por tela: embaixo da lista só no celular.
+    expect(cartPage).toContain('md:hidden"\n              data-cart-continue-mobile')
     expect(cartPage).toContain('Tudo pronto! Confirme')
     expect(cartPage).toContain('Tempo restante:')
   })
 
-  it('shows coupon savings as signed discounts without losing the original subtotal', () => {
+  it('fecha o resumo com as linhas: Subtotal é a soma delas, e só cupom e pontos são subtraídos', () => {
     const summary = read('app/components/CartSummaryBreakdown.vue')
     const cartPage = read('app/pages/sacola.vue')
     const checkout = read('app/pages/finalizar.vue')
 
+    const cartPresentation = read('app/presentation/cart.ts')
     expect(summary).toContain("import type { CartProjection } from '~/types/shopman'")
-    expect(summary).toContain('cart.has_discount')
-    // KISS: Subtotal = valor CHEIO (pré-desconto), sem risco. Descontos vêm depois
-    // como linhas assinadas; a conta fecha (Subtotal − Descontos = Total). Nada de
-    // strikethrough nem subtotal duplicado (confundia: desconto aparecia 2x).
-    expect(summary).toContain('cart.original_subtotal_display')
+    // Decisão do dono 1 (16/11/2026): a promoção do produto abate na linha, o
+    // Subtotal é a soma das linhas como a tela as mostra, a nota diz quanto as
+    // promoções já abateram (sem subtrair de novo) e as linhas assinadas são só
+    // as do pedido. A conta fecha (Subtotal − Descontos do pedido = Total). Nada
+    // de strikethrough no resumo nem de desconto aparecendo duas vezes.
+    expect(summary).toContain('{{ cart.lines_subtotal_display }}')
+    expect(summary).toContain('promoSavingsNote(cart)')
+    expect(summary).toContain('v-for="discount in cart.order_discount_lines"')
+    expect(summary).not.toContain('original_subtotal')
     expect(summary).not.toContain('line-through')
     expect(summary).toContain('discountDisplay(discount.amount_display)')
-    expect(summary).toContain("return value.startsWith('-') ? value : `- ${value}`")
+    expect(cartPresentation).toContain("return value.startsWith('-') ? value : `- ${value}`")
+    // A revisão do checkout conta a mesma conta, com o mesmo total de linha.
+    expect(checkout).toContain('{{ cart.lines_subtotal_display }}')
+    expect(checkout).toContain('v-for="discount in cart.order_discount_lines"')
+    expect(checkout).toContain('<CartLineTotal :line="line"')
+    expect(checkout).not.toContain('line.total_display')
     expect(cartPage).not.toContain('{{ cart.subtotal_display }}</span>')
     // Cupom mora no CHECKOUT (decisão Pablo 2026-06-16), não mais no carrinho —
     // aplicar/remover via cart state + refresh() do payload do checkout.
@@ -953,21 +998,13 @@ describe('surface UX guardrails', () => {
   })
 
   it('keeps alpha-test search discoveries canonized in the UI source', () => {
-    const search = read('app/pages/busca.vue')
     const overlay = read('app/components/SearchOverlay.vue')
     const menu = read('app/pages/menu.vue')
 
-    expect(search).toContain('collectionTargetForSearchOption')
     expect(menu).toContain('resolveSectionRefFromParam')
     expect(menu).toContain('dynamicCollectionPublicSlug')
     expect(menu).toContain('watch(() => route.query.secao, applyRouteSection)')
     expect(menu).toContain('class="min-h-11 min-w-11 shrink-0 rounded-full"')
-    expect(search).toContain("matchMedia('(pointer: fine)')")
-    expect(search).toContain('md:sticky md:top-16')
-    expect(search).toContain('class="h-11 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
-    expect(search).toContain('class="min-h-11 rounded-full px-3"')
-    expect(search).toContain('<ProductListItem')
-    expect(search).toContain('framed')
     expect(overlay).toContain(':placeholder="open ?')
     expect(overlay).toContain('v-if="open" class="min-h-0 flex-1 overflow-y-auto"')
     expect(overlay).toContain('data-search-filter-chips')
@@ -1010,6 +1047,7 @@ describe('surface UX guardrails', () => {
     const product = read('app/pages/produto/[sku].vue')
 
     expect(menu).toContain(':hide-dietary-warnings="dietaryFilterOn"')
+    expect(menu).toContain(':available-only="availableOnly"')
     expect(favorites).toContain('visibleItems')
     expect(favorites).toContain('(item.dietary_warnings || []).length === 0')
     expect(product).toContain('unavailableReason')
@@ -1065,7 +1103,7 @@ describe('surface UX guardrails', () => {
     expect(security).toContain('deleteAccountAcknowledged')
     expect(security).toContain('crypto.randomUUID()')
     expect(security).toContain("'Idempotency-Key': deleteAccountIdempotencyKey.value")
-    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose }')
+    expect(security).toContain('body: { code: stepUpCodeStr.value, purpose: pendingStepUpPurpose.value }')
     expect(security).toContain('Exportar meus dados')
     expect(security).toContain('Excluir minha conta')
     expect(security).toContain('privacy_requests_available')
@@ -1102,6 +1140,13 @@ describe('surface UX guardrails', () => {
     expect(security).toContain('profileIssueFrom')
     expect(security).toContain('phoneChangeIssue.actions')
 
+    // ⚠️ Antes do número novo, o ATUAL (laudo 23/10, S2): sem isto, quem recebeu um link
+    // encaminhado apontava a conta para o número dele. A troca abre pelo step-up e retoma
+    // o passo quando a confirmação vence no meio.
+    expect(security).toContain("void requireStepUp('phone', showPhoneChange)")
+    expect(security).toContain("data?.code !== 'step_up_required'")
+    expect(security).toContain('Antes de mudar o número, confirme que a conta é sua')
+
     // ⚠️ A tela nunca diz de quem é o número: quem pede a troca é um
     // desconhecido em relação ao dono, e aqui o número é a identidade de quem
     // entra. A frase vem do servidor, e o servidor não manda o dono.
@@ -1112,6 +1157,11 @@ describe('surface UX guardrails', () => {
     const profile = read('app/pages/conta/perfil.vue')
     expect(profile).toContain('/conta/seguranca')
     expect(profile).toContain('Leve a conta junto')
+
+    // Trocar o e-mail também pede o código no número atual, e só quando o e-mail MUDA.
+    expect(profile).toContain("body: { code: stepUpCodeStr.value, purpose: 'email' }")
+    expect(profile).toContain('if (emailChanges()) {')
+    expect(profile).toContain("apiPath('/api/auth/request-code/')")
   })
 
   it('lets authenticated customers manage addresses through the canonical AddressPicker', () => {
@@ -1599,6 +1649,44 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(read('app/pages/gerenciar-aviso.vue')).toContain("alertState.value?.state === 'paused'")
   })
 
+  it('every action on the dark floating card of the product page uses the inverted tone (#3558)', () => {
+    // O "outline" sobre o card escuro herdava letra e fundo claros: no produto
+    // pausado, o "Ver itens parecidos" (a única saída da cliente) ficava invisível.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const dock = pdp.slice(pdp.indexOf('class="shop-action-dock'))
+    const buttons = dock.match(/<UiButton[^>]*>/g) || []
+    expect(buttons.length).toBeGreaterThan(0)
+    for (const button of buttons) expect(button).toContain('shop-action-inverted')
+    expect(dock).toContain('tone="inverted"')
+    expect(dock).toMatch(/<StockNotifyButton[^>]*\binverted\b/)
+  })
+
+  it('keeps the store line for Google discreet, at the end of the product info (#2652)', () => {
+    // O dono: "Quero apenas cumpri-la, não dar destaque" (24/11/2026). A linha fica
+    // depois da descrição, em texto de rodapé, sem ícone e sem endereço.
+    const pdp = read('app/pages/produto/[sku].vue')
+    const line = pdp.slice(pdp.indexOf('data-pdp-in-store-pickup') - 200, pdp.indexOf('data-pdp-in-store-pickup') + 300)
+    expect(pdp.indexOf('data-pdp-in-store-pickup')).toBeGreaterThan(pdp.indexOf('product.short_description'))
+    expect(line).toContain('shop-meta')
+    expect(line).not.toContain('lucide:store')
+    expect(line).not.toContain('address')
+  })
+
+  it('promotion badges use the light promotion style on the card and the product page (B, 24/11/2026)', () => {
+    // O dono escolheu "B nos dois": a cor da promoção a ~10% com o texto na cor da
+    // promoção, no card e no produto. O burgundy cheio voltaria a pesar.
+    for (const file of ['app/components/ProductTile.vue', 'app/pages/produto/[sku].vue']) {
+      const source = read(file)
+      expect(source).toMatch(/v-for="adjustment in [\w.]+\.quote\.adjustments" :key="adjustment\.code" variant="promotion"/)
+    }
+    expect(read('app/presentation/fomo.ts')).toContain("variant: 'promotion'")
+    expect(read('app/components/Ui/Badge.vue')).toContain('promotion: "shop-badge-promotion border-transparent"')
+    const css = read('app/assets/css/tailwind.css')
+    expect(css).toContain('.shop-badge-promotion {')
+    // No escuro, a cor da promoção como letra dava 2,8:1: o texto é clareado.
+    expect(css).toMatch(/\.dark \.shop-badge-promotion \{[^}]*white 50%/)
+  })
+
   it('shows one label for every unavailable cause on the product page', () => {
     const pdp = read('app/pages/produto/[sku].vue')
 
@@ -1629,7 +1717,9 @@ describe('surface claims stay inside what the projection actually says', () => {
     // mesma peça. A PDP já fazia certo; só o tile mentia.
     const tile = read('app/components/ProductTile.vue')
 
-    expect(tile).toContain("'Adicionar' : 'Indisponível'")
+    // O rótulo do addable vem da promessa ("Adicionar" ou "Encomendar para
+    // amanhã", WP-L02); o não addable segue "Indisponível".
+    expect(tile).toContain("item.can_add_to_cart ? promiseAddLabel(item.promise) : 'Indisponível'")
     expect(tile).not.toContain('is_paused')
   })
 
@@ -1668,7 +1758,9 @@ describe('surface claims stay inside what the projection actually says', () => {
     const tracking = read('app/pages/pedido/[ref]/index.vue')
 
     expect(tracking).toContain("v-else-if=\"step.state === 'current'\"")
-    expect(tracking).toContain('timelineStepStateLabel(step.state)')
+    // O estado é dito ao leitor de tela (o sufixo cala só o "Cancelado,
+    // cancelado"; ver presentation/orderTracking.timelineStepSrSuffix).
+    expect(tracking).toContain('timelineStepSrSuffix(step)')
   })
 
   it('offers the notify bell on a bag line that fell to a real stockout', () => {

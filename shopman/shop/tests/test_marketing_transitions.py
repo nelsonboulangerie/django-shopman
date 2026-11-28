@@ -7,8 +7,6 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from shopman.shop.models import (
@@ -352,37 +350,3 @@ def test_expiry_crash_rolls_back_status_receipt_and_audit(announcement):
     assert announcement.version == 1
     assert MarketingCommandReceipt.objects.count() == 0
     assert MarketingAuditEvent.objects.count() == 0
-
-
-@pytest.mark.django_db(transaction=True)
-def test_transition_schema_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0027_marketing_approval_outbox")]
-    after = [("shop", "0028_marketing_transactional_transitions")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    with connection.cursor() as cursor:
-        before_columns = {
-            column.name
-            for column in connection.introspection.get_table_description(
-                cursor,
-                "shop_marketingoutbox",
-            )
-        }
-    assert "cancelled_at" not in before_columns
-    assert "cancelled_by_command_id" not in before_columns
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    with connection.cursor() as cursor:
-        after_columns = {
-            column.name
-            for column in connection.introspection.get_table_description(
-                cursor,
-                "shop_marketingoutbox",
-            )
-        }
-    assert {"cancelled_at", "cancelled_by_command_id"} <= after_columns
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())

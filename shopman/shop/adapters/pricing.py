@@ -4,9 +4,10 @@ from decimal import Decimal
 
 from django.utils import timezone
 from shopman.offerman.protocols import ContextualPrice, PriceAdjustment
-from shopman.utils.monetary import format_money
+from shopman.utils.monetary import format_money, monetary_mult
 
-from shopman.shop.modifiers import DiscountModifier
+from shopman.shop.modifiers import DiscountModifier, promotion_context
+from shopman.shop.policies.promotion import promotion_matches
 
 
 class PromotionPricingBackend:
@@ -25,7 +26,7 @@ class PromotionPricingBackend:
         qty: Decimal,
         listing: str | None,
         list_unit_price_q: int,
-        list_total_price_q: int,
+        list_line_total_q: int,
         context: dict | None = None,
     ) -> ContextualPrice:
         context = context or {}
@@ -61,12 +62,16 @@ class PromotionPricingBackend:
                 timezone.now(), channel_ref=channel_ref
             )
 
-        match_ctx = {
-            "fulfillment_type": fulfillment_type,
-            "sku_collections": {sku: sku_collections},
-            "customer_segment": customer_segment,
-            "price_tier": price_tier,
-        }
+        match_ctx = promotion_context(
+            {
+                "fulfillment_type": fulfillment_type,
+                "sku_collections": {sku: sku_collections},
+                "customer_segment": customer_segment,
+                "price_tier": price_tier,
+            },
+            sku=sku,
+            merchandise_subtotal_q=session_total_q,
+        )
 
         for promo in promotions:
             # Só PERCENT compete no preço por-card. Um desconto de VALOR FIXO é
@@ -76,9 +81,7 @@ class PromotionPricingBackend:
             # por-linha e o trata no nível do pedido.
             if promo.type != Promotion.PERCENT:
                 continue
-            if promo.min_order_q and session_total_q < promo.min_order_q:
-                continue
-            if not DiscountModifier._matches(promo, sku, match_ctx):
+            if not promotion_matches(promo, match_ctx):
                 continue
             discount_q = DiscountModifier._calc_discount(promo, list_unit_price_q)
             if discount_q > best_discount_q:
@@ -91,16 +94,16 @@ class PromotionPricingBackend:
                 qty=qty,
                 listing=listing,
                 list_unit_price_q=list_unit_price_q,
-                list_total_price_q=list_total_price_q,
+                list_line_total_q=list_line_total_q,
                 final_unit_price_q=list_unit_price_q,
-                final_total_price_q=list_total_price_q,
+                final_line_total_q=list_line_total_q,
                 adjustments=[],
                 metadata={"source": "framework.promotion_pricing"},
             )
 
-        total_discount_q = int(best_discount_q * qty)
+        total_discount_q = monetary_mult(qty, best_discount_q)
         final_unit_price_q = max(list_unit_price_q - best_discount_q, 0)
-        final_total_price_q = max(list_total_price_q - total_discount_q, 0)
+        final_line_total_q = max(list_line_total_q - total_discount_q, 0)
         if best_promo.type == Promotion.PERCENT:
             badge_label = f"-{best_promo.value}%"
         else:
@@ -111,9 +114,9 @@ class PromotionPricingBackend:
             qty=qty,
             listing=listing,
             list_unit_price_q=list_unit_price_q,
-            list_total_price_q=list_total_price_q,
+            list_line_total_q=list_line_total_q,
             final_unit_price_q=final_unit_price_q,
-            final_total_price_q=final_total_price_q,
+            final_line_total_q=final_line_total_q,
             adjustments=[
                 PriceAdjustment(
                     code="promotion",

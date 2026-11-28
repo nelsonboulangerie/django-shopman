@@ -30,11 +30,6 @@ O que **não** se desata, porque é história: `OrderItem.sku` e
 `HistoricalSaleItem.sku` guardam o código como texto. O pedido antigo continua
 dizendo o que vendeu.
 
-⚠️ **A URL vira 410, não 301.** Produto apagado não tem para onde redirecionar:
-o comando grava a lápide (`shop.services.retired_urls.record`) no mesmo
-``atomic()`` e antes do delete, com as coleções de onde ele saiu, e a loja
-responde "saiu do cardápio" em vez de 404 mudo. `sku_history.retired_skus()`
-os deixa de fora do mapa de redirect de propósito.
 """
 
 from __future__ import annotations
@@ -90,7 +85,6 @@ class Command(BaseCommand):
         from shopman.offerman.models import Product, ProductComponent
 
         from shopman.backstage.models import ProductAlias
-        from shopman.shop.services.retired_urls import record as record_retired
 
         apply = options["apply"]
         out = self.stdout
@@ -130,7 +124,7 @@ class Command(BaseCommand):
                 product.save(update_fields=["is_published"])
                 unpublished.append((sku, product.name))
 
-            for sku, reason in DELETE:
+            for sku, _reason in DELETE:
                 product = targets.get(sku)
                 if product is None:
                     missing.append(sku)
@@ -139,14 +133,6 @@ class Command(BaseCommand):
                 # B.I. continua lendo a venda antiga pelo nome da origem.
                 detached_aliases = ProductAlias.objects.filter(product=product).update(product=None)
                 removed_bindings = self._remove_bindings(product)
-                # A lápide nasce ANTES do delete: o vínculo com a coleção é
-                # CASCADE, e depois dele a prateleira de origem não existe mais
-                # em lugar nenhum (ver `shop.services.retired_urls`).
-                collection_refs = list(
-                    product.collection_items.order_by("-is_primary", "pk")
-                    .values_list("collection__ref", flat=True)
-                )
-                record_retired(sku=sku, collection_refs=collection_refs, note=reason)
                 name = product.name
                 product.delete()
                 deleted.append((sku, name, detached_aliases, removed_bindings))

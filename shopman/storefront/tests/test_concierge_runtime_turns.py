@@ -14,23 +14,25 @@ from shopman.orderman.models import Directive
 
 from shopman.shop.models import Conversation, ConversationBinding
 from shopman.shop.models import ConversationMessage as Message
-from shopman.storefront.concierge import agent, service
+from shopman.shop.tests.ai_support import configure_ai
+from shopman.storefront.concierge import service
 from shopman.storefront.concierge.contracts import WindowEvidence
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests.support.concierge_transport_v3 import (
     adapter_class,
     connection,
     event,
     reset_adapter,
 )
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture(autouse=True)
 def isolated_runtime(settings, monkeypatch):
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     settings.SHOPMAN_CONCIERGE = {
-        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",
@@ -176,9 +178,9 @@ def test_handoff_during_model_has_no_bot_reply_or_consumption(conversation, monk
     def model(**kwargs):
         started.set()
         assert release.wait(timeout=10)
-        return agent.AgentOutcome(reply_text="Resposta obsoleta")
+        return TurnOutcome(reply_text="Resposta obsoleta")
 
-    monkeypatch.setattr(agent, "run_agent", model)
+    stub_turn(monkeypatch, model)
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = pool.submit(threaded(lambda: service.run_turn(conversation.pk, binding.pk)))
         assert started.wait(timeout=10)
@@ -206,9 +208,9 @@ def test_new_input_during_model_stays_pending_and_invalidates_mutation(conversat
         seen.append(kwargs["conversation"])
         started.set()
         assert release.wait(timeout=10)
-        return agent.AgentOutcome(reply_text="Resumo factual anterior")
+        return TurnOutcome(reply_text="Resumo factual anterior")
 
-    monkeypatch.setattr(agent, "run_agent", model)
+    stub_turn(monkeypatch, model)
     with ThreadPoolExecutor(max_workers=1) as pool:
         pending = pool.submit(threaded(lambda: service.run_turn(conversation.pk, binding.pk)))
         assert started.wait(timeout=10)
@@ -255,9 +257,9 @@ def test_input_during_model_defers_without_spinning_then_finishes(conversation, 
     def model(**kwargs):
         calls.append(1)
         inbound(conversation, "Correção 1")
-        return agent.AgentOutcome(reply_text="Contexto preservado")
+        return TurnOutcome(reply_text="Contexto preservado")
 
-    monkeypatch.setattr(agent, "run_agent", model)
+    stub_turn(monkeypatch, model)
     directive = Directive.objects.create(
         topic=service.TURN_TOPIC,
         payload={
@@ -273,10 +275,9 @@ def test_input_during_model_defers_without_spinning_then_finishes(conversation, 
     assert directive.status == "queued"
     assert directive.attempts == 0
     assert service.unanswered_inbound(conversation, binding)
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: calls.append(1) or agent.AgentOutcome(reply_text="Contexto preservado"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: calls.append(1) or TurnOutcome(reply_text="Contexto preservado"),
     )
     _process_directive(directive)
     directive.refresh_from_db()
@@ -329,10 +330,9 @@ def test_removed_cohort_member_cannot_run_accepted_work(conversation, settings, 
     inbound(conversation)
     settings.SHOPMAN_CONCIERGE["connections"]["runtime"]["options"]["allowed_subjects"] = []
     calls = []
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: calls.append(1) or agent.AgentOutcome(reply_text="Não deveria executar"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: calls.append(1) or TurnOutcome(reply_text="Não deveria executar"),
     )
     result = service.run_turn(conversation.pk, binding.pk)
     assert calls == []

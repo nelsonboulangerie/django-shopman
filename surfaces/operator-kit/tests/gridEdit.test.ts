@@ -24,6 +24,18 @@ describe("gridEdit", () => {
     expect(parseGrid("a,b")).toEqual([["a", "b"]]);
   });
 
+  it("preserva uma coluna de preços com vírgula decimal", () => {
+    expect(parseGrid("7,50\n8,25\nR$ 1.234,50")).toEqual([
+      ["7,50"],
+      ["8,25"],
+      ["R$ 1.234,50"],
+    ]);
+    expect(parseGrid("Produto,Preço\nPão,7.50")).toEqual([
+      ["Produto", "Preço"],
+      ["Pão", "7.50"],
+    ]);
+  });
+
   it("preço pt-BR e simples viram centavos", () => {
     expect(parseMoneyCell("1.234,50")).toBe(123450);
     expect(parseMoneyCell("12,5")).toBe(1250);
@@ -71,4 +83,18 @@ describe("useGridEdit", () => {
     expect(edit.dirty.value).toBe(0);
     expect(edit.canUndo.value).toBe(false);
   });
+});
+
+it("confirma só as células gravadas e preserva o rascunho e o desfazer das outras", () => {
+  const edit = useGridEdit<string>();
+  edit.set("hidden", "inválido");
+  edit.set("saved", "2,50");
+  edit.set("hidden", "a corrigir");
+  edit.clear(["saved"]);
+  expect(edit.draft.value).toEqual({ hidden: "a corrigir" });
+  edit.undo();
+  expect(edit.draft.value).toEqual({ hidden: "inválido" });
+  edit.undo();
+  expect(edit.draft.value).toEqual({});
+  expect(edit.canUndo.value).toBe(false);
 });

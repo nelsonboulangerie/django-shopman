@@ -122,6 +122,28 @@ def test_matrix_shape(client, operator, catalog):
     assert colls["doces"]["product_count"] == 1
 
 
+def test_matrix_hides_archived_by_default_and_exposes_explicit_filter(client, operator, catalog):
+    catalog["bolo"].is_active = False
+    catalog["bolo"].save(update_fields=["is_active"])
+    client.force_login(operator)
+
+    default_rows = client.get(MATRIX_URL).json()["matrix"]["rows"]
+    assert [row["sku"] for row in default_rows] == ["PAO"]
+
+    archived_rows = client.get(MATRIX_URL, {"archived": "true"}).json()["matrix"]["rows"]
+    assert [row["sku"] for row in archived_rows] == ["BOLO"]
+    assert archived_rows[0]["is_active"] is False
+    assert archived_rows[0]["is_published"] is True
+    assert archived_rows[0]["is_sellable"] is True
+    assert not any(cell["available"] for cell in archived_rows[0]["cells"])
+
+    collection_rows = client.get(
+        MATRIX_URL, {"archived": "true", "collection": "doces"}
+    ).json()["matrix"]
+    assert [row["sku"] for row in collection_rows["rows"]] == ["BOLO"]
+    assert collection_rows["collections"][0]["product_count"] == 1
+
+
 def test_matrix_filtered_by_collection(client, operator, catalog):
     client.force_login(operator)
     resp = client.get(MATRIX_URL, {"collection": "doces"})
@@ -164,10 +186,11 @@ def test_cell_price(client, operator, catalog):
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 720
 
 
-def test_cell_unknown_returns_400(client, operator, catalog):
+def test_cell_missing_without_membership_revision_conflicts(client, operator, catalog):
     client.force_login(operator)
     resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "ifood", "is_sellable": False})
-    assert resp.status_code == 400  # BOLO não está na superfície ifood
+    assert resp.status_code == 409  # A intenção da matriz não autoriza criar um vínculo ausente.
+    assert not ListingItem.objects.filter(product__sku="BOLO", listing__ref="ifood").exists()
 
 
 def test_cell_negative_price_rejected(client, operator, catalog):
@@ -363,16 +386,19 @@ def test_bulk_price_pct_rounds(client, operator, catalog):
     assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 660
 
 
-def test_bulk_price_delta_clamps_at_zero(client, operator, catalog):
+def test_bulk_price_delta_that_reaches_zero_is_refused(client, operator, catalog):
     client.force_login(operator)
-    # PAO web = 600; delta -1000 → clamp 0 (nunca negativo)
+    # PAO web = 600; delta -1000 levaria a zero. Preço zero no canal ligado
+    # vira "Sem preço" no PDV (beta 05/11, GES-05): recusa no dialeto da casa.
     resp = _post_price_intention(client,
         BULK_PRICE_URL,
         data={"surface_ref": "web", "skus": ["PAO"], "op": "delta", "value": -1000},
         content_type="application/json",
     )
-    assert resp.status_code == 200
-    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 0
+    assert resp.status_code == 400
+    body = resp.json()
+    assert body["detail"] and body["field"] in body["errors"]
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == 600
 
 
 def test_bulk_price_by_collection(client, operator, catalog):
@@ -588,8 +614,49 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     assert _paused_skus("tv-salao") == set()
 
 
+def _hidden_skus(ref: str) -> set[str]:
+    channel = Channel.objects.get(ref=ref)
+    return {str(x) for x in ((channel.config or {}).get("display") or {}).get("hidden_skus") or []}
+
+
+def test_feed_cell_hide_routes_to_feed(client, operator, catalog_with_display):
+    """Ocultar a célula grava em config.display.hidden_skus, separado da pausa."""
+    client.force_login(operator)
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_published": False})
+    assert resp.status_code == 200
+    assert resp.json()["is_published"] is False
+    assert resp.json()["is_sellable"] is True
+    assert _hidden_skus("tv-salao") == {"BOLO"}
+    assert _paused_skus("tv-salao") == set()
+
+    matrix = client.get(MATRIX_URL).json()["matrix"]
+    bolo_tv = next(
+        c for r in matrix["rows"] if r["sku"] == "BOLO" for c in r["cells"] if c["surface_ref"] == "tv-salao"
+    )
+    assert bolo_tv["is_published"] is False
+    assert bolo_tv["is_sellable"] is True
+    assert bolo_tv["available"] is False
+
+    resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "is_published": True})
+    assert resp.status_code == 200
+    assert _hidden_skus("tv-salao") == set()
+
+
+def test_feed_bulk_hide(client, operator, catalog_with_display):
+    client.force_login(operator)
+    resp = _post_price_intention(client,
+        BULK_URL,
+        data={"surface_ref": "tv-salao", "skus": ["BOLO"], "is_published": False},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.json()["count"] == 1
+    assert _hidden_skus("tv-salao") == {"BOLO"}
+    assert _paused_skus("tv-salao") == set()
+
+
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
-    """Feed não aceita preço/publicação — só pausar/ativar."""
+    """Feed não aceita preço — só pausar/ativar e ocultar/exibir."""
     client.force_login(operator)
     resp = _post_cell(client, operator, {"sku": "BOLO", "surface_ref": "tv-salao", "price_q": 100})
     assert resp.status_code == 400
@@ -820,9 +887,11 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(matrix) == {
         "surfaces", "rows", "collections", "vocation_pending",
         # Paginação/filtro/ordenação no servidor (onda 1, fatia B).
-        "total", "page", "page_size", "has_next", "order", "query",
+        "total", "page", "page_size", "has_next", "order", "query", "date_from", "date_to",
         # Contagens por opção das facetas de multi-escolha (onda 1, fatia B).
         "facets",
+        # "Todas" conta o catálogo inteiro, não a página (beta 05/11, GES-08).
+        "all_product_count",
     }
 
     # Contrato das contagens: chaves dos valores de cada faceta de lista.
@@ -839,7 +908,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     row = matrix["rows"][0]
     assert set(row) == {
         "sku", "name", "image_url", "primary_collection", "primary_collection_name",
-        "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
+        "is_active", "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
         "hidden_by_inactive_collection", "has_vocation", "product_action", "resync_action",
@@ -849,6 +918,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
     assert set(cell) == {
         "surface_ref", "in_listing", "is_published", "is_sellable", "available",
         "price_q", "price_display", "sync_status", "sync_error", "synced_at", "action", "pause_audit",
+        "valid_from", "valid_until",
     }
 
     assert set(row["social"]) == {
@@ -895,11 +965,16 @@ def test_product_detail_get_shape(client, operator, catalog):
         "sku", "name", "short_description", "long_description", "keywords",
         "base_price_q", "unit", "unit_weight_g", "availability_policy",
         "shelf_life_days", "storage_tip", "production_cycle_hours",
-        "is_batch_produced", "is_published", "is_sellable", "ingredients_text",
+        "is_active", "is_published", "is_sellable", "ingredients_text",
         "image_url", "primary_collection", "primary_collection_name",
+        "collections", "collection_choices", "listing_links", "components",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
         "allows_next_day_sale", "made_to_order", "ready_from",
+        # preparo da encomenda na Cozinha (#2304): o do SKU e o padrão da loja
+        "preorder_prep_minutes", "preorder_prep_default_minutes",
+        # quando o item está acabando (DEV-2026-077): a % do SKU e o padrão da loja
+        "running_low_percent", "running_low_default_percent",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura, menos `confirmed`: o GTIN que a SEFAZ recusou (None sem recusa)
         "gtin_rejected",
@@ -914,7 +989,10 @@ def test_product_detail_get_shape(client, operator, catalog):
         "back_at",
         "back_reason",
         "admin_history_path",
+        # somente-leitura: o modo de produção da ficha vigente (ADR-040), None sem ficha
+        "production",
     }
+    assert product["production"] is None
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
     assert product["primary_collection"] == "doces"

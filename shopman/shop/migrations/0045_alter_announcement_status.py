@@ -2,7 +2,7 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-    dependencies = [("shop", "0044_merge_marketing_excellence")]
+    dependencies = [("shop", "0023_squashed_0044_merge_marketing_excellence")]
 
     operations = [
         migrations.AlterField(

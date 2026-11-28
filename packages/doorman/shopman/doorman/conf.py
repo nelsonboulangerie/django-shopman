@@ -29,6 +29,12 @@ class DoormanSettings:
     ACCESS_CODE_RATE_LIMIT_WINDOW_MINUTES: int = 15
     ACCESS_CODE_RATE_LIMIT_MAX: int = 5
     ACCESS_CODE_COOLDOWN_SECONDS: int = 60
+    # Códigos e access links por IP (G10). Alto de propósito: no 4G, muitos
+    # clientes saem pelo mesmo IP da operadora (CGNAT), e 20/h barrava o bairro
+    # inteiro. Quem segura abuso é o teto por telefone/e-mail (G9/G12), o
+    # cooldown (G11) e o teto de códigos errados (G13). Decisão do dono, 09/11/2026.
+    IP_RATE_LIMIT_MAX: int = 100
+    IP_RATE_LIMIT_WINDOW_MINUTES: int = 60
     # Wrong codes per target, summed across codes (G13). ``MAX_ATTEMPTS`` is per
     # code and a resend starts a fresh one; this budget is what a resend can't reset.
     ACCESS_CODE_MAX_FAILURES_PER_TARGET: int = 15
@@ -38,14 +44,18 @@ class DoormanSettings:
     PIN_MIN_LENGTH: int = 4
     PIN_DIGITS_ONLY: bool = True
     PIN_MAX_ATTEMPTS: int = 5
+    # Janela da PRIMEIRA trava. Cada falha depois dela (a trava não zera o contador:
+    # só um acerto zera) dobra a janela até o teto. Fixo em 5 min, quem insistisse
+    # varria os 10 mil PINs de 4 dígitos em semanas; dobrando até 1 h, leva anos.
     PIN_LOCKOUT_MINUTES: int = 5
+    PIN_LOCKOUT_MAX_MINUTES: int = 60
     PIN_HMAC_KEY: str = ""  # empty → falls back to SECRET_KEY
 
     # Sender (shortcut — equivalent to a single-item DELIVERY_CHAIN)
     MESSAGE_SENDER_CLASS: str = "shopman.doorman.senders.ConsoleSender"
 
     # Delivery fallback chain: ordered list of methods to try when sending codes.
-    # Empty = use MESSAGE_SENDER_CLASS as single sender (backward compat).
+    # Empty = use MESSAGE_SENDER_CLASS as the single configured sender.
     DELIVERY_CHAIN: list[str] = field(default_factory=list)
 
     # Map of method → sender class for the delivery chain.
@@ -94,8 +104,9 @@ class DoormanSettings:
 
     # Customer resolver (Protocol-based decoupling from Guestman)
     # Default raises NotImplementedError — configure a real resolver in settings.
-    # With shopman-guestman: "shopman.guestman.adapters.auth.CustomerResolver"
-    CUSTOMER_RESOLVER_CLASS: str = "shopman.doorman.resolvers.NoopCustomerResolver"
+    # With shopman-guestman: "shopman.guestman.adapters.auth.IdentityResolver"
+    IDENTITY_RESOLVER_CLASS: str = "shopman.doorman.resolvers.NoopIdentityResolver"
+    MANYCHAT_IDENTITY_BRIDGE_CLASS: str = ""
 
     # Adapter (single point of customization, like allauth's DefaultAccountAdapter)
     AUTH_ADAPTER: str = "shopman.doorman.adapter.DefaultAuthAdapter"
@@ -103,12 +114,14 @@ class DoormanSettings:
     # Passkey (WebAuthn)
     # `PASSKEY_RP_ID` é o DOMÍNIO que a credencial reconhece, e é o que torna passkey imune a
     # phishing: o sistema operacional só assina para ele. Deixe vazio em dev (o host da
-    # requisição vale); em produção, aponte para o domínio da loja (`nelsonboulangerie.com.br`
-    # — sem esquema, sem porta). Subdomínio herda: uma credencial de `nelsonboulangerie.com.br`
-    # vale em `www.nelsonboulangerie.com.br`, mas não o contrário.
+    # requisição vale); em produção, aponte para o domínio da loja (`loja.com.br`, sem
+    # esquema, sem porta). Subdomínio herda: uma credencial de `loja.com.br` vale em
+    # `www.loja.com.br`, mas não o contrário.
     PASSKEY_ENABLED: bool = True
     PASSKEY_RP_ID: str = ""
-    PASSKEY_RP_NAME: str = "Nelson Boulangerie"
+    #: O nome que o sistema mostra na passkey. O kernel não conhece loja nenhuma: quem
+    #: chama ``registration_options`` informa a marca; vazio cai no domínio.
+    PASSKEY_RP_NAME: str = ""
     #: Minutos que o desafio vale. Curto de propósito: é um handshake, não uma sessão.
     PASSKEY_CHALLENGE_TTL_MINUTES: int = 5
 
@@ -116,7 +129,13 @@ class DoormanSettings:
     # When True, after OTP verification the user can trust their device
     # to skip OTP on subsequent logins.
     DEVICE_TRUST_ENABLED: bool = True
-    DEVICE_TRUST_TTL_DAYS: int = 30
+    #: Dias SEM USO até a confiança vencer. Não é prazo fixo: cada uso renova
+    #: (``TrustedDevice.touch`` empurra ``expires_at`` e o cookie é reemitido com o
+    #: mesmo prazo). Quem volta à loja nunca mais digita código; o dispositivo
+    #: esquecido numa gaveta vence sozinho. Vale igual para cliente, quadro e
+    #: estação: os três são "este navegador já foi verificado", e nenhum ganha
+    #: permissão por ser confiável.
+    DEVICE_TRUST_TTL_DAYS: int = 180
     DEVICE_TRUST_COOKIE_NAME: str = "doorman_dt"
     # Cookie SEPARADO para display: o navegador do gestor pode confiar num quadro
     # sem atropelar a confiança de cliente do mesmo navegador (um cookie guarda um
@@ -172,6 +191,10 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.ACCESS_CODE_MAX_ATTEMPTS must be > 0")
     if s.ACCESS_CODE_RATE_LIMIT_MAX <= 0:
         errors.append("DOORMAN.ACCESS_CODE_RATE_LIMIT_MAX must be > 0")
+    if s.IP_RATE_LIMIT_MAX <= 0:
+        errors.append("DOORMAN.IP_RATE_LIMIT_MAX must be > 0")
+    if s.IP_RATE_LIMIT_WINDOW_MINUTES <= 0:
+        errors.append("DOORMAN.IP_RATE_LIMIT_WINDOW_MINUTES must be > 0")
     if s.ACCESS_CODE_MAX_FAILURES_PER_TARGET <= 0:
         errors.append("DOORMAN.ACCESS_CODE_MAX_FAILURES_PER_TARGET must be > 0")
     if s.ACCESS_CODE_FAILURE_WINDOW_HOURS <= 0:
@@ -186,6 +209,8 @@ def validate_settings() -> list[str]:
         errors.append("DOORMAN.PIN_MAX_ATTEMPTS must be > 0")
     if s.PIN_LOCKOUT_MINUTES < 0:
         errors.append("DOORMAN.PIN_LOCKOUT_MINUTES must be >= 0")
+    if s.PIN_LOCKOUT_MAX_MINUTES < s.PIN_LOCKOUT_MINUTES:
+        errors.append("DOORMAN.PIN_LOCKOUT_MAX_MINUTES must be >= PIN_LOCKOUT_MINUTES")
 
     return errors
 
@@ -204,28 +229,43 @@ doorman_settings = _LazySettings()
 
 
 # Customer resolver (singleton, thread-safe)
-_customer_resolver = None
-_customer_resolver_lock = threading.Lock()
+_identity_resolver = None
+_identity_resolver_lock = threading.Lock()
+_manychat_identity_bridge = None
 
 
-def get_customer_resolver():
-    """Get the configured customer resolver (singleton)."""
-    global _customer_resolver
-    if _customer_resolver is None:
-        with _customer_resolver_lock:
-            if _customer_resolver is None:
+def get_identity_resolver():
+    """Get the configured identity resolver (singleton)."""
+    global _identity_resolver
+    if _identity_resolver is None:
+        with _identity_resolver_lock:
+            if _identity_resolver is None:
                 from django.utils.module_loading import import_string
 
                 s = get_doorman_settings()
-                cls = import_string(s.CUSTOMER_RESOLVER_CLASS)
-                _customer_resolver = cls()
-    return _customer_resolver
+                cls = import_string(s.IDENTITY_RESOLVER_CLASS)
+                _identity_resolver = cls()
+    return _identity_resolver
 
 
-def reset_customer_resolver():
+def get_manychat_identity_bridge():
+    """Return the explicitly configured optional ManyChat bridge."""
+    global _manychat_identity_bridge
+    dotted_path = get_doorman_settings().MANYCHAT_IDENTITY_BRIDGE_CLASS
+    if not dotted_path:
+        return None
+    if _manychat_identity_bridge is None:
+        from django.utils.module_loading import import_string
+
+        _manychat_identity_bridge = import_string(dotted_path)()
+    return _manychat_identity_bridge
+
+
+def reset_identity_resolver():
     """Reset cached resolver. For testing."""
-    global _customer_resolver
-    _customer_resolver = None
+    global _identity_resolver, _manychat_identity_bridge
+    _identity_resolver = None
+    _manychat_identity_bridge = None
 
 
 # Auth adapter (singleton, thread-safe)

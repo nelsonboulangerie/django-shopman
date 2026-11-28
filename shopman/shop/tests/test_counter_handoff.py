@@ -7,7 +7,7 @@ aqui:
    ``system:counter_handoff``) — mas só se o CANAL declarou a transição no seu
    ``lifecycle.transitions`` (config-driven, assada no snapshot);
 2. item de prateleira NÃO vira ticket de picking nem alerta de item sem
-   estação (``prep_only``) — a estação "Encomendas" é para pedido que alguém
+   estação (``prep_only``) — a estação "Separação" é para pedido que alguém
    precisa separar, não para a sacola que o cliente já segura;
 3. a NFC-e é enfileirada UMA vez, com dedupe no banco, mesmo com dois
    gatilhos (fechamento da venda + ``on_completed``).
@@ -25,6 +25,7 @@ from shopman.shop.directives import FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import fiscal as fiscal_service
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 pytestmark = pytest.mark.django_db
 
@@ -46,7 +47,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -254,13 +255,14 @@ def test_same_day_order_mode_never_hands_goods_over_implicitly(source):
     assert order.status == Order.Status.ACCEPTED
 
 
-def test_pos_order_mode_waits_for_human_acceptance_even_on_immediate_channel():
+def test_pos_order_mode_is_accepted_without_human_acceptance():
+    """Quem registra a encomenda no PDV é o operador: não há aceite a pedir."""
     from datetime import timedelta
 
     from django.utils import timezone
 
     order = _counter_order(
-        ref="PDV-ORDER-MANUAL",
+        ref="PDV-ORDER-IMMEDIATE",
         status=Order.Status.NEW,
         data_extra={
             "pos": {"sales_mode": "order"},
@@ -271,7 +273,8 @@ def test_pos_order_mode_waits_for_human_acceptance_even_on_immediate_channel():
     lifecycle._handle_confirmation(order, ChannelConfig.for_channel("pdv"))
 
     order.refresh_from_db()
-    assert order.status == Order.Status.NEW
+    # Encomenda de amanhã: aceita agora, o trabalho físico espera o dia.
+    assert order.status == Order.Status.ACCEPTED
 
 
 def test_pos_counter_mode_keeps_immediate_confirmation():

@@ -9,6 +9,9 @@ Cobertura:
   - DeliveryFeeModifier — distância além de todas as faixas → fora da área
   - DeliveryFeeModifier — zona override sobrepõe a faixa de distância
   - DeliveryFeeModifier — zona exclude bloqueia mesmo com faixa válida
+  - DeliveryFeeModifier — distância desconhecida: cidade/UF fora da loja bloqueia,
+    mesma cidade cobra a taxa-padrão; zona exclude/override continuam valendo
+  - DeliveryZoneRule — o commit recusa cidade fora da loja sem distância
 """
 
 from __future__ import annotations
@@ -203,3 +206,95 @@ class _FakeKm:
 
     def __init__(self, km):
         self.delivery_distance_km = km
+
+
+PAULISTA = {
+    "route": "Avenida Paulista", "street_number": "1000", "neighborhood": "Bela Vista",
+    "city": "São Paulo", "state_code": "SP", "postal_code": "01310-100",
+}
+LONDRINA = {
+    "route": "Rua Teste", "street_number": "10", "neighborhood": "Centro",
+    "city": "londrina", "state_code": "pr", "postal_code": "86050-000",
+}
+
+
+@patch("shopman.shop.services.geocoding.forward_geocode", return_value=None)
+class TestUnknownDistanceFallsBackToDeclaredCity(TestCase):
+    """Sem coordenada e sem geocode (sem chave do Google): a cidade/UF decidem."""
+
+    def setUp(self):
+        cache.delete(SHOP_CACHE_KEY)
+        self.shop = Shop.objects.create(
+            name="Test Shop", latitude=ORIGIN_LAT, longitude=ORIGIN_LNG,
+            city="Londrina", state_code="PR",
+            defaults={"rules": {"default_delivery_fee_q": 800}},
+        )
+        _seed_bands(self.shop)
+        self.modifier = DeliveryFeeModifier()
+
+    def _session(self, addr):
+        session = MagicMock()
+        session.data = {"fulfillment_type": "delivery", "delivery_address_structured": dict(addr)}
+        session.items = []
+        return session
+
+    def test_other_city_without_coords_is_out_of_area(self, _geo):
+        session = self._session(PAULISTA)
+        self.modifier.apply(channel=None, session=session, ctx={})
+        self.assertTrue(session.data.get("delivery_zone_error"))
+        self.assertNotIn("delivery_fee_q", session.data)
+
+    def test_same_city_other_state_is_out_of_area(self, _geo):
+        session = self._session({**LONDRINA, "state_code": "SP"})
+        self.modifier.apply(channel=None, session=session, ctx={})
+        self.assertTrue(session.data.get("delivery_zone_error"))
+
+    def test_store_city_without_coords_charges_default_fee(self, _geo):
+        session = self._session(LONDRINA)  # caixa diferente da loja
+        self.modifier.apply(channel=None, session=session, ctx={})
+        self.assertEqual(session.data.get("delivery_fee_q"), 800)
+        self.assertNotIn("delivery_zone_error", session.data)
+
+    def test_exclude_zone_still_blocks_store_city(self, _geo):
+        DeliveryZone.objects.create(
+            shop=self.shop, name="Não entrego no Centro", mode=DeliveryZone.MODE_EXCLUDE,
+            zone_type=DeliveryZone.ZONE_TYPE_NEIGHBORHOOD, match_value="Centro", fee_q=0,
+        )
+        session = self._session(LONDRINA)
+        self.modifier.apply(channel=None, session=session, ctx={})
+        self.assertTrue(session.data.get("delivery_zone_error"))
+
+    def test_override_zone_still_prices_its_own_fee(self, _geo):
+        DeliveryZone.objects.create(
+            shop=self.shop, name="Centro cortesia", mode=DeliveryZone.MODE_OVERRIDE,
+            zone_type=DeliveryZone.ZONE_TYPE_NEIGHBORHOOD, match_value="Centro", fee_q=300,
+        )
+        session = self._session(LONDRINA)
+        self.modifier.apply(channel=None, session=session, ctx={})
+        self.assertEqual(session.data.get("delivery_fee_q"), 300)
+        self.assertNotIn("delivery_zone_error", session.data)
+
+    def _commit_session(self, addr):
+        session = MagicMock()
+        session.data = {
+            "fulfillment_type": "delivery",
+            "delivery_fee_q": 800,  # taxa de uma passagem antiga, antes da troca de cidade
+            "delivery_address_structured": dict(addr),
+        }
+        session.items = []
+        session.pricing = {}
+        return session
+
+    def test_commit_refuses_other_city_even_without_zone_error_flag(self, _geo):
+        from shopman.orderman.exceptions import ValidationError as OrderValidationError
+
+        from shopman.shop.rules.validation import DeliveryZoneRule
+
+        with self.assertRaises(OrderValidationError) as caught:
+            DeliveryZoneRule().validate(channel=None, session=self._commit_session(PAULISTA), ctx={})
+        self.assertEqual(caught.exception.code, "delivery_zone_not_covered")
+
+    def test_commit_accepts_store_city_without_distance(self, _geo):
+        from shopman.shop.rules.validation import DeliveryZoneRule
+
+        DeliveryZoneRule().validate(channel=None, session=self._commit_session(LONDRINA), ctx={})

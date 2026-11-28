@@ -1,0 +1,300 @@
+{
+ "about": "Perguntas que batem (ou não) numa pergunta frequente, para o placar da resposta pela IA a partir das FAQs (WP-18). 'parts': uma lista por parte da pergunta, com as referências que a respondem (qualquer uma serve); lista vazia = nenhuma FAQ cobre, e o certo é 'vou verificar'. 'source': real (mensagem de cliente) ou escrita pela sessão, a conferir. Referências: as operacionais (delivery, hours, location, payment, preorder, allergens, contact) e as curadas (curated-<ref> de FAQEntry). No placar, a referência que não está publicada na hora conta como 'nenhuma'. Rótulos revistos em 21/11/2026 contra as FAQs de produção (as novas com sufixo -2 e as que nasceram para pets, estacionamento, mesa e onde). 'mentions': palavras que o TEXTO da resposta tem de trazer (o assunto perguntado), conferidas sem acento e sem caixa; mede se o cliente recebeu a resposta, além dos refs.",
+ "cases": [
+  {
+   "ref": "msg-645",
+   "text": "Oie, me tira uma dúvida. Vocês fazem entrega?",
+   "parts": [
+    [
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
+    ]
+   ],
+   "source": "real",
+   "mentions": [
+    "entreg"
+   ]
+  },
+  {
+   "ref": "msg-682",
+   "text": "vocês fecham que horas mesmo hj?",
+   "parts": [
+    [
+     "hours",
+     "curated-qual-o-horario-de-funcionamento"
+    ]
+   ],
+   "source": "real",
+   "mentions": [
+    "18h"
+   ]
+  },
+  {
+   "ref": "msg-557",
+   "text": "olá, bom dia. Gostaria de saber se vcs estarão abertos no próximo domingo, 04/10?",
+   "parts": [
+    [
+     "hours",
+     "curated-qual-o-horario-de-funcionamento",
+     "curated-voces-abrem-em-feriado"
+    ]
+   ],
+   "source": "real",
+   "mentions": [
+    "domingo"
+   ]
+  },
+  {
+   "ref": "msg-582",
+   "text": "Até qui horas vcs e",
+   "parts": [
+    [
+     "hours",
+     "curated-qual-o-horario-de-funcionamento"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "msg-59",
+   "text": "seguimos. é para entrega, ok. qual a taxa?",
+   "parts": [
+    [
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "campo-9",
+   "text": "Qual o horário de vocês no sábado? E tem estacionamento?",
+   "parts": [
+    [
+     "hours"
+    ],
+    [
+     "curated-tem-estacionamento"
+    ]
+   ],
+   "source": "real"
+  },
+  {
+   "ref": "conversa-2011-pets",
+   "text": "Aceitam pets ai na padaria?",
+   "parts": [
+    [
+     "curated-posso-levar-meu-pet"
+    ]
+   ],
+   "source": "real",
+   "mentions": [
+    "pet"
+   ]
+  },
+  {
+   "ref": "faq-pix",
+   "text": "aceitam pix?",
+   "parts": [
+    [
+     "payment",
+     "curated-quais-formas-de-pagamento-voces-aceitam",
+     "curated-quais-formas-de-pagamento-voces-aceitam-2"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "pix"
+   ]
+  },
+  {
+   "ref": "faq-taxa",
+   "text": "quanto custa a entrega?",
+   "parts": [
+    [
+     "delivery",
+     "curated-voces-entregam-quanto-custa"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-onde",
+   "text": "onde vocês ficam?",
+   "parts": [
+    [
+     "location",
+     "curated-onde-voces-ficam"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "Madre Leônia"
+   ]
+  },
+  {
+   "ref": "faq-encomenda",
+   "text": "posso encomendar para sábado?",
+   "parts": [
+    [
+     "preorder",
+     "curated-posso-encomendar-para-outro-dia",
+     "curated-posso-encomendar-para-outro-dia-2"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "encomend"
+   ]
+  },
+  {
+   "ref": "faq-site",
+   "text": "como faço pra pedir pelo site?",
+   "parts": [
+    [
+     "curated-como-faco-um-pedido-pelo-site"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-conta",
+   "text": "preciso criar conta pra comprar?",
+   "parts": [
+    [
+     "curated-preciso-criar-uma-conta"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-levain",
+   "text": "o que é levain?",
+   "parts": [
+    [
+     "curated-o-que-e-fermentacao-natural"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-ifood",
+   "text": "vocês estão no ifood?",
+   "parts": [
+    [
+     "curated-voces-estao-no-ifood",
+     "curated-voces-estao-no-ifood-2"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "ifood"
+   ]
+  },
+  {
+   "ref": "faq-fidelidade",
+   "text": "tem programa de fidelidade?",
+   "parts": [
+    [
+     "curated-voces-tem-programa-de-fidelidade",
+     "curated-voces-tem-programa-de-fidelidade-2"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-estacionamento",
+   "text": "tem estacionamento?",
+   "parts": [
+    [
+     "curated-tem-estacionamento"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "estacionamento"
+   ]
+  },
+  {
+   "ref": "faq-wifi",
+   "text": "tem wi-fi pra cliente?",
+   "parts": [
+    []
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-telefone",
+   "text": "qual o telefone de vocês?",
+   "parts": [
+    [
+     "contact"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "3323-1997"
+   ]
+  },
+  {
+   "ref": "faq-pagar-na-entrega",
+   "text": "posso pagar na entrega?",
+   "parts": [
+    [
+     "payment",
+     "curated-quais-formas-de-pagamento-voces-aceitam",
+     "curated-quais-formas-de-pagamento-voces-aceitam-2"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "pix"
+   ]
+  },
+  {
+   "ref": "faq-indisponivel",
+   "text": "por que o croissant aparece indisponível no site?",
+   "parts": [
+    [
+     "curated-por-que-um-produto-aparece-como-indisponivel"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-me-avise",
+   "text": "como funciona o me avise?",
+   "parts": [
+    [
+     "curated-como-funciona-o-me-avise"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  },
+  {
+   "ref": "faq-cpf",
+   "text": "dá pra colocar CPF na nota?",
+   "parts": [
+    [
+     "curated-posso-pedir-cpf-na-nota",
+     "curated-posso-pedir-cpf-na-nota-2"
+    ]
+   ],
+   "source": "sessão (a conferir)",
+   "mentions": [
+    "cpf"
+   ]
+  },
+  {
+   "ref": "faq-mesa",
+   "text": "vocês têm mesa pra comer aí?",
+   "parts": [
+    [
+     "curated-posso-comer-no-local",
+     "curated-preciso-reservar-mesa"
+    ]
+   ],
+   "source": "sessão (a conferir)"
+  }
+ ]
+}

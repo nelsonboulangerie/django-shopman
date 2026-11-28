@@ -17,6 +17,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from shopman.shop.projections.order_tracking import display_status_key
+from shopman.shop.services import order_composition
+from shopman.shop.services import payment as payment_service
 from shopman.shop.services.customer_orders import (
     ACTIVE_STATUSES,
     customer_identity_filter,
@@ -29,8 +32,11 @@ logger = logging.getLogger(__name__)
 class CustomerOrderSummary:
     """Canonical compact order summary — semantic, prices in cents.
 
-    Carries the status *key* (``status``); the label and colour are resolved by
-    Presentation. ``created_at`` is the raw timestamp (Presentation formats it).
+    Carries the status *key* (``status``) and the semantic descriptor the
+    customer reads (``display_status_key``, the same one the tracking page uses:
+    ``payment_pending`` while a Pix is unpaid, for instance); the label and
+    colour are resolved by Presentation. ``created_at`` is the raw timestamp
+    (Presentation formats it).
     """
 
     ref: str
@@ -38,6 +44,12 @@ class CustomerOrderSummary:
     total_q: int
     status: str
     item_count: int
+    display_status_key: str
+    # Pedido cancelado com dinheiro que entrou: ``refunded`` (já voltou inteiro) ou
+    # ``refund_requested`` (ainda voltando), e quanto (``payment.cancelled_money``).
+    # Vazio quando não há devolução a contar (#2992).
+    refund_outcome: str = ""
+    refund_q: int = 0
 
 
 def history_summaries_for_customer(
@@ -105,17 +117,41 @@ def _apply_history_filter(qs, filter_param: str):
     return qs
 
 
+_REFUND_OUTCOMES = frozenset({"refunded", "refund_requested"})
+
+
+def _refund(order) -> tuple[str, int]:
+    """O dinheiro que volta à cliente de um pedido cancelado: (outcome, centavos).
+
+    A lista da Conta dizia só "Cancelado" para o pedido cujo Pix já tinha voltado
+    (#2992): a cliente ficava sem saber do dinheiro. Lê o mesmo
+    ``payment.cancelled_money`` do acompanhamento, que só olha pedido cancelado.
+    """
+    if str(order.status) != "cancelled":
+        return "", 0
+    money = payment_service.cancelled_money(order)
+    if money is None or money.outcome not in _REFUND_OUTCOMES:
+        return "", 0
+    return money.outcome, money.amount_q
+
+
 def _summaries_from_orders(orders) -> tuple[CustomerOrderSummary, ...]:
-    return tuple(
-        CustomerOrderSummary(
-            ref=order.ref,
-            created_at=order.created_at,
-            total_q=order.total_q,
-            status=order.status,
-            item_count=order.items.count(),
+    summaries = []
+    for order in orders:
+        refund_outcome, refund_q = _refund(order)
+        summaries.append(
+            CustomerOrderSummary(
+                ref=order.ref,
+                created_at=order.created_at,
+                total_q=order_composition.effective_total_q(order),
+                status=order.status,
+                item_count=len(order_composition.effective_items(order)),
+                display_status_key=display_status_key(order),
+                refund_outcome=refund_outcome,
+                refund_q=refund_q,
+            )
         )
-        for order in orders
-    )
+    return tuple(summaries)
 
 
 __all__ = [

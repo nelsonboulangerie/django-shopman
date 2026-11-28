@@ -32,7 +32,7 @@ com ★ (o mínimo para abrir a porta com segurança).
 - [ ] Impressora térmica do balcão com papel; impressora da estação sem tela (Lanches, TM-T20X) com papel.
 - [ ] Gaveta fechada e com o fundo de troco contado.
 - [ ] Maquininha carregada e com sinal.
-- [ ] Wi-Fi da loja e a rede reserva (4G) identificadas: quem vai desligar a rede no teste sem conexão sabe onde fica o roteador.
+- [ ] Wi-Fi da loja e a rede reserva (4G) identificadas: quem vai desligar a rede no teste sem conexão (B8: o PDV deve **parar** de cobrar) sabe onde fica o roteador.
 - [ ] Loja **aberta** no sistema (a loja mostra o horário de hoje sem aviso de fechada).
 
 ### O que anotar quando falhar
@@ -95,7 +95,7 @@ faria. Endereço: o domínio da loja (`www.`).
 O Pix só é gerado **depois que a loja aceita** o pedido (o gerente aceita no Gestor, Folha 4,
 G1.3). Combine com o gerente.
 
-- [ ] ★ **C5.1** Depois do aceite, **Confira** sem recarregar: "Gerando seu Pix" e logo "Pague com Pix" com o QR, o **Pix Copia e Cola**, **Copiar código** e o tempo para pagar (10 min).
+- [ ] ★ **C5.1** Depois do aceite, **Confira** sem recarregar: "Gerando seu Pix" e logo "Falta só o pagamento" com o QR, o **Pix Copia e Cola**, **Copiar código** e o tempo para pagar (10 min).
 - [ ] **C5.2** Tocar em **Copiar código**. **Confira:** aviso "Código Pix copiado." e o código cola no app do banco.
 - [ ] ★ **C5.3** Pagar (ensaio: Pix de sandbox pelo gerente na Efí; dia D: Pix real no app do banco). **Confira**, sem recarregar a página: a etapa vira "Pago" e o WhatsApp avisa a confirmação.
 - [ ] ★ **C5.4** **Confira:** o botão "Simular pagamento" **não existe** na tela. Se aparecer, é ✗ que trava (o Pix ainda está no simulado).
@@ -131,7 +131,7 @@ B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 
 ### B1. Entrar e abrir o caixa
 
-- [ ] ★ **B1.1** Abrir o PDV. **Confira:** "Identifique-se para operar"; entrar com o PIN. PIN errado mostra "Identificação inválida. Tente de novo."
+- [ ] ★ **B1.1** Abrir o PDV. **Confira:** "Identifique-se para operar"; entrar com o PIN. PIN errado mostra "PIN não confere. Tente de novo."
 - [ ] **B1.2** Ficar 1 min sem tocar em nada. **Confira:** a tela trava sozinha e pede o PIN de novo.
 - [ ] ★ **B1.3** Ir em **Caixa**, tocar em **Abrir caixa**, contar a gaveta e informar o **Fundo de troco**; **Abrir caixa e vender**. **Confira:** aviso "Caixa aberto · fundo R$ X".
 - [ ] ★ **B1.4** Em **Ajustes › Terminal**, tocar em **Testar o agente de novo**. **Confira:** Impressora e Gaveta aparecem prontas. Se não, ✗ e vá à Folha 5.
@@ -177,19 +177,20 @@ B2, B5 e B8 (no tablet a gaveta não abre sozinha: ver Folha 5, P2.5).
 
 ### B8. Sem conexão: derrubar a rede e voltar
 
+A chave **Venda sem conexão** (Admin, Ponto de venda) nasce **desligada** e fica assim no
+go-live (decisão do dono, 03/11/2026: sem contingência offline por enquanto). O teste
+prova que, sem rede, o PDV **não cobra nem guarda venda**. Ligar a chave depende da NFC-e
+em contingência, que ainda não existe.
+
 Combine com o gerente. **Desligue a rede do balcão** (tirar o cabo do PC ou desligar o
 Wi-Fi do PC; se o roteador for de toda a loja, avise a cozinha antes). Cronometre.
 
-- [ ] ★ **B8.1** **Confira** em até 5 s: faixa "Sem conexão…" no topo, que **não** cobre nenhum botão; logo abaixo, o aviso "O balcão continua vendendo." ("Sem conexão" aparece **uma** vez, na faixa)
-- [ ] ★ **B8.2** Tocar em **O que funciona agora**. **Confira:** a lista diz dinheiro e maquininha sim; Pix, entrega, encomenda e desconto não.
-- [ ] ★ **B8.3** Fazer uma venda em **dinheiro**. **Confira:** a gaveta abre (PC do balcão), o recibo sai pela impressão do navegador, e a tela diz "Venda guardada neste dispositivo."
-- [ ] ★ **B8.4** Fazer uma venda na **maquininha**. **Confira:** o aviso passa a "2 vendas esperando envio."
-- [ ] **B8.5** Tentar **Pix**. **Confira:** "Pix precisa de conexão. Receba em dinheiro ou na maquininha."
-- [ ] **B8.6** Tentar dar um **desconto**. **Confira:** o PDV recusa e diz que precisa de conexão.
-- [ ] **B8.7** Tentar **Fechar o caixa**. **Confira:** "N vendas feitas sem conexão ainda não foram enviadas. Envie antes de fechar o caixa."
-- [ ] ★ **B8.8** **Religar a rede.** **Confira** em até 30 s: "Enviando 2 vendas guardadas…" e os avisos "Venda guardada enviada: pedido NB-…" (anote: _______ e _______).
-- [ ] ★ **B8.9** **Confira** no Gestor (Folha 4): as duas vendas aparecem como pedidos pagos, e a NFC-e de cada uma sai depois do envio.
-- [ ] **B8.10** **Confira:** a faixa some e o PDV volta a vender Pix.
+- [ ] **B8.0** Antes de derrubar: **Confira** no Admin, Ponto de venda, que **Venda sem conexão** está desligada.
+- [ ] ★ **B8.1** **Confira** em até 5 s: no cabeçalho, "Sem conexão: a venda espera a rede voltar."
+- [ ] ★ **B8.2** Com itens na venda, **Confira:** Pagamento, pagar direto e Validar ficam apagados, com "Sem conexão. A venda espera a rede voltar." logo abaixo; F4 não abre o pagamento.
+- [ ] ★ **B8.3** **Confira:** nenhuma venda foi cobrada nem guardada no dispositivo (a gaveta não abre, nenhum recibo sai).
+- [ ] ★ **B8.4** **Religar a rede.** **Confira** em até 30 s: o aviso some e a mesma venda (os itens continuam lá) se conclui normalmente.
+- [ ] **B8.5** **Confira** no Gestor (Folha 4): só a venda do B8.4 aparece, uma vez.
 
 ### B9. Sangria, suprimento e fechar o caixa
 
@@ -276,7 +277,7 @@ Quem faz: o gerente, no PC ou tablet do escritório, com o **Gestor de pedidos**
 - [ ] ★ **G2.2** Pedido de retirada: o cliente chega, tocar em **Marcar como retirado**. **Confira:** o número sai do Painel de retirada (Folha 3, K5.4) e a NFC-e sai ("NFC-e sai na retirada" vira "NFC-e autorizada").
 - [ ] ★ **G2.3** Pedido de entrega: depois de Pronto, **Confira** que a DANFE imprimiu sozinha na impressora da saída ("DANFE impressa" no card). Imprimir a **Via Pedido** e grampear na sacola.
 - [ ] ★ **G2.4** Tocar em **Marcar saída para entrega** (ou **Saiu com a maquininha**) e, na volta, **Marcar como entregue**. **Confira:** o cliente vê "Saiu para entrega" e depois "Entregue".
-- [ ] **G2.5** Entrega por parceiro (se ligada): **Cotar entrega** e **Chamar entregador**. **Confira:** a corrida aparece no pedido; **Solicitar cancelamento da corrida** cancela.
+- [ ] **G2.5** Entrega por parceiro (se ligada): **Cotar entrega** e **Chamar entregador**. **Confira:** a corrida aparece no pedido; **Cancelar corrida** pede a confirmação (um toque não cancela) e, confirmado, mostra "Pedido de cancelamento enviado. Esperando a TaOn confirmar." até a corrida sair da tela.
 - [ ] **G2.6** Entrega paga na entrega: na volta, em **Acerto da entrega**, informar o **Valor recebido** e **Confirmar acerto**.
 
 ### G3. Pedido iFood

@@ -89,3 +89,12 @@ def test_configure_shop_contact_rejects_invalid_phone():
             phone="123",
             stdout=StringIO(),
         )
+
+
+def test_whatsapp_link_is_decided_by_host_not_substring():
+    from shopman.shop.models.shop import is_whatsapp_link
+
+    assert is_whatsapp_link("https://wa.me/554333231997")
+    assert is_whatsapp_link("https://api.whatsapp.com/send?phone=554333231997")
+    assert not is_whatsapp_link("https://exemplo.com/?wa.me")
+    assert not is_whatsapp_link("https://whatsapp.com.exemplo.com/")

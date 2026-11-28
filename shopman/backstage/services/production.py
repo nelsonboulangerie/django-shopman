@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import logging
+import re
 import tempfile
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -52,8 +53,11 @@ def _operator_error(exc: Exception) -> Exception:
     from shopman.stockman.exceptions import StockError
 
     if isinstance(exc, StockError):
+        # A frase do estoque, sem o código entre colchetes ("[INSUFFICIENT_QUANTITY] …"):
+        # o operador lê o que aconteceu, e o código fica no log.
+        logger.warning("production.stock_error code=%s data=%s", exc.code, getattr(exc, "data", {}))
         return ProductionError(
-            f"O lote não foi fechado porque o estoque falhou: {exc}. Atualize o painel e tente novamente."
+            f"O estoque não aceitou: {_lower_first(exc.message)}. Nada foi gravado. Atualize o painel e tente de novo."
         )
     if isinstance(exc, ObjectDoesNotExist):
         return ProductionNotFound(
@@ -87,7 +91,133 @@ def _operator_error(exc: Exception) -> Exception:
         )
     if code == "INVALID_QUANTITY":
         return ProductionError("Quantidade inválida.")
-    return ProductionError(str(exc) or "Falha na produção.")
+    if code == "COMMITTED_HOLDS":
+        return ProductionError(_committed_holds_message(data.get("committed")))
+    if code == "INSUFFICIENT_MATERIALS":
+        names = _input_names(str(row.get("sku") or "") for row in data.get("shortages") or ())
+        listed = f": {', '.join(names)}" if names else ""
+        return ProductionError(
+            f"Falta insumo para esta quantidade{listed}. Revise o número ou peça ao Compras antes de planejar."
+        )
+    if code == "DOWNSTREAM_DEFICIT":
+        refs = [str(row.get("wo_ref") or "") for row in data.get("deficit") or ()]
+        products = _work_order_product_names(refs)
+        listed = f" ({', '.join(products)})" if products else ""
+        return ProductionError(
+            "Reduzir este lote deixa faltar para os lotes que já estão planejados com ele"
+            f"{listed}. Reduza esses lotes primeiro."
+        )
+    if code in ("RECIPE_NOT_FOUND", "WORK_ORDER_NOT_FOUND"):
+        recipe = code == "RECIPE_NOT_FOUND"
+        return ProductionNotFound(
+            "Receita não encontrada. Atualize o painel." if recipe else "Lote não encontrado. Atualize o painel.",
+            resource="recipe" if recipe else "work_order",
+            identifier=str(data.get("ref") or data.get("work_order") or ""),
+        )
+    if code == "AMBIGUOUS_RECIPE":
+        return ProductionError("Há mais de uma receita ativa para este produto. Arquive a que sobra em Receitas.")
+    if code == "BOM_CYCLE":
+        return ProductionError("A receita usa a si mesma em alguma etapa. Confira a receita em Receitas.")
+    if code in _CRAFT_CODES_IN_PORTUGUESE:
+        return ProductionError(exc.message)
+    # Código que a Produção ainda não traduz: o operador lê o que fazer, e o código
+    # vai para o log, para virar tradução (nunca "[CODE] message in English").
+    logger.warning("production.untranslated_craft_error code=%s data=%s", code, data)
+    return ProductionError("Não deu para salvar esta mudança na produção. Atualize o painel e tente de novo.")
+
+
+#: Códigos do Craftsman cuja mensagem padrão já é a frase da casa.
+_CRAFT_CODES_IN_PORTUGUESE = frozenset(
+    {
+        "MADE_TO_ORDER_RECIPE",
+        "FORMULA_INVALID",
+        "ENTRY_WITHOUT_SKU",
+        "ITEM_WITHOUT_SKU",
+        "VERSION_NOT_DRAFT",
+        "PART_WITHOUT_FORMULA",
+        "PART_EXCEEDS_BASE",
+        "ENTRY_ARCHIVED",
+        "ANCHOR_EMPTY",
+    }
+)
+
+
+def _committed_holds_message(committed) -> str:
+    """A trava de redução, numa frase só (P1-13): a do vínculo e a do Core dizem isto."""
+    try:
+        amount = _qty(Decimal(str(committed)))
+    except (ArithmeticError, TypeError, ValueError):
+        return "Há encomendas para este dia. O plano não pode ficar abaixo delas."
+    return f"Há {amount} un. encomendadas para este dia. O plano não pode ficar abaixo disso."
+
+
+def _lower_first(text: str) -> str:
+    text = str(text or "").strip().rstrip(".")
+    return text[:1].lower() + text[1:] if text else "a operação falhou"
+
+
+def _input_names(skus) -> list[str]:
+    """O nome de cada insumo, como o cadastro chama (nunca o SKU cru)."""
+    wanted = [sku for sku in dict.fromkeys(skus) if sku]
+    if not wanted:
+        return []
+    names: dict[str, str] = {}
+    try:
+        from shopman.buyman.models import Material
+        from shopman.craftsman.models import Recipe
+
+        from shopman.backstage.projections.production import _product_names
+
+        names.update(_product_names(set(wanted)))
+        names.update(
+            (sku, name)
+            for sku, name in Material.objects.filter(sku__in=wanted).values_list("sku", "name")
+            if sku not in names and str(name or "").strip()
+        )
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=wanted, is_active=True).values_list("output_sku", "name")
+            if sku not in names and str(name or "").strip()
+        )
+    except Exception:  # silêncio-deliberado: sem nome, a frase sai sem a lista
+        logger.warning("production.input_names_failed", exc_info=True)
+    return [names.get(sku, sku) for sku in wanted]
+
+
+def _work_order_product_names(refs) -> list[str]:
+    wanted = [ref for ref in dict.fromkeys(refs) if ref]
+    if not wanted:
+        return []
+    try:
+        from shopman.craftsman.models import WorkOrder
+
+        skus = dict(WorkOrder.objects.filter(ref__in=wanted).values_list("ref", "output_sku"))
+    except Exception:  # silêncio-deliberado: sem nome, a frase sai sem a lista
+        logger.warning("production.work_order_names_failed", exc_info=True)
+        return []
+    return list(dict.fromkeys(_input_names(skus.get(ref, "") for ref in wanted)))
+
+
+def _speaks_to_operator(func):
+    """A recusa do Core ou do estoque chega ao operador em português, nunca como 500.
+
+    Para os serviços que não passavam pelo ``_operator_error``: um ``CraftError``
+    ou ``StockError`` vindo de dentro deles escapava da view (que só conhece
+    ``ProductionError``) e virava 500 com a mensagem do Core em inglês (P1-13).
+    """
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ProductionError:
+            raise
+        except Exception as exc:
+            translated = _operator_error(exc)
+            raise translated from (None if translated is exc else exc)
+
+    return wrapper
 
 
 def _positive_quantity(value, *, allow_zero: bool = False) -> Decimal:
@@ -111,6 +241,8 @@ class MissingMaterial:
     sku: str
     needed: Decimal
     available: Decimal
+    #: Unidade da ficha em que ``needed`` e ``available`` foram comparados.
+    unit: str = ""
 
     @property
     def shortage(self) -> Decimal:
@@ -118,11 +250,18 @@ class MissingMaterial:
 
 
 class ProductionStockShortError(ProductionError):
-    """Raised when pre-finish material validation detects a shortage."""
+    """Raised when material validation detects a shortage.
 
-    def __init__(self, *, work_order_ref: str, missing: list[MissingMaterial]):
+    ``stage`` diz de onde veio a falta. Na abertura (``"start"``) ela é aviso: o
+    padeiro lê o que falta e decide, e a confirmação do mesmo impacto abre o lote.
+    No fechamento (``"finish"``) é trava: só fecha com a assinatura de quem pode
+    autorizar (decisão 3 do dono, D-042).
+    """
+
+    def __init__(self, *, work_order_ref: str, missing: list[MissingMaterial], stage: str = "finish"):
         self.work_order_ref = work_order_ref
         self.missing = missing
+        self.stage = stage
         summary = ", ".join(f"{item.sku}: faltam {_qty(item.shortage)}" for item in missing)
         super().__init__(f"Insumos insuficientes para {work_order_ref}: {summary}")
 
@@ -150,16 +289,28 @@ class ProductionOrderShortError(ProductionError):
         requested: Decimal,
         order_refs: tuple[str, ...],
         allow_override: bool = True,
+        confirmable: bool = False,
+        orders: tuple[tuple[str, Decimal], ...] = (),
+        message: str = "",
     ):
         self.work_order_ref = work_order_ref
         self.required = required
         self.requested = requested
         self.order_refs = order_refs
         self.allow_override = allow_override
+        # O lote que rendeu menos que o encomendado fecha com a verdade (decisão 1 do
+        # dono, 23/11/2026): a recusa vira pergunta informada, e quem fecha o lote
+        # confirma sem pedir autorização de gerente.
+        self.confirmable = confirmable
+        #: O que cada pedido espera desta produção, na ordem em que reservou.
+        self.orders = orders
         short = max(Decimal("0"), required - requested)
         super().__init__(
-            f"{work_order_ref} tem {_qty(required)} un. comprometidas; "
-            f"a nova quantidade deixa {_qty(short)} un. descobertas."
+            message
+            or (
+                f"{work_order_ref} tem {_qty(required)} un. comprometidas; "
+                f"a nova quantidade deixa {_qty(short)} un. descobertas."
+            )
         )
 
 
@@ -371,6 +522,111 @@ def _require_creation_attempt(*, actor: str, idempotency_key: str | None) -> Non
         )
 
 
+def _delivered_beyond_other_lots(work_order) -> Decimal:
+    """Quanto já foi ENTREGUE contra o saldo de produção da data e os outros lotes não cobrem.
+
+    A entrega feita antes do fechamento é baixa contra o saldo de produção (#2724),
+    lida do ledger pela conta do Stockman (``_early_deliveries``, a mesma do
+    ``carry_deliveries``): a baixa, menos o que já seguiu ou voltou. Os outros lotes
+    abertos (planejados ou iniciados) do mesmo produto e dia ainda podem cobri-la.
+    """
+    from shopman.craftsman.models import WorkOrder
+    from shopman.stockman.models import Quant
+    from shopman.stockman.services.planning import _early_deliveries
+
+    if not work_order.target_date:
+        return Decimal("0")
+    quants = Quant.objects.filter(sku=work_order.output_sku, target_date=work_order.target_date)
+    delivered = sum(
+        (part for quant in quants for _hold, part, _kind, _settles in _early_deliveries(quant, limit=Decimal("1e30"))),
+        Decimal("0"),
+    )
+    if delivered <= 0:
+        return Decimal("0")
+    others = (
+        WorkOrder.objects.filter(
+            output_sku=work_order.output_sku,
+            target_date=work_order.target_date,
+            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        )
+        .exclude(pk=work_order.pk)
+        .values_list("quantity", flat=True)
+    )
+    return max(delivered - sum((Decimal(str(qty)) for qty in others), Decimal("0")), Decimal("0"))
+
+
+def _refuse_void_with_deliveries(work_order) -> None:
+    """Cancelar o lote que já entregou pão é recusado, como reduzir e fechar abaixo (#2729).
+
+    A entrega feita antes do fechamento é baixa contra o saldo de produção da data
+    (#2724). Cancelar o lote deixava essa entrega registrada num saldo zerado, de um
+    lote que não produziu nada, sem aviso: saía pão sem produção. Reduzir o plano
+    abaixo do comprometido e fechar abaixo do entregue já são recusados; o
+    cancelamento é o único que passava.
+
+    Só a ENTREGA trava. A reserva sem entrega continua podendo ser cancelada: vira
+    fato do pedido (#2547). E a entrega que outro lote aberto do mesmo produto e dia
+    ainda cobre não trava.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    if work_order.status not in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED):
+        return
+    delivered = _delivered_beyond_other_lots(work_order)
+    if delivered > 0:
+        raise ProductionError(
+            f"Não dá para cancelar o lote {work_order.ref}: {_qty(delivered)} un. dele já foram entregues. "
+            "Feche o lote com o que ele rendeu."
+        )
+
+
+def _refuse_finish_below_delivered(work_order, finished: Decimal) -> None:
+    """Fechar o lote com menos do que já foi entregue dele é recusado com o motivo (#2731).
+
+    Com o pedido ainda ativo, a guarda dos pedidos recusa antes, com a frase das
+    unidades comprometidas. Com o pedido já concluído, quem recusava era o ledger,
+    com a frase genérica do estoque ("[INSUFFICIENT_AVAILABLE] Quantidade
+    solicitada indisponível"), e o forneiro não lia o motivo.
+    """
+    delivered = _delivered_beyond_other_lots(work_order)
+    if delivered > finished:
+        raise ProductionError(
+            f"Não dá para fechar o lote {work_order.ref} com {_qty(finished)} un.: "
+            f"{_qty(delivered)} un. dele já foram entregues. Confira a contagem: o lote rendeu pelo menos isso."
+        )
+
+
+def _void_locked_work_order(
+    work_order,
+    *,
+    actor: str,
+    reason: str,
+    expected_rev: int | None,
+    idempotency_key: str | None,
+) -> str:
+    """O cancelamento com as guardas dele, sobre um lote já travado.
+
+    Um caminho só para "Cancelar lote…" e para zerar o lote no Planejamento: as
+    duas portas tiram o lote do plano, então as duas passam pela mesma guarda do
+    pão entregue (#3232) e gravam o motivo que a pessoa deu.
+    """
+    _refuse_void_with_deliveries(work_order)
+    result = production_core.void_work_order(
+        work_order.pk,
+        actor=actor,
+        reason=reason,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
+    )
+    _abandon_open_oven_run(
+        work_order,
+        actor=actor,
+        transition="void",
+        reason="work_order_voided",
+    )
+    return result
+
+
 def apply_void(
     work_order_id,
     *,
@@ -391,20 +647,13 @@ def apply_void(
     try:
         with transaction.atomic():
             work_order = WorkOrder.objects.select_for_update().get(pk=work_order_id)
-            result = production_core.void_work_order(
-                work_order_id,
+            return _void_locked_work_order(
+                work_order,
                 actor=actor,
                 reason=reason,
                 expected_rev=expected_rev,
                 idempotency_key=_mutation_idempotency_key("void", work_order_id, idempotency_key),
             )
-            _abandon_open_oven_run(
-                work_order,
-                actor=actor,
-                transition="void",
-                reason="work_order_voided",
-            )
-            return result
     except WorkOrder.DoesNotExist:
         raise ProductionNotFound(
             "Ordem de produção não encontrada.",
@@ -462,12 +711,12 @@ def _preflight_quick_finish(
     """Validate the command before creating any persistent receipt or WO."""
     from types import SimpleNamespace
 
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe
 
     if force and not str(override_reason or "").strip():
         raise ProductionError("Justificativa obrigatória para confirmar a falta.")
     try:
-        recipe = Recipe.objects.get(pk=recipe_id, is_active=True)
+        recipe = Recipe.objects.get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
     except Recipe.DoesNotExist:
         raise ProductionNotFound(
             "Receita de produção não encontrada.",
@@ -548,6 +797,16 @@ def _claim_projected_action_attempt(
                         "Esta chave já pertence a outra tentativa projetada.",
                         data={"cause": "idempotency_conflict"},
                     )
+                if (claim.response_body or {}).get("released"):
+                    # A dona volta ("Salvar com justificativa"): a posse é dela de novo.
+                    claim.response_body = {"idempotency_key": client_key, "attempt_digest": attempt_digest}
+                    claim.save(update_fields=["response_body"])
+                return
+            if (claim.response_body or {}).get("released"):
+                # A tentativa dona foi recusada sem gravar nada: a ação serve à
+                # tentativa revisada, com outra chave (ver _release_projected_action_attempt).
+                claim.response_body = {"idempotency_key": client_key, "attempt_digest": attempt_digest}
+                claim.save(update_fields=["response_body"])
                 return
             raise ProductionConflict(
                 "Esta ação projetada já foi consumida por outra tentativa.",
@@ -557,6 +816,24 @@ def _claim_projected_action_attempt(
         "Não foi possível confirmar a posse da ação projetada.",
         data={"cause": "projected_action_claim_conflict"},
     )
+
+
+def _release_projected_action_attempt(*, projected_action_proof: str, idempotency_key: str) -> None:
+    """Solta a posse da ação projetada que ESTA tentativa tomou, quando ela foi recusada.
+
+    Só a tentativa dona solta: a posse de outra chave fica como está. Soltar não
+    apaga: a mesma chave continua presa ao que tentou (outro número com ela é
+    conflito), e só OUTRA chave pode tomar a ação.
+    """
+    if not projected_action_proof or not idempotency_key:
+        return
+    from shopman.orderman.models import IdempotencyKey
+
+    proof_digest = hashlib.sha256(projected_action_proof.encode("utf-8")).hexdigest()
+    claim = IdempotencyKey.objects.filter(scope=PROJECTED_ACTION_CLAIM_SCOPE, key=proof_digest).first()
+    if claim is not None and str((claim.response_body or {}).get("idempotency_key") or "") == str(idempotency_key).strip():
+        claim.response_body = {**(claim.response_body or {}), "released": True}
+        claim.save(update_fields=["response_body"])
 
 
 def _claim_quick_finish_receipt(
@@ -834,6 +1111,7 @@ def apply_quick_finish(
     idempotency_key: str | None = None,
     projected_action_proof: str = "",
     approved_shortage: dict | None = None,
+    authorized_by: str = "",
 ):
     """Plan and immediately finish a work order from the operator surface.
 
@@ -954,6 +1232,7 @@ def apply_quick_finish(
             override_action="quick_finish",
             allow_implicit_start=True,
             approved_shortage=approved_shortage,
+            authorized_by=authorized_by,
         )
         _complete_quick_finish_receipt(
             receipt_pk,
@@ -1073,11 +1352,15 @@ def apply_planned(
     The recipe lock keeps the coverage read and the cell write in one transaction.
     """
     from django.db import transaction
-    from shopman.craftsman.models import Recipe
+    from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder
 
     _require_creation_attempt(actor=actor, idempotency_key=idempotency_key)
     quantity = _positive_quantity(quantity, allow_zero=True)
     attempt_key = f"production.plan:{str(idempotency_key).strip()}" if idempotency_key else None
+    # Zerar um lote que existe vira cancelamento, gravado com chave própria: o
+    # evento de cancelamento não carrega a tentativa do plano, e a releitura do
+    # plano (``replay_planned_quantity``) o tomaria por outra tentativa.
+    void_key = f"production.plan_void:{str(idempotency_key).strip()}" if idempotency_key else None
     attempt_payload = {"force": bool(force)}
     try:
         _claim_projected_action_attempt(
@@ -1117,7 +1400,7 @@ def apply_planned(
             # This lock contains the order-coverage read and the cell write in
             # one transaction.  The core acquires the same lock defensively for
             # non-backstage callers.
-            Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True)
+            Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True, production_mode=ProductionMode.BATCH)
             resolved_position_ref = _locked_planning_position_ref(position_ref)
             replay = production_core.replay_planned_quantity(
                 recipe_id=recipe_id,
@@ -1136,6 +1419,26 @@ def apply_planned(
             )
             if replay:
                 return replay
+            cleared_lot = _zeroed_planned_work_order(
+                recipe_id=recipe_id,
+                quantity=quantity,
+                target_date_value=target_date_value,
+                position_ref=resolved_position_ref,
+                work_order_id=work_order_id,
+                create_new=create_new,
+                void_key=void_key,
+            )
+            if cleared_lot is not None and cleared_lot.status == WorkOrder.Status.VOID:
+                # Releitura do mesmo zero: o cancelamento idempotente do core
+                # confere quem e por quê, e a resposta é a da primeira vez.
+                _void_locked_work_order(
+                    cleared_lot,
+                    actor=actor,
+                    reason=_zeroing_reason(reason),
+                    expected_rev=expected_rev,
+                    idempotency_key=void_key,
+                )
+                return cleared_lot.output_sku, "", Decimal("0"), "cleared"
             shortage = _check_linked_order_coverage(
                 recipe_id=recipe_id,
                 quantity=quantity,
@@ -1145,6 +1448,21 @@ def apply_planned(
                 work_order_id=work_order_id,
                 create_new=create_new,
             )
+            # As duas travas de redução numa só (P1-13): a dos pedidos ligados ao lote
+            # oferecia "Salvar com justificativa", e logo depois a do Core recusava de
+            # qualquer jeito com "[COMMITTED_HOLDS] …". Onde o Core recusa, a recusa
+            # vem antes, com a frase da casa e sem oferta que não leva a lugar nenhum.
+            core_refusal = _committed_holds_refusal(
+                recipe_id=recipe_id,
+                quantity=quantity,
+                target_date_value=target_date_value,
+                position_ref=resolved_position_ref,
+                work_order_id=work_order_id,
+                create_new=create_new,
+                linked=shortage,
+            )
+            if core_refusal is not None:
+                raise core_refusal
             if force:
                 _require_approved_shortage_snapshot(
                     approved_shortage,
@@ -1152,23 +1470,42 @@ def apply_planned(
                 )
             if shortage and not force:
                 raise shortage
-            result = production_core.set_planned_quantity(
-                recipe_id=recipe_id,
-                quantity=quantity,
-                target_date_value=target_date_value,
-                position_ref=position_ref,
-                operator_ref=operator_ref,
-                reason=reason,
-                actor=actor,
-                source_ref=source_ref,
-                expected_rev=expected_rev,
-                idempotency_key=attempt_key,
-                attempt_payload=attempt_payload,
-                planning_meta=planning_meta,
-                work_order_id=work_order_id,
-                resolved_position_ref=resolved_position_ref,
-                create_new=create_new,
-            )
+            if cleared_lot is not None:
+                # Zerar um lote que existe é cancelar o lote: mesmas guardas,
+                # mesma autoridade (a view pede ``can_void``) e o motivo de quem
+                # zerou, nunca o texto que o core escreveria.
+                cleaned_reason = _zeroing_reason(reason)
+                _require_irreversible_attempt(
+                    actor=actor,
+                    expected_rev=expected_rev,
+                    idempotency_key=idempotency_key,
+                )
+                _void_locked_work_order(
+                    cleared_lot,
+                    actor=actor,
+                    reason=cleaned_reason,
+                    expected_rev=expected_rev,
+                    idempotency_key=void_key,
+                )
+                result = (cleared_lot.output_sku, "", Decimal("0"), "cleared")
+            else:
+                result = production_core.set_planned_quantity(
+                    recipe_id=recipe_id,
+                    quantity=quantity,
+                    target_date_value=target_date_value,
+                    position_ref=position_ref,
+                    operator_ref=operator_ref,
+                    reason=reason,
+                    actor=actor,
+                    source_ref=source_ref,
+                    expected_rev=expected_rev,
+                    idempotency_key=attempt_key,
+                    attempt_payload=attempt_payload,
+                    planning_meta=planning_meta,
+                    work_order_id=work_order_id,
+                    resolved_position_ref=resolved_position_ref,
+                    create_new=create_new,
+                )
             if shortage:
                 _record_shortage_override(
                     work_order_ref=result[1] or shortage.work_order_ref,
@@ -1186,7 +1523,101 @@ def apply_planned(
             return result
     except Exception as exc:
         translated = _operator_error(exc)
+        _release_refused_planning_attempt(translated, projected_action_proof, idempotency_key)
         raise translated from (None if translated is exc else exc)
+
+
+def _release_refused_planning_attempt(translated: Exception, projected_action_proof: str, idempotency_key) -> None:
+    """A recusa por encomenda ou insumo não grava nada (a transação da célula volta
+    inteira), mas a posse da ação projetada é gravada à parte. Presa, ela recusava o
+    "Revisar quantidade" com "Esta ação projetada já foi consumida por outra
+    tentativa" (WP-F14, P1-13). Solta, a mesma ação serve à tentativa revisada; o
+    "forçar" da mesma chave a toma de novo.
+    """
+    if isinstance(translated, (ProductionOrderShortError, ProductionStockShortError)):
+        _release_projected_action_attempt(
+            projected_action_proof=projected_action_proof,
+            idempotency_key=str(idempotency_key or ""),
+        )
+
+
+def _zeroing_reason(reason) -> str:
+    """O motivo de quem tirou o lote do plano; sem ele, não sai."""
+    cleaned = str(reason or "").strip()
+    if not cleaned:
+        raise ProductionError("Diga o motivo de tirar o lote do plano.")
+    return cleaned
+
+
+def _zeroed_planned_work_order(
+    *,
+    recipe_id,
+    quantity,
+    target_date_value,
+    position_ref: str,
+    work_order_id=None,
+    create_new: bool = False,
+    void_key: str | None = None,
+):
+    """O lote planejado que esta célula zerada tira do plano, travado; ``None`` se não há.
+
+    Resolve o alvo como o core resolve (o ``work_order_id`` pedido, ou o único lote
+    planejado da célula). Quando não resolve (célula vazia, alvo velho, dois lotes
+    sem dizer qual), devolve ``None`` e o core responde como sempre respondeu.
+    A releitura de um cancelamento já aceito devolve o mesmo lote, para que o
+    cancelamento idempotente do core responda a tentativa repetida.
+    """
+    from shopman.craftsman.exceptions import CraftError
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+    try:
+        target_date = date.fromisoformat(str(target_date_value))
+    except ValueError:
+        target_date = None
+    accepted = None
+    if void_key:
+        accepted = (
+            WorkOrderEvent.objects.filter(idempotency_key=void_key)
+            .select_related("work_order")
+            .first()
+        )
+    if accepted is not None:
+        # A chave já tirou um lote do plano. Só a MESMA tentativa (zero, mesma
+        # célula, mesmo alvo) relê esse cancelamento; qualquer outra é conflito,
+        # como a releitura do plano responde.
+        voided = accepted.work_order
+        same_attempt = (
+            not create_new
+            and Decimal(str(quantity)) == 0
+            and accepted.kind == WorkOrderEvent.Kind.VOIDED
+            and str(voided.recipe_id) == str(recipe_id)
+            and voided.target_date == target_date
+            and voided.position_ref == position_ref
+            and str(work_order_id or voided.pk) == str(voided.pk)
+        )
+        if not same_attempt:
+            raise CraftError(
+                "IDEMPOTENCY_CONFLICT",
+                idempotency_key=void_key,
+                work_order=voided.ref,
+                existing_work_order=voided.ref,
+            )
+        return WorkOrder.objects.select_for_update().get(pk=voided.pk)
+    if create_new or Decimal(str(quantity)) != 0 or target_date is None:
+        return None
+    planned = list(
+        WorkOrder.objects.select_for_update()
+        .filter(
+            recipe_id=recipe_id,
+            target_date=target_date,
+            position_ref=position_ref,
+            status=WorkOrder.Status.PLANNED,
+        )
+        .order_by("pk")
+    )
+    if work_order_id not in (None, ""):
+        return next((wo for wo in planned if str(wo.pk) == str(work_order_id)), None)
+    return planned[0] if len(planned) == 1 else None
 
 
 def _locked_planning_position_ref(position_ref: str) -> str:
@@ -1212,8 +1643,22 @@ def apply_start(
     actor: str,
     expected_rev: int | None = None,
     idempotency_key: str | None = None,
+    approved_short_lot: dict | None = None,
+    approved_material_shortage: dict | None = None,
 ):
-    """Start a planned work order from the operator surface."""
+    """Start a planned work order from the operator surface.
+
+    Previsto abaixo do encomendado não recusa (decisão 1 do dono, 23/11/2026): a
+    primeira tentativa devolve os pedidos descobertos, e a confirmação do mesmo
+    impacto abre o lote. Quem responde pelo pão que faltar é o fechamento.
+
+    Falta de insumo na abertura é aviso, não trava (WP-F11, P1-14): a primeira
+    tentativa devolve o que falta, pela mesma régua da baixa (a quantidade bruta),
+    e ``approved_material_shortage`` com o mesmo impacto abre o lote. A decisão
+    fica no histórico do lote (``SHORTAGE_OVERRIDDEN`` com ``action="start"``),
+    que nunca autoriza a baixa: o fechamento com falta continua pedindo a
+    assinatura de quem pode autorizar.
+    """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
 
@@ -1240,13 +1685,41 @@ def apply_start(
                     expected_rev=expected_rev,
                     idempotency_key=attempt_key,
                 )
-            shortage = _locked_work_order_order_shortage(
-                work_order,
-                candidate_work_orders=locked_output_work_orders,
-                requested_quantity=Decimal(str(quantity)),
+            _confirmed_order_shortfall(
+                _locked_work_order_order_shortage(
+                    work_order,
+                    candidate_work_orders=locked_output_work_orders,
+                    requested_quantity=Decimal(str(quantity)),
+                ),
+                approved_short_lot,
+                actor=actor,
             )
-            if shortage is not None:
-                raise shortage
+            # Só o lote planejado: o que já abriu ou fechou recebe a recusa de
+            # estado do Core, não um aviso de insumo. Se o Compras deu entrada no
+            # meio e a falta sumiu, abrir é o gesto de sempre, sem registro.
+            missing = (
+                check_start_materials(work_order, quantity)
+                if work_order.status == WorkOrder.Status.PLANNED
+                else []
+            )
+            if missing:
+                material_shortage = ProductionStockShortError(
+                    work_order_ref=work_order.ref,
+                    missing=missing,
+                    stage="start",
+                )
+                if approved_material_shortage is None:
+                    raise material_shortage
+                _require_approved_shortage_snapshot(approved_material_shortage, material_shortage)
+                _record_shortage_override(
+                    work_order_ref=work_order.ref,
+                    action="start",
+                    reason="Abriu o lote sabendo da falta de insumo.",
+                    actor=actor,
+                    client_key=idempotency_key,
+                    impact=production_shortage_snapshot(material_shortage),
+                    resulting_rev=work_order.rev + 1,
+                )
             return production_core.start_work_order(
                 work_order_id=work_order_id,
                 quantity=quantity,
@@ -1268,6 +1741,394 @@ def apply_start(
         raise translated from (None if translated is exc else exc)
 
 
+def _old_dough_sku(output_sku: str) -> str:
+    """Stable stock identity for dough recovered from one produced SKU."""
+    suffix = re.sub(r"[^A-Z0-9]+", "-", str(output_sku or "").upper()).strip("-")
+    if not suffix:
+        raise ProductionError("A ficha não informa o produto de origem da massa velha.")
+    return f"MASSA-VELHA-{suffix}"[:100]
+
+
+def _old_dough_name(work_order) -> str:
+    recipe_name = str(getattr(work_order.recipe, "name", "") or work_order.output_sku).strip()
+    return f"Massa velha de {recipe_name}"
+
+
+def _old_dough_composition_snapshot(work_order) -> tuple[str, dict]:
+    """Freeze the authored formula that produced the recovered physical lot.
+
+    The WorkOrder snapshot owns the version reference.  Looking up by that
+    frozen reference is deliberate: today's current recipe must never rewrite
+    yesterday's recovered dough.
+    """
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    version_ref = str(snapshot.get("version_ref") or "").strip()
+    formula: dict = {}
+    if version_ref and "@" in version_ref:
+        from shopman.craftsman.models import RecipeVersion
+
+        entry_ref, number = version_ref.rsplit("@", 1)
+        if number.isdigit():
+            version = (
+                RecipeVersion.objects.filter(entry__ref=entry_ref, number=int(number))
+                .only("formula")
+                .first()
+            )
+            if version is not None:
+                formula = dict(version.formula or {})
+    return version_ref, formula
+
+
+@_speaks_to_operator
+def register_old_dough(
+    *,
+    work_order_id,
+    quantity,
+    unit: str,
+    expiry_date: date,
+    actor: str,
+    user=None,
+    position_ref: str = "",
+    note: str = "",
+    expected_rev: int | None = None,
+    idempotency_key: str,
+) -> dict:
+    """Register reusable old dough as a physical, traceable stock lot.
+
+    This is an inventory fact, not a formula kind.  The lot carries the exact
+    source WorkOrder, frozen recipe version and formula snapshot; later recipe
+    execution may consume it through its ordinary ingredient SKU.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder
+    from shopman.stockman.models import Batch, Move, Position, Quant
+    from shopman.stockman.services.movements import StockMovements
+
+    amount = _positive_quantity(quantity)
+    normalized_unit = str(unit or "g").strip()
+    if normalized_unit not in {"g", "kg"}:
+        raise ProductionError("A massa velha precisa ser registrada em g ou kg.")
+    quantity_g = amount * (Decimal("1000") if normalized_unit == "kg" else Decimal("1"))
+    if expiry_date < timezone.localdate():
+        raise ProductionError("A validade da massa velha não pode estar no passado.")
+    attempt = str(idempotency_key or "").strip()
+    if not attempt:
+        raise ProductionError("Esta ação chegou incompleta. Atualize o painel e tente de novo.")
+
+    with transaction.atomic():
+        work_order = (
+            WorkOrder.objects.select_for_update()
+            .select_related("recipe")
+            .filter(pk=work_order_id)
+            .first()
+        )
+        if work_order is None:
+            raise ProductionNotFound(
+                "Ordem de produção não encontrada.",
+                resource="work_order",
+                identifier=str(work_order_id),
+            )
+        if work_order.status not in {WorkOrder.Status.STARTED, WorkOrder.Status.FINISHED}:
+            raise ProductionConflict(
+                "Registre a massa velha durante ou depois da produção.",
+                data={"work_order": work_order.ref, "status": work_order.status},
+            )
+        if expected_rev is not None and work_order.rev != expected_rev:
+            raise ProductionConflict(
+                "O lote mudou em outra tela. Atualize o painel e tente de novo.",
+                data={
+                    "work_order": work_order.ref,
+                    "cause": "stale_revision",
+                    "expected_rev": expected_rev,
+                    "current_rev": work_order.rev,
+                },
+            )
+
+        digest = hashlib.sha256(f"{work_order.pk}:{attempt}".encode()).hexdigest()[:12].upper()
+        batch_ref = f"MV-{work_order.pk}-{digest}"[:50]
+        existing = Batch.objects.select_for_update().filter(ref=batch_ref).first()
+        if existing is not None:
+            frozen = existing.metadata or {}
+            if frozen.get("idempotency_key") != attempt:
+                raise ProductionConflict(
+                    "A referência do lote já pertence a outra tentativa.",
+                    data={"work_order": work_order.ref},
+                )
+            quant = Quant.objects.filter(sku=existing.sku, batch=existing.ref, target_date__isnull=True).first()
+            if quant is None:
+                raise ProductionError("O lote de massa velha existe sem saldo correspondente.")
+            return {
+                "sku": existing.sku,
+                "name": str(frozen.get("ingredient_name") or _old_dough_name(work_order)),
+                "batch_ref": existing.ref,
+                "quantity_g": _qty(quant.quantity),
+                "expiry_date": existing.expiry_date.isoformat() if existing.expiry_date else "",
+                "recipe_version_ref": str(frozen.get("recipe_version_ref") or ""),
+                "replayed": True,
+            }
+
+        requested_position = str(position_ref or work_order.position_ref or "").strip()
+        position = Position.objects.filter(ref=requested_position).first() if requested_position else None
+        if requested_position and position is None:
+            raise ProductionError("A posição informada não existe no estoque.")
+        if position is None:
+            position = Position.objects.filter(is_default=True).order_by("pk").first()
+
+        sku = _old_dough_sku(work_order.output_sku)
+        ingredient_name = _old_dough_name(work_order)
+        version_ref, formula = _old_dough_composition_snapshot(work_order)
+        metadata = {
+            "resource_kind": "old_dough",
+            "ingredient_name": ingredient_name,
+            "source_work_order_ref": work_order.ref,
+            "source_output_sku": work_order.output_sku,
+            "recipe_version_ref": version_ref,
+            "composition_snapshot": formula,
+            "quantity_g": _qty(quantity_g),
+            "registered_by": actor,
+            "registered_at": timezone.now().isoformat(),
+            "idempotency_key": attempt,
+            "note": str(note or "").strip(),
+        }
+        batch = Batch.objects.create(
+            ref=batch_ref,
+            sku=sku,
+            production_date=work_order.target_date or timezone.localdate(),
+            expiry_date=expiry_date,
+            notes=f"{ingredient_name}. Origem: {work_order.ref}.",
+            metadata=metadata,
+        )
+        quant = StockMovements.receive(
+            quantity=quantity_g,
+            sku=sku,
+            position=position,
+            batch=batch.ref,
+            user=user,
+            reason=f"Registrar massa velha de {work_order.ref}",
+            kind=Move.Kind.MAKE,
+            source="old_dough",
+            source_work_order_ref=work_order.ref,
+            recipe_version_ref=version_ref,
+            composition_snapshot=formula,
+            ingredient_name=ingredient_name,
+            idempotency_key=attempt,
+        )
+        return {
+            "sku": sku,
+            "name": ingredient_name,
+            "batch_ref": batch.ref,
+            "quantity_g": _qty(quant.quantity),
+            "expiry_date": expiry_date.isoformat(),
+            "recipe_version_ref": version_ref,
+            "replayed": False,
+        }
+
+
+def _execution_snapshot_items(bom: tuple[dict, ...], authored_items: list[dict], *, batch_ref: str = "") -> list[dict]:
+    """Translate the resolved immediate BOM back to Craftsman's frozen execution dialect."""
+    authored_by_sku = {str(item.get("input_sku") or ""): item for item in authored_items}
+    resolved: list[dict] = []
+    for line in bom:
+        sku = str(line.get("sku") or "")
+        original = authored_by_sku.get(sku, {})
+        net = Decimal(str(line.get("quantity") or "0"))
+        usable_factor = Decimal(str(original.get("usable_factor") or "1"))
+        if usable_factor <= 0 or usable_factor > 1:
+            usable_factor = Decimal("1")
+        meta = {**(original.get("meta") or {}), **(line.get("meta") or {})}
+        if batch_ref and sku.startswith("MASSA-VELHA-"):
+            meta["batch_ref"] = batch_ref
+        resolved.append(
+            {
+                "input_sku": sku,
+                "quantity": _qty(net),
+                "gross_quantity": _qty(net / usable_factor),
+                "usable_factor": _qty(usable_factor),
+                "unit": str(line.get("unit") or "g"),
+                "is_optional": bool(line.get("is_optional", False)),
+                "meta": meta,
+            }
+        )
+    return resolved
+
+
+@_speaks_to_operator
+def authorize_formula_deviation(
+    *,
+    work_order_id,
+    ingredient_ref: str,
+    actual_quantity,
+    reason: str,
+    actor: str,
+    expected_rev: int,
+    idempotency_key: str,
+    batch_ref: str = "",
+) -> dict:
+    """Authorize one execution-only quantity outside the recipe bounds.
+
+    The authored recipe stays untouched.  The WorkOrder keeps both its original
+    recipe snapshot and the effective BOM recalculated by Craftsman's canonical
+    formula engine.  The semantic event is the immutable authorization trail.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.recipe_book import ingredient_formulas_for, resolve_execution
+    from shopman.stockman.models import Batch, Quant
+
+    stable_ref = str(ingredient_ref or "").strip()
+    normalized_reason = str(reason or "").strip()
+    attempt = str(idempotency_key or "").strip()
+    actual = _positive_quantity(actual_quantity, allow_zero=True)
+    if not stable_ref:
+        raise ProductionError("Selecione o ingrediente cujo desvio será autorizado.")
+    if not normalized_reason:
+        raise ProductionError("Justificativa é obrigatória para autorizar um desvio da receita.")
+    if not attempt:
+        raise ProductionError("Esta ação chegou incompleta. Atualize o painel e tente de novo.")
+
+    with transaction.atomic():
+        work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
+        if work_order is None:
+            raise ProductionNotFound(
+                "Ordem de produção não encontrada.", resource="work_order", identifier=str(work_order_id)
+            )
+        event_key = f"production.formula-deviation:{work_order.pk}:{attempt}"
+        replay = WorkOrderEvent.objects.filter(idempotency_key=event_key).first()
+        if replay is not None:
+            payload = replay.payload or {}
+            if (
+                replay.actor != actor
+                or payload.get("ingredient_ref") != stable_ref
+                or Decimal(str(payload.get("actual") or "0")) != actual
+                or payload.get("reason") != normalized_reason
+            ):
+                raise ProductionConflict(
+                    "Esta tentativa já foi usada para outro desvio.",
+                    data={"work_order": work_order.ref, "cause": "idempotency_conflict"},
+                )
+            return {**payload, "replayed": True}
+        if work_order.status not in {WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED}:
+            raise ProductionConflict(
+                "Somente uma produção planejada ou aberta pode receber um desvio.",
+                data={"work_order": work_order.ref, "status": work_order.status},
+            )
+        if work_order.rev != expected_rev:
+            raise ProductionConflict(
+                "O lote mudou em outra tela. Atualize o painel e tente de novo.",
+                data={
+                    "work_order": work_order.ref,
+                    "cause": "stale_revision",
+                    "expected_rev": expected_rev,
+                    "current_rev": work_order.rev,
+                },
+            )
+
+        version_ref, formula = _old_dough_composition_snapshot(work_order)
+        if not version_ref or not formula:
+            raise ProductionError("A ordem não possui uma versão de receita congelada para recalcular o desvio.")
+        authored_ingredient = next(
+            (item for item in formula.get("ingredients") or [] if str(item.get("ref") or "") == stable_ref),
+            None,
+        )
+        if authored_ingredient is None:
+            raise ProductionError("O ingrediente não pertence à versão congelada desta receita.")
+        sku = str(authored_ingredient.get("sku") or "")
+        ingredient_name = str(authored_ingredient.get("name") or sku)
+        actuals = {
+            str(key): value
+            for key, value in ((work_order.meta or {}).get("_ingredient_actuals") or {}).items()
+        }
+        actuals[stable_ref] = actual
+        ingredient_formulas = ingredient_formulas_for(formula)
+
+        selected_batch = None
+        if batch_ref:
+            selected_batch = Batch.objects.select_for_update().filter(ref=batch_ref, sku=sku).first()
+            if selected_batch is None:
+                raise ProductionError("O lote selecionado não pertence a este ingrediente.")
+            if selected_batch.is_expired:
+                raise ProductionError("Lote vencido não pode ser autorizado para produção.")
+            metadata = selected_batch.metadata or {}
+            if sku.startswith("MASSA-VELHA-") and metadata.get("resource_kind") != "old_dough":
+                raise ProductionError("O lote selecionado não é massa velha registrada.")
+            source_formula = metadata.get("composition_snapshot")
+            source_version = str(metadata.get("recipe_version_ref") or "")
+            if isinstance(source_formula, dict) and source_formula and source_version:
+                ingredient_formulas[source_version] = source_formula
+                ingredient_formulas[str(authored_ingredient.get("recipe_version_ref") or "")] = source_formula
+        elif sku.startswith("MASSA-VELHA-"):
+            raise ProductionError("Selecione o lote de massa velha realmente utilizado.")
+
+        analysis = resolve_execution(formula, actuals, ingredient_formulas)
+        deviation = next((item for item in analysis.deviations if item.ingredient_ref == stable_ref), None)
+        if deviation is None:
+            raise ProductionError("O ingrediente não pertence à versão congelada desta receita.")
+        if deviation.within_bounds:
+            raise ProductionError("A quantidade está dentro dos limites da receita e não exige autorização.")
+
+        resolved_ingredient = next((item for item in analysis.ingredients if item.sku == sku), None)
+        snapshot = dict((work_order.meta or {}).get("_recipe_snapshot") or {})
+        authored_items = list(snapshot.get("authored_items") or snapshot.get("items") or [])
+        if selected_batch is not None and resolved_ingredient is not None and resolved_ingredient.grams is not None:
+            coefficient = (work_order.started_qty or work_order.quantity) / Decimal(str(snapshot.get("batch_size") or 1))
+            needed = resolved_ingredient.grams * coefficient
+            available = sum(
+                (quant.available for quant in Quant.objects.filter(sku=sku, batch=selected_batch.ref)), Decimal("0")
+            )
+            if available < needed:
+                raise ProductionError(
+                    f"O lote selecionado tem {_qty(available)} g disponíveis; o desvio exige {_qty(needed)} g."
+                )
+
+        snapshot["authored_items"] = authored_items
+        snapshot["items"] = _execution_snapshot_items(
+            analysis.bom,
+            authored_items,
+            batch_ref=selected_batch.ref if selected_batch is not None else "",
+        )
+        work_order.meta = {
+            **(work_order.meta or {}),
+            "_recipe_snapshot": snapshot,
+            "_ingredient_actuals": {**actuals, stable_ref: _qty(actual)},
+        }
+        work_order.rev += 1
+        work_order.save(update_fields=["meta", "rev", "updated_at"])
+        impact = {
+            "bom": [
+                {
+                    "sku": str(line.get("sku") or ""),
+                    "quantity": _qty(Decimal(str(line.get("quantity") or "0"))),
+                    "unit": str(line.get("unit") or "g"),
+                }
+                for line in analysis.bom
+            ],
+            "batch_ref": selected_batch.ref if selected_batch is not None else "",
+        }
+        payload = {
+            "ingredient_ref": stable_ref,
+            "ingredient_sku": sku,
+            "ingredient_name": ingredient_name,
+            "expected": {
+                "minimum": None if deviation.minimum is None else _qty(deviation.minimum),
+                "target": _qty(deviation.target),
+                "maximum": None if deviation.maximum is None else _qty(deviation.maximum),
+            },
+            "actual": _qty(deviation.actual),
+            "reason": normalized_reason,
+            "impact": impact,
+            "work_order_rev": work_order.rev,
+        }
+        CraftExecution.record_event(
+            work_order,
+            kind=WorkOrderEvent.Kind.FORMULA_DEVIATION,
+            payload=payload,
+            actor=actor,
+            idempotency_key=event_key,
+        )
+        return {**payload, "replayed": False}
+
+
 # Teto de sanidade da duração armada: um timer de forno não passa de 24h.
 OVEN_MAX_PLANNED_SECONDS = 86_400
 
@@ -1282,7 +2143,7 @@ def _abandon_open_oven_run(
 ):
     """Close an impossible open oven measurement with an append-only fact."""
     from shopman.craftsman.models import WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
 
     from shopman.backstage.models import OvenRun
 
@@ -1305,9 +2166,8 @@ def _abandon_open_oven_run(
         "terminal_transition": transition,
     }
     run.save(update_fields=["status", "metadata"])
-    WorkOrderEvent.objects.create(
-        work_order=work_order,
-        seq=_next_seq(work_order),
+    CraftExecution.record_event(
+        work_order,
         kind=WorkOrderEvent.Kind.OVEN_ABANDONED,
         payload={
             "run_id": run.pk,
@@ -1340,7 +2200,8 @@ def apply_oven_arm(
     """
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.backstage.models import OvenRun
 
@@ -1424,9 +2285,8 @@ def apply_oven_arm(
                 arm_idempotency_key=arm_key,
                 metadata={},
             )
-            WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.OVEN_ARMED,
                 payload={
                     "run_id": run.pk,
@@ -1463,7 +2323,8 @@ def apply_oven_conclude(
     from django.db import transaction
     from shopman.craftsman.exceptions import StaleRevision
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.backstage.models import OvenRun
 
@@ -1539,9 +2400,8 @@ def apply_oven_conclude(
                     "conclude_idempotency_key",
                 ]
             )
-            WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.OVEN_CONCLUDED,
                 payload={"run_id": run.pk, "oven_ref": run.oven_ref},
                 actor=actor,
@@ -1566,7 +2426,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
 
     - ``partition`` explícita (``[{quantity, quality_grade_ref,
       quality_defect_ref, loss}]``): cada grupo vira linha de OUTPUT; grupo com
-      ``loss=True`` é perda declarada pelo operador (o que não saiu do forno) e
+      ``loss=True`` é perda declarada pelo operador (o que não ficou pronto) e
       vira WASTE com o motivo, sem grau e sem lote; grupo cujo defeito tem
       ``forces_discard`` também vira WASTE (o veto é resolvido AQUI, antes do
       craft.finish — o core nunca interpreta o defeito).
@@ -1598,7 +2458,7 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     }
 
     if partition is not None and str(quality or "").strip():
-        raise ProductionError("Informe quality ou partition, nunca os dois.")
+        raise ProductionError("Informe a qualidade do lote de um jeito só: o grau ou a divisão em grupos.")
     if partition is not None:
         if not partition:
             raise ProductionError("A partição do lote não pode ser vazia.")
@@ -1983,6 +2843,7 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
     """Version QC lots while balancing transfers and recording loss reversals."""
     from django.db.models import Q
     from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Quant
+    from shopman.stockman.services.movements import StockMovements
 
     source_quants, position_id = _locked_quality_source_stock(work_order, before_partition)
     active_holds = list(
@@ -2085,9 +2946,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
         quantity = Decimal(str(item.get("quantity") or "0"))
         transfer_quantity = min(quantity, transfer_in_remaining)
         if transfer_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.receive_into(
+                quantity=transfer_quantity,
                 quant=quant,
-                delta=transfer_quantity,
                 reason=reason,
                 kind=Move.Kind.TRANSFER,
                 metadata={
@@ -2101,9 +2962,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             transfer_in_remaining -= transfer_quantity
         recovery_quantity = quantity - transfer_quantity
         if recovery_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.receive_into(
+                quantity=recovery_quantity,
                 quant=quant,
-                delta=recovery_quantity,
                 reason=f"Perda revertida após conferência: {work_order.ref}",
                 kind=Move.Kind.WASTE,
                 metadata={
@@ -2128,9 +2989,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             continue
         transfer_quantity = min(quantity, transfer_out_remaining)
         if transfer_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.issue(
+                quantity=transfer_quantity,
                 quant=quant,
-                delta=-transfer_quantity,
                 reason=reason,
                 kind=Move.Kind.TRANSFER,
                 metadata={
@@ -2144,9 +3005,9 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             transfer_out_remaining -= transfer_quantity
         waste_quantity = quantity - transfer_quantity
         if waste_quantity > 0:
-            move = Move.objects.create(
+            move = StockMovements.issue(
+                quantity=waste_quantity,
                 quant=quant,
-                delta=-waste_quantity,
                 reason=f"Perda confirmada na revisão do QC: {work_order.ref}",
                 kind=Move.Kind.WASTE,
                 metadata={
@@ -2258,7 +3119,8 @@ def apply_quality_review(
     """Confirm the effective QC partition without rewriting production facts."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
+    from shopman.craftsman.services.scheduling import _check_rev
 
     from shopman.shop.services import quality as quality_service
 
@@ -2315,9 +3177,8 @@ def apply_quality_review(
             partition = quality_service.effective_partition(work_order)
             if not partition:
                 raise ProductionError("O lote não possui fatos de qualidade para revisar.")
-            event = WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=_next_seq(work_order),
+            event = CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.QUALITY_REVIEWED,
                 payload={
                     "schema_version": 1,
@@ -2502,6 +3363,7 @@ def apply_quality_correction(
     """Correct post-close QC without rewriting the immutable closing lines."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.scheduling import _check_rev, _next_seq
 
     from shopman.shop.services import campaign as campaign_service
@@ -2644,9 +3506,8 @@ def apply_quality_correction(
                     ),
                     order_ref=work_order.ref,
                 )
-            event = WorkOrderEvent.objects.create(
-                work_order=work_order,
-                seq=event_seq,
+            event = CraftExecution.record_event(
+                work_order,
                 kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
                 payload={
                     "schema_version": 2,
@@ -2664,6 +3525,13 @@ def apply_quality_correction(
                 actor=actor,
                 idempotency_key=event_key,
             )
+            # O lote versionado e os Moves da reclassificação carregam ``event_seq``;
+            # o evento tem de ser exatamente esse lançamento, ou o rastro não fecha.
+            if event.seq != event_seq:
+                raise ProductionConflict(
+                    "A ordem de produção recebeu outro evento durante a correção.",
+                    data={"work_order": work_order.ref, "cause": "event_seq_drift"},
+                )
             _emit_quality_reviewed(work_order.pk)
             work_order.refresh_from_db(fields=["rev"])
             logger.info(
@@ -2703,8 +3571,20 @@ def apply_finish(
     yield_deviation_reason: str = "",
     allow_implicit_start: bool = False,
     approved_shortage: dict | None = None,
+    approved_short_lot: dict | None = None,
+    authorized_by: str = "",
 ):
     """Finish a work order from the operator surface — escalar ou particionado.
+
+    ``authorized_by``: o usuário de quem assinou a falta de insumo com o próprio PIN
+    (decisão 3 do dono, D-042). Vai para o histórico do lote junto do impacto.
+
+    ``approved_short_lot``: o lote que rendeu menos que o encomendado fecha com o
+    número verdadeiro (decisão 1 do dono, 23/11/2026). A primeira tentativa devolve
+    a recusa com os pedidos descobertos; a confirmação volta com o mesmo impacto
+    assinado e fecha. O pão entra no estoque uma vez só, e os pedidos que ficaram
+    sem ele viram "Promessa em risco" no Gestor pelo caminho de sempre
+    (``announce_short_lot``, #3149).
 
     ``expected_rev``: ver ``apply_void``. Convive com a chave de idempotência sem
     conflito — uma responde "é o MESMO gesto de novo?", a outra "o quadro que você leu
@@ -2810,12 +3690,29 @@ def apply_finish(
             if yield_anchor is None:
                 yield_anchor = Decimal(str(work_order.quantity))
             yield_deviation = reported_quantity - yield_anchor
-            if yield_deviation < 0:
-                raise ProductionError(
-                    "A quantidade total deve incluir toda perda do lote. "
-                    "Classifique o déficit com quantidade e motivo."
-                )
             deviation_context = None
+            if yield_deviation < 0:
+                # Rendeu menos que o previsto: a diferença é perda e nunca some.
+                # O evento guarda a quantidade, a causa e quem fechou (a hora é a
+                # do evento); o ledger de estoque a baixa como WASTE e os
+                # relatórios a contam (previsto menos realizado). Sem a causa
+                # confirmada, recusa.
+                deviation_reason = str(yield_deviation_reason or "").strip()
+                if yield_deviation_confirmed is not True or not deviation_reason:
+                    raise ProductionError(
+                        "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                        "ou confirme que rendeu menos e diga por quê."
+                    )
+                deviation_context = {
+                    "kind": "yield_shortfall",
+                    "anchor_qty": _qty(yield_anchor),
+                    "reported_qty": _qty(reported_quantity),
+                    "saleable_qty": _qty(saleable_quantity),
+                    "deviation_qty": _qty(-yield_deviation),
+                    "confirmed": True,
+                    "reason": deviation_reason,
+                    "actor": str(actor or ""),
+                }
             if yield_deviation > 0:
                 deviation_reason = str(yield_deviation_reason or "").strip()
                 if yield_deviation_confirmed is not True:
@@ -2833,21 +3730,20 @@ def apply_finish(
                     "actor": str(actor or ""),
                 }
 
-            # A finished link currently represents the whole order/SKU demand;
-            # there is no approved partial-allocation contract.  Therefore a
-            # finish that yields less saleable output than its linked demand
-            # must fail closed. ``force`` on this endpoint only overrides
-            # material availability, never customer demand truth.
-            order_shortage = _locked_work_order_order_shortage(
-                work_order,
-                candidate_work_orders=locked_output_work_orders,
-                requested_quantity=sum(
-                    (Decimal(str(item["quantity"])) for item in finished_items),
-                    Decimal("0"),
+            # Rendeu menos que o encomendado: a verdade entra, mas nunca calada.
+            # Sem a confirmação do impacto exato (os mesmos pedidos e números), a
+            # tentativa volta com a pergunta. ``force`` continua sendo só sobre
+            # insumo; a confirmação do lote curto é um gesto à parte.
+            order_shortfall_context = _confirmed_order_shortfall(
+                _locked_work_order_order_shortage(
+                    work_order,
+                    candidate_work_orders=locked_output_work_orders,
+                    requested_quantity=saleable_quantity,
                 ),
+                approved_short_lot,
+                actor=actor,
             )
-            if order_shortage is not None:
-                raise order_shortage
+            _refuse_finish_below_delivered(work_order, saleable_quantity)
 
             missing = check_finish_materials(work_order)
             if force:
@@ -2881,6 +3777,7 @@ def apply_finish(
                     action=override_action,
                     reason=override_reason,
                     actor=actor,
+                    authorized_by=authorized_by,
                     client_key=idempotency_key,
                     impact={
                         "kind": "material_shortage",
@@ -2916,6 +3813,7 @@ def apply_finish(
                     else {}
                 ),
                 **({"yield_deviation": deviation_context} if deviation_context is not None else {}),
+                **({"order_shortfall": order_shortfall_context} if order_shortfall_context is not None else {}),
             }
             result = production_core.finish_work_order(
                 work_order_id=work_order_id,
@@ -2986,6 +3884,25 @@ def _lock_output_work_orders(work_order_id):
     return target, locked
 
 
+def _production_demand(orders, sku: str) -> tuple[Decimal, tuple[tuple[str, Decimal], ...]]:
+    """O que a produção deve a estes pedidos neste SKU (P1-03).
+
+    Conta o pedido vigente (o editado pede o que vale agora, não as linhas seladas)
+    menos o que já está na prateleira, a mesma conta do alocador. O pedido servido
+    da vitrine não trava o lote.
+    """
+    from shopman.shop.handlers.production_order_sync import (
+        _production_quantity,
+        _shelf_quantities,
+    )
+
+    shelf = _shelf_quantities(orders)
+    lines = tuple(
+        (order.ref, quantity) for order in orders if (quantity := _production_quantity(order, sku, shelf)) > 0
+    )
+    return sum((quantity for _, quantity in lines), Decimal("0")), lines
+
+
 def _locked_work_order_order_shortage(
     work_order,
     *,
@@ -3001,18 +3918,19 @@ def _locked_work_order_order_shortage(
 
     from shopman.shop.handlers.production_order_sync import (
         ACTIVE_ORDER_STATUSES,
+        _adjusted_active_order_ids,
         _allocate_pending_links,
         _match_strategy,
     )
 
-    order_ids = list(
+    order_ids = set(
         Order.objects.filter(
             status__in=ACTIVE_ORDER_STATUSES,
             items__sku=work_order.output_sku,
         )
         .values_list("pk", flat=True)
         .distinct()
-    )
+    ) | _adjusted_active_order_ids([work_order.output_sku])
     orders = list(
         Order.objects.select_for_update()
         .filter(pk__in=order_ids, status__in=ACTIVE_ORDER_STATUSES)
@@ -3038,10 +3956,7 @@ def _locked_work_order_order_shortage(
     )
     covered_orders = [order for order in orders if work_order.ref in desired_work_orders_by_order.get(order.ref, ())]
 
-    required = sum(
-        (item.qty for order in covered_orders for item in order.items.all() if item.sku == work_order.output_sku),
-        Decimal("0"),
-    )
+    required, lines = _production_demand(covered_orders, work_order.output_sku)
     if requested_quantity >= required:
         _persist_locked_order_bindings(
             work_orders=open_work_orders,
@@ -3055,9 +3970,35 @@ def _locked_work_order_order_shortage(
         work_order_ref=work_order.ref,
         required=required,
         requested=requested_quantity,
-        order_refs=tuple(order.ref for order in covered_orders),
+        order_refs=tuple(ref for ref, _ in lines),
         allow_override=False,
+        confirmable=True,
+        orders=lines,
     )
+
+
+def _confirmed_order_shortfall(
+    shortage: ProductionOrderShortError | None,
+    approved: dict | None,
+    *,
+    actor: str,
+) -> dict | None:
+    """O fato do lote curto, quando a pessoa confirmou exatamente este impacto.
+
+    Sem falta, nada. Com falta e sem confirmação (ou confirmada para outro impacto:
+    outro pedido entrou, a conta mudou), a recusa volta com a pergunta nova.
+    """
+    if shortage is None:
+        return None
+    if approved is None or approved != production_shortage_snapshot(shortage):
+        raise shortage
+    return {
+        "required_qty": _qty(shortage.required),
+        "saleable_qty": _qty(shortage.requested),
+        "short_qty": _qty(max(Decimal("0"), shortage.required - shortage.requested)),
+        "orders": [{"ref": ref, "qty": _qty(quantity)} for ref, quantity in shortage.orders],
+        "confirmed_by": str(actor or ""),
+    }
 
 
 def _persist_locked_order_bindings(
@@ -3275,8 +4216,11 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
             [
                 "Receita",
                 "Nome",
-                "Ordens",
+                "Lotes",
+                "Unidade",
                 "Perda total",
+                "Perda declarada",
+                "Rendeu menos",
                 "Aproveitamento médio",
                 "Utilização capacidade",
             ]
@@ -3287,7 +4231,10 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
                     row.wo_count,
+                    _csv_safe(row.unit_label),
                     row.loss_total,
+                    _csv_safe(row.loss_declared_display),
+                    _csv_safe(row.loss_shortfall_display),
                     row.yield_avg,
                     row.capacity_utilization,
                 ]
@@ -3295,18 +4242,23 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
     else:
         yield writer.writerow(
             [
-                "Ref",
+                "Lote",
                 "Data",
                 "Receita",
                 "Nome da receita",
                 "Posição",
+                "Unidade",
                 "Qtd planejada",
                 "Qtd prevista",
                 "Previsto assumido",
                 "Qtd realizada",
                 "Perda",
+                "Perda declarada",
+                "Rendeu menos",
+                "Rendeu mais",
+                "Causas",
                 "Aproveitamento",
-                "Operador",
+                "Fechado por",
                 "Aberta em",
                 "Fechada em",
                 "Duração (min)",
@@ -3320,13 +4272,23 @@ def iter_reports_csv(report_kind: str, filters: dict | None = None):
                     _csv_safe(row.recipe_ref),
                     _csv_safe(row.recipe_name),
                     _csv_safe(row.position_ref),
+                    _csv_safe(row.unit_label),
                     row.qty_planned,
                     row.qty_started,
                     "sim" if row.started_assumed else "",
                     row.qty_finished,
                     row.qty_loss,
+                    row.loss_declared,
+                    row.loss_shortfall,
+                    row.loss_overshoot,
+                    _csv_safe(
+                        "; ".join(
+                            f"{part.kind_label} {part.quantity_display}: {part.cause}, {part.who} {part.at}".strip()
+                            for part in row.loss_parts
+                        )
+                    ),
                     row.yield_rate,
-                    _csv_safe(row.operator_ref),
+                    _csv_safe(row.operator_name or row.operator_ref),
                     _csv_safe(row.started_at),
                     _csv_safe(row.finished_at),
                     row.duration_minutes,
@@ -3381,6 +4343,65 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         prepared.close()
 
 
+def _committed_holds_refusal(
+    *,
+    recipe_id,
+    quantity,
+    target_date_value,
+    position_ref: str,
+    work_order_id=None,
+    create_new: bool = False,
+    linked: ProductionOrderShortError | None = None,
+) -> ProductionOrderShortError | None:
+    """A recusa que o Core daria ao ajustar este lote (``COMMITTED_HOLDS``), antes dele.
+
+    Mesma conta do Core (``scheduling._validate_committed_holds``): o lote planejado
+    que esta célula ajusta não pode ficar abaixo do que o ``DEMAND_BACKEND`` diz que
+    está encomendado para o produto e o dia. Não muda a regra: só a diz antes, em
+    português, e sem a oferta de forçar (o Core não aceita força aqui).
+    """
+    from django.utils.module_loading import import_string
+    from shopman.craftsman.conf import get_setting
+    from shopman.craftsman.models import WorkOrder
+
+    requested = Decimal(str(quantity or "0"))
+    if create_new or requested <= 0:
+        return None
+    backend_path = get_setting("DEMAND_BACKEND")
+    if not backend_path:
+        return None
+    planned = list(
+        WorkOrder.objects.filter(
+            recipe_id=recipe_id,
+            target_date=date.fromisoformat(str(target_date_value)),
+            position_ref=position_ref,
+            status=WorkOrder.Status.PLANNED,
+        ).order_by("created_at", "pk")
+    )
+    if work_order_id not in (None, ""):
+        target = next((wo for wo in planned if str(wo.pk) == str(work_order_id)), None)
+    else:
+        target = planned[0] if len(planned) == 1 else None
+    if target is None:
+        return None
+    try:
+        committed = Decimal(str(import_string(backend_path)().committed(target.output_sku, target.target_date)))
+    except Exception:  # silêncio-deliberado: o Core decide sozinho se a leitura falhar
+        logger.warning("production.committed_holds_probe_failed work_order=%s", target.ref, exc_info=True)
+        return None
+    if requested >= committed:
+        return None
+    return ProductionOrderShortError(
+        work_order_ref=target.ref,
+        required=committed,
+        requested=requested,
+        order_refs=linked.order_refs if linked else (),
+        orders=linked.orders if linked else (),
+        allow_override=False,
+        message=_committed_holds_message(committed),
+    )
+
+
 def _check_linked_order_coverage(
     *,
     recipe_id,
@@ -3399,6 +4420,7 @@ def _check_linked_order_coverage(
 
         from shopman.shop.handlers.production_order_sync import (
             ACTIVE_ORDER_STATUSES,
+            _adjusted_active_order_ids,
             _allocate_pending_links,
             _match_strategy,
         )
@@ -3443,14 +4465,14 @@ def _check_linked_order_coverage(
                     "candidates": [work_order.ref for work_order in work_orders],
                 },
             )
-        order_ids = list(
+        order_ids = set(
             Order.objects.filter(
                 status__in=ACTIVE_ORDER_STATUSES,
                 items__sku=recipe.output_sku,
             )
             .values_list("pk", flat=True)
             .distinct()
-        )
+        ) | _adjusted_active_order_ids([recipe.output_sku])
         active_orders = list(
             Order.objects.select_for_update()
             .filter(
@@ -3511,19 +4533,23 @@ def _check_linked_order_coverage(
         covered_orders = [
             order for order in active_orders if target_work_order.ref in desired_work_orders_by_order.get(order.ref, ())
         ]
-        active_refs = tuple(dict.fromkeys(order.ref for order in covered_orders))
+        required, lines = _production_demand(covered_orders, recipe.output_sku)
+        active_refs = tuple(ref for ref, _ in lines)
         if not active_refs:
             return None
-        required = sum(
-            (item.qty for order in covered_orders for item in order.items.all() if item.sku == recipe.output_sku),
-            Decimal("0"),
-        )
         if requested < required:
             return ProductionOrderShortError(
                 work_order_ref=target_work_order.ref,
                 required=required,
                 requested=requested,
                 order_refs=active_refs,
+                orders=lines,
+                # Só a trava dos pedidos ligados (o Core aceitaria): quem tem a
+                # permissão ainda pode salvar abaixo, com justificativa.
+                message=(
+                    f"Há {_qty(required)} un. encomendadas neste lote. "
+                    "Para planejar menos, é preciso justificar."
+                ),
             )
         return None
     except ProductionError:
@@ -3546,11 +4572,12 @@ def _record_shortage_override(
     client_key: str | None,
     impact: dict,
     resulting_rev: int | None = None,
+    authorized_by: str = "",
 ) -> None:
     """Append the accepted override and its impact in the locked transaction."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
-    from shopman.craftsman.services.scheduling import _next_seq
+    from shopman.craftsman.services.execution import CraftExecution
 
     normalized_reason = str(reason or "").strip()
     if not normalized_reason:
@@ -3562,15 +4589,15 @@ def _record_shortage_override(
     if event_key and WorkOrderEvent.objects.filter(idempotency_key=event_key).exists():
         return
 
-    WorkOrderEvent.objects.create(
-        work_order=work_order,
-        seq=_next_seq(work_order),
+    CraftExecution.record_event(
+        work_order,
         kind=WorkOrderEvent.Kind.SHORTAGE_OVERRIDDEN,
         payload={
             "action": action,
             "reason": normalized_reason,
             "impact": impact,
             "work_order_rev": (work_order.rev if resulting_rev is None else resulting_rev),
+            **({"authorized_by": authorized_by} if authorized_by else {}),
         },
         actor=actor,
         idempotency_key=event_key,
@@ -3584,6 +4611,7 @@ def _record_shortage_override(
                 "production_reason": normalized_reason,
                 "production_work_order": work_order_ref,
                 "production_impact": impact,
+                "production_authorized_by": authorized_by,
             },
         )
     )
@@ -3616,11 +4644,24 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
     Returns [] when no backend is configured (standalone). Ingredients carry real
     Stockman stock via the seed.
     """
+    return _missing_materials(work_order)
+
+
+def check_start_materials(work_order, quantity) -> list[MissingMaterial]:
+    """A mesma conferência, antes de abrir, pela quantidade que vai abrir (WP-F11).
+
+    O lote planejado ainda não tem ``started_qty``; a abertura confere o que o
+    padeiro confirmou, pela mesma régua (bruta) da baixa no fechamento.
+    """
+    return _missing_materials(work_order, quantity=Decimal(str(quantity)))
+
+
+def _missing_materials(work_order, *, quantity: Decimal | None = None) -> list[MissingMaterial]:
     backend_path = _craftsman_setting("INVENTORY_BACKEND")
     if not backend_path:
         return []
 
-    material_needs = _material_needs_for_work_order(work_order)
+    material_needs = _material_needs_for_work_order(work_order, quantity=quantity)
     if not material_needs:
         return []
 
@@ -3634,22 +4675,33 @@ def check_finish_materials(work_order) -> list[MissingMaterial]:
         # evidence of sufficient stock and must fail closed in every mode.
         raise ProductionError(f"Falha ao consultar estoque de insumos: {exc}") from exc
 
+    units_by_sku = {need.sku: need.unit for need in material_needs}
     return [
         MissingMaterial(
             sku=status.sku,
             needed=status.needed,
             available=status.available,
+            unit=units_by_sku.get(status.sku, ""),
         )
         for status in result.materials
         if not status.sufficient
     ]
 
 
-def _material_needs_for_work_order(work_order):
+def _material_needs_for_work_order(work_order, *, quantity: Decimal | None = None):
+    """O que o lote vai tirar do estoque, pela mesma régua da baixa.
+
+    A baixa do Core consome a quantidade BRUTA (``gross_quantity``: a casca da
+    cebola sai do estoque e não entra no produto). Conferir pela líquida deixava a
+    guarda passar e a baixa falhar com "o estoque falhou", sem nome (P1-23). Sem
+    ``gross_quantity`` no snapshot o Core recusa a baixa; aqui a guarda cai na
+    líquida só para não esconder a falta que ela já enxerga, e a recusa do Core
+    continua sendo a palavra final.
+    """
     from shopman.craftsman.protocols.inventory import MaterialNeed
 
     recipe = work_order.recipe
-    started_qty = work_order.started_qty or work_order.quantity
+    started_qty = quantity if quantity is not None else (work_order.started_qty or work_order.quantity)
     snapshot = (work_order.meta or {}).get("_recipe_snapshot")
     if snapshot:
         batch_size = Decimal(str(snapshot["batch_size"]))
@@ -3660,16 +4712,17 @@ def _material_needs_for_work_order(work_order):
             {
                 "input_sku": item.input_sku,
                 "quantity": str(item.quantity),
+                "gross_quantity": str(item.gross_quantity),
                 "unit": item.unit,
             }
             for item in recipe.items.filter(is_optional=False).order_by("sort_order")
         ]
 
-    coefficient = started_qty / batch_size
+    coefficient = Decimal(str(started_qty)) / batch_size
     return [
         MaterialNeed(
             sku=item["input_sku"],
-            quantity=Decimal(str(item["quantity"])) * coefficient,
+            quantity=Decimal(str(item.get("gross_quantity") or item["quantity"])) * coefficient,
             unit=item.get("unit", "un"),
             position_ref=work_order.position_ref or None,
         )

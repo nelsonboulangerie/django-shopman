@@ -1,27 +1,54 @@
 <script setup lang="ts">
 // Painel de produto — edição COMPLETA de um produto sem sair do Gestor. Presentacional:
 // o pai é dono do fetch/save (useCatalogMatrix.fetchProductDetail / saveProductDetail)
-// e do estado de ocupado; aqui mora só o rascunho, dividido em cinco abas:
-// Geral · Preço e config · Ingredientes e nutrição · Redes sociais · Fiscal.
+// e do estado de ocupado; aqui mora só o rascunho, dividido em seis abas:
+// Geral · Preço e config · Ingredientes e nutrição · Redes sociais · Fiscal · Vínculos.
 //
 // Emitimos APENAS o que mudou — o backend faz merge parcial, então não tocar num campo
 // é diferente de gravá-lo igual. Os blocos aninhados (social, fiscal, nutricional)
 // também vão parciais: mandar só `brand` não apaga a categoria.
 //
-// Fora do escopo (segue no Admin): componentes de bundle, coleções e listings.
+// Vínculos de coleções e canais têm editor inline próprio.
 import type {
+  ProductCollectionLink,
+  ProductComponentInput,
+  ProductListingLink,
   AssistableField,
   NutritionFacts,
   ProductDetailPatch,
   ProductEditConflict,
   ProductDetailProjection,
+  ProductArchiveReceipt,
   SkuRoles,
 } from "~/types/catalog";
 import { vocationLabel, vocationOptions } from "~/presentation/vocation";
+import {
+  availabilityRowLabel,
+  availabilitySummary,
+  COUNTER_SURFACES,
+  weighedChannelsNotice,
+} from "~/presentation/catalog";
 import { useIntersectionObserver } from "@vueuse/core";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+// Preço MOSTRADO no formato do Tabelão ("R$ 99.999.999,00"); o campo editável
+// segue sem milhar, para digitar (GES-24).
+import { formatBRL } from "../../../operator-kit/app/utils/money";
+import OperatorFormSection from "../../../operator-kit/app/components/OperatorFormSection.vue";
+import OperatorFormShell from "../../../operator-kit/app/components/OperatorFormShell.vue";
 
 const props = defineProps<{
+  saveComponents?: (rows: ProductComponentInput[]) => Promise<boolean>;
+  searchComponents?: (query: string) => Promise<{ sku: string; name: string; unit?: string }[]>;
+  saveCollections?: (rows: ProductCollectionLink[]) => Promise<boolean>;
+  saveListing?: (
+    link: ProductListingLink,
+    patch: {
+      price_q: number;
+      min_qty: string;
+      is_published: boolean;
+      is_sellable: boolean;
+    },
+  ) => Promise<boolean>;
   open: boolean;
   sku: string | null;
   detail: ProductDetailProjection | null;
@@ -39,6 +66,8 @@ const props = defineProps<{
   // Selos do SKU e o gesto "Permitir compra" — fora do rascunho: valem na hora.
   roles?: SkuRoles | null;
   purchaseBusy?: boolean;
+  archiveBusy?: boolean;
+  archiveUndo?: ProductArchiveReceipt | null;
   // O interruptor de cada canal na tabela (G22): pausado à mão, gesto liberado e
   // ocupado. O "Pausar" da linha é o MESMO gesto da célula da matriz.
   channelCells?: Record<
@@ -49,6 +78,9 @@ const props = defineProps<{
   liveAvailability?: ProductDetailProjection["channel_availability"] | null;
   // Endereço do Admin: o "Histórico" do ⋯ abre o histórico de alterações de lá.
   adminBaseUrl?: string;
+  /** Foto por arquivo (padronizar e guardar): o mesmo gesto da criação. */
+  enhance?: (image: string) => Promise<string>;
+  upload?: (image: string) => Promise<string>;
 }>();
 
 const emit = defineEmits<{
@@ -58,7 +90,35 @@ const emit = defineEmits<{
   "dirty-change": [dirty: boolean];
   "set-purchasable": [enabled: boolean];
   "pause-channel": [ref: string, pause: boolean];
+  "set-active": [active: boolean];
 }>();
+
+const confirmArchive = useConfirm();
+async function requestSetActive(active: boolean) {
+  const product = props.detail;
+  if (!product) return;
+  if (
+    !(await confirmArchive({
+      ...(active
+        ? {
+            tone: "primary" as const,
+            confirmLabel: "Desarquivar",
+            cancelLabel: "Manter arquivado",
+          }
+        : {
+            tone: "danger" as const,
+            confirmLabel: "Arquivar",
+            cancelLabel: "Manter produto",
+          }),
+      title: `${active ? "Desarquivar" : "Arquivar"} ${product.name}?`,
+      description: active
+        ? "O produto volta às listas e aos canais conforme os estados publicado e vendável que já tinha."
+        : "O produto sai do cardápio, dos canais e das listas. O histórico e os vínculos ficam guardados.",
+    }))
+  )
+    return;
+  emit("set-active", active);
+}
 
 // ⋯ do cabeçalho (v4): Ocultar/Exibir (entra no rascunho), Permitir compra (vale na
 // hora) e o Histórico de alterações.
@@ -75,7 +135,7 @@ function toggleHidden() {
 }
 function togglePurchaseFromMenu() {
   headerMenuOpen.value = false;
-  emit("set-purchasable", !props.roles?.purchasable);
+  void onPurchaseChange(!props.roles?.purchasable);
 }
 // "Descrição e foto seguem abaixo ⌄": o rodapé aponta o que a Geral ainda guarda
 // abaixo da dobra e leva até lá; some quando o bloco aparece.
@@ -91,6 +151,21 @@ function showBelow() {
 // Vendido por peso = unidade de venda kg (contrato do PDV). Desligar volta a
 // vender por unidade; outra unidade (lt, dz) se escreve no campo Unidade.
 const soldByWeight = computed(() => draft.unit.trim().toLowerCase() === "kg");
+// O aviso ANTES de salvar: de quais canais o item sai, e que volta (GES-02).
+const weighedNotice = computed(() =>
+  weighedChannelsNotice({
+    savedUnit: props.detail?.unit ?? "",
+    draftUnit: draft.unit,
+    remoteChannels: (props.liveAvailability ?? props.detail?.channel_availability ?? [])
+      .filter(
+        (row) =>
+          row.kind === "sale" &&
+          row.state !== "not_listed" &&
+          !COUNTER_SURFACES.has(row.ref),
+      )
+      .map((row) => row.name),
+  }),
+);
 function setSoldByWeight(on: boolean) {
   draft.unit = on ? "kg" : "un";
 }
@@ -98,7 +173,20 @@ function setSoldByWeight(on: boolean) {
 // O interruptor mostra o que o SERVIDOR diz: devolve a marca ao estado atual e
 // deixa o selo novo (ou a recusa) redesenhar. Sem isso a recusa "é produzido
 // aqui" deixaria o quadrado marcado, mentindo.
-function onPurchaseChange(wanted: boolean) {
+async function onPurchaseChange(wanted: boolean) {
+  // Desligar tira o item do Compras: confirma antes (D9), e diz o que fica.
+  if (
+    !wanted &&
+    !(await confirmArchive({
+      tone: "danger" as const,
+      title: `Desligar a compra de ${props.detail?.name ?? "este produto"}?`,
+      description:
+        "O item sai do Compras. Custo e histórico ficam guardados, e Permitir compra traz de volta.",
+      confirmLabel: "Desligar compra",
+      cancelLabel: "Manter compra",
+    }))
+  )
+    return;
   emit("set-purchasable", wanted);
 }
 
@@ -106,24 +194,16 @@ function onPurchaseChange(wanted: boolean) {
 const availability = computed(
   () => props.liveAvailability ?? props.detail?.channel_availability ?? [],
 );
+// Esgotado ou pausado; o canal onde o produto não está não é falta (GES-03).
 const unavailableCount = computed(
-  () => availability.value.filter((row) => row.state !== "available").length,
+  () =>
+    availability.value.filter(
+      (row) => row.state === "sold_out" || row.state === "paused",
+    ).length,
 );
-const availabilityHeadline = computed(() => {
-  const off = availability.value.filter((row) => row.state !== "available");
-  const paused = off.some((row) => row.state === "paused");
-  const since =
-    off
-      .map((row) => row.since)
-      .filter(Boolean)
-      .sort()[0] ?? "";
-  const word = paused ? "Pausado" : "Esgotado";
-  const where =
-    off.length === availability.value.length
-      ? ""
-      : ` em ${off.length} de ${availability.value.length}`;
-  return `${word}${where}${since ? ` desde ${since}` : ""}`;
-});
+const availabilityBadge = computed(() =>
+  availabilitySummary(availability.value),
+);
 function channelIcon(row: { ref: string; kind: string }): string {
   if (row.ref === "ifood") return "lucide:bike";
   if (row.ref === "pdv" || row.ref === "pos" || row.ref === "balcao")
@@ -151,6 +231,7 @@ const TABS = [
   { id: "rotulagem", label: "Ingredientes e nutrição" },
   { id: "social", label: "Redes sociais" },
   { id: "fiscal", label: "Fiscal" },
+  { id: "links", label: "Vínculos" },
 ] as const;
 const tabItems = TABS.map((item) => ({ value: item.id, label: item.label }));
 const panelMenuItems = computed(() => [
@@ -251,7 +332,8 @@ const draft = reactive({
   shelf_life_days: "" as number | "",
   storage_tip: "",
   production_cycle_hours: "" as number | "",
-  is_batch_produced: false,
+  preorder_prep_minutes: "" as number | "",
+  running_low_percent: "" as number | "",
   is_published: true,
   is_sellable: true,
   allows_next_day_sale: false,
@@ -277,6 +359,32 @@ const draft = reactive({
 });
 
 const centsToText = (q: number) => (q / 100).toFixed(2).replace(".", ",");
+
+// Preparo da encomenda (#2304): em branco, vale o preparo padrão da loja, e a tela
+// diz quanto ele é. A frase explica o efeito: é o que decide a hora de a encomenda
+// chegar à Cozinha.
+const preorderPrepDefault = computed(
+  () => props.detail?.preorder_prep_default_minutes ?? null,
+);
+const preorderPrepPlaceholder = computed(() =>
+  preorderPrepDefault.value === null
+    ? "Em branco = preparo padrão"
+    : `Em branco = preparo padrão (${preorderPrepDefault.value} min)`,
+);
+// Quando o item está acabando (DEV-2026-077): em branco, vale o padrão da loja, e a
+// tela diz quanto ele é. A frase explica o efeito nas duas telas que o usam.
+const runningLowDefault = computed(
+  () => props.detail?.running_low_default_percent ?? null,
+);
+const runningLowPlaceholder = computed(() =>
+  runningLowDefault.value === null
+    ? "Em branco = padrão da loja"
+    : `Em branco = padrão da loja (${runningLowDefault.value}%)`,
+);
+const runningLowHint =
+  "Quando restar esta parte do que o dia teve, o PDV mostra o saldo no botão do produto e a Cozinha avisa as últimas unidades. Ex.: 20% de 30 pães avisa a partir de 6. 0 desliga.";
+const preorderPrepHint =
+  "A encomenda chega à Cozinha este tempo antes da hora combinada, mais a antecedência da loja.";
 const numOrBlank = (v: number | null) =>
   v === null || v === undefined ? "" : v;
 
@@ -295,7 +403,8 @@ function hydrate(detail: ProductDetailProjection | null) {
   draft.production_cycle_hours = numOrBlank(
     detail?.production_cycle_hours ?? null,
   );
-  draft.is_batch_produced = detail?.is_batch_produced ?? false;
+  draft.preorder_prep_minutes = numOrBlank(detail?.preorder_prep_minutes ?? null);
+  draft.running_low_percent = numOrBlank(detail?.running_low_percent ?? null);
   draft.is_published = detail?.is_published ?? true;
   draft.is_sellable = detail?.is_sellable ?? true;
   draft.allows_next_day_sale = detail?.allows_next_day_sale ?? false;
@@ -460,7 +569,16 @@ function buildPatch(): ProductDetailPatch {
     nullableInt(draft.production_cycle_hours),
     current.production_cycle_hours,
   );
-  put("is_batch_produced", draft.is_batch_produced, current.is_batch_produced);
+  put(
+    "preorder_prep_minutes",
+    nullableInt(draft.preorder_prep_minutes),
+    current.preorder_prep_minutes ?? null,
+  );
+  put(
+    "running_low_percent",
+    nullableInt(draft.running_low_percent),
+    current.running_low_percent ?? null,
+  );
   put("is_published", draft.is_published, current.is_published);
   put("is_sellable", draft.is_sellable, current.is_sellable);
   put(
@@ -539,9 +657,22 @@ function buildPatch(): ProductDetailPatch {
   return patch;
 }
 
+const componentsDirty = ref(false);
+const componentsSaving = ref(false);
+const linksDirty = ref(false);
+const linksSaving = ref(false);
+watch(
+  () => [props.open, props.sku],
+  () => {
+    componentsDirty.value = false;
+    componentsSaving.value = false;
+    linksDirty.value = false;
+    linksSaving.value = false;
+  },
+);
 const patchSize = computed(() => Object.keys(buildPatch()).length);
 watch(
-  () => props.open && patchSize.value > 0,
+  () => props.open && (patchSize.value > 0 || linksDirty.value || componentsDirty.value),
   (dirty) => emit("dirty-change", dirty),
   { immediate: true, flush: "sync" },
 );
@@ -550,11 +681,26 @@ const formInvalid = computed(
 );
 const canSave = computed(
   () =>
+    !linksDirty.value &&
+    !componentsDirty.value &&
+    !componentsSaving.value &&
+    !linksSaving.value &&
     !props.busy &&
     !props.loading &&
     !props.conflict &&
     !formInvalid.value &&
     patchSize.value > 0,
+);
+const panelBusy = computed(
+  () => props.busy || linksSaving.value || componentsSaving.value,
+);
+const panelDirty = computed(
+  () => patchSize.value > 0 || linksDirty.value || componentsDirty.value,
+);
+const saveLabel = computed(() =>
+  patchSize.value
+    ? `${patchSize.value} ${patchSize.value === 1 ? "campo alterado" : "campos alterados"} · Salvar`
+    : "Salvar",
 );
 
 function onSave() {
@@ -593,27 +739,14 @@ function keepWithoutGtin() {
   emit("save", { ...buildPatch(), gtin_rejected: { confirmed: true } });
 }
 
-const discardRequested = ref(false);
-function requestClose(open: boolean) {
-  if (!open && props.busy) return;
-  if (!open && patchSize.value) {
-    discardRequested.value = true;
-    return;
-  }
-  emit("update:open", open);
-}
-watch(
-  () => props.open,
-  () => {
-    discardRequested.value = false;
-  },
-);
 const conflictLabels: Record<string, string> = {
+  collections: "Coleções",
   name: "Nome",
   short_description: "Descrição curta",
   long_description: "Descrição completa",
   keywords: "Palavras-chave",
   image_url: "Imagem",
+  components: "Componentes do combo",
   base_price_q: "Preço",
   unit: "Unidade",
   unit_weight_g: "Peso por unidade",
@@ -621,7 +754,8 @@ const conflictLabels: Record<string, string> = {
   shelf_life_days: "Validade",
   storage_tip: "Conservação",
   production_cycle_hours: "Tempo de produção",
-  is_batch_produced: "Produção em lote",
+  preorder_prep_minutes: "Preparo da encomenda",
+  running_low_percent: "Avisar que está acabando",
   is_published: "Publicado",
   is_sellable: "Disponível para venda",
   allows_next_day_sale: "Venda no dia seguinte",
@@ -665,6 +799,24 @@ function sourceChange(field: string): string {
 }
 
 function currentValue(path: string): string {
+  if (path === "components") {
+    const rows = props.conflict?.product.components ?? [];
+    return rows.length ? `Para 1 ${props.conflict?.product.unit || props.detail?.unit || "un"} do combo: ${rows.map((row) => `${row.name}: ${row.qty.replace(".", ",")} ${row.unit}`).join("; ")}` : "Sem componentes";
+  }
+  if (path === "collections") {
+    const rows = props.conflict?.product.collections ?? [];
+    const choices = props.conflict?.product.collection_choices ?? [];
+    return rows.length
+      ? rows
+          .map((row) => {
+            const name =
+              choices.find((choice) => choice.ref === row.ref)?.name ??
+              "Coleção indisponível";
+            return `${name}${row.is_primary ? " (primária)" : ""}, ordem ${row.sort_order}`;
+          })
+          .join("; ")
+      : "Sem coleção manual";
+  }
   if (path === "vocation")
     return vocationLabel(
       props.conflict?.product.vocation ?? "",
@@ -681,7 +833,7 @@ function currentValue(path: string): string {
     return "Não informado";
   if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (path === "base_price_q" && typeof value === "number")
-    return `R$ ${centsToText(value)}`;
+    return formatBRL(value);
   return Array.isArray(value) ? value.join(", ") : String(value);
 }
 
@@ -690,14 +842,62 @@ const sectionClass =
 </script>
 
 <template>
-  <NuxtSlideover
+  <OperatorFormShell
     :open="open"
     :title="detail?.name || 'Produto'"
-    :description="`${sku}${detail ? ` · R$ ${centsToText(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
-    side="right"
-    @update:open="requestClose"
+    :description="`${sku}${detail ? ` · ${formatBRL(detail.base_price_q)}${detail.unit === 'kg' ? '/kg' : ''}` : ''}${detail?.primary_collection_name ? ` · ${detail.primary_collection_name}` : ''}${roleBadges.length ? ` · ${roleBadges.join(' · ')}` : ''}`"
+    size="wide"
+    :dirty="panelDirty"
+    :dirty-count="patchSize"
+    :busy="panelBusy"
+    :save-label="saveLabel"
+    :save-disabled="!canSave"
+    :save-attrs="{ 'data-panel-save': '', 'data-panel-changes': '' }"
+    :discard-attrs="{ 'data-panel-discard': '' }"
+    :active-section="tab"
+    :confirm-discard="{
+      title: 'Há alterações não salvas neste produto',
+      description: 'As alterações feitas neste produto serão perdidas.',
+      confirmLabel: 'Descartar e fechar',
+      cancelLabel: 'Continuar editando',
+    }"
+    action-label="Ações do produto"
+    @update:open="emit('update:open', $event)"
+    @save="onSave"
   >
     <template #actions>
+      <NuxtBadge
+        v-if="detail && !detail.is_active"
+        label="Arquivado"
+        color="neutral"
+      />
+      <OperatorTimedButton
+        v-if="archiveUndo"
+        label="Desfazer"
+        short-label="Desfazer"
+        icon="i-lucide-undo-2"
+        color="error"
+        :until="archiveUndo.undo_until"
+        :server-now="archiveUndo.server_now"
+        :loading="archiveBusy"
+        data-product-archive-undo
+        @click="
+          emit('set-active', archiveUndo.applied[0]?.before_is_active ?? true)
+        "
+      />
+      <NuxtButton
+        v-else-if="detail"
+        type="button"
+        :label="detail.is_active ? 'Arquivar' : 'Desarquivar'"
+        :icon="
+          detail.is_active ? 'i-lucide-archive' : 'i-lucide-archive-restore'
+        "
+        :color="detail.is_active ? 'error' : 'primary'"
+        variant="solid"
+        :loading="archiveBusy"
+        data-product-archive
+        @click="requestSetActive(!detail.is_active)"
+      />
       <OperatorMoreMenu
         v-model:open="headerMenuOpen"
         :items="panelMenuItems"
@@ -705,8 +905,7 @@ const sectionClass =
         data-panel-more
       />
     </template>
-    <template #body>
-      <div class="flex flex-col gap-4">
+    <template #default>
         <NuxtAlert
           v-if="conflict"
           color="warning"
@@ -741,30 +940,9 @@ const sectionClass =
           icon="i-lucide-triangle-alert"
           :description="error"
         />
-        <NuxtAlert
-          v-if="discardRequested"
-          color="warning"
-          variant="subtle"
-          title="Há alterações não salvas neste produto"
-          :actions="
-            alertActions('warning', [
-              {
-                label: 'Continuar editando',
-                onClick: () => {
-                  discardRequested = false;
-                },
-              },
-              {
-                label: 'Descartar e fechar',
-                onClick: () => emit('update:open', false),
-              },
-            ])
-          "
-        />
-
         <!-- abas: o formulário é longo demais para uma coluna só. Rolam na horizontal
            porque cinco rótulos não cabem na largura do slide-over. -->
-        <!-- as cinco abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
+        <!-- as seis abas cabem (v4): sublinhada a ativa, sem caixa; rola só se a largura faltar -->
         <NuxtTabs
           v-model="tab"
           :items="tabItems"
@@ -788,8 +966,34 @@ const sectionClass =
           />
 
           <template v-else>
+            <OperatorFormSection
+              v-show="tab === 'links'"
+              section-key="links"
+              class="!gap-4"
+            >
+              <CatalogProductLinks
+                v-if="saveCollections && saveListing"
+                :detail="detail"
+                :busy="busy || componentsDirty || componentsSaving"
+                :save-collections="saveCollections"
+                :save-listing="saveListing"
+                @dirty-change="linksDirty = $event"
+                @saving-change="linksSaving = $event"
+              />
+              <CatalogProductComponents
+                v-if="saveComponents && searchComponents"
+                :sku="detail.sku"
+                :unit="detail.unit"
+                :components="detail.components ?? []"
+                :busy="busy || linksDirty || linksSaving"
+                :save="saveComponents"
+                :search="searchComponents"
+                @dirty-change="componentsDirty = $event"
+                @saving-change="componentsSaving = $event"
+              />
+            </OperatorFormSection>
             <!-- Geral -->
-            <div v-show="tab === 'geral'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'geral'" section-key="geral" class="!gap-4">
               <!-- A Geral começa pelo nome no cardápio (v4); a disponibilidade vem logo abaixo. -->
               <NuxtFormField label="Nome no cardápio">
                 <NuxtInput
@@ -816,14 +1020,9 @@ const sectionClass =
                         Disponibilidade nos canais
                       </h3>
                       <NuxtBadge
-                        v-if="unavailableCount"
-                        color="error"
-                        :label="availabilityHeadline"
-                      />
-                      <NuxtBadge
-                        v-else
-                        color="success"
-                        label="À venda em todos"
+                        :color="availabilityBadge.color"
+                        :label="availabilityBadge.label"
+                        data-panel-availability-badge
                       />
                       <span class="ms-auto op-micro text-muted-foreground"
                         >vale na hora</span
@@ -854,18 +1053,17 @@ const sectionClass =
                       <span class="min-w-0 flex-1 op-micro">
                         <span class="block">
                           <b
-                            v-if="row.state !== 'available'"
+                            v-if="
+                              row.state === 'paused' || row.state === 'sold_out'
+                            "
                             class="font-semibold text-error"
-                            >{{
-                              row.state === "paused"
-                                ? "Pausado"
-                                : row.kind === "display"
-                                  ? "Fora de estoque"
-                                  : "Esgotado"
-                            }}</b
+                            >{{ availabilityRowLabel(row) }}</b
                           >
-                          <span v-else class="text-muted-foreground"
-                            >À venda</span
+                          <span
+                            v-else
+                            class="text-muted-foreground"
+                            :data-panel-channel-state="row.state"
+                            >{{ availabilityRowLabel(row) }}</span
                           >
                           <span
                             v-if="row.back_at"
@@ -886,13 +1084,18 @@ const sectionClass =
                         <span
                           v-if="
                             row.note ||
-                            (row.automatic && row.state !== 'available')
+                            (row.automatic &&
+                              (row.state === 'paused' ||
+                                row.state === 'sold_out'))
                           "
                           class="mt-0.5 flex flex-wrap items-center gap-1.5 text-muted-foreground"
                           data-panel-channel-note
                         >
                           <NuxtBadge
-                            v-if="row.automatic && row.state !== 'available'"
+                            v-if="
+                              row.automatic &&
+                              (row.state === 'paused' || row.state === 'sold_out')
+                            "
                             color="neutral"
                             icon="i-lucide-sparkles"
                             label="automático"
@@ -996,6 +1199,15 @@ const sectionClass =
                 />
               </NuxtFormField>
 
+              <!-- A URL guardada entra no rascunho; quem grava é o Salvar do painel. -->
+              <CatalogProductPhoto
+                v-if="props.enhance && props.upload"
+                :enhance="props.enhance"
+                :upload="props.upload"
+                testid="detail-photo"
+                @stored="(url: string) => (draft.image_url = url)"
+              />
+
               <NuxtFormField label="URL da imagem">
                 <NuxtInput
                   v-model="draft.image_url"
@@ -1010,10 +1222,10 @@ const sectionClass =
                 alt="Prévia da imagem do produto"
                 class="h-32 w-32 rounded-lg border border-border object-cover"
               />
-            </div>
+            </OperatorFormSection>
 
             <!-- Preço e config -->
-            <div v-show="tab === 'config'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'config'" section-key="config" class="!gap-4">
               <!-- Vendido por peso: a unidade de venda vira kg e o MESMO campo de
                  preço passa a ser o preço do quilo. O preço final sai da balança
                  do balcão, então o item não vai para canal remoto. -->
@@ -1024,16 +1236,17 @@ const sectionClass =
                 @update:model-value="(value) => setSoldByWeight(value === true)"
               />
               <p
-                v-if="soldByWeight"
+                v-if="weighedNotice"
                 class="-mt-2 text-xs text-muted-foreground"
+                data-weighed-notice
               >
-                Vendido só no balcão: o preço final sai da balança.
+                {{ weighedNotice }}
               </p>
 
               <div class="grid grid-cols-2 gap-3">
                 <NuxtFormField
                   :label="soldByWeight ? 'Preço por kg' : 'Preço'"
-                  :error="priceInvalid ? 'Informe um valor válido.' : undefined"
+                  :error="priceInvalid ? 'Informe o preço em reais, como 12,50.' : undefined"
                 >
                   <NuxtInput
                     v-model="draft.priceText"
@@ -1104,10 +1317,39 @@ const sectionClass =
                 />
               </NuxtFormField>
 
-              <NuxtCheckbox
-                v-model="draft.is_batch_produced"
-                label="Produzido em lote"
-              />
+              <!-- Preparo da encomenda (#2304): o mesmo valor do Admin (Configurações ›
+                   Pedidos e entrega › Encomenda na Cozinha), nunca uma segunda fonte. -->
+              <NuxtFormField
+                label="Preparo da encomenda (min)"
+                :description="preorderPrepHint"
+                data-testid="preorder-prep"
+              >
+                <NuxtInput
+                  v-model.number="draft.preorder_prep_minutes"
+                  class="w-full"
+                  type="number"
+                  :min="0"
+                  :max="720"
+                  :placeholder="preorderPrepPlaceholder"
+                />
+              </NuxtFormField>
+
+              <!-- Quando o item está acabando (DEV-2026-077): a % do SKU sobre o que
+                   o dia teve; a mesma régua no botão do PDV e no card da Cozinha. -->
+              <NuxtFormField
+                label="Avisar que está acabando (%)"
+                :description="runningLowHint"
+                data-testid="running-low"
+              >
+                <NuxtInput
+                  v-model.number="draft.running_low_percent"
+                  class="w-full"
+                  type="number"
+                  :min="0"
+                  :max="100"
+                  :placeholder="runningLowPlaceholder"
+                />
+              </NuxtFormField>
 
               <NuxtCheckbox
                 v-model="draft.allows_next_day_sale"
@@ -1134,20 +1376,63 @@ const sectionClass =
                     É produzido aqui: o estoque entra pela Produção, não pela
                     compra.
                   </p>
-                  <NuxtCheckbox
-                    v-else
-                    :model-value="Boolean(roles?.purchasable)"
-                    :disabled="purchaseBusy || !roles"
-                    label="Permitir compra"
-                    @update:model-value="
-                      (value) => onPurchaseChange(value === true)
-                    "
-                  />
-                  <p
-                    v-if="roles?.purchasable"
-                    class="text-xs text-muted-foreground"
+                  <!-- Gesto na hora, com cara de gesto na hora (GES-20): um quadrado
+                     dentro do rascunho prometia "Descartar" e gravava sem Salvar.
+                     Ligar é botão; desligar é botão com confirmação. -->
+                  <template v-else>
+                    <p
+                      v-if="roles?.purchasable"
+                      class="text-xs text-muted-foreground"
+                    >
+                      Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+                    </p>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <NuxtButton
+                        type="button"
+                        :icon="
+                          roles?.purchasable
+                            ? 'i-lucide-shopping-cart'
+                            : 'i-lucide-shopping-basket'
+                        "
+                        :label="
+                          roles?.purchasable ? 'Desligar compra' : 'Permitir compra'
+                        "
+                        color="neutral"
+                        variant="outline"
+                        :loading="purchaseBusy"
+                        :disabled="purchaseBusy || !roles"
+                        data-purchase-action
+                        @click="onPurchaseChange(!roles?.purchasable)"
+                      />
+                      <span class="text-xs text-muted-foreground"
+                        >Vale na hora, sem o Salvar.</span
+                      >
+                    </div>
+                  </template>
+                </div>
+              </NuxtCard>
+
+              <!-- Modo de produção (ADR-040): só leitura. A fonte é a ficha, na
+                 Produção; produto sem ficha (revenda) não mostra nada. -->
+              <NuxtCard
+                v-if="detail?.production"
+                variant="soft"
+                data-testid="production-mode"
+              >
+                <div class="space-y-2">
+                  <p :class="sectionClass">Produção</p>
+                  <p class="text-sm">{{ detail.production.summary }}</p>
+                  <NuxtLink
+                    v-if="detail.production.url"
+                    :to="detail.production.url"
+                    external
+                    class="text-sm text-primary underline-offset-2 hover:underline"
                   >
-                    Aparece no Compras: recebe nota, tem custo, mínimo e pedido.
+                    Abrir a receita {{ detail.production.recipe_name }} na
+                    Produção
+                  </NuxtLink>
+                  <p v-else class="text-xs text-muted-foreground">
+                    Receita {{ detail.production.recipe_name }}, na Produção.
                   </p>
                 </div>
               </NuxtCard>
@@ -1204,10 +1489,10 @@ const sectionClass =
                   />
                 </div>
               </NuxtCard>
-            </div>
+            </OperatorFormSection>
 
             <!-- Ingredientes e nutrição -->
-            <div v-show="tab === 'rotulagem'" class="space-y-5">
+            <OperatorFormSection v-show="tab === 'rotulagem'" section-key="rotulagem" class="!gap-5">
               <CatalogAiSuggest
                 :sku="sku"
                 field="ingredients_text"
@@ -1354,10 +1639,10 @@ const sectionClass =
                   </p>
                 </div>
               </NuxtCard>
-            </div>
+            </OperatorFormSection>
 
             <!-- Redes sociais (PIM) -->
-            <div v-show="tab === 'social'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'social'" section-key="social" class="!gap-4">
               <NuxtAlert
                 color="info"
                 variant="subtle"
@@ -1519,10 +1804,10 @@ const sectionClass =
                   placeholder="Texto sugerido para posts e feeds."
                 ></NuxtTextarea>
               </CatalogAiSuggest>
-            </div>
+            </OperatorFormSection>
 
             <!-- Fiscal (NFC-e) -->
-            <div v-show="tab === 'fiscal'" class="space-y-4">
+            <OperatorFormSection v-show="tab === 'fiscal'" section-key="fiscal" class="!gap-4">
               <NuxtAlert
                 color="info"
                 variant="subtle"
@@ -1607,14 +1892,12 @@ const sectionClass =
                   :description="warning"
                 />
               </NuxtFormField>
-            </div>
+            </OperatorFormSection>
           </template>
         </div>
 
-        <!-- Rodapé (v4): o que ainda está abaixo na Geral, Descartar e "N campo alterado · Salvar". -->
-      </div>
     </template>
-    <template #footer>
+    <template #lead>
       <NuxtButton
         v-if="tab === 'geral' && detail && !belowVisible"
         type="button"
@@ -1625,29 +1908,6 @@ const sectionClass =
         data-panel-below
         @click="showBelow"
       />
-      <span v-else class="me-auto" />
-      <NuxtButton
-        type="button"
-        label="Descartar"
-        color="neutral"
-        variant="ghost"
-        data-panel-discard
-        @click="requestClose(false)"
-      />
-      <NuxtButton
-        type="button"
-        :label="
-          patchSize
-            ? `${patchSize} ${patchSize === 1 ? 'campo alterado' : 'campos alterados'} · Salvar`
-            : 'Salvar'
-        "
-        :disabled="!canSave"
-        color="primary"
-        :loading="busy"
-        data-panel-save
-        data-panel-changes
-        @click="onSave"
-      />
     </template>
-  </NuxtSlideover>
+  </OperatorFormShell>
 </template>

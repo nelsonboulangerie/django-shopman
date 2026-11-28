@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.db.models import Sum
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +78,15 @@ class DashboardProjection:
 # ── Builder ────────────────────────────────────────────────────────────
 
 
-def build_dashboard() -> DashboardProjection:
-    """Build the admin dashboard projection."""
+def build_dashboard(user=None) -> DashboardProjection:
+    """Build the admin dashboard projection.
+
+    ``user`` recorta os alertas pelo público que ele lê
+    (``visible_alert_audiences``): o financeiro panorâmico, como a diferença do
+    caixa, é só de quem audita o caixa. ``None`` é o sistema (vê tudo).
+    """
     stock_alerts = _stock_alerts()
-    operator_alerts = _operator_alerts()
+    operator_alerts = _operator_alerts(user)
     rating_average, rating_count, rating_low_count, recent_ratings = _customer_ratings()
 
     return DashboardProjection(
@@ -151,7 +157,6 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
     """
     try:
         from django.utils.dateparse import parse_datetime
-        from django.utils.formats import date_format
         from shopman.orderman.models import Order
     except ImportError:
         return "—", 0, 0, []
@@ -179,7 +184,7 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
             stars="★" * score + "☆" * (5 - score),
             comment=str(rating_data.get("comment") or "").strip(),
             order_ref=order.ref,
-            submitted_at_display=date_format(submitted_at, "d/m H:i") if submitted_at else "—",
+            submitted_at_display=format_local(submitted_at, "%d/%m {clock}") if submitted_at else "—",
             is_low=score <= 2,
         ))
 
@@ -190,19 +195,25 @@ def _customer_ratings() -> tuple[str, int, int, list[RatingRowProjection]]:
     low_count = sum(1 for s in scores if s <= 2)
     # ``rows`` já vem em ordem decrescente de criação do pedido (a query ordena
     # por -created_at), então os primeiros são os mais recentes — os "últimos
-    # comentários". Sem re-sort pela string "d/m H:i", que não ordena no tempo.
+    # comentários". Sem re-sort pela string de exibição, que não ordena no tempo.
     return f"{average:.1f}", len(scores), low_count, rows[:8]
 
 
-def _operator_alerts() -> list[OperatorAlertProjection]:
+def _operator_alerts(user=None) -> list[OperatorAlertProjection]:
     try:
-        from django.utils.formats import date_format
 
         from shopman.backstage.models import OperatorAlert
+        from shopman.backstage.services.alerts import visible_alert_audiences
 
         # "Visto" silencia o toque, não cura a causa. O painel só retira o
         # alerta quando o lifecycle grava ``resolved_at``.
-        qs = OperatorAlert.objects.filter(resolved_at__isnull=True).order_by("-created_at")[:20]
+        qs = (
+            OperatorAlert.objects.filter(
+                resolved_at__isnull=True,
+                audience__in=visible_alert_audiences(user),
+            )
+            .order_by("-created_at")[:20]
+        )
         return [
             OperatorAlertProjection(
                 pk=a.id,
@@ -210,7 +221,7 @@ def _operator_alerts() -> list[OperatorAlertProjection]:
                 severity=a.severity,
                 message=a.message,
                 order_ref=a.order_ref or "",
-                created_at_display=date_format(a.created_at, "d/m H:i") if a.created_at else "—",
+                created_at_display=format_local(a.created_at, "%d/%m {clock}") if a.created_at else "—",
             )
             for a in qs
         ]

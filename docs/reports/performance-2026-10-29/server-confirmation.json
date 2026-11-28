@@ -1,0 +1,201 @@
+{
+  "candidate_sha256": "e19f66240633f22ef931df5ab441bed18e49791326954a81047adea2b93d2edc",
+  "captured_utc": "2026-10-29T18:01:46.400994+00:00",
+  "read_only": true,
+  "pdp_batch_read": true,
+  "method": "Isolated process in web-storefront; same repeatable-read READ ONLY transaction, frozen clock, fresh request/stock memo per call, alternating variants, one warmup pair excluded, 1s gap, no serving worker patched, no files or settings changed on server. Entire JSON compared in memory on every iteration; bodies not persisted.",
+  "catalog": {
+    "samples": {
+      "before": [
+        {
+          "ms": 260.26,
+          "queries": 34
+        },
+        {
+          "ms": 296.55,
+          "queries": 34
+        },
+        {
+          "ms": 275.57,
+          "queries": 34
+        },
+        {
+          "ms": 286.64,
+          "queries": 34
+        },
+        {
+          "ms": 488.63,
+          "queries": 34
+        },
+        {
+          "ms": 294.36,
+          "queries": 34
+        },
+        {
+          "ms": 279.11,
+          "queries": 34
+        },
+        {
+          "ms": 227.59,
+          "queries": 34
+        },
+        {
+          "ms": 248.55,
+          "queries": 34
+        },
+        {
+          "ms": 264.16,
+          "queries": 34
+        }
+      ],
+      "after": [
+        {
+          "ms": 323.53,
+          "queries": 32
+        },
+        {
+          "ms": 304.79,
+          "queries": 32
+        },
+        {
+          "ms": 319.76,
+          "queries": 32
+        },
+        {
+          "ms": 283.99,
+          "queries": 32
+        },
+        {
+          "ms": 301.99,
+          "queries": 32
+        },
+        {
+          "ms": 226.01,
+          "queries": 32
+        },
+        {
+          "ms": 245.95,
+          "queries": 32
+        },
+        {
+          "ms": 248.02,
+          "queries": 32
+        },
+        {
+          "ms": 224.95,
+          "queries": 32
+        },
+        {
+          "ms": 256.02,
+          "queries": 32
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 277.34,
+      "after": 270.0
+    },
+    "json_equal": true,
+    "sha256": "47edba4a3ed597f154d6bd3f447c65a5c7894d1f190c8f07a52f6aabe0d4588d",
+    "bytes": 56719,
+    "observed_median_reduction_percent": 2.65,
+    "limitation": "Small controlled warm-builder sample, not HTTP production P50/P95 or proof that the former ~1 second disappeared. Resource contention/network variation overlaps before and after."
+  },
+  "pdp": {
+    "samples": {
+      "before": [
+        {
+          "ms": 165.65,
+          "queries": 27
+        },
+        {
+          "ms": 125.5,
+          "queries": 27
+        },
+        {
+          "ms": 145.15,
+          "queries": 27
+        },
+        {
+          "ms": 124.19,
+          "queries": 27
+        },
+        {
+          "ms": 147.84,
+          "queries": 27
+        },
+        {
+          "ms": 234.82,
+          "queries": 27
+        },
+        {
+          "ms": 133.18,
+          "queries": 27
+        },
+        {
+          "ms": 137.2,
+          "queries": 27
+        },
+        {
+          "ms": 141.19,
+          "queries": 27
+        },
+        {
+          "ms": 131.0,
+          "queries": 27
+        }
+      ],
+      "after": [
+        {
+          "ms": 138.27,
+          "queries": 24
+        },
+        {
+          "ms": 129.23,
+          "queries": 24
+        },
+        {
+          "ms": 133.63,
+          "queries": 24
+        },
+        {
+          "ms": 149.48,
+          "queries": 24
+        },
+        {
+          "ms": 130.02,
+          "queries": 24
+        },
+        {
+          "ms": 125.74,
+          "queries": 24
+        },
+        {
+          "ms": 106.66,
+          "queries": 24
+        },
+        {
+          "ms": 151.77,
+          "queries": 24
+        },
+        {
+          "ms": 138.68,
+          "queries": 24
+        },
+        {
+          "ms": 118.75,
+          "queries": 24
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 139.19,
+      "after": 131.82
+    },
+    "json_equal": true,
+    "sha256": "6bad7d0d312b41c06bd5a6b5745694f5eb5f8f9e3bb3e673e52a639a145eacfa",
+    "bytes": 2967,
+    "observed_median_reduction_percent": 5.29,
+    "limitation": "Small controlled warm-builder sample, not HTTP production P50/P95 or proof that the former ~1 second disappeared. Resource contention/network variation overlaps before and after."
+  }
+}

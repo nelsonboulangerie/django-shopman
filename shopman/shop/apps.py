@@ -88,6 +88,10 @@ class ShopmanConfig(AppConfig):
         # 11. Announcement truth closes/refreshes every personal alert sibling.
         import shopman.shop.user_notification_signals  # noqa: F401
 
+        # 11b. Apagar campanha exclusiva de grupo: antes da FK do anúncio virar
+        #      nula, os anúncios dela herdam os grupos (nunca viram envio para todos).
+        self._connect_campaign_exclusivity_inheritance()
+
         # 12. Register curated-data backup resources (shop + Core packages)
         self._register_backup_resources()
 
@@ -107,6 +111,16 @@ class ShopmanConfig(AppConfig):
         user_logged_in.connect(
             on_user_logged_in,
             dispatch_uid="shop.customer_sign_in.on_logged_in",
+            weak=False,
+        )
+
+        # Experimento de versão (R4, OC-20): a aderência nasce no login, que é
+        # comando, e nunca no GET do shell (a leitura não grava a sessão).
+        from shopman.shop.services import experience
+
+        user_logged_in.connect(
+            experience.on_user_logged_in,
+            dispatch_uid="shop.experience.remember_on_login",
             weak=False,
         )
 
@@ -309,6 +323,10 @@ class ShopmanConfig(AppConfig):
                 # (nenhuma linha órfã). O resto do lifecycle continua adiado
                 # para depois do COMMIT.
                 secure_stock(order)
+                if (kwargs.get("commit_context") or {}).get("checkout_finalize"):
+                    from shopman.shop.services.checkout import queue_post_commit_effects
+
+                    queue_post_commit_effects(order)
                 phase = "on_commit"
             elif event_type == "status_changed":
                 phase = f"on_{order.status}"
@@ -372,6 +390,28 @@ class ShopmanConfig(AppConfig):
             weak=False,
         )
         logger.info("ShopmanConfig: production lifecycle signal connected.")
+
+    def _connect_campaign_exclusivity_inheritance(self):
+        """``pre_delete`` de ``Campaign`` → ``campaign_exclusivity.forget_campaign``.
+
+        A API do Marketing já chama ``forget_campaign`` ao apagar; este gancho cobre
+        qualquer outro caminho de exclusão (shell, comando, cascata), porque é antes
+        do ``delete`` que ``campaign_refs`` ainda diz quais grupos herdar.
+        """
+        from django.db.models.signals import pre_delete
+
+        from shopman.shop.models import Campaign
+        from shopman.shop.services.campaign_exclusivity import forget_campaign
+
+        def _forget(sender, instance, **kwargs):
+            forget_campaign(instance.pk)
+
+        pre_delete.connect(
+            _forget,
+            sender=Campaign,
+            weak=False,
+            dispatch_uid="shopman.shop.campaign_exclusivity.forget_campaign",
+        )
 
     def _connect_recipe_derivation_signal(self):
         """Materialize Product weight, ingredients, nutrition and dietary on Recipe save.

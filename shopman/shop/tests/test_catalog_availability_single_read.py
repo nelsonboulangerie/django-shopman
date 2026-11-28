@@ -233,6 +233,22 @@ class TestSingleReadEqualsTheOldComposition:
         new = waitlist.next_batch_availability_for_skus(SKUS, channel_ref="web")
         assert _canonical(new) == _canonical(_reference_next_batch(SKUS, "web"))
 
+    def test_pdp_matches_previous_single_sku_path(self, scenario, monkeypatch):
+        from shopman.storefront.api.projections import projection_data
+        from shopman.storefront.presentation import product_detail
+
+        candidate = product_detail._availability
+        for sku in SKUS:
+            with monkeypatch.context() as old:
+                old.setattr(
+                    product_detail, "_availability",
+                    lambda sku, channel_ref: catalog_context.availability_for_sku(sku, channel_ref=channel_ref),
+                )
+                expected = projection_data(product_detail.build_product_detail(sku=sku, channel_ref="web"))
+            assert product_detail._availability is candidate
+            actual = projection_data(product_detail.build_product_detail(sku=sku, channel_ref="web"))
+            assert actual == expected, sku
+
     def test_catalog_availability(self, scenario):
         new = catalog_context.availability_for_skus(SKUS, channel_ref="web")
         assert _canonical(new) == _canonical(_reference_catalog_availability(SKUS, "web"))

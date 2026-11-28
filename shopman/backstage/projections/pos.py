@@ -18,6 +18,7 @@ from django.conf import settings
 from django.utils import timezone
 from shopman.offerman.models import Collection, Product
 from shopman.orderman.models import Session
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money, monetary_mult
 
 from shopman.backstage.constants import POS_CHANNEL_REF
@@ -31,13 +32,13 @@ from shopman.shop import product_options
 from shopman.shop.projections.catalog_context import choice_group as product_choice_group
 from shopman.shop.projections.catalog_context import choice_group_label as product_choice_group_label
 from shopman.shop.projections.catalog_context import option_groups as product_option_groups
-from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
     Action,
     AddressAutocompleteProjection,
     SavedAddressProjection,
 )
-from shopman.shop.services import weighed_sale
+from shopman.shop.services import pos_offline_sale, weighed_sale
+from shopman.shop.services.channel_policy import resolve_channel_policy
 from shopman.shop.services.pos_intent import (
     POS_SALE_INTENT_PAYLOAD_KEYS,
     POS_SALE_INTENT_RECEIPT_CHANNELS,
@@ -78,6 +79,16 @@ class POSProductProjection:
     # "Sem caixa" = caixa presente cuja caixa física (componente de estoque
     # limitado, ``metadata['kit_packaging']``) acabou. Vazio = "Esgotado".
     sold_out_reason: str = ""
+    # Quantas unidades a casa ainda promete HOJE (o teto do Stockman, a mesma régua
+    # do "Esgotado"), para o tile dizer "Restam 3" (#2610, WP-E8). ``None`` quando
+    # o número não vale como "restam": item sem rastreio de estoque, sem teto, só
+    # com fornada futura (nada pronto na prateleira), esgotado, ou vendido por peso.
+    units_left: int | None = None
+    # O item está ACABANDO (DEV-2026-077): o saldo chegou à porcentagem do SKU
+    # (``shop/services/running_low.py``, a mesma régua do "Últimas N un." da
+    # Cozinha). É só então que o tile mostra o ``units_left`` à vista; fora disso
+    # o número fica para o hover e o foco no PC.
+    running_low: bool = False
     # Vendido por peso (``Product.unit == "kg"``): ``price_q`` é o preço DO
     # QUILO, e tocar o tile pede o valor da etiqueta (ou o peso) em vez de somar
     # uma unidade. Ver ``shop/services/weighed_sale.py``.
@@ -99,7 +110,11 @@ class POSProductProjection:
     # A estação dele tem o envio automático ligado (opcional por estação,
     # desligado por padrão): o PDV envia a linha nova sozinho ao sair da comanda.
     kitchen_auto_fire: bool = False
-    # Janela de desconto por horário aberta (Hora da Xepa): ``price_q`` já é o
+    # A estação dele é de PREPARO (feito na hora). Na venda de balcão em que o
+    # cliente leva a mercadoria, só o de preparo vai à cozinha ao finalizar; o de
+    # separação (pão de vitrine) já está na mão dele (beta 05/11, PDV-09).
+    kitchen_prep: bool = False
+    # Desconto no ar (promoção automática do canal ou Hora da Xepa): ``price_q`` é o
     # preço que o motor cobra AGORA, e a etiqueta cheia vem aqui para o tile
     # mostrá-la riscada. Zero/vazio = sem desconto, ``price_q`` é a etiqueta.
     list_price_q: int = 0
@@ -263,6 +278,25 @@ class POSPendingCashRefundProjection:
 
 
 @dataclass(frozen=True)
+class POSOfflineReviewSaleProjection:
+    """Um item de venda sem conexão "a conferir": o catálogo não explica o preço cobrado.
+
+    A venda entrou (o dinheiro já estava na gaveta), e o turno só fecha com o
+    gerente (``close_cash_shift``). Uma linha por item: SKU, preço do catálogo
+    na hora da cobrança, preço cobrado e quem operava.
+    """
+
+    order_ref: str
+    sku: str
+    name: str
+    qty_display: str
+    catalog_price_display: str  # "R$ 12,00", ou "" quando o catálogo não tinha o item
+    charged_price_display: str
+    operator: str
+    captured_at_display: str = ""  # "14:32"
+
+
+@dataclass(frozen=True)
 class POSPendingCardMachineRefundProjection:
     """Venda paga na maquininha que precisa de estorno NA maquininha.
 
@@ -295,6 +329,10 @@ class POSCashRuntimeProjection:
     terminal_label: str
     operator_username: str
     opened_at: str
+    # Quem ABRIU a gaveta (``Shift.opened_by``). Não é quem opera agora: "turno
+    # aberto às 08:45 por joyce" atribuía a abertura do admin a quem estava no
+    # balcão (beta 05/11, PDV-19). Vazio sem turno aberto.
+    opened_by_username: str = ""
     # Dois valores: "open" e "closed". Houve um terceiro, `terminal_occupied`,
     # com quatro campos de bloqueio ao lado — de quando a custódia era da pessoa
     # e a gaveta podia estar "ocupada por outra". Saíram inteiros: com a custódia
@@ -317,6 +355,9 @@ class POSCashRuntimeProjection:
     # Estornos a fazer na maquininha (encomenda paga no cartão do balcão que
     # ficou mais barata). Como o dinheiro: do caixa, não deste turno.
     pending_card_machine_refunds: tuple[POSPendingCardMachineRefundProjection, ...] = ()
+    # Vendas sem conexão deste turno cobradas por um preço que o catálogo não
+    # explica: o fechamento as lista e só fecha com o gerente.
+    offline_review_sales: tuple[POSOfflineReviewSaleProjection, ...] = ()
     # Contas na casa com saldo em aberto: quem está com a gaveta aberta é quem
     # recebe o acerto (em dinheiro entra no livro dele; pix/cartão é atestado).
     account_balances: tuple[POSAccountBalanceProjection, ...] = ()
@@ -418,19 +459,21 @@ class POSCustomerSearchResult:
 
 @dataclass(frozen=True)
 class POSShiftSummaryProjection:
-    """Today's shift totals for the POS."""
+    """As CONTAGENS de hoje no canal do PDV. Nenhuma soma em dinheiro.
+
+    Caixa cego (§2.6, D4 do plano de excelência do PDV): quem opera o balcão
+    conta a gaveta às cegas, e o faturamento do dia é o gabarito dessa
+    contagem. Por isso o total do dia, o valor da última venda e a soma do
+    "receber na entrega" NÃO viajam no payload, para ninguém: a tela só usava a
+    contagem, e quem audita (``cashman.audit_shift``) lê o dinheiro na leitura
+    X (``/session/report``) e no Admin. Contagem é operação; valor é apuração.
+    """
 
     count: int
-    total_display: str
     pickup_count: int
     delivery_count: int
-    # Caixa cego (§2.6): o breakdown esperado (cash/digital) NÃO viaja no payload —
-    # a contagem é cega e a conferência (esperado×contado) vive no gestor/Unfold.
-    # (Removido com a morte do POS-HTMX legado que o consumia — WP1.)
     last_ref: str
-    last_total_display: str
     cod_pending_count: int
-    cod_pending_display: str
 
 
 @dataclass(frozen=True)
@@ -458,6 +501,9 @@ class POSTabProjection:
     # Hora em que a comanda abriu ("aberta 21:48", v4 tablet): é o relógio da
     # mesa, diferente do último toque.
     opened_at_display: str = ""
+    # Quem abriu a comanda (o primeiro nome), que não muda quando outra estação a
+    # abre depois: o quadro diz de quem é a comanda vazia (PDV-19, #2443).
+    opened_by_display: str = ""
     # A mesa do Salão vinculada a esta comanda (opcional), para o quadro e o Salão.
     seating_spot_ref: str = ""
     # A cozinha terminou tudo o que foi disparado (todo ticket vivo no Pronto):
@@ -496,6 +542,10 @@ class POSProjection:
     # renderiza a porta quando ela abre para QUEM está logado. É consulta: a via
     # do cliente sai na bobina, e essa não depende deste gate.
     danfe_screen_allowed: bool = False
+    # O operador fecha o dia (``backstage.perform_closing``, o Gerente)? O "Fim do
+    # dia" da barra de baixo só aparece para ele: para a Caixa era um beco, "Sua
+    # conta não tem permissão" (beta 05/11, op:PDV-13).
+    can_close_day: bool = False
     # ENTREGA, estado inicial. A review responde pela data ESCOLHIDA, mas ela só
     # existe depois que há endereço — e a tela precisa abrir o formulário já
     # dizendo "hoje" e já mostrando as janelas de hoje. Sem isto o operador
@@ -544,6 +594,10 @@ class POSProjection:
     # Desligado = só valor, e a tela nem mostra a opção. Ver
     # ``weighed_sale.weight_entry_enabled`` (``Shop.defaults.pos.weighed_weight_entry``).
     weighed_weight_entry: bool = False
+    # A loja deixa o balcão vender SEM CONEXÃO? (``Shop.pos_offline_sale_enabled``,
+    # desligada por padrão até existir NFC-e em contingência.) Desligada, o PDV
+    # sem rede não cobra nem guarda venda: avisa e espera a conexão voltar.
+    offline_sale_enabled: bool = False
     # A janela de desconto por horário (Hora da Xepa), ou ``None`` sem regra
     # ligada para o PDV. Ver ``POSPriceWindowProjection``.
     price_window: POSPriceWindowProjection | None = None
@@ -691,7 +745,9 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
         fiscal_label=fiscal_label,
         fiscal_message=fiscal_message,
         danfe_screen_allowed=bool(getattr(operator, "is_staff", False)),
+        can_close_day=bool(operator is not None and operator.has_perm("backstage.perform_closing")),
         weighed_weight_entry=weighed_sale.weight_entry_enabled(),
+        offline_sale_enabled=pos_offline_sale.enabled(),
         price_window=_price_window_projection(offer),
         delivery_today=_delivery_today().isoformat(),
         delivery_slots_today=tuple(_delivery_slots_today()),
@@ -803,7 +859,7 @@ def _kitchen_tickets_by_line(session_key: str) -> dict[str, list[dict]]:
             "prints": prints,
             "status": ticket.status,
             "status_label": labels.get(ticket.status, ticket.status),
-            "fired_at_display": timezone.localtime(ticket.created_at).strftime("%H:%M"),
+            "fired_at_display": format_clock(ticket.created_at),
             "paper_label": paper.label if paper else "",
             "paper_failed": bool(paper and paper.failed),
             "items": [
@@ -860,12 +916,11 @@ def _eligible_operator_cards() -> tuple[dict, ...]:
 def _manager_cards(operator=None) -> tuple[dict, ...]:
     """Gerentes que podem autorizar exceção, para o diálogo de PIN oferecer a lista.
 
-    ⚠️ Sem ``operator``, a lista mostrava o próprio operador quando ele era
-    gerente. A Joyce (grupo Gerente do seed, tem ``operate_pos`` E
-    ``adjust_shift``) se escolhia em "Quem autoriza?", digitava o próprio PIN e
-    a exceção saía com as duas assinaturas dela. A segunda assinatura existe
-    para haver DUAS pessoas; quem opera não se autoriza. O servidor recusa de
-    qualquer jeito (``_verify_manager_pin``); esta lista só evita oferecer.
+    ⚠️ O gerente que está operando ENTRA na lista, em primeiro (decisão do dono,
+    28/10/2026). Ele assina a própria exceção digitando o PIN de novo: é uma
+    fricção curta, e é a que segura quem estiver usando a sessão dele. Antes ele
+    era tirado da lista, e com uma gerente só no turno a lista chegava vazia e
+    nenhuma exceção saía.
 
     Existe porque a tela pedia o nome do gerente DIGITADO, e nome digitado erra: o
     servidor resolve o usuário por ``username`` e valida o PIN contra a credencial
@@ -879,13 +934,13 @@ def _manager_cards(operator=None) -> tuple[dict, ...]:
     from shopman.backstage.services.operator import ADJUST_SHIFT, eligible_operators
 
     operator_pk = getattr(operator, "pk", None)
+    users = sorted(eligible_operators(perm=ADJUST_SHIFT), key=lambda user: user.pk != operator_pk)
     return tuple(
         {
             "username": user.get_username(),
             "name": user.get_full_name().strip() or user.get_username(),
         }
-        for user in eligible_operators(perm=ADJUST_SHIFT)
-        if operator_pk is None or user.pk != operator_pk
+        for user in users
     )
 
 
@@ -911,16 +966,13 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         Order.objects.filter(channel_ref=channel_ref, created_at__gte=start, created_at__lt=end)
         .exclude(status="cancelled")
         .order_by("created_at", "pk")
-        .values_list("ref", "total_q", "data")
+        .values_list("ref", "data")
     )
 
-    shift_count = len(rows)
-    shift_total_q = sum(int(total_q or 0) for _ref, total_q, _data in rows)
     pickup_count = 0
     delivery_count = 0
     cod_pending_count = 0
-    cod_pending_q = 0
-    for _ref, total_q, data in rows:
+    for _ref, data in rows:
         data = data or {}
         if data.get("fulfillment_type") == "delivery":
             delivery_count += 1
@@ -929,20 +981,63 @@ def build_pos_shift_summary(*, channel_ref: str = POS_CHANNEL_REF) -> POSShiftSu
         payment = data.get("payment") or {}
         if payment.get("collection") == "on_delivery" and not payment.get("cod_settled_at"):
             cod_pending_count += 1
-            cod_pending_q += int(total_q or 0)
-
-    last_ref, last_total_q = (rows[-1][0], rows[-1][1]) if rows else ("", None)
 
     return POSShiftSummaryProjection(
-        count=shift_count,
-        total_display=format_money(shift_total_q),
+        count=len(rows),
         pickup_count=pickup_count,
         delivery_count=delivery_count,
-        last_ref=last_ref,
-        last_total_display=format_money(last_total_q) if rows else "",
+        last_ref=rows[-1][0] if rows else "",
         cod_pending_count=cod_pending_count,
-        cod_pending_display=format_money(cod_pending_q),
     )
+
+
+def build_pos_availability() -> list[dict]:
+    """Só os selos da grade: ``[{sku, sold_out, sold_out_reason}]`` por produto do PDV.
+
+    É a releitura do aviso de estoque (SSE ``stock-update`` no canal do PDV): outro
+    balcão vendeu a última unidade, a Produção lançou o lote, e o tile troca o
+    selo sem ninguém tocar. A leitura inteira (preço, coleção, escolhas, turno,
+    comandas) não muda com o estoque, e custa segundos de CPU a cada aviso.
+
+    Mesma régua do ``_load_products``: os mesmos itens publicados e vendáveis do
+    canal, o mesmo ``_sold_out_skus`` e o mesmo "Sem caixa" do kit. O SKU sem
+    preço sai da grade inteira e é ignorado por quem recebe.
+    """
+    try:
+        from shopman.offerman.models import ListingItem
+
+        skus = sorted(
+            set(
+                ListingItem.objects.filter(
+                    listing__ref=POS_CHANNEL_REF,
+                    is_published=True,
+                    is_sellable=True,
+                    product__is_published=True,
+                    product__is_sellable=True,
+                ).values_list("product__sku", flat=True)
+            )
+        )
+    except Exception:
+        logger.exception("pos_availability_listing_failed")
+        return []
+    sold_out, units_left = _grid_stock(skus)
+    without_box = _kits_without_box(skus)
+    weighed = _weighed_skus(skus)
+    shown = {
+        sku: None if sku in without_box or sku in weighed else units_left.get(sku)
+        for sku in skus
+    }
+    low = _running_low(shown)
+    return [
+        {
+            "sku": sku,
+            "sold_out": sku in sold_out or sku in without_box,
+            "sold_out_reason": "Sem caixa" if sku in without_box else "",
+            "units_left": shown[sku],
+            "running_low": sku in low,
+        }
+        for sku in skus
+    ]
 
 
 def build_pos_tabs(
@@ -989,6 +1084,9 @@ def build_pos_tabs(
     ready_keys = kitchen_done_session_keys(
         [session.session_key for session in sessions.values() if (session.data or {}).get("fired_lines")]
     )
+    opener_names = _operator_first_names(
+        {str((session.data or {}).get("pos_opened_by") or "") for session in sessions.values()} - {""}
+    )
     tabs = []
     for ref in refs:
         session = sessions.get(ref)
@@ -998,6 +1096,7 @@ def build_pos_tabs(
             session=session,
             display_ref=session_display or tab_displays.get(ref, ""),
             kitchen_ready=session is not None and session.session_key in ready_keys,
+            opener_names=opener_names,
         )
         if query_norm and query_norm not in _tab_haystack(tab, sessions.get(ref)):
             continue
@@ -1026,23 +1125,32 @@ def _birthday_projection(customer) -> dict:
     today = timezone.localdate()
     is_today = (birthday.day, birthday.month) == (today.day, today.month)
     promo_label = ""
-    if is_today:
-        # Só promete o que EXISTE configurado: promoção de aniversariante ativa
-        # no Core (aplicada sozinha no reprice). Sem promoção, o aviso é só o
-        # parabéns — nunca inventar desconto.
-        try:
-            from shopman.shop.models import Promotion
+    # O desconto de aniversário vale UMA vez no dia (uma vez por ano; dono,
+    # 07/11/2026): já celebrado em outro pedido, o aviso fica só no parabéns.
+    from shopman.shop.services.promotions import birthday_benefit_available
 
-            now = timezone.now()
-            promo = (
-                Promotion.objects.filter(
-                    is_active=True, birthday_only=True,
-                    valid_from__lte=now, valid_until__gte=now,
-                )
-                .order_by("name")
-                .first()
+    if is_today and birthday_benefit_available(customer, today):
+        # Só promete o que o reprice vai APLICAR, perguntado a quem decide (A3-2):
+        # as promoções que o motor lê (``get_active_promotions``: ativas, no canal
+        # do PDV, sem cupom) e, delas, a que o ANIVERSÁRIO destrava pela política
+        # (``promotion_matches``: vale para o aniversariante e não vale para quem
+        # não faz anos). Filtrar à parte prometia a promoção da loja online e a de
+        # cupom, que o balcão não dá. Sem promoção, o aviso é só o parabéns.
+        try:
+            from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
+            from shopman.shop.services.promotions import get_active_promotions
+
+            aniversariante = PromotionContext(shopper=Shopper(is_birthday=True))
+            qualquer_um = PromotionContext()
+            birthday_promotions = sorted(
+                (
+                    promotion
+                    for promotion in get_active_promotions(timezone.now(), channel_ref=POS_CHANNEL_REF)
+                    if promotion_matches(promotion, aniversariante) and not promotion_matches(promotion, qualquer_um)
+                ),
+                key=lambda promotion: promotion.name,
             )
-            promo_label = promo.name if promo else ""
+            promo_label = birthday_promotions[0].name if birthday_promotions else ""
         # ⚠️ O marcador fica NA LINHA do `except`, e o log logo abaixo dele: o
         # gate da meia-correção procura o marcador na linha/no corpo, e o
         # `test_exception_hygiene` do backstage exige o `logger.` dentro de
@@ -1142,12 +1250,54 @@ def _group_discount_label(customer) -> str:
     return promotion_service.group_discount_label(promo)
 
 
+#: Busca por NÚMERO (telefone, CPF) só a partir de 4 dígitos: com 2 ("11"), a
+#: lista varria a base de 8 em 8 (beta adversarial do PDV, 07/11/2026; dono: "sim").
+CUSTOMER_SEARCH_MIN_DIGITS = 4
+
+
+def mask_phone(phone: str) -> str:
+    """"+5543991111111" → "(43) •••••-1111": o DDD e os 4 últimos bastam para o
+    operador distinguir duas Marias sem a lista expor o número inteiro."""
+    digits = re.sub(r"\D", "", phone or "")
+    if not digits:
+        return ""
+    if digits.startswith("55") and len(digits) in (12, 13):
+        return f"({digits[2:4]}) •••••-{digits[-4:]}"
+    return f"••••{digits[-4:]}"
+
+
+def mask_document(document: str) -> str:
+    """CPF "•••.•••.•••-44", CNPJ "••.•••.•••/••••-90": só os dígitos verificadores."""
+    digits = re.sub(r"\D", "", document or "")
+    if not digits:
+        return ""
+    if len(digits) == 14:
+        return f"••.•••.•••/••••-{digits[-2:]}"
+    return f"•••.•••.•••-{digits[-2:]}"
+
+
+def mask_email(email: str) -> str:
+    """"maria.santos@gmail.com" → "m•••@gmail.com"."""
+    email = (email or "").strip()
+    local, at, domain = email.partition("@")
+    if not at or not local:
+        return ""
+    return f"{local[0]}•••@{domain}"
+
+
 def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSearchResult, ...]:
     """Search customers by any unique key (name/phone/CPF/email) for the POS
     customer modal. Light projection (identity only) — the full lookup loads
-    memory/addresses once a result is chosen."""
+    memory/addresses once a result is chosen.
+
+    A lista é para RECONHECER, não para ler o cadastro: telefone, CPF e e-mail
+    saem mascarados, e o dado completo vem no lookup por ``ref`` do escolhido.
+    Antes, "11" devolvia telefone, CPF e e-mail inteiros de 8 clientes por vez
+    (beta 07/11). Busca só por número pede ``CUSTOMER_SEARCH_MIN_DIGITS``."""
     query = (query or "").strip()
     if len(query) < 2:
+        return ()
+    if not re.search(r"[^\W\d_]", query) and len(re.sub(r"\D", "", query)) < CUSTOMER_SEARCH_MIN_DIGITS:
         return ()
     from shopman.guestman.services import customer as customer_service
 
@@ -1171,9 +1321,9 @@ def build_pos_customer_search(query: str, limit: int = 8) -> tuple[POSCustomerSe
         results.append(POSCustomerSearchResult(
             ref=getattr(customer, "ref", ""),
             name=name,
-            phone=getattr(customer, "phone", "") or "",
-            document=getattr(customer, "document", "") or "",
-            email=getattr(customer, "email", "") or "",
+            phone=mask_phone(getattr(customer, "phone", "") or ""),
+            document=mask_document(getattr(customer, "document", "") or ""),
+            email=mask_email(getattr(customer, "email", "") or ""),
         ))
     return tuple(results)
 
@@ -1188,8 +1338,8 @@ def _price_window_projection(offer) -> POSPriceWindowProjection | None:
         active=offer.active,
         label=offer.label,
         discount_percent=offer.discount_percent,
-        starts_at=offer.start.strftime("%H:%M"),
-        ends_at=offer.end.strftime("%H:%M"),
+        starts_at=offer.start.strftime("%H:%M"),  # hora-ok: contrato HH:MM, lido por código
+        ends_at=offer.end.strftime("%H:%M"),  # hora-ok: contrato HH:MM, lido por código
         next_change_at=offer.next_change_at().isoformat(),
     )
 
@@ -1212,15 +1362,21 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
 
     try:
         from shopman.offerman.models import ListingItem
+        from shopman.offerman.service import CatalogService
 
-        items = (
+        items = list(
             ListingItem.objects.filter(
                 listing__ref=POS_CHANNEL_REF,
-                listing__is_active=True,
                 is_published=True,
                 is_sellable=True,
+                # Visibilidade e vendabilidade são o AND do produto com o vínculo
+                # (system-spec, Offerman). "Ocultar no catálogo" tira o item de
+                # TODOS os canais, PDV incluído (decisão do dono, beta 05/11,
+                # GES-10): para vender só no balcão, pausam-se os canais remotos.
+                product__is_published=True,
+                product__is_sellable=True,
             )
-            .select_related("product")
+            .select_related("listing", "product")
             .prefetch_related(
                 Prefetch(
                     "product__collection_items",
@@ -1230,42 +1386,85 @@ def _load_products(*, offer=None) -> list[POSProductProjection]:
             )
             .order_by("product__name")
         )
-        for li in items:
-            p = li.product
-            price_q = li.price_q if li.price_q else p.base_price_q
-            entries.append((p, price_q))
+        if items and not items[0].listing.is_valid():
+            return []
+        products_by_sku = {item.product.sku: item.product for item in items}
+
+        products = sorted(products_by_sku.values(), key=lambda product: product.name)
+        prices = CatalogService.unit_prices(
+            [(product.sku, Decimal("1")) for product in products],
+            listings=(POS_CHANNEL_REF,),
+            published_only=True,
+        )
+        entries.extend(
+            (product, price_q) for product, price_q in zip(products, prices, strict=True) if price_q is not None
+        )
     except Exception:
         logger.exception("pos_load_products_listing_failed")
-
-    if not entries:
-        entries = [
-            (p, p.base_price_q)
-            for p in Product.objects.filter(is_published=True, is_sellable=True)
-            .prefetch_related(
-                Prefetch(
-                    "collection_items",
-                    queryset=primary_items,
-                    to_attr="primary_collection_items",
-                )
-            )
-            .order_by("name")
-        ]
+        return []
 
     skus = [p.sku for p, _ in entries]
-    sold_out = _sold_out_skus(skus)
+    sold_out, units_left = _grid_stock(skus)
     without_box = _kits_without_box(skus)
+    # Vendido por peso: ``_product_projection`` já tira o número e o selo.
+    low = _running_low({sku: left for sku, left in units_left.items() if sku not in without_box})
     routes = _kitchen_routes(skus)
+    promotion_prices = _promotion_prices(entries)
     return [
         _product_projection(
             p, price_q,
             sold_out=p.sku in sold_out or p.sku in without_box,
             sold_out_reason="Sem caixa" if p.sku in without_box else "",
+            units_left=None if p.sku in without_box else units_left.get(p.sku),
+            running_low=p.sku in low,
             kitchen_station=(routes.get(p.sku) or {}).get("station", ""),
             kitchen_auto_fire=bool((routes.get(p.sku) or {}).get("auto_fire")),
+            kitchen_prep=bool((routes.get(p.sku) or {}).get("prep")),
             offer=offer,
+            promotion=promotion_prices.get(p.sku),
         )
         for p, price_q in entries
     ]
+
+
+def _promotion_prices(entries: list[tuple[Product, int]]) -> dict[str, tuple[int, str]]:
+    """``{sku: (preço com a promoção, nome da promoção)}`` para o balcão sem cliente.
+
+    A mesma régua do cartão da loja: ``catalog_context.contextual_price`` com as
+    promoções automáticas do canal lidas uma vez. Só entra o que a linha de uma
+    venda de balcão sem cliente ganharia: percentual, sem pedido mínimo, e sem
+    restrição de recebimento que exclua a retirada. Promoção de grupo, de
+    aniversário ou com mínimo aparece quando a venda a conquista, no total.
+    Falha fechada: sem leitura, preço cheio.
+    """
+    from shopman.shop.projections import catalog_context
+
+    try:
+        promotions = catalog_context.active_promotions(POS_CHANNEL_REF)
+        if not promotions:
+            return {}
+        collections = catalog_context.collection_refs_by_sku([p.sku for p, _ in entries])
+        found: dict[str, tuple[int, str]] = {}
+        for product, price_q in entries:
+            if price_q <= 0:
+                continue
+            quote = catalog_context.contextual_price(
+                product.sku,
+                listing_ref=POS_CHANNEL_REF,
+                context={
+                    "channel_ref": POS_CHANNEL_REF,
+                    "sku_collections": collections.get(product.sku, []),
+                    "active_promotions": promotions,
+                },
+                list_unit_price_q=price_q,
+            )
+            if 0 < quote.final_unit_price_q < price_q:
+                label = quote.adjustments[0].label if quote.adjustments else ""
+                found[product.sku] = (quote.final_unit_price_q, label)
+        return found
+    except Exception:
+        logger.warning("pos_promotion_prices_failed", exc_info=True)
+        return {}
 
 
 def _kitchen_routes(skus: list[str]) -> dict[str, dict]:
@@ -1315,14 +1514,16 @@ def _fulfillment_options(fulfillment_types: tuple[str, ...]) -> tuple[POSFulfill
             options.append(POSFulfillmentOptionProjection(
                 ref="delivery",
                 label="Entrega",
-                description="Entrega local com endereço informado pelo operador.",
+                # O que acontece com o pedido, em paralelo com a retirada; quem digita
+                # o endereço não é assunto do cartão (#2814).
+                description="O pedido vai até o endereço do cliente.",
                 requires_address=True,
             ))
         elif ref == "pickup":
             options.append(POSFulfillmentOptionProjection(
                 ref="pickup",
                 label="Retirada",
-                description="Retirada no balcão ou consumo local.",
+                description="O cliente retira no balcão.",
                 requires_address=False,
             ))
     return tuple(options)
@@ -1350,6 +1551,18 @@ def _pos_actions() -> tuple[Action, ...]:
             href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
             payload_schema={"path": {"tab_ref": "string"}},
             idempotency="none",
+        ),
+        Action(
+            ref="open_next_free_tab",
+            kind="mutation",
+            label="Próxima livre",
+            priority="secondary",
+            method="POST",
+            href="/api/v1/backstage/pos/tabs/next-free/",
+            payload_schema={"optional": ["client_request_id"]},
+            # Cada chamada reserva uma comanda NOVA: sem a chave, a repetição de
+            # uma chamada que perdeu a resposta deixaria uma a mais em uso.
+            idempotency="client_request_id",
         ),
         Action(ref="read_tab", kind="navigation", label="Atualizar comanda", priority="quiet",
                method="GET", href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
@@ -1428,16 +1641,16 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/sale/recent/cancel/",
             payload_schema={
-                "required": ["order_ref", "manager_approval"],
+                "required": ["order_ref", "manager_approval", "client_request_id"],
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
-            idempotency="none",
+            idempotency="client_request_id",
         ),
         Action(
             ref="emit_fiscal",
             kind="mutation",
-            label="Estabelecer emissão da NFC-e",
+            label="Solicitar NFC-e",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/orders/{order_ref}/emit-fiscal/",
@@ -1602,9 +1815,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/lookup/?phone={phone}&ref={ref}",
-            payload_schema={"query": {"phone": "string", "ref": "string"}},
+            # POST com o telefone no CORPO: na query string ele ia para o log de
+            # acesso e para o cache (beta test de 05/11/2026, PDV2-07).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/lookup/",
+            payload_schema={"optional": ["phone", "ref"]},
             idempotency="none",
         ),
         Action(
@@ -1612,9 +1827,11 @@ def _pos_actions() -> tuple[Action, ...]:
             kind="query",
             label="Buscar cliente",
             priority="quiet",
-            method="GET",
-            href="/api/v1/backstage/pos/customer/search/?q={query}",
-            payload_schema={"query": {"q": "string"}},
+            # POST: o termo é nome, telefone, CPF ou e-mail, e na query string
+            # ele ficava no log de acesso e no cache, como o do lookup (#2335).
+            method="POST",
+            href="/api/v1/backstage/pos/customer/search/",
+            payload_schema={"required": ["q"]},
             idempotency="none",
         ),
         Action(
@@ -2251,11 +2468,13 @@ def _cash_runtime_projection(cash_shift, runtime, operator, terminal=None) -> PO
         # quem abriu vive em `cash_shift.opened_by` e aparece na auditoria.
         operator_username=getattr(operator, "username", "") if operator is not None else "",
         opened_at=cash_shift.opened_at.isoformat() if cash_shift.opened_at else "",
+        opened_by_username=cash_shift.opened_by.get_username() if cash_shift.opened_by_id else "",
         status="open",
         can_audit_cash=audita,
         pending_change_requests=_pending_change_requests(cash_shift),
         pending_cash_refunds=_pending_cash_refunds(cash_shift),
         pending_card_machine_refunds=_pending_card_machine_refunds(cash_shift),
+        offline_review_sales=_offline_review_sales(cash_shift),
         account_balances=account_balances(),
         default_float_q=default_float_q,
         default_float_display=f"R$ {format_money(default_float_q)}" if default_float_q else "",
@@ -2289,9 +2508,23 @@ def _default_float_q(terminal) -> int:
 
 
 def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
-    """Clientes com conta na casa e saldo em aberto, maior saldo primeiro."""
+    """Clientes com conta na casa e saldo em aberto, a dívida mais antiga primeiro.
+
+    Nunca pelo maior saldo: o topo da lista viraria um ranking de clientes pelo
+    dinheiro, e o dono não quer panorama de valores de clientes diferentes a quem
+    não audita o caixa (21/11/2026: "O problema seria poder ver valores de vários
+    registros agregados, sobretudo de clientes diferentes"). A ordem é a do que
+    cobrar primeiro: a conta aberta há mais tempo (``oldest_at``); no empate, o
+    nome. O Core devolve por saldo (``PaymentService.account_balances``); quem
+    reordena é esta projeção. O saldo de CADA cliente segue na linha.
+    """
     from shopman.shop.services import house_account
 
+    rows = sorted(
+        house_account.balances(),
+        # ``oldest_at`` é ISO do mesmo fuso (ordena como texto); sem data vai ao fim.
+        key=lambda row: (not row.oldest_at, row.oldest_at, str(row.customer_name).casefold(), row.customer_ref),
+    )
     return tuple(
         POSAccountBalanceProjection(
             customer_ref=row.customer_ref,
@@ -2301,7 +2534,7 @@ def account_balances() -> tuple[POSAccountBalanceProjection, ...]:
             intents=row.intents,
             oldest_at=row.oldest_at,
         )
-        for row in house_account.balances()
+        for row in rows
     )
 
 
@@ -2331,7 +2564,7 @@ def _card_machine_lookup_display(item) -> str:
     parts = []
     paid_at = parse_datetime(item.paid_at) if item.paid_at else None
     if paid_at is not None:
-        parts.append(f"Aprovado em {timezone.localtime(paid_at).strftime('%d/%m às %H:%M')}")
+        parts.append(f"Aprovado em {format_local(paid_at, '%d/%m às {clock}')}")
     if item.nsu:
         parts.append(f"NSU {item.nsu}")
     if item.authorization:
@@ -2361,6 +2594,31 @@ def _pending_card_machine_refunds(cash_shift) -> tuple[POSPendingCardMachineRefu
         )
         for item in payment_service.pending_card_machine_refunds()
     )
+
+
+def _offline_review_sales(cash_shift) -> tuple[POSOfflineReviewSaleProjection, ...]:
+    from django.utils.dateparse import parse_datetime
+
+    from shopman.shop.services import pos_offline_sale
+    from shopman.shop.services.weighed_sale import qty_number
+
+    def money(value) -> str:
+        return f"R$ {format_money(int(value))}" if value is not None else ""
+
+    rows = []
+    for row in pos_offline_sale.review_sales(cash_shift):
+        captured = parse_datetime(row.get("captured_at") or "")
+        rows.append(POSOfflineReviewSaleProjection(
+            order_ref=row["order_ref"],
+            sku=row.get("sku") or "",
+            name=row.get("name") or row.get("sku") or "",
+            qty_display=str(qty_number(row.get("qty"))).replace(".", ","),
+            catalog_price_display=money(row.get("catalog_line_total_q")),
+            charged_price_display=money(row.get("charged_line_total_q")),
+            operator=row.get("operator") or "",
+            captured_at_display=format_clock(captured) if captured else "",
+        ))
+    return tuple(rows)
 
 
 def _pending_change_requests(cash_shift) -> tuple[POSChangeRequestProjection, ...]:
@@ -2469,9 +2727,13 @@ def _saved_address_projection(addr) -> SavedAddressProjection:
 
 def _product_projection(
     product: Product, price_q: int, *, sold_out: bool = False, sold_out_reason: str = "",
+    units_left: int | None = None,
+    running_low: bool = False,
     kitchen_station: str = "",
     kitchen_auto_fire: bool = False,
+    kitchen_prep: bool = False,
     offer=None,
+    promotion: tuple[int, str] | None = None,
 ) -> POSProductProjection:
     prefetched = getattr(product, "primary_collection_items", None)
     if prefetched is None:
@@ -2488,15 +2750,22 @@ def _product_projection(
 
     sold_by_weight = weighed_sale.is_sold_by_weight(product.unit)
     unit_suffix = "/kg" if sold_by_weight else ""
-    # A Hora da Xepa aberta: o tile mostra o preço que o fechamento vai cobrar
-    # (a mesma conta do ``TimeWindowDiscountModifier``), e a etiqueta riscada.
+    # O tile mostra o preço que o fechamento vai cobrar, e a etiqueta riscada: a
+    # promoção automática do canal (``DiscountModifier``) e a Hora da Xepa
+    # (``TimeWindowDiscountModifier``) competem em "maior desconto ganha", e no
+    # empate fica a promoção, que o motor aplica primeiro.
     list_price_q, list_price_display, discount_label = 0, "", ""
+    best_q, best_label = price_q, ""
+    if promotion is not None and 0 < promotion[0] < best_q:
+        best_q, best_label = promotion
     if offer is not None and offer.active and price_q > 0:
-        now_q = offer.price_q(price_q)
-        if now_q < price_q:
-            list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
-            discount_label = offer.label
-            price_q = now_q
+        window_q = offer.price_q(price_q)
+        if window_q < best_q:
+            best_q, best_label = window_q, offer.label
+    if best_q < price_q:
+        list_price_q, list_price_display = price_q, f"R$ {format_money(price_q)}{unit_suffix}"
+        discount_label = best_label
+        price_q = best_q
     # Sem preço não vende em canal nenhum: o tile diz isso, não "R$ 0,00".
     if price_q <= 0:
         price_display = "Sem preço"
@@ -2514,12 +2783,17 @@ def _product_projection(
         gtin=_product_gtin(product),
         sold_out=sold_out,
         sold_out_reason=sold_out_reason,
+        # O teto de quem vende por peso é em quilo, e "Restam 3" de pão por quilo
+        # não diz nada ao balcão: o número fica só no que se conta por unidade.
+        units_left=None if sold_out or sold_by_weight else units_left,
+        running_low=running_low and not sold_out and not sold_by_weight and bool(units_left),
         sold_by_weight=sold_by_weight,
         choice_group=product_choice_group(product),
         choice_group_label=product_choice_group_label(product),
         option_groups=tuple(product_option_groups(product)),
         kitchen_station=kitchen_station,
         kitchen_auto_fire=kitchen_auto_fire,
+        kitchen_prep=kitchen_prep,
         list_price_q=list_price_q,
         list_price_display=list_price_display,
         discount_label=discount_label,
@@ -2567,11 +2841,40 @@ def _kits_without_box(skus: list[str]) -> set[str]:
         return set()
 
 
-def _sold_out_skus(skus: list[str]) -> set[str]:
-    """SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
+def _sold_out_skus(skus: list[str], *, target_date=None) -> set[str]:
+    """SKUs esgotados no escopo do canal do PDV (o primeiro lado de ``_grid_stock``)."""
+    return _grid_stock(skus, target_date=target_date)[0]
+
+
+def _weighed_skus(skus: list[str]) -> set[str]:
+    """Os SKUs vendidos por peso (``Product.unit == "kg"``), numa consulta."""
+    if not skus:
+        return set()
+    return {
+        sku for sku, unit in Product.objects.filter(sku__in=skus).values_list("sku", "unit")
+        if weighed_sale.is_sold_by_weight(unit)
+    }
+
+
+def _running_low(shown: dict[str, int | None]) -> set[str]:
+    """Os SKUs da grade que estão ACABANDO, medidos sobre o número que o tile mostra."""
+    from shopman.shop.services.running_low import running_low_skus
+
+    return running_low_skus({sku: left for sku, left in shown.items() if left})
+
+
+def _grid_stock(skus: list[str], *, target_date=None) -> tuple[set[str], dict[str, int]]:
+    """O estoque da grade numa leitura só: ``(esgotados, unidades que restam)``.
+
+    SKUs esgotados no escopo do canal do PDV — a MESMA leitura em lote que o
     storefront usa (``catalog_context.availability_for_skus`` → stockman), uma
     query para a grade inteira. Silencioso quando o stockman não responde: a
     grade do balcão nunca quebra por causa de um selo.
+
+    As unidades que restam (#2610) saem da MESMA resposta: o teto do que a casa
+    promete, só quando há pronto na prateleira (``available``/``low_stock``). O
+    item que só tem a fornada de mais tarde (``planned_ok``) não entra: "Restam 12"
+    de um pão que ainda não saiu mentiria ao balcão.
 
     ⚠️ Este selo NÃO distingue "tem pão na prateleira" de "sai da próxima
     fornada", e a diferença não está ao alcance daqui: para o stockman um quant
@@ -2581,9 +2884,12 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
     (``fulfillment_window.annotate`` → ``product_readiness``), que é cara por
     produto e que a grade do balcão deliberadamente não paga. Ver o comentário
     em ``shop/services/pos.py`` sobre o custo dessa pergunta.
+
+    ``target_date`` pergunta por OUTRO dia (a encomenda para amanhã): a mesma
+    régua por data da reserva que o salvamento usa (``stock_on_dates``).
     """
     if not skus:
-        return set()
+        return set(), {}
     try:
         from decimal import Decimal
 
@@ -2592,8 +2898,9 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
             basic_availability,
         )
 
-        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF)
+        avail_map = availability_for_skus(skus, channel_ref=POS_CHANNEL_REF, target_date=target_date)
         sold_out: set[str] = set()
+        units_left: dict[str, int] = {}
         for sku in skus:
             raw = avail_map.get(sku)
             # SKU sem rastreio de estoque não é esgotado: o zero dele é ausência
@@ -2605,14 +2912,34 @@ def _sold_out_skus(skus: list[str]) -> set[str]:
             )
             if resolved.status == "unavailable":
                 sold_out.add(sku)
-        return sold_out
+            elif resolved.status in ("available", "low_stock") and resolved.available_qty is not None:
+                units_left[sku] = int(resolved.available_qty)
+        return sold_out, units_left
     except Exception:
         logger.exception("pos_sold_out_lookup_failed")
-        return set()
+        return set(), {}
+
+
+def _operator_first_names(usernames: set[str]) -> dict[str, str]:
+    """O primeiro nome de cada operador, numa consulta só (o quadro inteiro)."""
+    if not usernames:
+        return {}
+    from django.contrib.auth import get_user_model
+
+    return {
+        username: (first_name or "").strip() or username
+        for username, first_name in get_user_model().objects.filter(username__in=usernames)
+        .values_list("username", "first_name")
+    }
 
 
 def _tab_projection(
-    *, ref: str, session: Session | None, display_ref: str = "", kitchen_ready: bool = False,
+    *,
+    ref: str,
+    session: Session | None,
+    display_ref: str = "",
+    kitchen_ready: bool = False,
+    opener_names: dict[str, str] | None = None,
 ) -> POSTabProjection:
     from shopman.shop.services.pos_sales_mode import sales_mode
 
@@ -2641,11 +2968,15 @@ def _tab_projection(
     # Uma peça pesada é UM item no contador (0,312 kg não é "0 itens"), e o
     # valor dela é peso × preço do quilo sem truncar o peso.
     item_count = sum(_qty_int(item.get("qty", 1)) or 1 for item in items)
+    # As linhas gravadas já são o preço do motor: o ``ManualDiscountModifier``
+    # rateou o desconto manual de pedido no ``unit_price_q`` de cada uma na
+    # gravação. Subtrair ``manual_discount.discount_q`` de novo tirava o
+    # desconto duas vezes, e o card prometia menos do que o fechamento cobra
+    # (#3245).
     total_q = sum(
         monetary_mult(Decimal(str(weighed_sale.qty_number(item.get("qty", 1)))), int(item.get("unit_price_q", 0)))
         for item in items
     )
-    discount_q = int((data.get("manual_discount") or {}).get("discount_q", 0))
 
     return POSTabProjection(
         ref=ref,
@@ -2658,15 +2989,23 @@ def _tab_projection(
         customer_phone=str(customer.get("phone") or ""),
         item_count=item_count,
         line_count=len(items),
-        total_display=f"R$ {format_money(max(0, total_q - discount_q))}",
+        total_display=f"R$ {format_money(max(0, total_q))}",
         last_touched_display=_format_time(last_touched),
         items_preview=_items_preview(items),
         fired=bool(data.get("fired_lines")),
         sales_mode=sales_mode(data),
         opened_at_display=_format_time(session.opened_at) if session.opened_at else "",
+        opened_by_display=_opened_by_display(data, opener_names),
         seating_spot_ref=str(data.get("seating_spot_ref") or ""),
         kitchen_ready=kitchen_ready,
     )
+
+
+def _opened_by_display(data: dict, opener_names: dict[str, str] | None) -> str:
+    username = str(data.get("pos_opened_by") or "").strip()
+    if not username:
+        return ""
+    return (opener_names or {}).get(username) or username
 
 
 def _parse_dt(value, *, fallback):
@@ -2683,7 +3022,7 @@ def _parse_dt(value, *, fallback):
 
 
 def _format_time(value) -> str:
-    return timezone.localtime(value).strftime("%H:%M")
+    return format_clock(value)
 
 
 def _qty_int(value) -> int:
@@ -2956,7 +3295,24 @@ def _tab_line_price_fields(item: dict, manual_originals: dict[str, int]) -> dict
         "pricing_discount": _tab_payload_pricing_discount(item),
         "list_price_q": _tab_line_list_price_q(item, manual_originals),
         "charged_price_q": _int_q(item.get("unit_price_q", 0)),
+        "manual_discount_discarded": _manual_discount_discarded(item),
     }
+
+
+def _manual_discount_discarded(item: dict) -> bool:
+    """O desconto que o operador deu nesta linha foi DESCARTADO pelo motor?
+
+    "Maior desconto ganha, um por item": um manual que não bate o automático da
+    linha (Semana do Pão −15%, grupo, Xepa) não vale, e o motor deixa na linha o
+    carimbo do vencedor (``meta._disc``). Quem diz é o motor, não a tela: a tela
+    já fez essa conta por conta própria e errou (R$ 2,50 numa Tabatière com −15%
+    ganha, e o operador ouvia que não).
+    """
+    meta = item.get("meta") or {}
+    manual = meta.get("manual_discount") or {}
+    if not manual.get("value"):
+        return False
+    return (meta.get("_disc") or {}).get("type") != "manual"
 
 
 def tab_line_prices(session: Session) -> dict[str, dict]:
@@ -2973,11 +3329,12 @@ def tab_line_prices(session: Session) -> dict[str, dict]:
 
 
 def review_line_prices(priced_lines) -> dict[str, dict]:
-    """``line_id -> preço cobrado`` da venda SEM comanda, a partir da revisão.
+    """``line_id -> preço cobrado`` segundo a revisão.
 
     Mesmo formato do eco do salvar (:func:`tab_line_prices`): as linhas que a
     revisão devolve (``PosSaleReview.priced_lines``) já têm o feitio da linha da
-    comanda, e o desconto manual já foi decidido contra o automático ali.
+    comanda, e o desconto manual já foi decidido contra o automático ali. Sem
+    comanda ou com ela, vêm todas, inclusive ao remover o último desconto.
     """
     return {
         line["line_id"]: _tab_line_price_fields(line, {})
@@ -3110,6 +3467,8 @@ def build_open_tab(session: Session) -> dict:
         # endereço — e ela pode ter mudado desde que o rascunho foi salvo.
         "delivery_fee_override_q": data.get("delivery_fee_override_q"),
         "order_notes": data.get("order_notes", ""),
+        # Comer aqui ou levar, no balcão (#3193). Vazio = a comanda ainda não disse.
+        "counter_service": str((data.get("pos") or {}).get("counter_service") or ""),
         "payment_method": payment.get("method", "cash"),
         "payment_collection": payment.get("collection", "terminal"),
         "payment_tenders": _tab_payload_payment_tenders(payment),
@@ -3192,6 +3551,52 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
 
+def _pos_sold_out_on(day) -> tuple[list[str], list[str]]:
+    """A grade do PDV numa data de encomenda: ``(sem saldo, sem lote planejado)``.
+
+    Beta test de 05/11/2026 (PDV2-04). A grade só sabia o esgotado de HOJE: na
+    encomenda para amanhã, o pão que acabou hoje não entrava, e o que a grade
+    deixava entrar o salvamento recusava ("não tem saldo para 07/11"). A grade
+    passa a ler a mesma régua por data do salvamento.
+
+    A régua do Stockman responde "zero" por dois motivos que a tela precisa
+    separar (WP-E3, P1-1): o lote planejado da data acabou (plano esgotado: o
+    item segue bloqueado, e acima do plano só o gerente libera, WP-E2), ou a
+    data ainda não tem lote planejado do item (sem plano). Com a data a dez
+    dias, o plano do seed já tinha terminado e trinta e cinco pães da casa
+    apareciam "Sem saldo". Sem plano a encomenda entra como pedido à Produção
+    (dono, D2): o item sai do bloqueio e vem na segunda lista.
+    """
+    from shopman.offerman.models import ListingItem
+
+    skus = list(
+        ListingItem.objects.filter(
+            listing__ref=POS_CHANNEL_REF, is_published=True, is_sellable=True,
+        ).values_list("product__sku", flat=True).distinct()
+    )
+    sold_out = _sold_out_skus(skus, target_date=day)
+    unplanned = _unplanned_skus(sorted(sold_out), day)
+    return sorted(sold_out - unplanned), sorted(unplanned)
+
+
+def _unplanned_skus(skus: list[str], day) -> set[str]:
+    """Dos ``skus`` sem saldo em ``day``, os que viram pedido à Produção.
+
+    A régua é do orquestrador (``stock.unplanned_on``): produzido aqui em lote e
+    ainda sem lote planejado PARA a data. Silencioso quando a leitura falha: o item
+    fica como estava (sem saldo), e o salvamento confere de qualquer jeito.
+    """
+    if not skus or day is None:
+        return set()
+    try:
+        from shopman.shop.services import stock as stock_service
+
+        return stock_service.unplanned_on(skus, day)
+    except Exception:
+        logger.exception("pos_unplanned_lookup_failed")
+        return set()
+
+
 def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
     """O "quando" do pedido, para a tela poder PERGUNTAR em vez de adivinhar.
 
@@ -3218,6 +3623,7 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         day = today
 
     context = fulfillment_window.annotate(day, list(skus or []))
+    sold_out, unplanned = _pos_sold_out_on(day) if day != today else ([], [])
     dates = business_calendar.available_dates(
         max_count=max_preorder_days + 1, horizon_days=max_preorder_days
     )
@@ -3242,15 +3648,47 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
         # "sem restrição" — todas as janelas voltam desabilitadas.
         "readiness_unavailable": bool(context.get("readiness_unavailable")),
+        # Outro dia: o que a grade NÃO deixa entrar naquela data (a régua da
+        # reserva), e o que entra como pedido à Produção porque a data ainda não
+        # tem lote planejado dele (WP-E3, D2). Hoje a grade já sabe pelo selo do
+        # próprio catálogo.
+        "sold_out_skus": sold_out,
+        "unplanned_skus": unplanned,
+        # Outro dia: o LASTRO de cada SKU do carrinho na data (WP-E2, D-041), a
+        # lote planejado e o que dele está sem encomenda. A linha diz "22 planejadas para
+        # 17/11", e o pedido acima do que o lote ainda tem sem encomenda pede o
+        # gerente. O PDV mostra o que o servidor apura; a sobra de hoje não conta.
+        # O SKU do carrinho sem lote planejado na data vem com os dois zeros: a
+        # linha diz que vira pedido à Produção (WP-E3), e nada pede o gerente.
+        "plan_by_sku": _pos_plan_by_sku(skus, day, unplanned=set(unplanned)) if day != today else {},
     }
+
+
+def _pos_plan_by_sku(skus: list[str] | None, day, *, unplanned: set[str] | frozenset[str] = frozenset()) -> dict[str, dict]:
+    from shopman.shop.services import stock as stock_service
+
+    backing = stock_service.plan_backing_on(list(skus or ()), day, channel_ref=POS_CHANNEL_REF)
+    plan = {
+        sku: {"planned_qty": _plan_qty(info["planned_qty"]), "unclaimed_qty": _plan_qty(info["unclaimed_qty"])}
+        for sku, info in backing.items()
+    }
+    for sku in dict.fromkeys(skus or ()):
+        if sku in unplanned and sku not in plan:
+            plan[sku] = {"planned_qty": 0, "unclaimed_qty": 0}
+    return plan
+
+
+def _plan_qty(value) -> int | float:
+    number = Decimal(str(value))
+    return int(number) if number == number.to_integral_value() else float(number)
 
 
 def _recent_moment_display(moment) -> str:
     """``14:10`` hoje; ``27/09 14:10`` em outro dia (a lista alcança dias atrás)."""
     local = timezone.localtime(moment)
     if local.date() == timezone.localdate():
-        return local.strftime("%H:%M")
-    return local.strftime("%d/%m %H:%M")
+        return format_clock(local)
+    return format_local(local, "%d/%m {clock}")
 
 
 def _recent_handoff_display(order) -> str:
@@ -3269,7 +3707,7 @@ def _recent_handoff_display(order) -> str:
         return ""
     day = "hoje" if local.date() == timezone.localdate() else local.strftime("%d/%m")
     verb = "Saiu para entrega" if get_fulfillment_type(order) == "delivery" else "Retirada"
-    return f"{verb} {day} às {local.strftime('%H:%M')}"
+    return f"{verb} {day} às {format_clock(local)}"
 
 
 def _preorder_days() -> tuple[int, list]:

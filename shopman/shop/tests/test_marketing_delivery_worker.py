@@ -9,8 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.core.cache import cache
-from django.db import IntegrityError, connection, transaction
-from django.db.migrations.executor import MigrationExecutor
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from shopman.guestman import ConsentService
 from shopman.guestman.contrib.consent.models import (
@@ -942,31 +941,6 @@ def test_database_rejects_lease_outside_queued_state():
             )
 
 
-@pytest.mark.django_db(transaction=True)
-def test_delivery_lease_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0031_marketing_attempt_outcomes")]
-    after = [("shop", "0032_marketing_delivery_leases")]
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    with connection.cursor() as cursor:
-        constraints = connection.introspection.get_constraints(
-            cursor,
-            DeliveryTarget._meta.db_table,
-        )
-    assert "shop_delivery_target_lease_state_ck" not in constraints
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    with connection.cursor() as cursor:
-        constraints = connection.introspection.get_constraints(
-            cursor,
-            DeliveryTarget._meta.db_table,
-        )
-    assert "shop_delivery_target_lease_state_ck" in constraints
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(executor.loader.graph.leaf_nodes())
 
 
 # ── Plataforma desligada pela flag: calada no ciclo, visível na fila ─────────

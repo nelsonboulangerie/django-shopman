@@ -131,7 +131,9 @@ const displayDescription = computed(
     </template>
   </NuxtModal>
 
-  <div v-else v-bind="attrs" class="grid min-h-dvh place-items-center p-4">
+  <!-- `w-full flex-1`: num pai `flex` em linha (o da Central) o wrapper encolhia para a
+       largura do cartão, e o login ficava colado à esquerda (beta 05/11, CEN-09). -->
+  <div v-else v-bind="attrs" class="grid min-h-dvh w-full flex-1 place-items-center p-4" data-operator-login-page>
     <NuxtCard class="w-full max-w-sm text-center" data-operator-login>
       <OperatorLoginForm
         heading

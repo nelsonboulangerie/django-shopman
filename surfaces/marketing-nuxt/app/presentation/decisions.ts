@@ -14,6 +14,7 @@ import type {
   DecisionReach,
   ScheduledItem,
 } from "~/types/decisions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: "Instagram",
@@ -23,7 +24,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 // Título curto do cartão, pela ocasião. "Lote" é a palavra da Produção para o que
-// sai do forno (vocabulário da suíte, 22/09); "fornada" fica no texto do cliente.
+// fica pronto (vocabulário da suíte, 22/09); "fornada" fica no texto do cliente.
 const TRIGGER_TITLES: Record<string, string> = {
   production_finished: "Lote pronto",
   low_stock: "Estoque baixo",
@@ -112,8 +113,8 @@ export function destinationsLine(
 }
 
 /**
- * O fato do lote (v4, cartão do lote): "24 un saíram às 10:01". É a voz do forno, não
- * a do sistema: o pão sai do forno, o anúncio é que se publica ou se envia.
+ * O fato do lote (v4, cartão do lote): "24 un ficaram prontas às 10h01". A casa diz
+ * "ficar pronto" (dono, 16/11/2026); o anúncio é que se publica ou se envia.
  */
 export function lotLine(
   item: Pick<DecisionItem, "lot_quantity" | "lot_finished_at">,
@@ -123,7 +124,8 @@ export function lotLine(
   if (!item.lot_quantity) return "";
   const quantity = item.lot_quantity.replace(".", ",");
   const at = item.lot_finished_at ? ` ${pastAtLabel(item.lot_finished_at, timeZone, nowMs)}` : "";
-  return `${quantity} un saíram${at}`;
+  const ready = Number(item.lot_quantity) === 1 ? "ficou pronta" : "ficaram prontas";
+  return `${quantity} un ${ready}${at}`;
 }
 
 /** A linha de baixo do cartão de revisão: o fato do lote e para onde vai. */
@@ -210,7 +212,7 @@ function zonedParts(ms: number, timeZone: string) {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-    hour: "2-digit",
+    hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
     minute: "2-digit",
     hourCycle: "h23",
   }).formatToParts(new Date(ms));
@@ -218,7 +220,7 @@ function zonedParts(ms: number, timeZone: string) {
   return {
     day: `${get("year")}-${get("month")}-${get("day")}`,
     dayMonth: `${get("day")}/${get("month")}`,
-    time: `${get("hour")}:${get("minute")}`,
+    time: formatClock(`${get("hour")}:${get("minute")}`),
   };
 }
 
@@ -333,11 +335,23 @@ export function deadlinePresentation(
 }
 
 /** O cabeçalho da fila: quantas decisões, e em que ordem estão. */
-export function queueHeadline(count: number): { strong: string; rest: string } {
-  if (count === 0) return { strong: "Nada pede você agora", rest: "" };
+export function queueHeadline(
+  count: number,
+  awaitingApprover = 0,
+): { strong: string; rest: string } {
+  // O que espera aprovação de outro perfil não "pede você" (beta 05/11, ge:MKT-03).
+  const awaiting =
+    awaitingApprover === 1
+      ? "1 aguarda quem aprova"
+      : `${formatCount(awaitingApprover)} aguardam quem aprova`;
+  if (count === 0) {
+    return awaitingApprover > 0
+      ? { strong: awaiting, rest: "" }
+      : { strong: "Nada pede você agora", rest: "" };
+  }
   return {
     strong: count === 1 ? "1 pede você" : `${formatCount(count)} pedem você`,
-    rest: count === 1 ? "" : "o prazo mais curto primeiro",
+    rest: awaitingApprover > 0 ? awaiting : count === 1 ? "" : "o prazo mais curto primeiro",
   };
 }
 

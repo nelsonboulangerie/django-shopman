@@ -1,0 +1,103 @@
+// WP-E2 (D-041): encomenda acima da fornada planejada da data bloqueia e só o
+// gerente libera, vendo os dois números; encomenda de outro dia não oferece "Na
+// retirada". A presentation só diz o que o servidor apura.
+import { describe, expect, it } from "vitest";
+import {
+  collectionsForFulfillment,
+  overPlanNumbers,
+  overPlanSummary,
+  planLineFact,
+} from "../app/presentation/payment";
+import { approvalPortrait } from "../app/utils/posIntent";
+import type { POSPaymentCollectionProjection } from "../app/types/pos";
+
+const collections: POSPaymentCollectionProjection[] = [
+  { ref: "terminal", label: "Receber no caixa", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "pix"] },
+  { ref: "on_delivery", label: "Receber ao entregar o pedido", description: "", fulfillment_types: ["pickup", "delivery"], payment_method_refs: ["cash", "credit"] },
+];
+
+describe("a linha da encomenda mostra o plano da data", () => {
+  it("dentro do plano: '22 planejadas para 17/11'", () => {
+    expect(planLineFact(20, { planned_qty: 22, unclaimed_qty: 22 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11",
+      over: false,
+    });
+  });
+  it("acima do livre: a linha avisa que passa do plano", () => {
+    expect(planLineFact(200, { planned_qty: 22, unclaimed_qty: 22 }, "2026-11-17")?.over).toBe(true);
+  });
+  it("lote parcialmente prometido: o que sobra dele vem junto (é contra isso que se mede)", () => {
+    expect(planLineFact(10, { planned_qty: 22, unclaimed_qty: 7 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11, 7 ainda sem encomenda",
+      over: true,
+    });
+  });
+  it("o segundo número nunca passa do planejado (a sobra de hoje não lastreia encomenda)", () => {
+    expect(planLineFact(30, { planned_qty: 22, unclaimed_qty: 44 }, "2026-11-17")).toEqual({
+      text: "22 planejadas para 17/11",
+      over: true,
+    });
+  });
+  it("sem lastro informado (hoje, ou SKU sem controle), a linha não inventa nada", () => {
+    expect(planLineFact(3, undefined, "2026-11-17")).toBeNull();
+    expect(planLineFact(3, { planned_qty: 22, unclaimed_qty: 22 }, "")).toBeNull();
+  });
+  it("sem lote planejado na data, a linha diz que vira pedido à Produção, sem passar do plano (WP-E3, D2)", () => {
+    expect(planLineFact(30, { planned_qty: 0, unclaimed_qty: 0 }, "2026-11-30")).toEqual({
+      text: "Ainda sem lote planejado para 30/11: vira pedido à Produção",
+      over: false,
+      unplanned: true,
+    });
+    expect(planLineFact(30, { planned_qty: 0, unclaimed_qty: 0 }, "")).toBeNull();
+  });
+  it("plano esgotado não é data sem plano: passa do plano e pede o gerente", () => {
+    expect(planLineFact(5, { planned_qty: 22, unclaimed_qty: 0 }, "2026-11-30")).toEqual({
+      text: "22 planejadas para 30/11, 0 ainda sem encomenda",
+      over: true,
+    });
+  });
+});
+
+describe("o Validar travado diz os dois números", () => {
+  const k16 = { sku: "BF", name: "Baguette de Tradition", date: "2026-11-17", requested_qty: 200, planned_qty: 22, unclaimed_qty: 22 };
+  it("'200 pedidas, 22 planejadas para 17/11'", () => {
+    expect(overPlanNumbers(k16)).toBe("200 pedidas, 22 planejadas para 17/11");
+    expect(overPlanSummary([k16])).toBe("Baguette de Tradition: 200 pedidas, 22 planejadas para 17/11.");
+  });
+  it("com parte do lote já prometida, o que sobra dele vem junto", () => {
+    expect(overPlanNumbers({ ...k16, requested_qty: 10, unclaimed_qty: 12 })).toBe("10 pedidas, 22 planejadas para 17/11 (12 ainda sem encomenda)");
+  });
+  it("nunca diz mais do que o planejado", () => {
+    expect(overPlanNumbers({ ...k16, unclaimed_qty: 44 })).toBe("200 pedidas, 22 planejadas para 17/11");
+    expect(overPlanSummary([{ ...k16, unclaimed_qty: 44 }])).not.toContain("44");
+  });
+  it("sem linha, nada", () => {
+    expect(overPlanSummary([])).toBe("");
+    expect(overPlanSummary(undefined)).toBe("");
+  });
+  it("a copy não usa travessão", () => {
+    expect(overPlanSummary([k16])).not.toMatch(/[—–]/);
+  });
+});
+
+describe("encomenda de outro dia não oferece 'Na retirada'", () => {
+  it("retirada de outro dia: só cobrar agora", () => {
+    expect(collectionsForFulfillment(collections, "pickup", "order", true).map((c) => c.ref)).toEqual(["terminal"]);
+  });
+  it("retirada de hoje segue oferecendo", () => {
+    expect(collectionsForFulfillment(collections, "pickup", "order", false).map((c) => c.ref)).toEqual(["terminal", "on_delivery"]);
+  });
+  it("a entrega de outro dia não muda (a decisão é sobre a retirada)", () => {
+    expect(collectionsForFulfillment(collections, "delivery", "order", true).map((c) => c.ref)).toEqual(["terminal", "on_delivery"]);
+  });
+});
+
+describe("a assinatura do gerente é do plano DESTA data", () => {
+  it("trocar a data da encomenda dá outro retrato", () => {
+    const base = {
+      tabRef: "", tabSessionKey: "", items: [], discountType: "percent", discountValue: "",
+      paymentCollection: "terminal", paymentTenders: [], customerRef: "C1", deliveryFeeOverrideQ: null,
+    };
+    expect(approvalPortrait({ ...base, deliveryDate: "2026-11-17" })).not.toBe(approvalPortrait({ ...base, deliveryDate: "2026-11-18" }));
+  });
+});

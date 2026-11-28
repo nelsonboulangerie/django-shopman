@@ -110,21 +110,23 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         # O link só existe no modo Encomendas (`link_requires_order_mode`): é o
         # pedido remoto anotado, com cliente identificado e data combinada.
         customer, _ = Customer.objects.get_or_create(ref="MARIA", defaults={"first_name": "Maria"})
+        payload = {
+            "items": [{"sku": SKU, "name": "Pão Francês", "qty": SOLD_QTY, "unit_price_q": 100}],
+            "sales_mode": "order",
+            "customer_ref": customer.ref,
+            "delivery_date": timezone.localdate().isoformat(),
+            "fulfillment_type": "pickup",
+            "customer_name": "Maria",
+            "customer_phone": "43999990000",
+            "payment_tenders": [{"method": "link", "amount_q": 100 * SOLD_QTY, "collection": "terminal"}],
+            "cash_shift_id": self.shift.pk,
+            "client_request_id": request_id,
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         result = pos_service.close_sale(
             channel_ref="pdv",
-            payload={
-                "items": [{"sku": SKU, "name": "Pão Francês", "qty": SOLD_QTY, "unit_price_q": 100}],
-                "sales_mode": "order",
-                "customer_ref": customer.ref,
-                "delivery_date": timezone.localdate().isoformat(),
-                "fulfillment_type": "pickup",
-                "customer_name": "Maria",
-                # O contato é obrigatório no link: a URL existe para ser enviada.
-                "customer_phone": "43999990000",
-                "payment_tenders": [{"method": "link", "amount_q": 100 * SOLD_QTY, "collection": "terminal"}],
-                "cash_shift_id": self.shift.pk,
-                "client_request_id": request_id,
-            },
+            payload=payload,
             actor="pos:alice",
             operator_username="alice",
         )
@@ -140,8 +142,9 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
     def test_link_sale_for_today_stays_open_with_the_deadline_armed(self) -> None:
         order, screen = self._close_with_link()
 
-        # 1. Não é entrega de balcão: fica aguardando o cliente pagar.
-        self.assertEqual(order.status, Order.Status.NEW)
+        # 1. Não é entrega de balcão: nasce aceita (quem registrou é o operador)
+        #    e fica aguardando o cliente pagar.
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
 
         # 2. O prazo é UM, e chega a todo mundo: pedido, Payman, tela, Directive.
         payment = order.data["payment"]
@@ -212,7 +215,7 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self._run_timeout(directive, at=expires_at - timedelta(hours=1))
 
         order.refresh_from_db()
-        self.assertEqual(order.status, Order.Status.NEW)
+        self.assertEqual(order.status, Order.Status.ACCEPTED)
         directive.refresh_from_db()
         self.assertEqual(directive.status, Directive.Status.QUEUED)
         self.assertEqual(directive.available_at, expires_at)

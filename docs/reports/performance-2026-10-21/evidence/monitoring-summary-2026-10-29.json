@@ -1,0 +1,301 @@
+{
+  "source_run": "https://github.com/nelsonboulangerie/django-shopman/actions/runs/40922403473",
+  "window_utc": [
+    1792690619,
+    1793295419
+  ],
+  "summary_by_series": [
+    {
+      "component": "web-storefront",
+      "metric": "cpu_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "web-storefront",
+            "app_component_instance": "web-storefront-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 3.569266554572593,
+          "p95_nearest_rank": 4.775371606617441,
+          "maximum": 11.274932064814815
+        },
+        {
+          "labels": {
+            "app_component": "web-storefront",
+            "app_component_instance": "web-storefront-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 39,
+          "p50": 4.802640444444446,
+          "p95_nearest_rank": 8.294922893581063,
+          "maximum": 8.294922893581063
+        }
+      ]
+    },
+    {
+      "component": "web-storefront",
+      "metric": "memory_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "web-storefront",
+            "app_component_instance": "web-storefront-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 25.6683349609375,
+          "p95_nearest_rank": 32.454681396484375,
+          "maximum": 32.72666931152344
+        },
+        {
+          "labels": {
+            "app_component": "web-storefront",
+            "app_component_instance": "web-storefront-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 30,
+          "p50": 23.388290405273438,
+          "p95_nearest_rank": 25.624847412109375,
+          "maximum": 25.624847412109375
+        }
+      ]
+    },
+    {
+      "component": "web-storefront",
+      "metric": "restart_count",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "web-storefront",
+            "app_component_instance": "web-storefront-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 0.0,
+          "p95_nearest_rank": 0.0,
+          "maximum": 0.0
+        }
+      ]
+    },
+    {
+      "component": "storefront-nuxt",
+      "metric": "cpu_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "storefront-nuxt",
+            "app_component_instance": "storefront-nuxt-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 3.1105290878786946,
+          "p95_nearest_rank": 4.296362571428571,
+          "maximum": 9.425136471908537
+        },
+        {
+          "labels": {
+            "app_component": "storefront-nuxt",
+            "app_component_instance": "storefront-nuxt-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 48,
+          "p50": 2.1899921017595583,
+          "p95_nearest_rank": 3.33000802875887,
+          "maximum": 3.628228771520281
+        }
+      ]
+    },
+    {
+      "component": "storefront-nuxt",
+      "metric": "memory_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "storefront-nuxt",
+            "app_component_instance": "storefront-nuxt-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 9.41619873046875,
+          "p95_nearest_rank": 11.840438842773438,
+          "maximum": 12.29248046875
+        },
+        {
+          "labels": {
+            "app_component": "storefront-nuxt",
+            "app_component_instance": "storefront-nuxt-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 45,
+          "p50": 4.9839019775390625,
+          "p95_nearest_rank": 10.834121704101562,
+          "maximum": 12.465667724609375
+        }
+      ]
+    },
+    {
+      "component": "storefront-nuxt",
+      "metric": "restart_count",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "storefront-nuxt",
+            "app_component_instance": "storefront-nuxt-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 0.0,
+          "p95_nearest_rank": 0.0,
+          "maximum": 0.0
+        }
+      ]
+    },
+    {
+      "component": "operator-floor",
+      "metric": "cpu_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-floor",
+            "app_component_instance": "operator-floor-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 3.106998365345321,
+          "p95_nearest_rank": 5.842911587521638,
+          "maximum": 28.89824597816667
+        },
+        {
+          "labels": {
+            "app_component": "operator-floor",
+            "app_component_instance": "operator-floor-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 44,
+          "p50": 4.4399249070732605,
+          "p95_nearest_rank": 6.285993793588202,
+          "maximum": 14.791777871235531
+        }
+      ]
+    },
+    {
+      "component": "operator-floor",
+      "metric": "memory_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-floor",
+            "app_component_instance": "operator-floor-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 31.203842163085938,
+          "p95_nearest_rank": 37.14027404785156,
+          "maximum": 37.59803771972656
+        },
+        {
+          "labels": {
+            "app_component": "operator-floor",
+            "app_component_instance": "operator-floor-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 35,
+          "p50": 21.734619140625,
+          "p95_nearest_rank": 32.703399658203125,
+          "maximum": 37.60490417480469
+        }
+      ]
+    },
+    {
+      "component": "operator-floor",
+      "metric": "restart_count",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-floor",
+            "app_component_instance": "operator-floor-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 0.0,
+          "p95_nearest_rank": 0.0,
+          "maximum": 0.0
+        }
+      ]
+    },
+    {
+      "component": "operator-office",
+      "metric": "cpu_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-office",
+            "app_component_instance": "operator-office-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 2.950423132168644,
+          "p95_nearest_rank": 3.4075127881818705,
+          "maximum": 5.965152563381846
+        },
+        {
+          "labels": {
+            "app_component": "operator-office",
+            "app_component_instance": "operator-office-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 46,
+          "p50": 3.2665537880830415,
+          "p95_nearest_rank": 3.739343909581435,
+          "maximum": 3.7543446471293667
+        }
+      ]
+    },
+    {
+      "component": "operator-office",
+      "metric": "memory_percentage",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-office",
+            "app_component_instance": "operator-office-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 34.285736083984375,
+          "p95_nearest_rank": 44.382476806640625,
+          "maximum": 44.67010498046875
+        },
+        {
+          "labels": {
+            "app_component": "operator-office",
+            "app_component_instance": "operator-office-1",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 37,
+          "p50": 22.483062744140625,
+          "p95_nearest_rank": 35.0250244140625,
+          "maximum": 43.993377685546875
+        }
+      ]
+    },
+    {
+      "component": "operator-office",
+      "metric": "restart_count",
+      "summary_by_series": [
+        {
+          "labels": {
+            "app_component": "operator-office",
+            "app_component_instance": "operator-office-0",
+            "app_uuid": "40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f"
+          },
+          "n": 401,
+          "p50": 0.0,
+          "p95_nearest_rank": 0.0,
+          "maximum": 0.0
+        }
+      ]
+    }
+  ]
+}

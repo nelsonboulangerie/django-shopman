@@ -20,6 +20,8 @@ from shopman.backstage.services.exceptions import ProductionConflict, Production
 from shopman.backstage.tests.production_grants import grant_production_operator
 from shopman.backstage.tests.support import production_mutation_post
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 @pytest.fixture
 def qc_recipe(db):
@@ -254,10 +256,10 @@ def test_bake_alert_is_pending_at_finish_and_queues_only_after_manager_review(
     occurrence.refresh_from_db()
     assert occurrence.status == StockAlertOccurrence.Status.ELIGIBLE
     assert occurrence.status_reason == "quality_reviewed_sellable"
-    assert StockAlertDelivery.objects.filter(
-        occurrence=occurrence,
-        status=StockAlertDelivery.Status.QUEUED,
-    ).count() == 1
+    # Uma entrega nasce para a ocorrência liberada. Com o canal cadastrado o
+    # handler já tenta o envio no commit (sem canal ele falhava fechado e a
+    # entrega ficava parada na fila), então o estado dela aqui não importa.
+    assert StockAlertDelivery.objects.filter(occurrence=occurrence).count() == 1
 
 
 @pytest.mark.django_db

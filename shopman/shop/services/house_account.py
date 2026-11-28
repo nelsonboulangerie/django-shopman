@@ -183,6 +183,7 @@ def settle_account(
     *,
     shift=None,
     actor,
+    approved_by=None,
 ) -> AccountSettlement:
     """O cliente acertou (parte d)a conta: captura FIFO e, em dinheiro, a gaveta recebe.
 
@@ -192,6 +193,11 @@ def settle_account(
     intent capturado vira uma linha ``account_settled`` (``order_ref``,
     ``payment_ref``) no livro, na mesma transação. Sem segunda assinatura:
     entrada não exige PIN (suprimento também não).
+
+    Fora do dinheiro, nada passa pela gaveta e nada se conta no fim do turno: o
+    acerto em Pix/cartão/outro é a palavra de quem está no balcão. Por isso ele
+    chega aqui já assinado por um gerente (``approved_by``, conferido pelo
+    PDV), e a assinatura fica no intent capturado (beta 07/11).
     """
     from shopman.cashman import services as cash_ledger
     from shopman.payman import PaymentService
@@ -220,7 +226,11 @@ def settle_account(
                 break
             PaymentService.capture(
                 intent.ref,
-                gateway_data={"settled_with": method, "settled_by": actor_name},
+                gateway_data={
+                    "settled_with": method,
+                    "settled_by": actor_name,
+                    **({"approved_by": approved_by.get_username()} if approved_by is not None else {}),
+                },
             )
             captured.append(intent)
             remaining_q -= intent.amount_q

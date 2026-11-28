@@ -30,21 +30,25 @@ evidência e auditoria, sem confirmar pedido automaticamente.
 | `shop.manage_customers` | `Shop` | Criar/editar Customer, grupos, loyalty | Admin |
 | `shop.manage_rules` | `RuleConfig` | Criar/editar regras de pricing e validação | Admin |
 | `backstage.view_production_reports` | `DayClosing` | Relatórios de produção | Produção `/reports` via `api/v1/backstage/production/reports|management|weighing/blind-map/` |
+| `backstage.refund_single_order` | `DayClosing` | **Estornar UM pedido**: a exceção financeira do Gerente. Vê o valor pago naquela cobrança e o que volta dela, e mais nada | Gestor (orders-nuxt), no detalhe do pedido, via `api/v1/backstage/orders/<ref>/refund/` |
 
 ---
 
 ## Grupos padrão
 
-Criados por `python manage.py setup_groups`. Nenhum usuário é atribuído por default.
+Declarados na seção `rbac_personas` do descritor da Instância (`config/instances/nelson.json`
+na Nelson) e aplicados por `python manage.py setup_groups`, que lê o descritor apontado por
+`SHOPMAN_INSTANCE_DESCRIPTOR`. Não há segunda lista em código. Nenhum usuário é atribuído
+por default.
 
 | Grupo | Permissões de AÇÃO | Persona típica |
 |-------|-----------|----------------|
 | **Caixa** | `cashman.operate_pos`, `shop.manage_orders` | Atendente de balcão / PDV |
 | **Cozinha** | `backstage.operate_kds`, `shop.manage_production` | Cozinheiro / preparador |
-| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.view_bi` | Gerente de turno |
+| **Gerente** | `shop.manage_orders`, `shop.manage_catalog`, `shop.manage_customers`, `shop.manage_campaigns`, `craftsman.change_recipe`, `cashman.operate_pos`, `cashman.adjust_shift`, `cashman.manage_operators`, `backstage.perform_closing`, `backstage.void_production`, `backstage.refund_single_order` (a exceção, abaixo) | Gerente de turno |
 | **Admin de Catálogo** | `manage_catalog`, `manage_rules` | Responsável por produtos e regras |
 | **Rules Managers** | `manage_rules` | Segurança (WP-GAP-06, sem membros por default) |
-| **Dono** | `cashman.audit_shift` | Quem vê dinheiro. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
+| **Dono** | `cashman.audit_shift`, `payman.refund_paymentintent`, `backstage.view_bi` (o B.I. inteiro, com os de-paras e as regras de alerta), `backstage.void_production`, `backstage.refund_single_order` (o mesmo gesto do Gestor) | Quem vê dinheiro, lê o B.I. e estorna cobrança no Admin. Portão, não persona — some com "Gerente" quando a pessoa faz as duas coisas |
 
 ### Ação é uma permissão; ABRIR A TELA é outra
 
@@ -63,13 +67,59 @@ cards do dashboard perguntam à própria tela antes de oferecê-la
 |---|---|---|
 | **Caixa** | nada — ela opera no PDV, a retaguarda não é ferramenta dela | — |
 | **Cozinha** | fichas técnicas, ordens, insumos, fornecedores, estoque | — (mexer acontece no app de Produção) |
-| **Gerente** | catálogo, clientes, produção, estoque, pedidos, B.I. e a configuração inteira | catálogo, clientes, promoções, cupons, textos da interface, terminais |
+| **Gerente** | catálogo, clientes, produção, estoque, pedidos e a configuração inteira (o B.I. não: é do Dono) | catálogo, clientes, promoções, cupons, textos da interface, terminais |
 | **Admin de Catálogo** | catálogo, regras, promoções, cupons | catálogo e regras |
 | **Rules Managers** | regras de preço | regras de preço |
-| **Dono** | turnos de caixa (apuração), cobranças, comprovantes | — |
+| **Dono** | turnos de caixa (apuração), cobranças, comprovantes, o B.I. inteiro | estorno de cobrança (`payman.refund_paymentintent`, com segunda confirmação no diálogo) |
 
 ⚠️ **Dinheiro é do Dono, e o Gerente não vê** — nem a apuração do turno, nem as
 cobranças (Pix/cartão). É a mesma régua do fechamento cego, explicada abaixo.
+
+### Gerente não tem permissão financeira (dono, 21/11/2026)
+
+A regra, na palavra do dono: *"Isso, gerente basicamente NÃO tem permissões
+financeiras. Ponto. O que teremos são exceções, extremamente pontuais, com regra
+claríssima, que pode/deve ser testada/confrontada/questionada por guardrails ou algo
+que o valha. Simples assim."* E: *"gerente pode ver valores, mas NUNCA somados,
+relatórios, etc. ... ver valores específicos de uma transação não é o problema."*
+
+- **O B.I. é só do Dono.** *"BI -> Só dono, só dono tem acesso!!! Gerente NÃO deve ter
+  acesso ao BI. Se for ter, um dia, será por exceção explícita, solicitada previamente
+  por mim, em pessoa."* Isto revê, para o B.I., a decisão de 13/10/2026 (#1680, "a
+  gerente abre toda superfície de operador"): o app do B.I. e as telas de B.I. do Admin
+  respondem 403 ao Gerente, e a Central não oferece o tile a ele.
+- **O Gerente vê o valor de UMA transação, nunca agregados nem listas de cobranças**:
+  nada de total esperado, quebra, soma por forma de pagamento, faturamento, ticket médio.
+- **As listas do balcão mostram o valor de cada registro, nunca a conta sobre vários**
+  (dono, 21/11/2026): *"Não tem problema ver o valor de um pedido no histórico. O
+  problema seria poder ver valores de vários registros agregados, sobretudo de clientes
+  diferentes, soma de um período, etc."* O pedido, a encomenda e a conta de UM cliente
+  (o que ele gastou, o ticket médio dele, o saldo dele) chegam com valor. Não chegam:
+  soma de período ou de lista, a lista de contas na casa ordenada pelo saldo (vai pela
+  dívida mais antiga), o filtro por faixa de valor no Admin de pedidos, número do
+  faturamento no aviso do B.I. e exportação de pedido, venda ou pagamento com valor.
+- **O fechamento do dia e a assinatura do gerente no caixa são operação, não exceção**:
+  ele fecha às cegas e assina o valor do gesto que autoriza. O registro do fechamento no
+  Admin chega a ele sem o resumo do caixa (o esperado, a quebra e o que entrou por forma de
+  pagamento ficam para quem audita).
+- **A exceção, a primeira e por enquanto a única: estornar UM pedido**
+  (`backstage.refund_single_order`, #2727 item 5). Na palavra do dono: *"gerente pode
+  ver valores, mas NUNCA somados, relatórios, etc. ... ver valores específicos de uma
+  transação não é o problema."* O Gerente estorna partindo do pedido, no detalhe do
+  Gestor ("Estornar", no menu do pedido), e vê o valor pago naquela cobrança, o que já
+  voltou dela e o que ainda pode voltar. Escolhe o valor (parcial vale, até o
+  disponível; em branco, tudo) e confirma duas vezes, como no diálogo do Admin. O
+  dinheiro sai pelo mesmo caminho do estorno do Dono no Admin
+  (`payment.refund_intent_at_gateway`). Ele **não** ganha `payman.view_paymentintent`,
+  `payman.view_paymenttransaction` nem `payman.refund_paymentintent`: o Admin de
+  cobranças lista, busca e filtra, e isso continua 403 para ele. Pedido com mais de uma
+  cobrança online com dinheiro não é somado: o gesto recusa e o estorno fica com o Dono.
+  O Dono tem a mesma permissão e usa o mesmo gesto, além de tudo o que já tinha.
+- **A trava** é `shopman/shop/tests/test_gerente_sem_permissao_financeira.py`. Toda
+  permissão financeira do grupo Gerente (payman, cashman, B.I., fechamento) tem de estar
+  numa de duas listas fechadas: `EXCEPTIONS` (com a regra e a palavra do dono) ou
+  `OPERATION_WITHOUT_AGGREGATE` (com o porquê de não somar, e teste do que é servido a
+  ele). Fora delas, reprova. Exceção nova só entra mudando a lista, ou seja, revisada.
 
 ---
 
@@ -88,6 +138,12 @@ tela do Admin.
 
 O que o balcão **não** perde: a antesala segue mostrando a contagem de vendas do
 próprio turno. Contagem é operação; valor é apuração.
+
+No PDV a régua vale para toda projeção (WP-E7, 17/11/2026): `/pos/` não manda o
+faturamento do dia a ninguém (só contagens), e a aba Encomendas manda as somas do
+período e de cada dia (total e "a receber") só a quem tem `cashman.audit_shift`;
+para os outros elas vêm `null`, e a tela diz "A receber em 2 encomendas". O valor
+de CADA encomenda segue no cartão: é com ele que o balcão recebe.
 
 ## Como adicionar um novo operador
 
@@ -139,14 +195,44 @@ python manage.py setup_groups
 O comando recria/atualiza todos os grupos padrão com as permissões corretas. Seguro para
 rodar múltiplas vezes — o release job do deploy o chama logo depois do `migrate`.
 
-Ele é a **fonte da verdade** dos seis grupos padrão: usa `permissions.set(...)`, então
-o que sai da lista em `setup_groups.py` sai do banco no deploy seguinte, e as revogações
-aparecem no log da forma `Caixa: atualizado (2 permissões) — revogadas: shop.manage_catalog`.
+A **fonte da verdade** dos grupos padrão é o descritor: o comando usa `permissions.set(...)`,
+então o que sai de `rbac_personas` sai do banco no deploy seguinte, e as revogações
+aparecem no log da forma `Caixa: atualizado (2 permissões); revogadas: shop.manage_catalog`.
+Numa Instância que não seja a Nelson, o release aplica só as personas que ela declara.
 
 ⚠️ Consequência prática: **permissão marcada à mão** na tela de Grupos do Admin, num
-desses seis, dura até o próximo deploy. Para valer, escreva-a em `setup_groups.py`. Grupo
+desses grupos, dura até o próximo deploy. Para valer, escreva-a no descritor. Grupo
 customizado (criado fora dessa lista, como o "Supervisor" do exemplo acima) o comando
 não toca.
+
+### Por que cada persona tem o que tem
+
+JSON não guarda comentário, então o porquê das concessões mora aqui:
+
+- **Caixa** abre a Cozinha (`backstage.operate_kds`): vê o que está saindo e dá o
+  Pronto quando o prato passa por ele (decisão do dono, 13/10/2026).
+- **Cozinha** lê no Admin o que fabrica (`view_*` de craftsman, buyman e stockman):
+  ficha técnica, ordem, insumo, saldo, lote. Mexer acontece no app de Produção.
+  A ficha técnica ela só LÊ, também no app: criar, editar, conferir e publicar ficha
+  é da gestão da produção (`craftsman.change_recipe`, Gerente e Dono; decisão do dono,
+  05/11/2026). O `shop.manage_production` dela opera lotes e não abre o editor.
+- **Gerente** consulta auditoria e faz configuração ou reparo excepcional. Dinheiro
+  fica de fora de propósito: `payman` e a apuração do turno são do **Dono** (a régua do
+  fechamento cego: ela conta às cegas, quem vê o esperado audita). Lê a trilha das
+  unificações de cadastro (`customer_merge`); desfazer é `manage_customers`. Abre toda
+  estação de cozinha (13/10/2026), cancela depois de pronto (`cancel_advanced_order`),
+  lê os relatórios de produção, corrige QC depois do fechamento e lê o B.I. com o que o
+  alimenta. Regra de preço continua atrás de `manage_rules` (WP-GAP-06). Marketing:
+  só ver, editar e prévia; efeito externo fica nos grupos de Marketing.
+- **Admin de Catálogo**: `manage_catalog`/`manage_rules` dizem o que pode mudar; os
+  `view_*` abrem a tela. Sem eles o grupo inteiro respondia 403 na porta.
+- **Rules Managers** e **Dono** são portões, não personas, e nascem sem membros:
+  `manage_rules` executa expressão; `audit_shift`, `audit_stock` e `payman` são
+  dinheiro e auditoria.
+- **Marketing (sete grupos)**: personas por capacidade, sem membros; o descritor
+  governa concessões, não escolhe pessoas nem fura o controle duplo.
+- Apagar (`delete_*`) fica de fora em toda persona: no Admin quase tudo tem estado em
+  vez de sumiço (produto sai da vitrine, promoção expira, pedido cancela).
 
 ---
 

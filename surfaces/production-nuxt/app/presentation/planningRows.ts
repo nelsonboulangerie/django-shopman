@@ -3,8 +3,8 @@
 // grupos; quem desenha é a grade.
 //
 // Planejamento:
-//   - EM FOCO: o que ainda não tem plano e pede um olhar (um sinal na sugestão, pedidos
-//     comprometidos, ou nenhuma sugestão para seguir);
+//   - EM FOCO: o que ainda não tem plano e pede um olhar (um sinal na sugestão,
+//     encomenda na data, ou nenhuma sugestão para seguir);
 //   - SEM RESSALVA: o que ainda não tem plano, tem sugestão e nada a notar. Vira um
 //     conjunto ("+16 produtos sem ressalva"), com "um sim para todos" ou "ver um a um".
 //     Só agrupa a partir de `CLEAN_GROUP_MIN`: "+1 produto" seria uma linha a mais, não
@@ -17,10 +17,10 @@
 // Recortes: Todos (os três grupos), A planejar (tudo sem plano, um a um), Com ressalva
 // (só o que tem sinal) e Planejados.
 //
-// Abertura: A confirmar (há lote planejado esperando o previsto) e Abertos (o previsto
-// já foi dito e o lote segue para o Fechamento).
+// Produção: A confirmar (há lote planejado esperando o previsto) e Abertos (o previsto
+// já foi dito e o lote segue para a Finalização).
 import type { ProductionMatrixRowProjection } from "~/types/production";
-import { rowCommittedUnits } from "~/presentation/production";
+import { rowOrderedUnits } from "~/presentation/production";
 import { suggestionSignal } from "~/presentation/planningReason";
 
 export type PlanFilter = "all" | "todo" | "flagged" | "done";
@@ -42,9 +42,11 @@ export function isPlannedRow(row: ProductionMatrixRowProjection): boolean {
   );
 }
 
-/** Tem algo a notar: o sinal da sugestão ou pedidos que dependem do lote. */
+/** Tem algo a notar: o sinal da sugestão ou encomenda do produto na data (a
+ *  régua das reservas, com ou sem lote). Por isso o conjunto "sem encomenda" só
+ *  junta o que não tem demanda na data (P1-04). */
 export function rowHasCaveat(row: ProductionMatrixRowProjection): boolean {
-  return Boolean(suggestionSignal(row.suggestion)) || rowCommittedUnits(row) > 0;
+  return Boolean(suggestionSignal(row.suggestion)) || rowOrderedUnits(row) > 0;
 }
 
 /** Sem plano, com sugestão acima de zero e nada a notar: pode ir no conjunto. */
@@ -135,7 +137,7 @@ export function cleanPreview(
   return rest > 0 ? `${head.join(", ")} e mais ${rest}` : head.join(", ");
 }
 
-// ── Abertura ───────────────────────────────────────────────────────────────
+// ── Produção ───────────────────────────────────────────────────────────────
 
 export function openRowPending(row: ProductionMatrixRowProjection): boolean {
   return row.planned_orders.length > 0;

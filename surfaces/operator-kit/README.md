@@ -77,6 +77,7 @@ O layer contribui, via auto-import do Nuxt:
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
 | `app/components/OfflineBanner.vue` | `<OfflineBanner>` | faixa "Sem conexão" (colocar no layout raiz); não cobre nada: os shells do kit descem a altura dela (`--operator-offline-inset`) |
+| `app/components/OperatorLoadingFeedback.vue` | `<OperatorLoadingFeedback>` | aviso de espera de navegação ("Carregando…"); montado UMA vez pelo `OperatorAppRoot`, nenhum app o monta |
 | `app/plugins/errorReporter.client.ts` | — | captura erro não-tratado → telemetria (inerte em dev) |
 | `app/utils/deviceActivity.ts` | `deviceActivityClock`, `createDeviceActivityClock`, `deviceActivityCookieDomain` | relógio de atividade do DISPOSITIVO: cookie `shopman_operator_activity` (epoch ms) no domínio-pai (`<app>.<zona>` → `.<zona>`; localhost/IP/zona recusada pelo navegador → host-only), throttle de 5 s no próprio cookie, valor no futuro ignorado; o BFF não o repassa ao Django |
 | `app/plugins/deviceActivity.client.ts` | — | todo toque real (pointerdown/keydown/wheel/touchstart/pointermove, na captura) em qualquer app marca o relógio; rota com `definePageMeta({ operatorActivity: false })` fica fora (tela do cliente do PDV). É o que faz a trava do PDV contar a ociosidade do dispositivo, não só a dele |
@@ -117,6 +118,7 @@ O layer contribui, via auto-import do Nuxt:
 | `app/components/OperatorConfirmDialog.vue` | `<OperatorConfirmDialog>` | a caixa do `useConfirm`; montada UMA vez pelo `OperatorPwaRuntime`, nenhum app a monta |
 | `app/components/OperatorFormShell.vue` | `<OperatorFormShell>` | o casco canônico de um cadastro: seções, aviso do que não foi salvo, ação na base (salvar/descartar) e a pergunta antes de descartar (ver "Casco de cadastro") |
 | `app/components/OperatorFormSection.vue` | `<OperatorFormSection>` | a seção de um cadastro: título, descrição e a chave do próximo foco (`data-focus-target`) |
+| `app/components/OperatorFieldRow.vue` | `<OperatorFieldRow>` | linha responsiva de dois campos relacionados; a prioridade semântica distribui o espaço e o detalhe condicional ocupa uma nova linha inteira |
 | `app/composables/useDirtyForm.ts` | `useDirtyForm` | estado sujo de um cadastro: um retrato na abertura e as diferenças a partir dele |
 | `app/utils/pwaUpdateReport.ts` | `markPwaUpdateApplied`, `reportPwaUpdateApplied` | marca a troca antes do reload e a relata no boot seguinte (→ `pwa.update_applied` no Django) |
 | `app/presentation/orientationLock.ts` | `orientationFamily`, `orientationLockFailure`, `ORIENTATION_LOCK_COPY` | regra pura da trava de giro: família travada, motivo da recusa e cópia ao operador |
@@ -128,6 +130,18 @@ Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
 pelos testes de composables que o adotam — os projetos `unit` desses apps
 declaram `resolve.dedupe: ["vue"]` para garantir instância única do Vue.
+
+As jornadas pela tela (Playwright) também têm os gestos de operador num lugar só:
+`tests/support/operatorGestures.ts` (#2580). São eles a Gerente que entra com senha
+(`managerSignsIn`) e vincula o posto (`managerBindsStation`), alguém que trava
+(`lockDevice`) e quem toca no nome e digita o PIN (`operatorUnlocksWithPin`). Entram também a espera de
+hidratação (`settled`), a captura numerada (`capture`), um contexto por dispositivo
+(`newDevice`, 375 px ou 1366 px) e o elenco do seed (`cast`). O PDV ao vivo
+(`pos-nuxt/tests/e2e-live/support/operator.ts`) e as jornadas do Gestor
+(`orders-nuxt/tests/operator/support/`) importam daqui e guardam só o que é de cada app.
+⚠️ O módulo importa só **tipos** do `@playwright/test`: o kit tem a própria cópia, e
+importar o `expect` dela em tempo de execução carregaria um segundo Playwright na suíte
+do app. As esperas são de locator (`waitFor`, clique de ensaio).
 
 As superfícies de operador compartilham SSO pelo domínio-pai usando
 `shopman_operator_sessionid` e `shopman_operator_csrftoken`. O BFF traduz esses
@@ -346,6 +360,14 @@ build do PDV: o manifesto de precache não tem nenhuma entrada de navegação, s
 abre. É por isso que abrir a tela do cliente no PDV leva junto um `checkForUpdate()`:
 a janela nova não precisa de ajuda, a do operador precisa.
 
+ℹ️ **Casco sem conexão (`offlineShellPaths`, opt-in; hoje só a venda do PDV, `["/"]`).**
+Essas rotas trocam o `NetworkOnly` por `NetworkFirst`: com rede, a regra acima vale igual
+(o HTML vem da rede); sem rede, abre o último HTML que a rede devolveu ao dispositivo, num
+cache de runtime `<app>-shell`, nunca no precache. O `buildId` do Nuxt entra como literal
+no `sw.js`: o HTML só é guardado e só é usado se for da build do próprio worker, então
+uma versão nova (ou um rollback) não reabre HTML velho; sem casar, cai no `offline.html`.
+O gate (`make pwa app=pos`) confere rota única, cache próprio e o `buildId` da build.
+
 **3. Provar.** A troca termina em `location.reload()`, e nada que fique na memória
 sobrevive para contar o que houve. Então a marca vai ao `localStorage` **antes** do
 reload e é relatada no boot seguinte, quando as duas versões são conhecidas:
@@ -386,9 +408,11 @@ rota desconhecida cai na seção raiz — a barra nunca fica sem nenhuma aba ace
 "nenhuma acesa" é a tela dizendo que o operador está em lugar nenhum.
 
 **Por que isto virou peça da layer.** Quatro apps desenhavam a mesma barra à mão e, na
-medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (44px) no Gestor,
-`h-11` no Marketing e **`h-8`** no B.I. e no Compras — metade do alvo de toque que o
-token `--spacing-control` define para a casa, numa barra usada com a mão ocupada. O
+medição de 22/09/2026, "a mesma" já não era a mesma: `min-h-control` (que então media
+44px) no Gestor, `h-11` no Marketing e **`h-8`** no B.I. e no Compras, cada app com a
+sua altura escrita à mão. Hoje a barra usa o token: `--spacing-control` mede 32 px, a
+altura `md` de campos e botões em todos os apps (decisão do dono de 09/10/2026; trava em
+`tests/catalog.guardrails.test.ts`). O
 `chipClass(active)` do B.I. e o do Compras eram cópia byte a byte. E a aba ativa só era
 trazida para dentro da área visível no Marketing — onde o defeito tinha aparecido de
 verdade: a 390px cabem duas abas e meia, e em `/platforms` a seção ativa nascia fora da
@@ -437,7 +461,7 @@ Como um app migra:
 | `OperatorToolbar` | a barra de trabalho que o app monta sem tocar a estrutura do Nuxt UI (o ledger proíbe `NuxtDashboardToolbar` direto nos apps): camada fina sobre o `NuxtDashboardToolbar`, slots `#left`, `#right` e o padrão (que ocupa a barra inteira, como no oficial), `as` = `div` (padrão), `header` ou `footer`; `class`, `data-*` e `aria-*` chegam ao elemento. Sem pele própria: o fundo vem do tema (`dashboardToolbar.slots.root` em `app.config.ts`) | DashboardToolbar do Nuxt UI |
 | `OperatorLiveStatus` | o ponto ao vivo com a hora; fora do ao vivo o estado se escreve por extenso. Rótulo que cabe: completo → `shortLabel` escrito pelo app ("A cada 30 s") → só o ponto ou o ícone de atualizar, com o completo na dica e no nome acessível. Invólucro em volta do selo leva `min-w-0` | `.live-dot` |
 | `OperatorInbox` | "Avisos": UM item no rail e UM sino na barra de 56px; um painel (portal) com duas abas, a operação (alertas do app, capacidade acima do limite) e a caixa pessoal (avisos, Meus acessos); um selo somado | `_rail3bottom.html` |
-| `OperatorShortcutsHelp` | a ajuda de atalhos de todo app: "Em todo o app" (Alt 1…9, "?") e os grupos da tela | "Atalhos (?)" de `_rail3bottom.html` |
+| `OperatorShortcutsHelp` | a ajuda de atalhos de todo app: "<App>: em qualquer tela" (Alt 1…9, "?") e os grupos da tela | "Atalhos (?)" de `_rail3bottom.html` |
 | `OperatorPhoneMenu` | o menu do operador sem o rail: o "Mais" da barra de baixo (`variant="bar"`) ou as iniciais na barra de 56px (`variant="header"`, a Central) | menu de `_rail3bottom.html` |
 | `OperatorMenuItems` | o conteúdo do menu do operador (posto, Bloquear no celular, tema, giro, capacidade do serviço escrita) | menu de `_rail3bottom.html` |
 | `OperatorAppSeal` | o selo do app na barra de 56px dos cabeçalhos próprios (PDV, Central) | `_rail3top.html` |
@@ -464,8 +488,10 @@ lugar só; `divider` desenha um traço acima dela no rail.
 Onde mora a navegação (V6-KIT, `depois-navegacao.jpg`): rail no tablet deitado e em
 qualquer tela de 1024px para cima; no celular e no tablet em pé, barra de 56px em cima e
 seções embaixo. A régua é uma só: a variante `rail:` no CSS e `useSuiteRailShown()` no
-script. Alvos ≥ 44px em tudo (as prévias tinham chips de
-40px: aqui ficaram com 44). `prefers-reduced-motion` desliga as transições dentro de
+script. O item do rail, as iniciais do operador e os ícones da linha compacta têm 44px
+ou mais (as prévias tinham chips de 40px); os itens da barra de seções e todo campo e
+botão das telas ficam na altura `md` (`min-h-control`, 32 px, decisão do dono de
+09/10/2026). `prefers-reduced-motion` desliga as transições dentro de
 `data-suite`. Contrato em `tests/components/SuiteChrome.test.ts`;
 `tests/guardrails.appBar.test.ts` lista quem migrou.
 
@@ -480,11 +506,11 @@ cai. Uso novo fora do conjunto reprova; migrar um uso antigo baixa o teto.
 | peça | conjunto | como se escreve |
 |---|---|---|
 | Botão | tamanho `md` (todo lugar) e `xl` (toque crítico: PDV, Cozinha, quiosque, teclado numérico); variante `solid` (o gesto principal, um por região), `outline` (secundário) e `ghost` (terciário, ícone, menu); cor `primary`, `neutral` e `error` | estado ativo por `active` + `active-variant`/`active-color`, nunca `:variant="ativo ? … : …"`. Botão só de ícone é `square`. Aviso, informação e sucesso moram no selo ou no aviso, não na cor do botão; a exceção é a ação de aviso (abaixo). O default continua o do Nuxt UI (`primary` `solid` `md`): trocá-lo repintaria em silêncio todo botão sem cor escrita |
-| Selo (Badge) | uma variante, `soft` (sem borda), nas 6 cores `neutral`, `primary`, `info`, `success`, `warning`, `error` | o tema dá `soft` (`badge.defaultVariants`); ninguém escreve `variant` num selo. O `primary` usa a tinta `--primary-ink` (AA) |
+| Selo (Badge) | uma variante, `soft` (sem borda), nas 6 cores `neutral`, `primary`, `info`, `success`, `warning`, `error` | o tema dá `soft` (`badge.defaultVariants`); ninguém escreve `variant` num selo. O `primary` usa a tinta `--primary-ink` (AA). **Sentença: só a primeira letra maiúscula, na suíte inteira** (dono, 16/11/2026: "Procurando outro entregador", "Loja online"; reverte as iniciais maiúsculas de 03 e 04/11): o `NuxtBadge` do kit (`app/components/NuxtBadge.vue`) substitui o do Nuxt UI pelo mesmo nome e passa `label` e texto do slot por `presentation/badgeCase.ts`, que só garante a primeira maiúscula; o resto fica como foi escrito (nome próprio, marca, sigla, número e unidade). Nenhum app chama `badgeCase` |
 | Cartão (Card) | `outline` no topo; `soft` para cartão dentro de outro cartão (só fundo, sem borda dupla) | `outline` é o default; o aninhado escreve `variant="soft"` na chamada. `subtle` e `solid` não entram. Destaque navegável é `NuxtPageCard` |
 | Aviso (Alert) | `subtle` × `info`, `success`, `warning`, `error` | fundo opaco pré-composto no tema (compoundVariants). `primary` e `neutral` ainda têm uso e morrem com a migração deles; `secondary` saiu |
 | Cores geradas | `primary`, `info`, `success`, `warning`, `error` (e o `neutral`, que o Nuxt UI sempre gera) | `theme.colors` no módulo: cor que não é gerada não existe no tipo do `color` |
-| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. `UiNativeSelect` está aposentado |
+| Escolha numa lista | `NuxtSelect` (lista curta e fixa) e `NuxtSelectMenu` (longa, buscável ou que cresce) | ver abaixo. O antigo adaptador nativo foi removido |
 | Texto | 5 tamanhos: `text-xs` 12 (rótulo e meta), `text-sm` 14 (texto corrido e controles), `text-base` 16 (título de cartão), `text-xl` (título de tela), `text-2xl` (figura); 2 pesos: `font-medium` e `font-semibold` | nenhum tamanho arbitrário novo (`text-[13px]`, `text-[0.625rem]`); a trava conta os que existem. Os papéis `op-*` de `operator-suite.css` ainda não foram reduzidos a esses cinco |
 | Chip | ponto (estado) e número (contagem) com anel de 2 px (`chip.slots.base: 'ring-2'`, o traço dos ícones Lucide), na cor do fundo onde o chip está (`ring-bg`) | exceção declarada: o tamanho `4xl` numerado (16 px, texto 12 px), porque o `3xl` oficial não lê dois dígitos. Número acima de 99 escreve "99+". Toda contagem é o **chip de contagem** (`OperatorCountChip`, ver abaixo); selo com número não existe |
 | Rail | dourado pelo tema: `ui.dashboardSidebar.slots` (`root` e `content`) redefine os tokens do Nuxt UI só dentro do rail (`--ui-text*`, `--ui-primary`, `--primary-ink`, `--ui-bg` = `--rail`, `--ui-border`) | nenhuma tela passa `:ui` ao rail. Três estados e sinais no `OperatorSuiteShell` (PR-K4): ver "Barra lateral em três estados" abaixo |
@@ -582,7 +608,9 @@ dourado mora no `ui.dashboardSidebar` deste `app.config`.
 - Sem o rail na tela (oculto ou abaixo de `lg`), Avisos sobe para a barra do topo.
 - **Sinais** (`sectionRailSignal`, `railSignalChip`, `railSignalLabel` em
   `presentation/suiteChrome.ts`): `badge` numérico maior que zero vira o chip de
-  contagem (`4xl` do kit, "99+" acima de 99); `attention` vira ponto (tamanho padrão do
+  contagem (`4xl` do kit, "99+" acima de 99); `badge: UNKNOWN_COUNT` ("?") é a contagem
+  que o servidor não conseguiu fazer, o mesmo chip com "?" e "contagem indisponível" no
+  nome acessível (zero diria "nada a fazer"); `attention` vira ponto (tamanho padrão do
   NavigationMenu). A cor é `tone` da seção (`success`, `warning` padrão, `error`).
   Compacto: chip no canto do ícone (`chip` do item, `inset: false`). Aberto: o MESMO
   chip na ponta direita da linha, no centro vertical (`OperatorCountChip` no slot
@@ -649,6 +677,28 @@ gaveta) até a onda de cada um.
 
 Contrato em `tests/suiteChrome.test.ts` (máximo 5, mínimo 3, "Mais" só quando sobra) e
 `tests/components/OperatorSuiteShell.test.ts`.
+
+**Com o trocador** (`switcher-sections`, modelo de navegação de 31/10/2026), a forma da
+tela decide a barra de baixo, e cada desvio é opt-in do app:
+
+| O shell recebe | Tela do chão | Tela do escritório |
+| --- | --- | --- |
+| só `switcher-sections` | nenhuma barra (o selo troca) | as seções do escritório; "Mais" abre o trocador |
+| `floor-bar` | as seções do chão | as seções do escritório |
+| `floor-bar` + `office-uses-floor-bar` | as seções do chão | **as mesmas do chão, nenhuma acesa** |
+
+`office-uses-floor-bar` é para o app cujo escritório é um canto só e cujo celular vive
+no chão: o Compras, em que a Base é a única seção do escritório (dono, 04/11/2026). Sem
+ela, a vaga única do escritório some (`shown: false`) e o caminho de volta fica só no
+selo. Não é regra implícita para todo escritório de uma seção: o app decide.
+
+**A leitura no selo** (`seal-tone` e `seal-time` do `OperatorPageHeader`). Com o
+trocador, abaixo de `lg` o cabeçalho mostra o `OperatorCompactSeal`; a tela que passa
+`seal-tone` põe nele o ponto da leitura, como a linha do chão (`OperatorCompactBar`), e
+declara que o `#status` É a leitura: abaixo de `lg` ele sai, em vez de descer sozinho
+para uma segunda linha (era o "● 12:05" solto da Base do Compras). Na mesa o `#status`
+segue. Com `#lead`, `#subtitle` ou `eyebrow`, o `#status` fica, porque a linha tem mais
+que a leitura.
 
 **O desenho das duas barras de baixo é um só** (`TAB_BAR_UI` em
 `presentation/tabBar.ts`): a barra inferior do shell (`OperatorQuickBar`) e a barra do
@@ -752,6 +802,22 @@ Trava: `tests/pageHeader.test.ts` (quem ganha a vaga, nada se perde) e
 `/__operator_kit_catalog/phone-header`: nenhuma caixa se cruza ou sai da largura, título
 inteiro em até 2 linhas, no máximo 3 controles à direita, todas as ações no ⋯).
 
+### Linha do chão: o selo (`OperatorCompactBar` + `OperatorCompactSeal`)
+
+No celular (abaixo de `md`), a página que se declara `data-compact-page` troca a barra do
+topo pela linha do chão: selo, Busca, Avisos e o ⋮ no canto. O selo diz o app (pequeno) e
+o lugar (grande, o `title`), e o `title` também vira o `<h1>` escondido da linha.
+
+- **`seal-app-as-title`** (no `OperatorCompactBar`, repassado ao selo como `app-as-title`):
+  para a tela de um lugar só, cujo nome no selo seria repetição. O selo mostra o ícone e o
+  nome do app grande, numa linha, com o ▾; a página diz o lugar no próprio `<h1>` visível
+  (só no celular, `md:hidden`, porque na mesa o título é o do cabeçalho), e a linha deixa
+  de ter o `<h1>` escondido: um `<h1>` só por tela. Uso: a Central (dono, 04/11/2026), que
+  mostra "Central" no selo e "Olá, Ana" como título da página, acima de "Apps".
+- Sem a prop, nada muda.
+
+Trava: `tests/components/OperatorCompactSeal.test.ts` e `OperatorCompactBar.test.ts`.
+
 ### Toolbar no celular
 
 Abaixo de `sm`, no shell (`phone-filters="drawer"`, o padrão com `OperatorSuiteShell`),
@@ -786,11 +852,8 @@ rolagem escondida, o painel abre, o recorte vira chip e sai pelo ×).
 
 ### Escolha numa lista: `NuxtSelect` e `NuxtSelectMenu`
 
-`UiNativeSelect` **está aposentado** (dono, 08/10/2026): nada de lista do sistema, em
-nenhum dispositivo. Os usos de hoje (43, nos apps ainda não migrados) são teto no ledger
-(`ui_native_select_occurrences` em `docs/reference/operator-component-ledger.json`,
-conferido por `scripts/check_operator_component_ledger.py`): o número só cai, e nenhum
-uso novo passa. Escolha nova nasce em Nuxt UI:
+O adaptador nativo foi removido em 23/10/2026, depois de chegar a zero usos de
+produção. Escolha nova nasce em Nuxt UI:
 
 - **Lista curta e fixa:** `NuxtSelect`.
 - **Lista longa ou que cresce:** `NuxtSelectMenu` com busca. A busca recebe o foco ao
@@ -936,6 +999,37 @@ linhas, e o spec confere degrau e altura em todos os viewports. Onde a trava rod
 CI: catálogo do kit, Kitchen Sink, Compras e Gestor (a varredura inteira, por
 `captureOperatorEvidence`); Cozinha, Marketing e Produção (só a do rótulo, por
 `expectOperatorLabelsFit`, porque essas matrizes ainda não passam a varredura inteira).
+
+### Nada se sobrepõe (dono, 07/11/2026)
+
+No cabeçalho do pedido do Gestor, a 1360 px, a seta "Pedido anterior" se desenhava por
+cima da hora do selo de atualização e a busca por cima do "Próximo pedido" ("parece
+coisa de amador; não pode acontecer, nem nessa tela nem em nenhuma"). A causa era do
+kit: a coluna da esquerda do `DashboardNavbar` é `min-w-0` e encolhe abaixo do conteúdo,
+que então vaza por baixo da busca.
+
+**A barra do topo que cabe (`usePageHeaderFit`, no `OperatorPageHeader`).** A barra mede a
+si mesma (no `ResizeObserver`, depois do layout e antes da pintura) e cede em degraus,
+nesta ordem, no atributo `data-page-header-fit`:
+
+1. `full`: tudo na linha, a busca inteira (o selo de atualização já encolhe sozinho);
+2. `compact`: a busca vira a lupa (a mesma do celular);
+3. `wrap`: as ações descem para uma segunda linha, à direita.
+
+Conta como "não caber" o conteúdo que passa da coluna e o título espremido em duas
+linhas. Nenhum degrau é largura fixa: a régua é o que a tela pôs na barra.
+
+**A trava (`expectNoOperatorOverlap`, `visual/playwright.ts`).** Reprova o que se desenha
+por cima de outra coisa visível na mesma camada: controle sobre controle
+(`control-overlap`) e texto solto (título, selo, hora, "2 de 4") sobre controle ou sobre
+outro texto (`content-overlap`, a caixa das próprias letras, linha a linha). Ficam de fora o
+que mora em overlay aberto ou atrás de modal, o chip sobre ícone (`[data-slot="chip"]`)
+e a camada empilhada de propósito, que a tela declara com
+`data-operator-overlap-allowed`. É geometria, não retrato: não precisa de baseline. O
+`content-overlap` é opt-in no `scanOperatorGeometry` (`contentOverlap: true`) enquanto as
+matrizes dos outros apps não passam por ele. Onde roda na CI: Gestor
+(`orders-nuxt/tests/e2e/overlap.spec.ts`, todas as telas em 1440, 1360, 1280, 1024, 768
+e 390).
 
 ## Peças de tela (fase 2)
 
@@ -1207,7 +1301,29 @@ Carregando, vazio, erro e sem conexão, com UMA frase por estado
 ### Aviso da tela (`alerts` do `OperatorPageHeader`)
 
 O que a tela precisa que a pessoa saiba agora tem **um lugar só**: as `alerts` do
-cabeçalho, logo abaixo da toolbar.
+cabeçalho, logo abaixo da última barra do topo.
+
+**O aviso vem depois de TODAS as barras do topo e é o primeiro item do conteúdo, em todo
+tamanho** (dono, 20/11/2026, DEV-2026-063). As barras são a de 56 px (ou a linha do chão
+no celular), as abas e os recortes (as colunas do Gestor no celular: "Novos · Em preparo ·
+Prontos"), a linha dos controles e a dos filtros. O cabeçalho desenha o aviso por último,
+depois de todas as linhas dele, inclusive o `#below`; o que ele não controla é a barra
+que a tela monta FORA dele. Por isso:
+
+- Barra da tela que não cabe nos slots de controle (`#actions`, `#filters-primary`,
+  `#filters`, `#filter-panel`, `#selection`) mora no **`#below`**: é ali que "as barras
+  acabam", e o aviso vem logo depois. Barra do celular que a linha do chão leva junto
+  (o período das Encomendas, as abas dos Ajustes do PDV) pode morar ANTES do cabeçalho,
+  como hoje.
+- Nunca depois do `</OperatorPageHeader>`: ali ela fica embaixo do aviso. Foi o defeito
+  do Gestor de pedidos a 375 px, onde as abas das colunas vinham depois do "Ana espera a
+  resposta da equipe".
+- Sem `order` no CSS: a ordem visual é a do documento (o invólucro do cabeçalho é
+  `contents`, os filhos seguem na coluna da página).
+- Travas: `tests/components/OperatorPageHeaderAlertOrder.test.ts` (o kit: o aviso depois
+  de barra, controles, filtros, seleção e `#below`) e `tests/guardrails.alertsAfterBars.test.ts`
+  (os apps: nenhuma barra logo depois do `</OperatorPageHeader>` ou de um cabeçalho que o
+  embrulha).
 
 ```vue
 <OperatorPageHeader
@@ -1225,6 +1341,16 @@ cabeçalho, logo abaixo da toolbar.
   ordem é a da tela: o mais importante primeiro.
 - O aviso fica fixo com o cabeçalho (não rola com o conteúdo): o "um inteiro, o resto em
   e mais N" é o que impede que ele coma a tela do celular.
+- **Todo aviso fecha, inclusive o crítico, e volta enquanto a causa durar** (dono; no kit
+  desde 23/10/2026). O X dispensa só nesta montagem da tela: não muda o domínio nem grava
+  no navegador, e o aviso volta no próximo carregamento. Para voltar antes quando a causa
+  mudar, ponha a grandeza no `id` (`vocation:${count}`): id novo é aviso novo.
+- `NuxtAlert` solto no topo de uma página, fora das `alerts`, é defeito: perde o X, o
+  "e mais N" e a fixação. Aviso junto de um controle (erro de campo, diálogo) segue inline.
+- Aviso que não cabe nas `alerts` (convite com duas saídas, título rico, a pílula
+  flutuante do Gestor) também tem X: `useAlertDismissals()` dá o mesmo X do cabeçalho
+  (`closeProps`) e a dispensa por montagem (`isOpen(chave)`, `onOpen(chave, aberto)`), com
+  a grandeza na chave para voltar quando a causa mudar.
 
 **Ação dentro de aviso** (dono, 09/10/2026): a ação acompanha a cor do aviso. A
 **principal** é `solid` na cor do aviso; a **secundária**, `outline` na mesma cor. Nunca um
@@ -1256,6 +1382,7 @@ cabeçalho, logo abaixo da toolbar.
 | aviso de uma tela ("33 produtos sem vocação", "2 pedidos atrasados") | `alerts` do `OperatorPageHeader` |
 | o conteúdo não veio (erro ao carregar, vazio, carregando) | `OperatorScreenState`, no lugar do conteúdo |
 | sem rede no app inteiro | `OfflineBanner` (do app) |
+| navegação demorando (espera, não erro) | `OperatorLoadingFeedback` (modal), montado uma vez pelo `OperatorAppRoot` |
 | prazo correndo que interrompe ("o pedido cancela em 2 min") | `OperatorUrgentAlert` (modal) |
 | resultado de uma ação ("Pedido aceito", "Não deu para aceitar") | toast (`useSonner`/`useToast`), ou o erro escrito junto do controle |
 | alerta da operação que fica (capacidade, canal parado) | caixa de Avisos (`provideOperatorInboxAlerts`) |
@@ -1268,6 +1395,23 @@ do erro; um aviso inteiro e "e mais N") e `tests/catalog/phone-header.spec.ts` (
 navegador, a 320, 390 e 1440 px: um aviso visível, "e mais 2 avisos" abre os três, a saída
 do aviso no tamanho da suíte e sem rolagem lateral). Primeiro uso do estado: o B.I. (oito
 erros de leitura, em sete telas); do aviso: a bancada do catálogo.
+
+### Espera de navegação (`OperatorLoadingFeedback`)
+
+A irmã do `NavigationFeedback` da loja, adaptada ao tema do balcão: quando uma navegação
+demora, um modal diz "Carregando…", para o operador não confundir espera com travamento.
+Montado UMA vez pelo `OperatorAppRoot` (que todo app de operador adota): nenhum app o monta
+nem o configura.
+
+- **Só aparece depois de 200 ms** (navegação rápida não pisca o aviso); quando aparece,
+  fica **ao menos 320 ms** (não some num clarão); um **watchdog de 15 s** solta sozinho se a
+  navegação não terminar. `page:start` começa a espera, `page:finish` encerra, e erro ou
+  cancelamento (`app:error`, `router.onError`, bfcache `pageshow`) soltam na hora.
+- **Estritamente observacional**: `pointer-events-none`, nunca engole clique nem navegação.
+- A frase é única e neutra ("Carregando…" / "Só um instante."); o anúncio acessível vai no
+  `role="status"` `sr-only`, e o modal em si é `aria-hidden`.
+- Trava: `tests/components/OperatorLoadingFeedback.test.ts` (o limiar de 200 ms, o mínimo
+  visível, o watchdog e a soltura por erro/bfcache).
 
 ### Tabela (`OperatorTable` + `OperatorTableView`)
 
@@ -1313,7 +1457,9 @@ ganha o respiro da confortável).
   ordenação local (ordenaria só a página da vez).
 - **Seleção múltipla** (`selectable`, `v-model:row-selection`): caixa em cada linha e o
   "todos" no cabeçalho; marcar não abre a linha.
-- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha.
+- **Linha expansível**: basta o slot `#expanded`; a seta entra sozinha, no começo da
+  linha. `expand-at="end"` a põe no fim, presa à direita (some do rolar de lado): a lista
+  da Preparação, onde a caixa de "Separado" é o primeiro gesto (dono, 26/11/2026).
 - **Coluna fixada** (`pinned`, e `pinned-end` para o ⋯ de uma matriz larga): presa ao
   rolar de lado e, no celular, com largura máxima (o texto dela quebra).
 - **Colunas de apoio** (`meta.supporting`): somem no celular por CSS (`max-sm:hidden`),
@@ -1334,6 +1480,36 @@ ganha o respiro da confortável).
 - Substituiu as cinco tabelas do Gestor (Lista da fila, Histórico, Clientes, Unificações e a
   matriz do Catálogo) e aposentou o `ColumnPicker`.
 
+### Exibir no estreito (`OperatorViewMenu`)
+
+Dono, 07/11/2026: no celular, os controles que mudam COMO uma lista aparece (Grade ou
+Lista, densidade, ocultar indisponíveis) não são gestos primários e roubavam a linha da
+busca e a dos filtros. No estreito eles viram **um botão "Exibir"**, o mesmo gesto do
+`OperatorTableView` das tabelas: só o ícone, que é o estado da vista atual (grade ou
+lista); o menu traz uma seção por escolha, com a opção atual marcada, e as preferências
+de ligar e desligar juntas no fim. O nome do botão diz o estado inteiro ("Exibir: Grade,
+Padrão, indisponíveis ocultos"); preferência ligada deixa o botão `soft`.
+
+```vue
+<OperatorViewMenu v-if="narrow" :groups="[
+  { kind: 'choice', key: 'layout', label: 'Vista', value: layout, options: LAYOUTS, select: setLayout },
+  { kind: 'toggle', key: 'hide', label: 'Ocultar indisponíveis', onLabel: 'indisponíveis ocultos',
+    checked: hide, icon: 'lucide:eye-off', toggle: setHide },
+]" />
+```
+
+- **Quando**: a tela decide pela largura da ÁREA (não da tela). No PDV, área de produtos
+  abaixo de 32rem (`collapseViewControls`), que cobre todo celular em pé. Na mesa e no
+  tablet, os segmentados e o olho continuam à vista: um clique, estado de relance.
+- **Um botão por tela, não um por grupo**: vista, densidade e ocultar vão no mesmo menu,
+  como Linhas e Colunas no "Exibir" da tabela. Dois botões de visualização lado a lado no
+  celular voltariam a disputar a linha.
+- **O que NÃO entra**: filtro (muda O QUE aparece; é do `OperatorFilterPanel`), recorte
+  com contagem e ação. Par único de vista (só Grade | Lista) não precisa de menu: no
+  estreito vira um botão que alterna, dizendo a vista que abre.
+- **Menu aberto depois da escolha**: quem ajusta vê o efeito e ajusta a próxima.
+- Desenho puro em `presentation/viewMenu.ts`. Consumidor: `PosProductGrid` (PDV).
+
 ### Painel de filtros (`OperatorFilterPanel` + `useSavedViews` + `#filter-panel`)
 
 UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), sobre o
@@ -1349,8 +1525,11 @@ UM painel, igual no celular e na mesa (dono, 09/10/2026, referência: o Odoo), s
    "Cliente contém …" para as dimensões de texto. Intervalos ficam com o `FilterBar`.
 
 No pé, **Limpar** e **Salvar como favorito** (o diálogo pede o nome e "Mostrar nos
-filtros rápidos da tela"). O botão: só o ícone com o número no celular; ícone, "Filtros"
-e o número na mesa. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
+filtros rápidos da tela"). O botão: no celular, só o ícone, e o número
+no **canto superior direito do ícone**, o mesmo `NuxtChip` do sino (dono, 04/11/2026: em
+toda tela, a toolbar do escritório e a linha do chão; nunca ao lado do ícone). Na mesa,
+ícone, "Filtros" e o número no fluxo do botão (`OperatorCountChip`), como todo botão com
+rótulo da suíte. Contêiner: `NuxtDrawer` de baixo no celular, `NuxtPopover` na mesa.
 Na mesa os recortes ativos viram chips ao lado do botão (`chips`); no celular, os chips
 são os do cabeçalho (`active-filters`).
 
@@ -1377,6 +1556,36 @@ são os do cabeçalho (`active-filters`).
   `BIView` sem perder nenhum). "Publicar para a equipe" (gerente) fica para depois.
 - `#filter-panel` do `OperatorPageHeader`: no celular, fixo na ponta da linha da
   toolbar (o último a sair); na mesa, logo depois dos recortes primários.
+
+#### Filtro único da suíte (dono, 04/11/2026)
+
+Toda lista filtra por UMA coisa, este painel, no MESMO lugar e com o MESMO gesto em
+todos os apps:
+
+- **Mesa:** `#filter-panel` do `OperatorPageHeader`: "Filtros (n)" no começo da linha de
+  baixo, popover, e os chips dos recortes ao lado, cada um com ×.
+- **Celular (a linha do chão):** `#filter-panel` do `OperatorCompactBar`, com
+  `trigger="icon"` e `:chips="false"`. O gatilho fica na linha do selo, antes da busca
+  (selo · Filtros · Busca · Sino · ⋮): ícone fantasma de 44px e o número no **canto
+  superior direito do ícone**, o mesmo `NuxtChip` do sino (nunca no fluxo ao lado). Um
+  toque abre o painel na gaveta de baixo. O recorte ativo aparece na faixa logo abaixo da
+  linha (`filter-active` + `filter-label`), com Limpar.
+- Nada de abas, selects ou gaveta paralela repetindo um recorte do painel. O que não é
+  filtro fica fora: o modo da lista (`#filters-primary`, o dia da Produção), Ordenar e
+  Ver como (no ⋮), e os controles de leitura do B.I. (período ‹ ›, comparar).
+- Nunca gaveta dentro de gaveta: o painel não entra no `#filters` do `OperatorCompactBar`.
+
+```vue
+<OperatorCompactBar title="Enviados" :filter-active="hasFilters" :filter-label="filterSummary" @clear="clearFilters">
+  <template #filter-panel>
+    <OperatorFilterPanel v-model="filters" :dimensions="dimensions" trigger="icon" :chips="false" />
+  </template>
+</OperatorCompactBar>
+```
+
+O `#filters` do `OperatorCompactBar` (o painel antigo, por "Filtros" dentro do ⋮) está **a
+sair**: fica só até o Gestor (Pedidos), a Produção (`ProductionHeader`) e o B.I.
+(`BiCompactBar`) migrarem, um PR por app. Tela nova não o usa.
 - Trava: `guardrails.filterPanel.test.ts` (nenhum `FilterBar` no Gestor; toda tela
   que guarda favorito está no registro do servidor).
 
@@ -1687,13 +1896,35 @@ Contrato:
   erro continua sendo da ação.
 - **Spinner empacotado**: `line-md:loading-loop` (coleção instalada na layer, #1316).
   Ícone buscado pela rede no meio do gesto é a mesma inércia por outro caminho.
+- **Na raiz, o botão da suíte já cumpre isso sozinho** (DEV-2026-094). O plugin
+  `app/plugins/buttonPendingByDefault.ts` liga o `loadingAuto` do Nuxt UI em todo
+  `NuxtButton` (e no `OperatorButton`, que o embrulha): o clique que **devolve** a
+  promessa (`@click="save"`, `@click="save(linha)"`) gira e trava até ela assentar.
+  `usePendingAction` continua sendo o caminho para pendente por chave (linha A não
+  trava a B), para o estado que outra peça da tela precisa ler e para o `<button>`
+  nativo. Desligar o automático (`:loading-auto="false"`) só com motivo, na lista da
+  trava.
+- **Navegação também responde no toque**: o `OperatorLoadingFeedback` (montado pelo
+  `OperatorAppRoot`) começa a espera no `page:loading:start`, antes do middleware, com
+  uma barra de rota indeterminada no topo (só `transform`, sem fade: o compositor a
+  mantém andando mesmo com a thread presa), e marca o link tocado (`aria-busy` +
+  `data-navigation-pending`, esmaecido por um estilo global do próprio componente). O atalho que abre
+  outro app (origem diferente) ganha a marca, a barra e o modal no toque: no PWA não
+  há barra do navegador para dizer que a página está vindo.
+- **Pinta antes de trabalhar**: `app/plugins/navigationPaintsFirst.client.ts` faz a
+  troca de página esperar um quadro pintado (teto de 50 ms). Sem isso, a montagem da
+  tela nova prendia a thread (~380 ms medidos no Compras) e nenhum sinal chegava à tela.
 - A trava `tests/guardrails.pendingAction.test.ts` varre a layer e os apps de operador
   do `registry.json`: botão com `@click` numa função `async` do próprio componente
   precisa declarar o pendente (`:loading`, `:aria-busy` ou `:disabled` no mesmo
-  elemento). O que já existia sem isso está numa lista que **só encolhe**: corrigir um
-  item obriga a tirá-lo da lista, e item novo reprova.
+  elemento), a não ser o botão da suíte que devolve a promessa. Botão da suíte cujo
+  handler **joga a promessa fora** (`@click="a(); save()"`) reprova sem lista: o
+  automático não a veria. A lista do que já existia zerou em 25/11/2026 e **só
+  encolhe**: item novo reprova.
 
-A loja tem cópia espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`) e,
+A loja tem cópia espelhada (`storefront-nuxt/app/composables/usePendingAction.ts`), o
+mesmo automático no `UiButton` (o clique que devolve promessa gira e trava), a mesma
+barra de rota e o mesmo link marcado e,
 além dela, o **toque antes da hidratação** (`storefront-nuxt/app/utils/earlyTap.ts`):
 o "Adicionar" nasce ativo no HTML do servidor, um script inline no `<head>` guarda o
 toque que chega antes do app e o mostra girando, e o componente o executa uma vez ao
@@ -1703,29 +1934,42 @@ montar.
 
 O gesto destrutivo que o cliente vai ler (cancelar, recusar) pergunta o motivo, diz a
 consequência e confirma num diálogo só. Consumidores: o cancelar da encomenda no PDV
-(`PosPreorderCancelDialog`) e o recusar/cancelar do Gestor (`OrderReasonDialog`).
+(`PosPreorderCancelDialog`), o recusar/cancelar do Gestor (`OrderReasonDialog`), a
+ouvidoria resolvida do Gestor e o recusar anúncio do Marketing.
 
 ```html
 <OperatorReasonDialog
   :open="open" title="Cancelar pedido" :description="consequence"
-  confirm-label="Confirmar" :presets="cancellation_presets" :busy="busy"
-  @update:open="open = $event" @confirm="({ reason, code }) => cancelOrder(reason, code)" />
+  confirm-label="Confirmar" :keyed-reasons="cancel_reasons" :busy="busy"
+  @update:open="open = $event" @confirm="({ key, reason }) => cancelOrder(key, reason)" />
 ```
 
 Contrato:
 
 - **A consequência é obrigatória** (`description`): reembolso, para onde vai o motivo.
-- **Motivos prontos** (`presets`, os grupos cadastrados no Admin) são um toque; com
-  eles vem o "Outros", que exige texto. "Outros" nunca é o motivo enviado.
-- **Motivo codificado** (`coded` + `codedReasons`): o iFood exige um código da lista
-  dele; a descrição escolhida vira o texto que o cliente lê.
-- `required` diz se confirmar em branco é permitido (recusar exige; cancelar não).
+- **Motivo da lista** (`keyedReasons`): a lista única do backend, a MESMA para recusar e
+  cancelar (dono, 07/11/2026). Escolher é obrigatório, a tela mostra a frase que o
+  cliente lê, e o texto livre é a observação interna (`{ key, reason }`).
+- **Texto livre** (sem lista): o motivo escrito; `required` exige texto para confirmar.
 - **Fechar com texto digitado pergunta dentro do diálogo**, nunca por
   `window.confirm`. Ocupado (`busy`), o diálogo não fecha nem confirma de novo.
 - A autorização do gerente fica **fora**: o `OperatorManagerAuth` sobe por cima, e o
   motivo digitado continua embaixo.
-- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtSelect`, `NuxtFormField`
-  com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
+- **O que decide o gesto fica sempre à vista** (WP-G06): o confirmar, o Voltar, a linha
+  do que falta, a pergunta de descarte e a falha moram no rodapé do `NuxtModal`, que não
+  rola. O corpo (motivos, frase do cliente, observação) é o que rola. Com oito motivos
+  em 850 px de altura o confirmar ficava cortado na base.
+- **A falha aparece dentro do diálogo** (`error`): o toast e o cartão de quem chamou
+  ficam atrás dele. `errorField` (`key` ou `reason`) marca o campo que a falha aponta,
+  no dialeto `{detail, field, errors}`. Quem chama limpa o `error` ao tentar de novo.
+- **`blocked`**: a frase de por que ainda não dá para confirmar quando o motivo não é o
+  que falta (quem chama ainda lê o que o gesto faz). O confirmar apaga e a linha ao lado
+  dele diz a frase; "Escolha um motivo para confirmar." vem antes.
+- **`#summary`**: sobre o quê é o gesto e o que ele faz (qual pedido, o destino do
+  dinheiro), no topo do corpo, antes da pergunta do motivo. No celular a `description`
+  do cabeçalho passa por baixo do X quando é longa: frase longa vai aqui.
+- Peças do Nuxt UI, nada do app hospedeiro: `NuxtModal`, `NuxtRadioGroup`,
+  `NuxtFormField` com `NuxtTextarea`, `NuxtAlert` e `NuxtButton`.
 
 ## Pergunta antes de descartar (`useConfirm`)
 
@@ -1772,6 +2016,12 @@ Contrato:
   (`usePosPreorderMove`: "Mudar para qui, 01/10" / "Manter a data").
 - **Ficar é o padrão seguro.** O foco nasce em "Continuar editando"; Esc responde ficar;
   toque fora não responde nada (é `AlertDialog`). Só o botão destrutivo descarta.
+- **O sim que troca a tela leva o foco adiante (`returnFocusOnConfirm: false`).** Ao fechar,
+  a caixa devolve o foco a quem o tinha na abertura. Quando o sim troca a tela, esse
+  elemento está de saída e o foco morreria no `body`; com `returnFocusOnConfirm: false` o
+  sim não devolve o foco a ninguém, e quem pediu o leva ao gesto que segue quando ele
+  aparecer. O não devolve sempre. Consumidor: a "Nova encomenda" do PDV (`openNewOrder`),
+  que leva o foco a "Identificar cliente" (#2824).
 - **Uma pergunta por vez.** Com uma aberta, a seguinte responde `false` sem abrir: dois
   gatilhos do mesmo gesto (o Esc do campo e o Esc do popover) não empilham caixas.
 - **Abre sobre o diálogo do app.** O kit faz `dedupe` do `reka-ui` (`nuxt.config.ts`), para
@@ -1810,6 +2060,7 @@ todo cadastro precisa e que antes cada tela escrevia por conta própria.
   @update:open="open = $event"
   @save="submit"
 >
+  <template #actions><!-- ações contextuais do cabeçalho (ex.: "Arquivar") --></template>
   <template #lead><!-- ação extra antes do descarte (ex.: "Trocar intenção") --></template>
 
   <OperatorFormSection section-key="identity" title="Identificação">
@@ -1839,10 +2090,18 @@ Contrato:
   `size="standard"` (`sm:max-w-lg`) para gestos curtos como uma duplicação de dois
   campos. Título, descrição, corpo com o slot padrão e barra de ação vêm juntos. Quem chama
   continua dono do formulário e do salvamento: o casco só conduz.
+- **Ações contextuais continuam no cabeçalho.** O slot `actions` é encaminhado ao
+  cabeçalho da gaveta para gestos sobre o registro inteiro, como arquivar e abrir o
+  histórico. Salvar e descartar continuam exclusivamente na barra da base.
 - **Seções com nome.** Cada `OperatorFormSection` é um bloco `data-focus-target` com
   `tabindex="-1"`; o título e a descrição são opcionais, e quem chama decide o chrome
   (um `NuxtCard` em volta, ou os campos direto na superfície do painel). O controle que
   deve receber o foco de teclado se marca com `data-focus-control`.
+- **Linhas de campos pelo significado.** `OperatorFieldRow` recebe `priority="value"`,
+  `priority="context"` ou `priority="balanced"`. O consumidor declara qual lado precisa
+  de leitura, não frações ou larguras. Os slots `value` e `context` dividem a primeira
+  linha; `detail` abre uma linha inteira quando uma escolha revela outro campo. Abaixo de
+  360 px os campos empilham. Assim, conteúdo condicional nunca é espremido numa coluna.
 - **Próximo foco por seção.** `active-section` é a chave do momento; quando ela muda, a
   página vai à seção (`useNextFocus`) e foca o controle marcado, ou a própria seção. O
   casco também expõe `reveal(alvo, opções)` para o foco fora do fluxo.
@@ -1860,8 +2119,8 @@ Contrato:
   `window.confirm`.
 - **Nada de salvar no escuro.** `save-disabled` com `save-disabled-reason` diz o que
   falta ("Informe o código e o nome para salvar."); o botão continua no lugar.
-- Consumidor: o criar/duplicar produto do Gestor
-  (`orders-nuxt/app/components/CatalogProductCreatePanel.vue`). O próximo é a criação
+- Consumidores: criar/duplicar e editar produto no Gestor
+  (`CatalogProductCreatePanel.vue` e `CatalogProductPanel.vue`). O próximo é a criação
   de receita da Produção (`recipes/new`), quando a porta Manual virar o formulário
   canônico.
 - Testes: `tests/formShell.test.ts` (a conta pura), `tests/composables/useDirtyForm.test.ts`
@@ -1985,9 +2244,9 @@ Do `UiSelect`, três coisas que valem a leitura:
   `<span id>` e passe `labelledBy`. Isto é memória de um defeito pago no recebimento do
   Compras; o teste que a prende vive em `tests/components/UiChoicePrimitives.test.ts`.
 
-O `UiNativeSelect` **está aposentado** e o `UiSelect` saiu do conjunto (dono,
-08/10/2026): escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da
-suíte", acima.
+O select nativo foi removido e o `UiSelect` saiu do conjunto (dono, 08/10/2026):
+escolha nova é `NuxtSelect` ou `NuxtSelectMenu`. Ver "Conjunto mínimo da suíte",
+acima.
 
 ### `UiToggleChip` — escolha múltipla desenhada como pílula
 
@@ -2017,11 +2276,12 @@ O chip é `role="checkbox"` com `aria-checked`, como o `UiCheckbox` — escolher
 é marcar item, não apertar um botão que fica apertado. Um grupo de chips mora dentro de
 um `<fieldset>` com `<legend>` ou de um `role="group"` com nome.
 
-**Não há degrau denso, e é de propósito.** O alvo de 44 px (`min-h-control`) é o piso do
-kit, e o `h-9` de 36 px é justamente a dívida que a cópia do Marketing carregava —
+**Não há degrau denso, e é de propósito.** A altura é a do token (`min-h-control`, 32 px,
+a altura `md` de campos e botões em todos os apps, decisão do dono de 09/10/2026), e o
+`h-9` escrito à mão é justamente a dívida que a cópia do Marketing carregava:
 `kitOwnership.guardrails.test.ts` recusa altura literal em primitivo. Grade que não cabe
-a 44 px não vira exceção aqui: ela **reflui**. Os sete dias da semana do Marketing eram o
-caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
+na altura do token não vira exceção aqui: ela **reflui**. Os sete dias da semana do
+Marketing eram o caso difícil e viraram quatro colunas no celular, sete a partir do `sm`.
 
 ### ⚠️ `aria-pressed` não é sinal de chip — e quase nunca é
 
@@ -2073,8 +2333,9 @@ Passo de wizard e campo de formulário (PDV agendar e reagendar; Compras recebim
                    :max="maxDate" :available-dates="openDates" label="Dia da retirada" />
 ```
 
-- **Quatro botões de 44 px** (`min-h-control`), um toque escolhe: `Hoje / Qui 01/10`,
-  `Amanhã / Sex 02/10`, `<dia da semana por extenso> / 03/10` e `Outra data`.
+- **Quatro botões**, com piso na altura `md` (`min-h-control`, 32 px); um toque escolhe:
+  `Hoje / Qui 01/10`, `Amanhã / Sex 02/10`, `<dia da semana por extenso> / 03/10` e
+  `Outra data`.
 - O terceiro é a **próxima data depois de amanhã que o contexto permite**: pula dia
   fechado (`availableDates`) e respeita `min`/`max`.
 - Hoje e amanhã **aparecem sempre**; se o contexto não deixa, ficam apagados com o
@@ -2266,12 +2527,12 @@ há `node_modules` acima de `surfaces/`. Na base eles não resolveriam.
 **Tail legítimo** é o que pertence a um app só: impressão térmica de 80 mm e
 `.pos-tile-fallback` no POS; `.date-input-hit-area` e `forced-colors` no Produção;
 `@font-face` self-hosted, alvos de toque de 44 px e `prefers-reduced-motion` no
-Marketing (piloto do ADR-026). Os outros cinco apps não têm tail.
+Marketing (piloto do ADR-038). Os outros cinco apps não têm tail.
 
 ⚠️ **A armadilha do `@source`:** o caminho é relativo ao arquivo que o declara. Na
 base, `../..` é a raiz `operator-kit/app`. Errar não quebra o build — o CSS compila
 e as classes usadas só nos componentes do kit (`OperatorRail`, `RailItem`,
-`RailToggle`, `OfflineBanner`, `UiNativeSelect`) somem do bundle em silêncio.
+`RailToggle`, `OfflineBanner`) somem do bundle em silêncio.
 Medido: um `@source` errado derrubou 14 KB do CSS do `production-nuxt` com exit 0 e
 zero avisos. `tests/guardrails.test.ts` resolve o caminho declarado e exige que ele
 ainda alcance esses componentes; o mesmo arquivo recusa que qualquer app volte a
@@ -2393,7 +2654,7 @@ Duas consequências que valem a leitura:
   regra acusaria cada um deles. É o mesmo que o preset do Nuxt faz nos apps.
 - **`Ui*.vue` do kit NÃO herda o afrouxamento de `any`.** O bloco
   `app/components/Ui/**` da base existe para as primitivas VENDADAS do ui-thing/reka-ui;
-  no kit os `Ui*.vue` são planos (`app/components/UiNativeSelect.vue`) e escritos aqui.
+  no kit os `Ui*.vue` são planos e escritos aqui.
   O glob da base não os alcança, e isso é deliberado: `@typescript-eslint/no-explicit-any`
   continua **erro** neles.
 

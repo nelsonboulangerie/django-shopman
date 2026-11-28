@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-098",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Analise os docs anexos, compreenda o objetivo, aprimore e unifique a abordagem e por fim execute o plano descrito em SHOPMAN-CI-DX-EXCELLENCE-PLANO-agente-a e SHOPMAN-CI-DX-PLANO-agente-b",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

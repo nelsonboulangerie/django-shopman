@@ -36,7 +36,6 @@ function card(
     partition: [{ quantity: "10", quality_grade_ref: "standard", quality_defect_ref: "", loss: false }],
     correction_count: 0,
     last_correction_at_display: "",
-    committed_qty: "",
     full_price_qty: "10",
     discounted_qty: "0",
     loss_qty: "0",
@@ -110,6 +109,22 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(wrapper.emitted("confirm-batch")).toHaveLength(1);
   });
 
+  it("sem permissão, diz quem confirma em vez de botões mortos (beta 05/11)", () => {
+    const orders = ORDERS().map((order) => ({ ...order, can_correct: false }));
+    const wrapper = mountPanel(orders, {
+      batchAvailable: false,
+      reviewAvailable: () => false,
+      correctionAvailable: () => false,
+    });
+
+    expect(wrapper.find("[data-quality-confirm-batch]").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Você confirma como responsável");
+    expect(wrapper.text()).not.toContain("Confirmar assim");
+    const hints = wrapper.findAll("[data-quality-manager-only]").map((hint) => hint.text());
+    expect(hints.length).toBeGreaterThan(0);
+    expect(hints[0]).toBe("Quem confirma a qualidade é o gerente. Chame quem está de turno.");
+  });
+
   it("mostra todos os lotes limpos só quando pedido", async () => {
     const wrapper = mountPanel(ORDERS());
     expect(wrapper.find("[data-quality-clean]").text()).not.toContain("Receita 6");
@@ -127,7 +142,7 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(exceptions).toHaveLength(1);
     expect(exceptions[0]!.text()).toContain("Croissant");
     expect(exceptions[0]!.text()).toContain("Perda 2");
-    expect(exceptions[0]!.text()).toContain("fechado por Rafael 07:00");
+    expect(exceptions[0]!.text()).toContain("fechado por Rafael 7h");
 
     const buttons = exceptions[0]!.findAll("button");
     await buttons.find((button) => button.text().includes("Confirmar assim"))!.trigger("click");
@@ -136,11 +151,11 @@ describe("QualityGatePanel — qualidade em lote", () => {
     expect(wrapper.emitted("correct")?.[0]?.[0]).toMatchObject({ pk: 7 });
   });
 
-  it("deixa fora do portão o lote não fechado, com atalho para o Fechamento", async () => {
+  it("deixa fora do portão o lote não fechado, com atalho para a Finalização", async () => {
     const wrapper = mountPanel(ORDERS());
     const open = wrapper.find("[data-quality-open]");
 
-    expect(open.text()).toContain("1 lote ainda no forno ou sem fechar. Entra aqui depois do Fechamento.");
+    expect(open.text()).toContain("1 lote ainda no forno ou sem fechar. Entra aqui depois da Finalização.");
     await open.find("button").trigger("click");
     expect(wrapper.emitted("go-close")).toHaveLength(1);
   });

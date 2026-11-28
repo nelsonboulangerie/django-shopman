@@ -85,35 +85,19 @@ venda não declarada, descoberta pelo contador, não pelo sistema.
 `shopman/shop/tests/test_fiscal_focusnfe.py:40,184,219` afirmam a URL
 `homologacao.focusnfe.com.br`. Nenhum teste exige que produção seja alcançável.
 
-### 3. ✅ `SHOPMAN_EXPOSE_DEBUG_OTP` ligava sozinho, e a inferência lia texto livre
+### 3. ✅ OTP não possui saída de debug no HTTP
 
-- Era: `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", DEBUG or SHOPMAN_ENVIRONMENT == "staging")`, com o ambiente inferido por substring de host. Hoje: `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", False)` (`config/settings.py:88-92`)
-- Consumidor: `shopman/storefront/api/auth.py::_debug_otp_allowed` põe o código OTP na resposta JSON — só em DEBUG, ou com flag explícita + segredo apresentado
+O código OTP nunca integra resposta HTTP, em nenhum ambiente. A cadeia de
+entrega é independente e sempre usa sender declarado; desenvolvimento e E2E
+capturam o código por dublê explícito fora da superfície pública. Foram
+removidos flag, segredo, aliases de payload e UI de exibição. O gate ativo
+reprova qualquer reintrodução desses símbolos.
 
-**Risco: segurança.** É o bloqueador de go-live já registrado. O agravante — **a
-porta abria sozinha por causa de uma string** — está fechado.
+### 4. ✅ O adapter de e-mail devolve sucesso enquanto o backend só imprime
 
-**✅ Corrigido (a inferência):** `SHOPMAN_ENVIRONMENT` não é mais inferido de
-substring. A env é explícita nos specs de deploy (`.do/app.subdomains.yaml`
-= `production`, `.do/app.alpha-subdomains.yaml` = `staging`), e a ausência fora
-de `DEBUG` falha FECHADO: `production`, nunca `staging`
-(`config/settings.py:77-86`). Um CNAME esquecido ou um `DJANGO_ALLOWED_HOSTS`
-que ainda lista host de staging não rebaixa mais o ambiente — e o guarda
-`SHOPMAN_E010` volta a ler um valor confiável, então dispara. Regressão em
-`shopman/shop/tests/test_shopman_environment.py` (re-executa o módulo de
-settings com env envenenada e afirma `production` + OTP desligado).
-
-**✅ Corrigido (o default):** `SHOPMAN_EXPOSE_DEBUG_OTP` nasce `False` sempre,
-sem herdar de `DEBUG` nem de ambiente (`config/settings.py:88-92`). Ligar é
-decisão explícita do spec de deploy — o alpha declara `true`, produção declara
-`false`, e quem esquecer a env fica com a porta fechada. Nada muda no vivo:
-o dev local não lê este default (`_debug_otp_allowed` devolve `True` em
-`DEBUG` antes de consultar a flag), e por cima ainda vale o segredo
-`SHOPMAN_DEBUG_OTP_TOKEN` (PR #430): fora de `DEBUG`, flag ligada sem token
-apresentado continua recusando. As três camadas — env explícita, flag
-explícita, segredo — falham fechadas de forma independente.
-
-### 4. ⬜ O adapter de e-mail devolve sucesso enquanto o backend só imprime
+> **✅ Já fechado no `main`** (conferido em 19/10): `notification_email.is_available`
+> devolve `False` para backend inerte (console, locmem, dummy) e para SMTP sem host;
+> a cadeia segue para SMS e WhatsApp.
 
 - `shopman/shop/adapters/notification_email.py:238-240` — `is_available` devolve `bool(EMAIL_HOST or EMAIL_BACKEND)`
 - `config/settings.py:799-802` — `EMAIL_BACKEND` cai no `console.EmailBackend`
@@ -249,7 +233,11 @@ em silêncio a escolha explícita do gestor e cai para settings. E `logger.debug
 
 ## Tier 3 — fail-open em decisão de segurança
 
-### 13. ⬜ O middleware de 2FA do Admin deixa passar quando a URL não resolve
+### 13. ✅ O middleware de 2FA do Admin deixa passar quando a URL não resolve
+
+> **✅ Já fechado no `main`** (conferido em 19/10): os dois `NoReverseMatch` de
+> `middleware_2fa.py` devolvem 503 ("Verificação em duas etapas indisponível."),
+> nunca o request passando.
 
 - `shopman/backstage/middleware_2fa.py:26-30` — `except NoReverseMatch: return self.get_response(request)`
 - idem `:42-45` — `except NoReverseMatch: return False` ("não precisa verificar")
@@ -259,7 +247,12 @@ URLconf falhar ao importar, o portão de 2FA vira no-op e todo `/admin/` abre pa
 qualquer sessão staff. **Um middleware de segurança que não acha a própria view
 de verificação deve dar 500, não acenar para o request passar.**
 
-### 14. ⬜ `notifications.get_backend(None)` resolve para o console
+### 14. ✅ `notifications.get_backend(None)` resolve para o console
+
+> **✅ Fechado (19/10, PR #1898).** Fora de `DEBUG` não existe backend padrão:
+> `get_backend(None)` devolve `None` com `logger.error`, e `notify()` falha com
+> "Backend not named". O aviso de estoque para cliente sem canal com consentimento
+> para antes do `notify()`. Regressão: `shop/tests/test_notification_backend_unnamed.py`.
 
 - `shopman/shop/notifications.py:33-37` — `if name is None: name = "console"`
 - `shopman/shop/adapters/notification_console.py:45,48-50` — `send`/`is_available` devolvem `True` incondicionalmente
@@ -286,7 +279,13 @@ de produção transforma toda notificação em sucesso silencioso pelo resto da 
 daquele processo. O adapter de OTP acertou (`otp_sms_comtele.py:51-56` devolve
 `False` no ramo inerte, para a cadeia seguir) — é o modelo.
 
-### 16. ⬜ O resolver fiscal degrada para "só se o operador pedir"
+### 16. ✅ O resolver fiscal degrada para "só se o operador pedir"
+
+> **✅ Fechado (19/10, PR #1894).** Cada resolver vota sozinho; o quebrado vira
+> `logger.error` e, no `emit` (lado de escrita), alerta crítico
+> `integration_config_drift`, sem calar os que funcionam. No boot, o
+> `SHOPMAN_E028` (check comum, roda no `migrate` do PRE_DEPLOY) reprova caminho que
+> não importa, inclusive o `intermediated_sale` do delta do Dia D num build sem ele.
 
 - `shopman/shop/services/fiscal.py:49-52` — `except Exception: logger.warning(...); return _default_emission_decision(order)`
 
@@ -316,7 +315,13 @@ por isso Tier 3 — mas é o ramo permissivo escolhido no `except`, em `logger.d
 
 ## Uma classe acima — quando o permissivo não é esquecimento, é o default do tipo
 
-### 18. 🟨 `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+### 18. ✅ `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+
+> **✅ Metade 2 fechada (19/10, PR #1918).** As oito mutações de caixa já estavam no
+> replay por `client_request_id` (`DIVIDA_ONDA_2` vazia); `cancel_recent_sale` entrou
+> no mesmo claim (`_local_idempotent`, escopo `pos.sale.cancel_recent`) e o PDV manda
+> o id, reusado na mesma tentativa. `clear_tab` segue `none` de propósito: DELETE por
+> `session_key`, o segundo disparo não acha o que liberar.
 
 > **Metade 1 fechada (29/08).** O default virou `"required"` no dataclass, nas duas
 > fábricas de ação (`storefront/api/actions.py`, `shop/projections/order_tracking.py`)
@@ -404,9 +409,8 @@ Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em
 | `check_secret_key` (E001) | `SECRET_KEY` ≠ default de dev | ⚠️ **Sim.** O default é literal (`config/settings.py:71`), e essa chave deriva o HMAC do OTP, do PIN, do link de acesso e da assinatura do comprovante de caixa. Chave conhecida = OTP/PIN/comprovante forjáveis |
 | `check_allowed_hosts` (E002) | sem `*` | ⚠️ **Sim.** Default é `"*"` (`:104`) |
 | `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). `EFI_SANDBOX` e a chave test-vs-live do Stripe são cobertos pelo E022 (valor) e E026 (omissão); o sentido contrário (chave live com porta de teste aberta, em qualquer ambiente) pelo E027 |
-| `check_debug_otp_exposure` (E010) | OTP de debug só em dev/staging | ⚠️ **Sim** (só roda em `check --deploy`), mas o valor que ele lê voltou a ser confiável: `SHOPMAN_ENVIRONMENT` é explícito, sem inferência por substring (item 3 ✅) |
 | `check_shared_cache_backend` (E006) | Redis em prod | ⚠️ **Sim.** LocMem em prod faz o `django-ratelimit` virar por-worker: os limites de OTP/login multiplicam pelo número de workers |
-| `check_fiscal_emission_resolver` (E013) | resolver configurado | ⚠️ **Sim** (item 16). E não checa `FOCUS_NFE_ENVIRONMENT` |
+| `check_fiscal_emission_resolver` (E013) | resolver configurado | ✅ Fechado (item 16): caminho quebrado é o E028, check comum, e o motor grita em runtime. O ambiente da Focus é o E022/E026 |
 | `check_operator_cookie_domain` (E014) | hosts sob o domínio-pai | ⚠️ Leve — divergência quebra CSRF/sessão em silêncio |
 | `check_webhook_tokens` (E004) | tokens EFI/iFood | Não — os endpoints já falham fechados |
 | `check_guestman_webhook_secret` (W009) | segredo ManyChat | Não — `Gates.provider_event_authenticity` falha fechado em runtime |
@@ -427,7 +431,6 @@ conferência antecipada, não a única trava.
 |---|---|---|---|
 | `EFI_SANDBOX` | `true` (dev/staging) | E026 (omissão) + E022 (valor) no PRE_DEPLOY de produção ✅ | Deploy de produção não sobe (item 1) |
 | `FOCUS_NFE_ENVIRONMENT` | `homologacao` (dev/staging) | E026 (omissão) + E022 (valor) no PRE_DEPLOY de produção ✅ | Deploy de produção não sobe (item 2) |
-| `SHOPMAN_EXPOSE_DEBUG_OTP` | **`false`** (item 3 ✅ — sem herdar de nada) | flag explícita + segredo `SHOPMAN_DEBUG_OTP_TOKEN` (sem token, fora de DEBUG = recusa) | OTP na resposta exige spec com flag `true` E segredo apresentado |
 | `SHOPMAN_PIX_ADAPTER` | `payment_mock` **só em DEBUG** ✅ | `_ensure_simulation_allowed` ✅ | — |
 | `SHOPMAN_CARD_ADAPTER` | `payment_stripe` ✅ | `_refuse_card` + `StripeNotConfigured` ✅ | — |
 | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` | `False` | `payment_mock` ✅ | Reabre o simulador de Pix |
@@ -440,7 +443,7 @@ conferência antecipada, não a única trava.
 
 ⚠️ **No alpha hoje** (spec vivo da DO): `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true`,
 `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`, `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true` (8s),
-`SHOPMAN_EXPOSE_DEBUG_OTP=true`, `EFI_SANDBOX=true`. Todas legítimas para o alpha
+`EFI_SANDBOX=true`. Todas legítimas para o alpha
 e **todas na lista de remoção do go-live** —
 ver `docs/runbooks/go-live-preflight.md`.
 
@@ -456,11 +459,8 @@ comportamento permissivo**. Casos encontrados:
   teste de **cartão**. ✅ corrigidas nesta rodada.
 - `shopman/shop/tests/test_fiscal_focusnfe.py:40,184,219` — travam a URL de
   homologação como caminho feliz. ⬜
-- `config/settings_test.py` — pinos que descrevem o ambiente de teste
-  (`SHOPMAN_EXPOSE_DEBUG_OTP=True`, `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=True`).
-  Legítimos, **desde que** a porta fechada tenha teste próprio com
-  `@override_settings` — é o que
-  `shopman/shop/tests/test_payment_never_authorized_without_gateway.py` faz.
+- `config/settings_test.py` — pinos que descrevem o ambiente de teste para
+  adapters de pagamento. OTP é capturado por sender explícito; nunca pelo HTTP.
 
 **Regra:** todo default permissivo num caminho de dinheiro/acesso precisa de um
 teste que exercite a **porta fechada**, não só a aberta.

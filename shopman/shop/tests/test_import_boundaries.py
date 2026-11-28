@@ -37,6 +37,48 @@ PRESENTATION_ROOTS = (
     STOREFRONT_ROOT / "presentation",
     BACKSTAGE_ROOT / "presentation",
 )
+READ_SIDE_ROOTS = (
+    SHOP_ROOT / "projections",
+    BACKSTAGE_ROOT / "projections",
+    STOREFRONT_ROOT / "presentation",
+)
+API_ROOTS = (
+    BACKSTAGE_ROOT / "api",
+    STOREFRONT_ROOT / "api",
+)
+
+# Command modules are delivery-visible, but never callable from GET handlers.
+# Keep this list small and explicit; mutation-shaped calls are caught as a
+# second line of defence even when they live outside these modules.
+COMMAND_SERVICE_MODULES = (
+    "shopman.backstage.services.blind_prep_codes",
+)
+MUTATION_CALL_PREFIXES = (
+    "add_",
+    "allocate_",
+    "consume_",
+    "create_",
+    "delete_",
+    "ensure_",
+    "issue_",
+    "mark_",
+    "mutate_",
+    "process_",
+    "reconcile_",
+    "record_",
+    "save_",
+    "send_",
+    "set_",
+    "update_",
+)
+ORM_MUTATION_METHODS = {
+    "bulk_create",
+    "bulk_update",
+    "create",
+    "get_or_create",
+    "update",
+    "update_or_create",
+}
 
 HOST_PREFIXES = (
     "config",
@@ -44,6 +86,28 @@ HOST_PREFIXES = (
     "shopman.storefront",
     "shopman.backstage",
 )
+
+DOMAIN_KERNEL_PACKAGES = {
+    "buyman",
+    "cashman",
+    "craftsman",
+    "doorman",
+    "fiscalman",
+    "guestman",
+    "offerman",
+    "orderman",
+    "payman",
+    "stockman",
+}
+
+# O que a rede TRANSITIVA (abaixo) achou no dia em que nasceu, além das sete
+# chamadas que a A8-1 tirou dos GETs (acompanhamento, sino, etiqueta, menu): GET
+# que alcança uma escrita por um serviço sem nome de comando. É dívida, com
+# catraca nos dois sentidos: escrita NOVA reprova, e linha que ficou velha
+# (escrita resolvida, linha esquecida) também. Cada grupo é uma frente própria.
+# Chave: (arquivo, chamada no GET) -> quantas vezes.
+GET_WRITE_FOUND_BY_TRANSITIVE_GATE: dict[tuple[str, str], int] = {}
+KNOWN_NON_MUTATING_GET_CALLS = {"response.add_post_render_callback"}
 
 PROTECTED_KERNEL_PACKAGES = (
     "refs",
@@ -94,6 +158,277 @@ def _format_violations(violations: list[tuple[Path, int, str]]) -> str:
     )
 
 
+def _get_handler_write_calls(path: Path) -> list[tuple[Path, int, str]]:
+    """Return command/write calls made inside HTTP ``get`` handlers."""
+    tree = ast.parse(path.read_text(), filename=str(path))
+    imported_command_names: set[str] = set()
+    imported_command_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module and _matches_prefix(
+            node.module, COMMAND_SERVICE_MODULES
+        ):
+            imported_command_names.update(alias.asname or alias.name for alias in node.names)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if _matches_prefix(alias.name, COMMAND_SERVICE_MODULES):
+                    imported_command_modules.add(alias.asname or alias.name)
+
+    violations: list[tuple[Path, int, str]] = []
+    for handler in ast.walk(tree):
+        if not isinstance(handler, (ast.FunctionDef, ast.AsyncFunctionDef)) or handler.name != "get":
+            continue
+        for node in ast.walk(handler):
+            if not isinstance(node, ast.Call):
+                continue
+            label = ast.unparse(node.func)
+            if isinstance(node.func, ast.Name):
+                if node.func.id in imported_command_names or node.func.id.startswith(MUTATION_CALL_PREFIXES):
+                    violations.append((path, node.lineno, label))
+            elif isinstance(node.func, ast.Attribute):
+                owner = ast.unparse(node.func.value)
+                if node.func.attr in ORM_MUTATION_METHODS and ".objects" in owner:
+                    violations.append((path, node.lineno, label))
+                elif node.func.attr in {"save", "delete"}:
+                    violations.append((path, node.lineno, label))
+                elif node.func.attr.startswith(MUTATION_CALL_PREFIXES):
+                    violations.append((path, node.lineno, label))
+                elif any(owner == module or owner.startswith(f"{module}.") for module in imported_command_modules):
+                    violations.append((path, node.lineno, label))
+    return violations
+
+
+# ── Escrita transitiva: GET/projeção que chama um serviço de comando ─────────
+#
+# O detector acima vê só a chamada que tem cara de escrita (prefixo de mutação,
+# ``.objects.create``). Um GET que chama ``tidy(order)``, e ``tidy`` grava,
+# passava. O grafo abaixo indexa toda função do framework (shop, storefront,
+# backstage), marca quem grava DIRETO e propaga pela chamada até o ponto fixo:
+# quem chama quem grava, grava. Um GET ou uma função da camada de leitura que
+# alcança uma escritora reprova.
+
+FRAMEWORK_GRAPH_ROOTS = (SHOP_ROOT, STOREFRONT_ROOT, BACKSTAGE_ROOT)
+_GRAPH_SKIP_PARTS = {"tests", "migrations", "__pycache__"}
+# Escrita que não depende de quem é o dono da chamada.
+_ALWAYS_WRITE_METHODS = {"bulk_create", "bulk_update", "get_or_create", "update_or_create", "transition_status"}
+# Escrita só quando o dono é um queryset/manager (``dict.update`` não é).
+_QUERYSET_WRITE_METHODS = {"create", "update", "delete"}
+_QUERYSET_OWNER_MARKERS = ("objects", "filter(", "exclude(", "all(", "select_for_update(", "_set")
+
+
+def _module_name(path: Path, *, base: Path) -> str:
+    parts = list(path.relative_to(base).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts = parts[:-1]
+    return ".".join(parts)
+
+
+def _direct_write(nodes: Iterable[ast.AST]) -> str | None:
+    """A primeira escrita que o corpo da função faz por conta própria, ou ``None``."""
+    for node in nodes:
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            owner = ast.unparse(node.func.value)
+            attr = node.func.attr
+            if attr in _ALWAYS_WRITE_METHODS:
+                return f"{owner}.{attr}"
+            if attr in _QUERYSET_WRITE_METHODS and any(marker in owner for marker in _QUERYSET_OWNER_MARKERS):
+                return f"{owner}.{attr}"
+            # ``instance.save()``/``.delete()`` de model não recebe posicional;
+            # ``workbook.save(stream)`` e ``image.save(buffer)`` recebem.
+            if attr in {"save", "delete"} and not node.args and "cache" not in owner:
+                return f"{owner}.{attr}"
+            if attr == "pop" and owner.endswith("session"):
+                return f"{owner}.pop"
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript) and ast.unparse(target.value).endswith("session"):
+                    return f"{ast.unparse(target.value)}[...] ="
+                if isinstance(target, ast.Attribute) and target.attr == "modified" and ast.unparse(
+                    target.value
+                ).endswith("session"):
+                    return "session.modified ="
+    return None
+
+
+class _FrameworkWriteGraph:
+    """Funções do framework, quem cada uma chama e quem grava (transitivo)."""
+
+    def __init__(self, roots: Iterable[Path], *, base: Path = REPO_ROOT):
+        self.paths: dict[str, Path] = {}
+        trees: dict[str, ast.Module] = {}
+        for root in roots:
+            for path in sorted(root.rglob("*.py")):
+                if _GRAPH_SKIP_PARTS & set(path.relative_to(root).parts):
+                    continue
+                module = _module_name(path, base=base)
+                try:
+                    trees[module] = ast.parse(path.read_text(), filename=str(path))
+                except (SyntaxError, UnicodeDecodeError):
+                    continue
+                self.paths[module] = path
+        self.functions: dict[tuple[str, str], ast.AST] = {}
+        module_imports: dict[str, dict[str, tuple[str, ...]]] = {}
+        for module, tree in trees.items():
+            module_imports[module] = self._import_map(
+                [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))], {}
+            )
+            for node in tree.body:
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    self.functions[(module, node.name)] = node
+                elif isinstance(node, ast.ClassDef):
+                    for member in node.body:
+                        if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                            self.functions[(module, f"{node.name}.{member.name}")] = member
+        # Um passeio só por função: é a parte cara do gate.
+        self.calls: dict[tuple[str, str], list[tuple[int, ast.expr, tuple[str, str]]]] = {}
+        # Escritora -> o que a faz escritora: a escrita direta (``str``) ou a
+        # função que ela chama e que grava (``tuple``).
+        self.writers: dict[tuple[str, str], str | tuple[str, str]] = {}
+        for key, fn in self.functions.items():
+            nodes = list(ast.walk(fn))
+            local = self._import_map(
+                [node for node in nodes if isinstance(node, (ast.Import, ast.ImportFrom))],
+                module_imports[key[0]],
+            )
+            self.calls[key] = [
+                (node.lineno, node.func, target)
+                for node in nodes
+                if isinstance(node, ast.Call) and (target := self._resolve(node, key[0], local))
+            ]
+            if write := _direct_write(nodes):
+                self.writers[key] = write
+        changed = True
+        while changed:
+            changed = False
+            for key, calls in self.calls.items():
+                if key in self.writers:
+                    continue
+                for _line, _label, target in calls:
+                    if target in self.writers:
+                        self.writers[key] = target
+                        changed = True
+                        break
+
+    def _import_map(self, nodes, base: dict) -> dict[str, tuple[str, ...]]:
+        mapping = dict(base)
+        for node in nodes:
+            if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+                for alias in node.names:
+                    full = f"{node.module}.{alias.name}"
+                    mapping[alias.asname or alias.name] = (
+                        ("module", full) if full in self.paths else ("function", node.module, alias.name)
+                    )
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.asname:
+                        mapping[alias.asname] = ("module", alias.name)
+        return mapping
+
+    @staticmethod
+    def _resolve(call: ast.Call, module: str, imports: dict) -> tuple[str, str] | None:
+        func = call.func
+        if isinstance(func, ast.Name):
+            target = imports.get(func.id)
+            if target is None:
+                return (module, func.id)
+            return (target[1], target[2]) if target[0] == "function" else None
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            target = imports.get(func.value.id)
+            if target is not None and target[0] == "module":
+                return (target[1], func.attr)
+        return None
+
+    def chain(self, key: tuple[str, str]) -> str:
+        """Do ponto de chamada até a escrita direta: ``mod.a -> mod.b -> obj.save``."""
+        steps = [f"{key[0].rsplit('.', 1)[-1]}.{key[1]}"]
+        while isinstance(via := self.writers.get(key), tuple):
+            key = via
+            steps.append(f"{key[0].rsplit('.', 1)[-1]}.{key[1]}")
+        steps.append(str(via))
+        return " -> ".join(steps)
+
+    def get_handler_writes(self, roots: Iterable[Path]) -> list[tuple[Path, int, str]]:
+        """Chamadas, dentro de ``get`` HTTP, que alcançam uma escritora."""
+        violations = []
+        for (module, name), _fn in self.functions.items():
+            path = self.paths[module]
+            if not name.endswith(".get") or not any(path.is_relative_to(root) for root in roots):
+                continue
+            for line, func, target in self.calls[(module, name)]:
+                if target in self.writers:
+                    violations.append((path, line, f"{ast.unparse(func)} [{self.chain(target)}]"))
+        return violations
+
+    def read_side_writers(self, roots: Iterable[Path]) -> list[tuple[Path, int, str]]:
+        """Funções da camada de leitura que gravam, direto ou por quem chamam."""
+        return [
+            (self.paths[module], fn.lineno, f"{name} [{self.chain((module, name))}]")
+            for (module, name), fn in self.functions.items()
+            if (module, name) in self.writers
+            and any(self.paths[module].is_relative_to(root) for root in roots)
+        ]
+
+
+_FRAMEWORK_GRAPH: _FrameworkWriteGraph | None = None
+
+
+def _framework_graph() -> _FrameworkWriteGraph:
+    global _FRAMEWORK_GRAPH
+    if _FRAMEWORK_GRAPH is None:
+        _FRAMEWORK_GRAPH = _FrameworkWriteGraph(FRAMEWORK_GRAPH_ROOTS)
+    return _FRAMEWORK_GRAPH
+
+
+def test_offerman_is_the_only_list_tier_price_owner():
+    """Named orchestrator consumers cannot grow a second tier algorithm."""
+    guarded = (
+        SHOP_ROOT / "handlers" / "pricing.py",
+        SHOP_ROOT / "services" / "customer_orders.py",
+        SHOP_ROOT / "services" / "display_prices.py",
+        SHOP_ROOT / "services" / "substitutes.py",
+        SHOP_ROOT / "projections" / "suggestions.py",
+        BACKSTAGE_ROOT / "projections" / "pos.py",
+    )
+    forbidden = ('order_by("-min_qty")', "bulk_listing_tiers", "find_listing_tiers")
+    violations = [
+        f"{path.relative_to(REPO_ROOT)}: {token}"
+        for path in guarded
+        for token in forbidden
+        if token in path.read_text()
+    ]
+    assert not violations, "Duplicate list/tier price decisions:\n" + "\n".join(violations)
+
+
+def test_contextual_quote_has_no_flattened_surface_contract():
+    """The public catalog/PDP price is one typed quote, not parallel fields."""
+    assert not (SHOP_ROOT / "services" / "pricing.py").exists()
+    guarded = (
+        STOREFRONT_ROOT / "presentation" / "catalog.py",
+        STOREFRONT_ROOT / "presentation" / "product_detail.py",
+    )
+    forbidden = ("has_promotion", "promotion_label", "original_price_display")
+    violations = [
+        f"{path.relative_to(REPO_ROOT)}: {token}"
+        for path in guarded
+        for token in forbidden
+        if token in path.read_text()
+    ]
+    serializers = (STOREFRONT_ROOT / "api" / "serializers.py").read_text()
+    public_catalog = serializers.split("class ProductListItemSerializer", 1)[1].split("class CollectionSerializer", 1)[
+        0
+    ]
+    types = (REPO_ROOT / "surfaces" / "storefront-nuxt" / "app" / "types" / "shopman.ts").read_text()
+    public_types = types.split("export interface CatalogItemProjection", 1)[1].split(
+        "export interface CatalogSectionProjection", 1
+    )[0]
+    public_forbidden = (*forbidden, "base_price_q", "price_display")
+    violations.extend(
+        f"public catalog contract: {token}"
+        for token in public_forbidden
+        if token in public_catalog or token in public_types
+    )
+    assert not violations, "Legacy flattened quote fields:\n" + "\n".join(violations)
+
+
 def test_kernel_packages_do_not_import_host_layers():
     """Kernel packages must remain standalone and never import host layers."""
     violations = []
@@ -111,6 +446,187 @@ def test_kernel_packages_do_not_import_host_layers():
             "Move host-specific behavior behind an optional integration resolved "
             "through Django's app registry, settings, or a protocol adapter."
         )
+
+
+def test_domain_kernels_do_not_import_each_other_outside_bridges():
+    """Cross-kernel imports are opt-in bridges, never domain implementation."""
+    violations = []
+    for owner in sorted(DOMAIN_KERNEL_PACKAGES):
+        package_root = PACKAGES_ROOT / owner
+        for path in _py_files(package_root, skip_parts={"tests"}):
+            relative_parts = set(path.relative_to(package_root).parts)
+            if relative_parts & {"adapters", "contrib"}:
+                continue
+            for line, module in _imports(path):
+                parts = module.split(".")
+                if len(parts) < 2 or parts[0] != "shopman" or parts[1] not in DOMAIN_KERNEL_PACKAGES - {owner}:
+                    continue
+                violations.append((path, line, module))
+
+    if violations:
+        pytest.fail(
+            "Domain kernels imported another kernel outside adapters/contrib:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Move the integration to an optional adapter/contrib bridge or to the orchestrator."
+        )
+
+
+HOST_APP_LABELS = frozenset({"shop", "storefront", "backstage"})
+
+
+def _registry_lookups(source: str) -> Iterable[tuple[int, str]]:
+    """``(linha, app_label)`` de cada ``get_model("<label>"...)`` com label literal."""
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        first = node.args[0]
+        if name == "get_model" and isinstance(first, ast.Constant) and isinstance(first.value, str):
+            yield node.lineno, first.value.split(".", 1)[0]
+
+
+def _foreign_registry_lookups(source: str, owner: str) -> list[tuple[int, str]]:
+    foreign = (DOMAIN_KERNEL_PACKAGES - {owner}) | HOST_APP_LABELS
+    return [(line, label) for line, label in _registry_lookups(source) if label in foreign]
+
+
+def test_registry_lookup_detector_sees_both_spellings():
+    """O detector pega a forma de dois argumentos e a de ``"app.Model"``."""
+    source = (
+        "from django.apps import apps\n"
+        "a = apps.get_model('guestman', 'Customer')\n"
+        "b = apps.get_model('shop.Channel')\n"
+        "c = apps.get_model('orderman', 'Order')\n"
+        "d = apps.get_model(label)\n"
+    )
+    assert _foreign_registry_lookups(source, "orderman") == [(2, "guestman"), (3, "shop")]
+
+
+def test_kernels_do_not_reach_other_apps_through_the_registry():
+    """``apps.get_model("<outro kernel>", ...)`` é import com outro nome.
+
+    O gate de imports não via: o Orderman consultava ``guestman.Customer`` e
+    ``shop.Channel``, e o Craftsman ``offerman.Product``, pelo registro do Django
+    (laudo de soberania 18/10, AK-1). Fora de ``adapters``/``contrib``
+    (pontes opt-in) e de ``migrations``, o kernel pede ao porto ou à setting
+    que o host declara.
+    """
+    violations = []
+    for package_root in sorted(p for p in PACKAGES_ROOT.iterdir() if p.is_dir()):
+        owner = package_root.name
+        for path in _py_files(package_root, skip_parts={"tests", "migrations", "adapters", "contrib"}):
+            for line, label in _foreign_registry_lookups(path.read_text(), owner):
+                violations.append((path, line, f'get_model("{label}", ...)'))
+
+    if violations:
+        pytest.fail(
+            "Kernel packages reached another app through apps.get_model:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Declare a port (protocols + adapter in the owning kernel) or a host setting instead."
+        )
+
+
+def test_doorman_identity_port_has_no_legacy_contract_residue():
+    """The identity cut is atomic: old names cannot silently become a second API."""
+    roots = (
+        PACKAGES_ROOT / "doorman" / "shopman" / "doorman",
+        PACKAGES_ROOT / "guestman" / "shopman" / "guestman" / "adapters" / "auth.py",
+    )
+    forbidden = (
+        "AuthCustomerInfo",
+        "CustomerResolver",
+        "CUSTOMER_RESOLVER_CLASS",
+        "get_by_phone",
+        "get_by_email",
+        "get_by_identifier",
+        "target_kind",
+        "lock_active_by_uuid",
+        "resolve_customer_by_",
+        "normalize_login_target",
+        "LEGACY_CROSS_KERNEL_DEBT",
+        "backward compat",
+        "backward-compat",
+        "backward_compat",
+        "protocols.customer",
+    )
+    violations: list[str] = []
+    for root in roots:
+        paths = (root,) if root.is_file() else _py_files(root, skip_parts={"tests"})
+        for path in paths:
+            text = path.read_text()
+            violations.extend(
+                f"{path.relative_to(REPO_ROOT)}: {token}"
+                for token in forbidden
+                if token in text
+            )
+    assert not violations, "Legacy Doorman identity contract residue:\n" + "\n".join(violations)
+
+
+def _dynamic_imports(path: Path) -> Iterable[tuple[int, str]]:
+    """``(linha, módulo)`` de ``import_module("...")``/``import_string("...")`` literais."""
+    for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+        if not isinstance(node, ast.Call) or not node.args:
+            continue
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+        first = node.args[0]
+        if name in {"import_module", "import_string", "__import__"} and isinstance(first, ast.Constant):
+            if isinstance(first.value, str):
+                yield node.lineno, first.value
+
+
+def test_doorman_imports_no_other_kernel_not_even_through_bridges():
+    """O Doorman é soberano: nem ponte ``adapters/``/``contrib/`` para outro kernel.
+
+    A regra geral (acima) deixa ``adapters``/``contrib`` importarem outro kernel
+    como ponte opt-in. O Doorman abriu mão disso no corte do porto de identidade
+    (17/10, ``a522f21cc``): a ligação identidade verificada → cliente é o verbo
+    ``bind_verified_handle`` do ``IdentityResolverProtocol``, e quem o implementa
+    é o Guestman (``guestman/adapters/auth.py``), escolhido pelo host em
+    ``DOORMAN["IDENTITY_RESOLVER_CLASS"]``. O antigo ``_link_verified_identifier``
+    importava o Guestman dentro do service e engolia a falha; esta trava impede a
+    volta, inclusive por import dinâmico e por ``apps.get_model``.
+    """
+    package_root = PACKAGES_ROOT / "doorman"
+    foreign = DOMAIN_KERNEL_PACKAGES - {"doorman"}
+    violations = []
+    for path in _py_files(package_root, skip_parts={"tests", "migrations"}):
+        if path.name in {"conftest.py", "doorman_test_settings.py"}:
+            continue
+        found = [*_imports(path), *_dynamic_imports(path)]
+        for line, module in found:
+            parts = module.split(".")
+            if len(parts) >= 2 and parts[0] == "shopman" and parts[1] in foreign:
+                violations.append((path, line, module))
+        for line, label in _registry_lookups(path.read_text()):
+            if label in foreign:
+                violations.append((path, line, f'get_model("{label}", ...)'))
+
+    assert not violations, (
+        "Doorman reached another kernel:\n"
+        f"{_format_violations(violations)}\n\n"
+        "Identity binding belongs to the identity port implemented by the host "
+        "(IdentityResolverProtocol), never to a Doorman import."
+    )
+
+
+def test_concierge_identity_paths_import_only_host_composition():
+    """WP-4 identity paths in the storefront cannot import Guestman directly."""
+    guarded = (
+        STOREFRONT_ROOT / "concierge" / "tools.py",
+        STOREFRONT_ROOT / "concierge" / "transport.py",
+    )
+    violations = [
+        (path, line, module)
+        for path in guarded
+        for line, module in _imports(path)
+        if _matches_prefix(module, ("shopman.guestman",))
+    ]
+    assert not violations, (
+        "Concierge identity must cross the shop composition facade:\n"
+        + _format_violations(violations)
+    )
 
 
 def test_surfaces_do_not_import_each_other():
@@ -171,6 +687,36 @@ def test_framework_does_not_import_protected_kernel_internals():
             f"{_format_violations(violations)}\n\n"
             "Use package-level exports, public services, settings, or protocol "
             "adapters instead of models.<submodule> or contrib.<submodule> imports."
+        )
+
+
+def test_host_does_not_import_private_kernel_modules():
+    """Módulo de kernel com ``_`` no nome é interno: o host usa a API pública.
+
+    Vale também para os testes do host. Foi assim que o shop e o storefront
+    passaram a depender de ``shopman.doorman.services._user_bridge``, até os
+    dois verbos saírem por ``shopman.doorman``.
+    """
+    kernels = DOMAIN_KERNEL_PACKAGES | set(PROTECTED_KERNEL_PACKAGES)
+    violations = []
+    for root in (FRAMEWORK_ROOT, REPO_ROOT / "config"):
+        for path in _py_files(root):
+            for line, module in _imports(path):
+                parts = module.split(".")
+                if (
+                    len(parts) >= 3
+                    and parts[0] == "shopman"
+                    and parts[1] in kernels
+                    and any(p.startswith("_") and not p.startswith("__") for p in parts[2:])
+                ):
+                    violations.append((path, line, module))
+
+    if violations:
+        pytest.fail(
+            "Host imported private kernel modules:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Expose the verb through the kernel's public API (package __init__ "
+            "or a public services module) and import it from there."
         )
 
 
@@ -453,6 +999,203 @@ def test_presentation_reads_only_the_read_side():
             "Presentation consumes only shop.projections (Projection + Action). "
             "Route mutations through views/intents calling shop.services."
         )
+
+
+def test_read_side_does_not_write():
+    """GET/projection code must be observational, including during SSR/polling."""
+    violations: list[tuple[Path, int, str]] = []
+    for root in READ_SIDE_ROOTS:
+        if not root.exists():
+            continue
+        for path in _py_files(root, skip_parts={"tests"}):
+            tree = ast.parse(path.read_text(), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                    continue
+                chain = ast.unparse(node.func.value)
+                if node.func.attr in ORM_MUTATION_METHODS and ".objects" in chain:
+                    violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
+                elif node.func.attr in {"save", "delete"}:
+                    violations.append((path, node.lineno, f"{chain}.{node.func.attr}()"))
+
+    if violations:
+        pytest.fail(
+            "Read-side code performed writes:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Move allocation/mutation to an explicit command service reached by POST; "
+            "GET and Projection builders only read."
+        )
+
+
+def test_get_handlers_do_not_invoke_commands_or_write():
+    """HTTP GET/SSE delivery may assemble a read model but never mutate it.
+
+    Duas redes: a chamada com cara de escrita (prefixo de mutação, ORM, módulo
+    de comando), sem dívida nenhuma; e a escrita transitiva (o GET chama quem
+    grava, a qualquer distância), contra o inventário do dia em que ela nasceu.
+    """
+    direct = [
+        violation
+        for root in API_ROOTS
+        for path in _py_files(root, skip_parts={"tests"})
+        for violation in _get_handler_write_calls(path)
+        if violation[2] not in KNOWN_NON_MUTATING_GET_CALLS
+    ]
+    observed: dict[tuple[str, str], int] = {}
+    transitive = []
+    for path, line, call in _framework_graph().get_handler_writes(API_ROOTS):
+        key = (path.relative_to(REPO_ROOT).as_posix(), call.split(" [", 1)[0])
+        observed[key] = observed.get(key, 0) + 1
+        if observed[key] > GET_WRITE_FOUND_BY_TRANSITIVE_GATE.get(key, 0):
+            transitive.append((path, line, call))
+    stale = sorted(
+        f"  {path}: {call} (inventário diz {count}, achado {observed.get((path, call), 0)})"
+        for (path, call), count in GET_WRITE_FOUND_BY_TRANSITIVE_GATE.items()
+        if observed.get((path, call), 0) < count
+    )
+    violations = [*direct, *transitive]
+    if violations:
+        pytest.fail(
+            "GET handlers invoked command-side code or direct writes:\n"
+            f"{_format_violations(violations)}\n\n"
+            "Expose an Action in the projection and invoke it through POST/command ingress, "
+            "or move the effect to the lifecycle or the worker."
+        )
+    assert not stale, (
+        "GET_WRITE_FOUND_BY_TRANSITIVE_GATE tem linha que não acontece mais; tire-a:\n" + "\n".join(stale)
+    )
+
+
+def test_read_side_never_writes():
+    """Projeção e Presentation montam leitura; nenhuma função delas grava."""
+    violations = _framework_graph().read_side_writers(READ_SIDE_ROOTS)
+    if violations:
+        pytest.fail(
+            "Read-side functions write (directly or through what they call):\n"
+            f"{_format_violations(violations)}"
+        )
+
+
+def test_get_write_detector_rejects_command_service(tmp_path):
+    """Negative fixture: the gate catches the BlindPrepCode regression shape."""
+    source = tmp_path / "regression.py"
+    source.write_text(
+        "from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes\n"
+        "class RegressedView:\n"
+        "    def get(self, request):\n"
+        "        allocate_blind_prep_codes(recipe_refs=(), selected_date=None)\n",
+        encoding="utf-8",
+    )
+
+    violations = _get_handler_write_calls(source)
+    assert [(line, call) for _, line, call in violations] == [(4, "allocate_blind_prep_codes")]
+
+
+def _mutant_framework(tmp_path: Path, files: dict[str, str]) -> _FrameworkWriteGraph:
+    root = tmp_path / "shopman" / "fake"
+    for relative, source in files.items():
+        target = root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8")
+    return _FrameworkWriteGraph((root,), base=tmp_path)
+
+
+_MUTANT_COMMAND = (
+    "def tidy(order):\n"
+    "    order.data['tidied'] = True\n"
+    "    order.save(update_fields=['data'])\n"
+    "\n"
+    "def tidy_later(order):\n"
+    "    tidy(order)\n"
+    "\n"
+    "def describe(order):\n"
+    "    return {'ref': order.ref}\n"
+)
+
+
+def test_get_write_detector_catches_a_write_behind_a_service_without_command_name(tmp_path):
+    """Mutante: um GET novo que grava por um serviço de nome inocente reprova.
+
+    ``tidy`` não tem prefixo de mutação e o módulo não está em
+    ``COMMAND_SERVICE_MODULES``: a rede antiga deixava passar. A transitiva
+    pega a chamada direta, a de duas voltas e o import por função, e não acusa
+    a leitura pura do mesmo módulo.
+    """
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/orders.py": _MUTANT_COMMAND,
+            "api/views.py": (
+                "from shopman.fake.services import orders as order_service\n"
+                "from shopman.fake.services.orders import tidy_later\n"
+                "\n"
+                "class TrackingView:\n"
+                "    def get(self, request, ref):\n"
+                "        order = request.order\n"
+                "        order_service.tidy(order)\n"
+                "        tidy_later(order)\n"
+                "        return order_service.describe(order)\n"
+                "\n"
+                "    def post(self, request, ref):\n"
+                "        order_service.tidy(request.order)\n"
+            ),
+        },
+    )
+
+    found = [(line, call) for _path, line, call in graph.get_handler_writes((tmp_path / "shopman" / "fake" / "api",))]
+    assert found == [
+        (7, "order_service.tidy [orders.tidy -> order.save]"),
+        (8, "tidy_later [orders.tidy_later -> orders.tidy -> order.save]"),
+    ]
+    assert _get_handler_write_calls(tmp_path / "shopman" / "fake" / "api" / "views.py") == []
+
+
+def test_read_side_detector_catches_a_projection_that_writes(tmp_path):
+    """Mutante: a projeção que chama quem grava reprova; a que só lê, não."""
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/orders.py": _MUTANT_COMMAND,
+            "projections/tracking.py": (
+                "from shopman.fake.services import orders\n"
+                "\n"
+                "def build_tracking(order):\n"
+                "    orders.tidy_later(order)\n"
+                "    return orders.describe(order)\n"
+                "\n"
+                "def build_summary(order):\n"
+                "    return orders.describe(order)\n"
+            ),
+        },
+    )
+
+    found = [call for _path, _line, call in graph.read_side_writers((tmp_path / "shopman" / "fake" / "projections",))]
+    assert found == ["build_tracking [tracking.build_tracking -> orders.tidy_later -> orders.tidy -> order.save]"]
+
+
+def test_session_and_workbook_writes_are_told_apart(tmp_path):
+    """A sessão é escrita; ``workbook.save(stream)`` e ``dict.update`` não são."""
+    graph = _mutant_framework(
+        tmp_path,
+        {
+            "services/misc.py": (
+                "def remember(request):\n"
+                "    request.session['k'] = 1\n"
+                "\n"
+                "def forget(request):\n"
+                "    request.session.pop('k', None)\n"
+                "\n"
+                "def export(book, stream):\n"
+                "    book.save(stream)\n"
+                "\n"
+                "def merge(data, extra):\n"
+                "    data.update(extra)\n"
+                "    return data\n"
+            ),
+        },
+    )
+
+    assert {name for _module, name in graph.writers} == {"remember", "forget"}
 
 
 # Tailwind colour/tone design-token classes — appearance, owned by each

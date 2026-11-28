@@ -2,26 +2,34 @@ import type { ComputedRef, Ref } from "vue";
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage, type HandOverBody } from "~/presentation/preorderActions";
+import type { HandOverBody } from "~/presentation/balanceCharge";
+import { danfeExpected, handOverDoneMessage, paidOnlineNotice, rescheduleDoneMessage } from "~/presentation/preorderActions";
 import type {
   PreorderDetail,
   PreorderHandOverResponse,
   PreorderRedoResponse,
   PreorderRescheduleResponse,
 } from "~/types/preorders";
-import type { POSProjection } from "~/types/pos";
+import type { POSPaymentResultProjection, POSProjection } from "~/types/pos";
 import { detailAction } from "../../../operator-kit/app/presentation/orderDetail";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 /** Os gestos do entregador que o balcão faz (as ações do detalhe com o mesmo `ref`). */
 type CourierGesture = "courier-dispatch" | "courier-dispatch-again" | "courier-cancel" | "courier-back";
 
-/** O que o aviso diz quando o gesto passa, e o que diz quando não passa. */
-const COURIER_GESTURE_COPY: Record<CourierGesture, { done: string; failed: string }> = {
-  "courier-dispatch": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-dispatch-again": { done: "Pedido de entregador enviado à TaOn.", failed: "Não deu para chamar o entregador." },
-  "courier-cancel": { done: "Cancelamento da corrida enviado à TaOn.", failed: "Não deu para cancelar a corrida." },
-  "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
-};
+/**
+ * O que o aviso diz quando o gesto passa, e o que diz quando não passa. `service` é o
+ * nome do serviço da corrida, como o cadastro diz ("TaOn").
+ */
+function courierGestureCopy(ref: CourierGesture, service: string): { done: string; failed: string } {
+  const copy: Record<CourierGesture, { done: string; failed: string }> = {
+    "courier-dispatch": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-dispatch-again": { done: `Pedido de entregador enviado à ${service}.`, failed: "Não deu para chamar o entregador." },
+    "courier-cancel": { done: `Cancelamento da corrida enviado à ${service}.`, failed: "Não deu para cancelar a corrida." },
+    "courier-back": { done: "Volta do entregador registrada.", failed: "Não deu para registrar a volta do entregador." },
+  };
+  return copy[ref];
+}
 
 export interface ManagerChallenge {
   code: string;
@@ -32,7 +40,8 @@ export interface ManagerChallenge {
  * Os gestos do detalhe de uma encomenda (ENCOMENDAS-PDV-PLAN, WP-E3/E4).
  *
  * - **Receber e entregar**: a rota do PDV (`/pos/preorders/<ref>/hand-over/`),
- *   que faz o acerto no turno DESTA estação e conclui, numa transação. Mesma
+ *   que faz o acerto no turno DESTA estação e conclui, numa transação. As formas
+ *   vêm da tela de Pagamento da venda (`PosPreorderBalancePayment`). Mesma
  *   idempotência das mutações de caixa: uma chave por gesto (`client_request_id`),
  *   reaproveitada quando o mesmo gesto é repetido depois de uma falha de rede.
  *   Pix ou link pendente: o servidor cancela a cobrança do cliente antes de
@@ -76,7 +85,11 @@ export function usePosPreorderActions(options: {
     return key;
   }
 
-  async function handOver(body: HandOverBody): Promise<boolean> {
+  /**
+   * `changeQ`: o troco que a tela de Pagamento mostrou, para o aviso de pronto.
+   * `pixQ`: o saldo que acabou de entrar em Pix no balcão (o aviso diz isso).
+   */
+  async function handOver(body: HandOverBody, changeQ = 0, pixQ = 0): Promise<boolean> {
     const detail = options.detail.value;
     if (!detail || busy.value) return false;
     busy.value = true;
@@ -93,7 +106,7 @@ export function usePosPreorderActions(options: {
       lastAttempt = null;
       if (body.tenders?.some((tender) => tender.method === "cash")) void drawer.kick("preorder_cash");
       paidOnline.value = "";
-      toast.success(handOverDoneMessage(response?.received_q ?? 0));
+      toast.success(handOverDoneMessage(response?.received_q ?? 0, changeQ, pixQ));
       // A nota da retirada nasce na entrega: a DANFE sai sozinha na bobina
       // quando autoriza, como na venda de balcão (P2-27). Sem impressora nesta
       // estação, não há o que esperar; o detalhe já diz que o papel sai no
@@ -115,6 +128,42 @@ export function usePosPreorderActions(options: {
       toast.error(`${httpErrorMessage(error, "Não deu para entregar a encomenda.")} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
+  /**
+   * O saldo em Pix no balcão (#2897): a cobrança Pix do pedido, do jeito da venda.
+   * Devolve o QR no formato da venda (`POSPaymentResultProjection`), ou `null`
+   * quando não nasceu (o aviso diz por quê; o cliente que acabou de pagar online
+   * vira o aviso da página, como no receber). O servidor nunca deixa duas
+   * cobranças vivas: o Pix ou link online do cliente é aproveitado ou cancelado antes.
+   */
+  async function startPix(): Promise<POSPaymentResultProjection | null> {
+    const detail = options.detail.value;
+    if (!detail || busy.value) return null;
+    busy.value = true;
+    const path = `/api/v1/backstage/pos/preorders/${encodeURIComponent(detail.ref)}/pix/`;
+    const payload = { base_revision: detail.counter.revision, terminal_ref: options.pos.value?.terminal_ref || "" };
+    try {
+      const response = await action.call<{ payment?: POSPaymentResultProjection }>(path, {
+        body: { ...payload, client_request_id: gestureKey(`${path}:${JSON.stringify(payload)}`) },
+      });
+      lastAttempt = null;
+      await options.refresh();
+      return response?.payment ?? null;
+    } catch (error) {
+      const notice = paidOnlineNotice(httpErrorCode(error));
+      if (notice) {
+        lastAttempt = null;
+        paidOnline.value = notice;
+        toast.warning(notice);
+      } else {
+        toast.error(`${httpErrorMessage(error, "Não deu para gerar o Pix.")} Receba em dinheiro ou cartão, ou tente de novo.`);
+      }
+      await options.refresh();
+      return null;
     } finally {
       busy.value = false;
     }
@@ -146,7 +195,10 @@ export function usePosPreorderActions(options: {
       lastAttempt = null;
       managerChallenge.value = null;
       toast.success("Encomenda cancelada.");
-      await options.refresh();
+      // Sem refresh: o detalhe não serve encomenda cancelada, e reler aqui
+      // virava a página de erro "não é uma encomenda" logo depois do toast
+      // (beta test de 05/11/2026, PDV2-12). Quem chamou leva o operador para a
+      // lista (ou para a comanda do "Cancelar e refazer").
       return true;
     } catch (error) {
       const code = httpErrorCode(error);
@@ -242,7 +294,10 @@ export function usePosPreorderActions(options: {
    * custódia da chamada (troco da gaveta, maquininha) vai no mesmo corpo do Gestor.
    * A corrida se acompanha pelo SSE dos pedidos.
    */
-  async function courier(ref: CourierGesture, custody: { change_out?: string; equipment?: string[] } = {}): Promise<boolean> {
+  async function courier(
+    ref: CourierGesture,
+    custody: { change_out?: string; equipment?: string[]; reason_id?: number } = {},
+  ): Promise<boolean> {
     const detail = options.detail.value;
     const offered = detailAction(detail, ref);
     if (!detail || !offered?.enabled || busy.value) return false;
@@ -252,11 +307,11 @@ export function usePosPreorderActions(options: {
     try {
       await action.call(path, { body: { ...payload, idempotency_key: gestureKey(`${path}:${JSON.stringify(payload)}`) } });
       lastAttempt = null;
-      toast.success(COURIER_GESTURE_COPY[ref].done);
+      toast.success(courierGestureCopy(ref, deliveryServiceName(detail.courier?.service_name)).done);
       await options.refresh();
       return true;
     } catch (error) {
-      toast.error(`${httpErrorMessage(error, COURIER_GESTURE_COPY[ref].failed)} Confira a encomenda e tente de novo.`);
+      toast.error(`${httpErrorMessage(error, courierGestureCopy(ref, "").failed)} Confira a encomenda e tente de novo.`);
       await options.refresh();
       return false;
     } finally {
@@ -269,10 +324,12 @@ export function usePosPreorderActions(options: {
   }
 
   return {
-    busy, managerChallenge, paidOnline, handOver, cancel, redo, reschedule, comment, dismissManagerChallenge,
+    busy, managerChallenge, paidOnline, handOver, startPix, cancel, redo, reschedule, comment, dismissManagerChallenge,
     courierDispatch: (custody: { change_out?: string; equipment?: string[] } = {}) => courier("courier-dispatch", custody),
     courierDispatchAgain: () => courier("courier-dispatch-again"),
-    courierCancel: () => courier("courier-cancel"),
+    // O motivo escolhido na confirmação (depois do aceite) vai como `reason_id`;
+    // antes do aceite não há escolha e o servidor usa o da fase.
+    courierCancel: (reasonId?: number) => courier("courier-cancel", reasonId ? { reason_id: reasonId } : {}),
     courierBack: () => courier("courier-back"),
   };
 }

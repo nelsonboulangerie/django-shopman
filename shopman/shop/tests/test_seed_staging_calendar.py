@@ -25,6 +25,9 @@ pytestmark = pytest.mark.django_db
 def _command():
     from config.management.commands.seed import Command
 
+    # O seed atualiza a loja que o descritor materializou; nunca cria a sua.
+    if not Shop.objects.exists():
+        Shop.objects.create(name="Nelson Boulangerie")
     command = Command()
     command.stdout = StringIO()
     return command

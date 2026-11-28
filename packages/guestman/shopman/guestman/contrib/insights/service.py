@@ -139,23 +139,35 @@ class InsightService:
 
         insight.favorite_products = cls._calculate_favorite_products(orders, limit=5)
 
-        # Calculate RFM scores
-        insight.rfm_recency = cls._calculate_recency_score(
-            insight.days_since_last_order
-        )
-        insight.rfm_frequency = cls._calculate_frequency_score(insight.total_orders)
-        insight.rfm_monetary = cls._calculate_monetary_score(insight.total_spent_q)
-        insight.rfm_segment = cls._calculate_rfm_segment(
-            insight.rfm_recency,
-            insight.rfm_frequency,
-            insight.rfm_monetary,
-        )
+        if insight.total_orders and insight.last_order_at:
+            # Calculate RFM scores
+            insight.rfm_recency = cls._calculate_recency_score(
+                insight.days_since_last_order
+            )
+            insight.rfm_frequency = cls._calculate_frequency_score(insight.total_orders)
+            insight.rfm_monetary = cls._calculate_monetary_score(insight.total_spent_q)
+            insight.rfm_segment = cls._calculate_rfm_segment(
+                insight.rfm_recency,
+                insight.rfm_frequency,
+                insight.rfm_monetary,
+            )
 
-        # Churn risk
-        insight.churn_risk = cls._calculate_churn_risk(
-            insight.days_since_last_order,
-            insight.average_days_between_orders,
-        )
+            # Churn risk
+            insight.churn_risk = cls._calculate_churn_risk(
+                insight.days_since_last_order,
+                insight.average_days_between_orders,
+            )
+        else:
+            # Sem pedido não há o que classificar. As escadas dão 1 a quem não
+            # tem recência, frequência nem gasto, e ``r=1, f=1`` cai em "lost":
+            # chamar de "Perdido" quem nunca comprou é mentira, e a campanha de
+            # reconquista o alcançaria. Segmento vazio é o "sem segmento" que
+            # todos os leitores (audiência, B.I., Admin, pedido) já entendem.
+            insight.rfm_recency = None
+            insight.rfm_frequency = None
+            insight.rfm_monetary = None
+            insight.rfm_segment = ""
+            insight.churn_risk = None
 
         # Predicted LTV (simple: avg_ticket * projected_orders_per_year)
         insight.predicted_ltv_q = cls._calculate_ltv(

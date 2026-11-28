@@ -7,8 +7,10 @@ import pytest
 from django.utils import timezone
 
 from shopman.shop.models import Conversation, ConversationBinding, ConversationMessage, OutboundAttempt
-from shopman.storefront.concierge import agent, service, transport
+from shopman.shop.tests.ai_support import configure_ai
+from shopman.storefront.concierge import intents, service, transport
 from shopman.storefront.concierge.contracts import WindowEvidence
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests.support.concierge_transport_v3 import (
     ADAPTER_PATH,
     adapter_class,
@@ -16,6 +18,7 @@ from shopman.storefront.tests.support.concierge_transport_v3 import (
     event,
     reset_adapter,
 )
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 
 pytestmark = pytest.mark.django_db
 
@@ -27,9 +30,8 @@ def channel(request, settings, monkeypatch):
     provider = "future-provider" if is_tiktok else "manychat"
     account = "tiktok-business" if is_tiktok else "manychat-account"
     subject = "subject:cliente-α" if is_tiktok else "123456"
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
-        "intents_plural": "off",  # mede o agente; as intenções no plural têm suíte própria
         "enabled": True,
         "contract_version": 3,
         "channel_ref": "web",
@@ -71,10 +73,9 @@ def intake(channel, text="Olá", event_id="event-1"):
 
 def test_core_turn_preserves_causal_inbound_and_acceptance_evidence(channel, monkeypatch):
     conversation, binding, inbound_id = intake(channel)
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Como posso ajudar?"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Como posso ajudar?"),
     )
     result = service.run_turn(conversation.pk, binding.pk)
     inbound = ConversationMessage.objects.get(pk=inbound_id)
@@ -172,7 +173,7 @@ def test_same_subject_in_another_account_has_separate_context(channel, settings)
 def test_human_escape_skips_model_and_acks_on_causal_binding(channel, monkeypatch):
     conversation, binding, _ = intake(channel, text="Quero falar com alguém")
     model = Mock(side_effect=AssertionError("human escape used model"))
-    monkeypatch.setattr(agent, "run_agent", model)
+    monkeypatch.setattr(intents, "read_with_model", model)
     result = service.run_turn(conversation.pk, binding.pk)
     conversation.refresh_from_db()
     ack = conversation.messages.get(kind=ConversationMessage.Kind.REPLY)

@@ -8,6 +8,7 @@
 // O que este composable NÃO faz: decidir quem pode cadastrar. Isso é do servidor
 // (`identity_confirmation_required` quando a sessão só conhece o número) — regra de segurança
 // não mora no cliente, que é justamente onde ela pode ser removida com o DevTools aberto.
+import type { AuthSessionResponse } from '~/types/shopman'
 
 /** base64url → bytes. O `-` e o `_` do base64url voltam a `+` e `/`. */
 function fromB64url(value: string): Uint8Array {
@@ -99,6 +100,33 @@ export async function passkeyIsQuick(): Promise<boolean> {
   }
 }
 
+// ── A marca "este navegador guarda uma chave" ──────────────────────────
+//
+// A tela de entrada só oferece a chave a quem a tem AQUI. O WebAuthn não deixa a página perguntar
+// "existe credencial para este domínio?" sem abrir o diálogo do sistema, e oferecer o botão a todo
+// mundo levaria quem nunca ativou a um diálogo vazio: botão que falha ensina a não confiar no botão.
+// Então o navegador lembra, depois de ativar ou de entrar com a chave, que ela mora nele.
+//
+// A marca é só uma dica de tela, nunca de segurança: quem decide é a assinatura, no servidor.
+// Sem armazenamento (aba privada, bloqueio), a marca some e a pessoa entra pelo WhatsApp.
+const PASSKEY_HERE_KEY = 'shopman.passkey-here'
+
+export function passkeyRememberedHere(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage?.getItem(PASSKEY_HERE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function rememberPasskeyHere(): void {
+  try {
+    window.localStorage?.setItem(PASSKEY_HERE_KEY, '1')
+  } catch {
+    // Sem armazenamento a oferta não aparece na próxima visita; a entrada continua pelo WhatsApp.
+  }
+}
+
 type ServerOptions = Record<string, unknown> & {
   challenge: string
   user?: { id: string, name: string, displayName: string }
@@ -187,6 +215,7 @@ export function usePasskey() {
         credentials: 'include',
         body: { credential: asJson(created), label: deviceLabel() }
       })
+      rememberPasskeyHere()
       return true
     } catch (e) {
       const data = httpError(e).data || {}
@@ -210,8 +239,9 @@ export function usePasskey() {
     }
   }
 
-  /** Entrar. Devolve `true` quando a sessão abriu. */
-  async function signIn(): Promise<boolean> {
+  /** Entrar. Devolve a resposta de sessão quando abriu (a tela decide o passo seguinte por ela),
+   *  ou `null` quando não abriu: cancelou, ou `error` diz o porquê. */
+  async function signIn(): Promise<AuthSessionResponse | null> {
     busy.value = true
     error.value = ''
     try {
@@ -222,9 +252,9 @@ export function usePasskey() {
       const assertion = await navigator.credentials.get({
         publicKey: asCredentialOptions(options)
       }) as PublicKeyCredential | null
-      if (!assertion) return false
+      if (!assertion) return null
 
-      const response = await $fetch<Record<string, unknown>>(
+      const response = await $fetch<AuthSessionResponse>(
         apiPath('/api/v1/auth/passkey/login/'),
         {
           method: 'POST',
@@ -233,12 +263,15 @@ export function usePasskey() {
           body: { credential: asJson(assertion) }
         }
       )
-      session.setFromAuthSession(response as never)
-      return true
+      session.setFromAuthSession(response)
+      rememberPasskeyHere()
+      return response
     } catch (e) {
-      if ((e as DOMException)?.name === 'NotAllowedError') return false
+      // Cancelou, ou o navegador não achou chave da loja: a escolha é dela, e o WhatsApp
+      // continua logo abaixo. Não é erro para pintar de vermelho.
+      if ((e as DOMException)?.name === 'NotAllowedError') return null
       error.value = errorDetail(e, 'Não reconhecemos esta chave neste aparelho.')
-      return false
+      return null
     } finally {
       busy.value = false
     }
@@ -246,6 +279,6 @@ export function usePasskey() {
 
   return {
     enroll, signIn, busy, error, needsConfirmation,
-    passkeySupported, passkeyIsQuick, passkeyBlockedReason,
+    passkeySupported, passkeyIsQuick, passkeyBlockedReason, passkeyRememberedHere,
   }
 }

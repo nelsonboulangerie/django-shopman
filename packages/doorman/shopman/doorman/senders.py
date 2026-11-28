@@ -140,10 +140,10 @@ class WhatsAppCloudAPISender:
                 timeout=10,
             )
             response.raise_for_status()
-            logger.info("WhatsApp code sent", extra={"phone": phone})
+            logger.info("WhatsApp code sent")
             return True
         except Exception:
-            logger.exception("WhatsApp send failed", extra={"phone": phone})
+            logger.error("WhatsApp send failed")
             return False
 
 
@@ -197,8 +197,8 @@ class EmailSender:
             msg.attach_alternative(html_body, "text/html")
             msg.send(fail_silently=False)
 
-            logger.info("Email code sent", extra={"target": target})
+            logger.info("Email code sent")
             return True
         except Exception:
-            logger.exception("Email send failed", extra={"target": target})
+            logger.error("Email send failed")
             return False

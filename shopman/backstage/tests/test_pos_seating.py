@@ -1,7 +1,7 @@
 """PDV › Ajustes › Salão: a planta das mesas, a regra de tempo e o registro.
 
-Decisão do dono (04/10/2026): quem opera o PDV redesenha o salão, e toda
-mudança fica registrada (quem, quando, o quê, antes e depois). O B.I. mede a
+Decisão do dono (05/11/2026, que substitui a de 04/10): quem opera o PDV LÊ o
+salão, e só o Gerente e o Dono o redesenham. Toda mudança fica registrada (quem, quando, o quê, antes e depois). O B.I. mede a
 lotação com o mesmo cadastro, então mudar lugares ou a capacidade vale de hoje
 em diante e não reescreve os dias de antes.
 """
@@ -17,7 +17,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.contrib.contenttypes.models import ContentType
 from django.utils import timezone
-from shopman.cashman.models import Shift
 
 from shopman.backstage.models import SeatingSpot, SpotKind, SpotShape
 from shopman.backstage.services import seating
@@ -38,15 +37,21 @@ def _loja():
 def _user(username, *codenames):
     user = get_user_model().objects.create_user(username, password="x", is_staff=True,
                                                 first_name=username.title())
-    ct = ContentType.objects.get_for_model(Shift)
     for codename in codenames:
-        user.user_permissions.add(Permission.objects.get(content_type=ct, codename=codename))
+        user.user_permissions.add(Permission.objects.get(content_type__app_label="cashman", codename=codename))
     return get_user_model().objects.get(pk=user.pk)
 
 
 @pytest.fixture
 def operador():
-    return _user("bruna", "operate_pos")
+    """Quem redesenha o salão: opera o PDV e ajusta o equipamento (o Gerente)."""
+    return _user("bruna", "operate_pos", "change_terminal")
+
+
+@pytest.fixture
+def caixa():
+    """Quem só opera o PDV: lê o salão, não grava."""
+    return _user("fran", "operate_pos")
 
 
 @pytest.fixture
@@ -311,3 +316,54 @@ def test_mesa_como_destino_do_transferir_so_vale_no_salao_de_hoje(salao):
         with pytest.raises(PosIntentError) as raised:
             spot_label_today(ref)
         assert raised.value.code == "seating_spot_not_found"
+
+
+# ── Quem grava (decisão do dono, 05/11/2026) ────────────────────────────
+
+
+def test_a_caixa_le_o_salao_mas_nao_grava(client, caixa, salao):
+    """Beta 05/11 (PDV2-06): a Caixa salvava a planta e a capacidade oficial do B.I."""
+    client.force_login(caixa)
+    data = _read(client)
+    assert data["can_edit"] is False
+    response = _save(client, {"revision": data["revision"], "spots": [{"ref": "mesa-2", "seats": 9}], "removed": []})
+    assert response.status_code == 403, response.content
+    assert response.json()["detail"] == "Maquininha, impressora e Salão são ajustados pelo gerente."
+    salao["m2"].refresh_from_db()
+    assert salao["m2"].seats == 4
+
+
+def test_o_gerente_le_que_pode_gravar(client, operador, salao):
+    client.force_login(operador)
+    assert _read(client)["can_edit"] is True
+
+
+def test_duas_mesas_com_a_mesma_sigla_nao_se_gravam(client, operador, salao):
+    """Beta 05/11 (PDV-18): a planta ficava com duas "M2" e o rodapé não avisava."""
+    client.force_login(operador)
+    data = _read(client)
+    response = _save(client, {"revision": data["revision"], "spots": [{"ref": "mesa-1", "short_label": "m2"}],
+                              "removed": []})
+    assert response.status_code == 400, response.content
+    body = response.json()
+    assert body["field"] == "spots[0].short_label"
+    assert "Já existe uma mesa" in body["detail"]
+    salao["m1"].refresh_from_db()
+    assert salao["m1"].short_label == "M1"
+
+
+def test_mesa_nova_com_sigla_de_outra_e_recusada(client, operador, salao):
+    client.force_login(operador)
+    data = _read(client)
+    response = _save(client, {"revision": data["revision"], "removed": [],
+                              "spots": [{"label": "Mesa nova", "short_label": "M1"}]})
+    assert response.status_code == 400, response.content
+    assert response.json()["field"] == "spots[0].short_label"
+
+
+def test_trocar_as_siglas_de_duas_mesas_num_salvar_so_passa(client, operador, salao):
+    client.force_login(operador)
+    data = _read(client)
+    response = _save(client, {"revision": data["revision"], "removed": [],
+                              "spots": [{"ref": "mesa-1", "short_label": "M2"}, {"ref": "mesa-2", "short_label": "M1"}]})
+    assert response.status_code == 200, response.content

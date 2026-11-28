@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // "Ver lotes e vendas" (prévia `bi-sobra4.html`, pino 7): aprofundar sem trocar de tela.
-// Os lotes do dia (o registro de onde o "fez" saiu, cada um leva ao Fechamento da
+// Os lotes do dia (o registro de onde o "fez" saiu, cada um leva à Finalização da
 // Produção daquele dia, e o lote que o plano tinha e não fechou), as vendas por hora
 // (cheio = vendido; tracejado = a estimativa depois que acabou) e o que aconteceu
 // depois: quando os canais tiraram o produto do ar, quantos pediram "Me avise", e os
@@ -20,15 +20,17 @@ import {
   inTypical,
   lotsLine,
   ordersLinkLabel,
+  overShortOrdersHref,
   unavailableText,
   verdictMeta,
 } from "~/presentation/overShort";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   row: BIOverShortRow;
   day: string;
   compare: string;
-  /** Link do Fechamento da Produção daquele dia (os lotes moram lá). */
+  /** Link da Finalização da Produção daquele dia (os lotes moram lá). */
   closeUrl: string;
   /** Base do Gestor: "Abrir os N pedidos" abre o Histórico daquele dia, só com o produto. */
   ordersUrl: string;
@@ -39,7 +41,7 @@ const { attrsFor } = useOperatorAppLink();
 const closeLink = computed(() => attrsFor(props.closeUrl));
 const ordersHref = computed(() =>
   props.ordersUrl && props.row.orders
-    ? `${props.ordersUrl}history?period=custom&from=${props.day}&to=${props.day}&sku=${encodeURIComponent(props.row.sku)}`
+    ? overShortOrdersHref(props.ordersUrl, props.day, props.row.sku)
     : "",
 );
 const ordersLink = computed(() => attrsFor(ordersHref.value));
@@ -82,11 +84,11 @@ const historyEntries = computed(() =>
         trailing-icon="i-lucide-arrow-up-right"
         block
         class="justify-start"
-        :aria-label="`Lote ${lot.ref}, ${formatQty(lot.qty)} unidades: abrir o Fechamento da Produção`"
+        :aria-label="`Lote ${lot.ref}, ${formatQty(lot.qty)} unidades: abrir a Finalização da Produção`"
         data-over-short-lot
       >
         <span class="font-mono text-primary">{{ lot.ref }}</span>
-        <span v-if="lot.finished_at" class="tnum text-muted-foreground">saiu {{ lot.finished_at }}</span>
+        <span v-if="lot.finished_at" class="tnum text-muted-foreground">saiu {{ formatClock(lot.finished_at) }}</span>
         <span class="ml-auto tnum font-semibold">{{ formatQty(lot.qty) }} un.</span>
       </NuxtButton>
       <p class="mt-1 op-micro" :class="missingLot ? 'font-medium text-foreground' : 'text-muted-foreground'" data-over-short-lots-line>
@@ -110,7 +112,7 @@ const historyEntries = computed(() =>
         empty-title="Nenhuma venda registrada neste dia"
       />
       <p v-if="row.soldout_at" class="mt-0.5 text-xs" :class="row.verdict === 'short' ? 'text-error' : 'text-muted'">
-        acabou {{ row.soldout_at }}
+        acabou {{ formatClock(row.soldout_at) }}
       </p>
     </div>
 
@@ -126,7 +128,7 @@ const historyEntries = computed(() =>
       </ul>
       <template v-if="row.verdict === 'short'">
         <p class="op-label leading-6">
-          Acabou às <b>{{ row.soldout_at }}</b> com {{ formatQty(row.sold) }} vendidas.
+          Acabou às <b>{{ formatClock(row.soldout_at) }}</b> com {{ formatQty(row.sold) }} vendidas.
           <template v-if="row.lost_estimate">
             No ritmo até ali, o dia venderia ~{{ formatQty(String(demandEstimate)) }}: <b>~{{ formatQty(row.lost_estimate) }} vendas perdidas</b> <span class="op-micro text-muted-foreground">(estimativa)</span>.
           </template>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { absoluteImage, siteVerificationMeta } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
+import type { ShellResponse } from '~/types/shopman'
+import { STOREFRONT_HOME_KEY } from '~/composables/useStorefrontHome'
 
 const session = useShopSession()
 const { setFromServer, refreshCart } = useCartState()
@@ -17,12 +19,24 @@ function focusMainContent () {
 
 // Reconexão / retorno de foco reconcilia o carrinho (a fonte de verdade que muda
 // fora da aba). Falha silenciosa aqui é aceitável: é reconciliação de fundo.
-watchConnectivity(() => { void refreshCart().catch(() => null) })
+watchConnectivity(() => {
+  if (route.path === '/rota' || route.path.startsWith('/rota/')) return
+  void refreshCart().catch(() => null)
+})
+
+// A página do entregador da casa (`/rota`, DEV-2026-030) é outro app no mesmo domínio:
+// hiperfoco, sem cabeçalho, rodapé, sacola, convite nem estado de cliente. Ela não pede o
+// shell da loja (nada de sessão de cliente nem cookie no celular do entregador).
+const courierShell = route.path === '/rota' || route.path.startsWith('/rota/')
 
 // Disparada antes do estado do shell, para as duas buscas correrem juntas.
-const { site: siteSeo, ready: siteSeoReady } = useSiteSeo()
+const { site: siteSeo, ready: siteSeoReady } = courierShell
+  ? { site: computed(() => null), ready: Promise.resolve() }
+  : useSiteSeo()
 
-const { data: shellState, refresh: refreshShellState } = await useStorefrontShell()
+const { data: shellState, refresh: refreshShellState } = courierShell
+  ? { data: ref<ShellResponse | undefined>(undefined), refresh: async () => {} }
+  : await useStorefrontShell()
 
 await siteSeoReady
 
@@ -32,9 +46,25 @@ watch(() => shellState.value, value => {
   if (!authRoute) setFromServer(value?.cart)
 }, { immediate: true })
 
-watch(authShellRoute, (isAuthRoute, wasAuthRoute) => {
-  if (!isAuthRoute && wasAuthRoute) void refreshShellState()
-})
+// Saindo do login, a próxima página só monta com o shell de quem entrou (#3572): a
+// versão do experimento e o nome já chegam certos, sem a tela trocar depois. `cancel`
+// descarta uma leitura anônima em voo em vez de reaproveitá-la. A home guardada é a
+// do anônimo (sem nome nem recompra) e, montada antes do shell novo, desfazia a
+// identidade: sai do cache, e a home relê. Ainda na rota de login, o `watch` acima
+// não semeia a sacola: semeia-se aqui, com o shell novo.
+if (!courierShell) {
+  useFreshShellAfterLogin(path => AUTH_SHELL_ROUTES.has(path), async () => {
+    clearNuxtData(STOREFRONT_HOME_KEY)
+    await refreshShellState({ dedupe: 'cancel' })
+    setFromServer(shellState.value?.cart)
+  })
+}
+
+// Loja viva (WP-L04): "aberta" e "fechada" viram sozinhas na hora da virada, e na
+// volta da aba que ficou esquecida. Sem isso o cabeçalho dizia "Aberta" a noite toda.
+if (!courierShell) {
+  useLiveShopStatus(() => shellState.value?.shell?.shop_status, refreshShellState)
+}
 
 // O Nuxt restaura a rolagem do document, mas no PWA iOS o viewport rolável é
 // interno para manter a bottom-nav fora do bug de position:fixed do WebKit.
@@ -121,7 +151,11 @@ useSeoMeta({
 </script>
 
 <template>
-  <div class="shop-shell flex min-h-dvh flex-col">
+  <div v-if="courierShell" class="courier-shell">
+    <NuxtPage />
+  </div>
+  <div v-else class="shop-shell flex min-h-dvh flex-col">
+    <!-- Barra de rota, link marcado e aviso de espera (DEV-2026-094). -->
     <NavigationFeedback />
     <!-- No PWA instalado este é o único viewport rolável. A bottom-nav fica fora
          dele, em fluxo normal, para não depender do position:fixed que deriva no
@@ -137,6 +171,7 @@ useSeoMeta({
       </a>
       <ShopHeader />
       <div id="main-content" tabindex="-1" class="flex-1 min-h-[calc(100svh-4rem)]">
+        <ClientOnly><PageNotice /></ClientOnly>
         <NuxtPage />
       </div>
       <ShopFooter v-if="!hideFooter" />

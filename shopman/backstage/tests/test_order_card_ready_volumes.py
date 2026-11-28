@@ -22,13 +22,13 @@ from shopman.backstage.projections.order_queue import build_order_card, build_tw
 from shopman.backstage.tests._order_intent import context_payload
 from shopman.shop.models import Channel, Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
 def operator(db):
     Shop.objects.create(name="Loja")
-    Channel.objects.create(ref="web", name="Loja online", config={})
+    Channel.objects.update_or_create(ref='web', defaults={'name': 'Loja online', 'config': {}})[0]
     user = User.objects.create_user("gestor-volumes", password="pw", is_staff=True)
     user.user_permissions.add(Permission.objects.get(
         content_type=ContentType.objects.get(app_label="shop", model="shop"), codename="manage_orders",

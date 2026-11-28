@@ -202,13 +202,20 @@ jobs:
         run: |
           dep=$(jq -r '.deployment.id // empty' manifesto/published.json)
           echo "deployment=${dep}" >> "$GITHUB_OUTPUT"
+          echo "mode=$(jq -r '.deploy_mode // "deploy_on_push"' manifesto/published.json)" >> "$GITHUB_OUTPUT"
           echo "modo: $(jq -r '.deploy_mode // "deploy_on_push"' manifesto/published.json)" \
                "deployment: ${dep:-<por tag>}"
 
+      # ⚠️ `production_pinned` (WP-RELEASE-01 R2): o app está nas tags `-prod`,
+      # o push publicou só o candidato e não implantou nada. Não há deployment
+      # a esperar, e as asserções medem a produção como ela está. Esse run não
+      # torna o release promovível: a promoção exige o modo em que o alpha
+      # rodou o release set.
       - name: Esperar a DigitalOcean trocar os contêineres
         if: >-
           github.event_name == 'workflow_run' &&
-          steps.modo.outputs.deployment == ''
+          steps.modo.outputs.deployment == '' &&
+          steps.modo.outputs.mode != 'production_pinned'
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_APP_NAME: ${{ vars.DO_APP_NAME }}

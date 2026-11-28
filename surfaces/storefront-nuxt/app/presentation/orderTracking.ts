@@ -3,6 +3,28 @@ import type { Action, OrderProgressStepProjection, TrackingCopyProjection, Track
 // Lógica pura da tela de acompanhamento. Contrato vem das projeções do backend
 // (SAGRADO): a UI deriva apresentação, nunca inventa estado.
 
+export type TrackingSidePrimary = 'cancellation_contact' | 'rate' | 'reorder' | 'support' | null
+
+/**
+ * Um (e só um) botão primary no card de Ações: o topo da pilha não-destrutiva.
+ * Prioridade: Quero falar com o responsável > Avaliar > Pedir de novo > Ajuda.
+ * Cancelar fica destructive à parte. Assim nunca sobra um card só com botões
+ * secundários (faubourg). Quem chega ao "Quer cancelar?" depois do preparo quer
+ * desistir, e o caminho é a ouvidoria: o "Ajuda" (WhatsApp) desce (#3257).
+ */
+export function trackingSideActionsPrimary (available: {
+  cancellationContact: boolean
+  rate: boolean
+  reorder: boolean
+  support: boolean
+}): TrackingSidePrimary {
+  if (available.cancellationContact) return 'cancellation_contact'
+  if (available.rate) return 'rate'
+  if (available.reorder) return 'reorder'
+  if (available.support) return 'support'
+  return null
+}
+
 // Painel de status: acento na borda esquerda por tom (legível, sem virar um
 // banner cheio de cor). Mantém as classes exatas do design aprovado.
 export function trackingPanelClass (tone: string | null | undefined): string {
@@ -49,7 +71,18 @@ export function trackingStatusPanelActions (
 // quantos já concluíram (no mínimo 1).
 export function timelineActiveStep (steps: OrderProgressStepProjection[]): number | undefined {
   if (!steps.length) return undefined
-  const active = steps.findIndex(step => step.state === 'current' || step.state === 'cancelled')
+  // Depois do cancelamento ainda pode haver um marco que JÁ aconteceu (o dinheiro
+  // devolvido): a linha do tempo vai até ele, em vez de deixá-lo apagado como
+  // passo futuro.
+  const cancelled = steps.findIndex(step => step.state === 'cancelled')
+  if (cancelled >= 0) {
+    let last = cancelled
+    for (let index = cancelled + 1; index < steps.length; index++) {
+      if (steps[index]!.state === 'completed') last = index
+    }
+    return last + 1
+  }
+  const active = steps.findIndex(step => step.state === 'current')
   if (active >= 0) return active + 1
   return Math.max(steps.filter(step => step.state === 'completed').length, 1)
 }
@@ -61,6 +94,43 @@ export function timelineStepStateLabel (state: string): string {
   if (state === 'current') return 'em andamento'
   if (state === 'cancelled') return 'cancelado'
   return 'ainda não'
+}
+
+// Sufixo do passo para o leitor de tela. "Cancelado" e "Concluído"
+// já nomeiam o desfecho. O último passo pode continuar sendo o status atual
+// da projeção; se ainda estiver pendente, o leitor precisa ouvir a diferença.
+export function timelineStepSrSuffix (step: Pick<OrderProgressStepProjection, 'state' | 'key'>): string {
+  if (step.state === 'cancelled' || (step.key === 'completed' && (step.state === 'current' || step.state === 'completed'))) return ''
+  return `, ${timelineStepStateLabel(step.state)}`
+}
+
+// O esqueleto é só da PRIMEIRA carga. No Nuxt 4 o `pending` volta a `true` em
+// todo `refresh()`, e o `v-if="pending"` desmontava o painel e o histórico a
+// cada evento do SSE e a cada poll: a tela piscava (beta 06/11, SMS-12).
+export function showsTrackingSkeleton (pending: boolean | null | undefined, hasTracking: boolean): boolean {
+  return Boolean(pending) && !hasTracking
+}
+
+// O prazo de PAGAR zerou e o servidor ainda não trouxe o pedido cancelado (quem
+// cancela é o worker, segundos depois). Nesse intervalo o QR, o "Copiar código"
+// e o "Cancelar pedido" saem da tela: pagar um Pix vencido é o erro que a tela
+// existe para evitar (beta 06/11, PIXEXP-04).
+export function paymentDeadlineLapsed (
+  promise: Pick<TrackingPromiseProjection, 'deadline_kind'> | null | undefined,
+  deadlineExpired: boolean | null | undefined,
+  isActive: boolean | null | undefined
+): boolean {
+  return Boolean(promise?.deadline_kind === 'payment' && deadlineExpired && isActive)
+}
+
+// A ponte de expiração insiste: um refresh a cada 3 s, até 10 vezes, enquanto o
+// pedido continua ativo com o mesmo prazo. Um refresh único quase sempre
+// chegava antes do worker cancelar, e aí só o poll (15 s ou mais) trazia a troca.
+export const EXPIRY_RECONCILE_INTERVAL_MS = 3000
+export const EXPIRY_RECONCILE_MAX_ATTEMPTS = 10
+
+export function shouldRetryExpiryReconcile (attempts: number, stillLapsed: boolean): boolean {
+  return stillLapsed && attempts < EXPIRY_RECONCILE_MAX_ATTEMPTS
 }
 
 // Cadência do polling: respeita stale_after_seconds, com piso de 15s.
@@ -131,7 +201,7 @@ export function ratingThanksView (
 ): RatingThanksView {
   const celebrate = shouldCelebrateRating(rating)
   return {
-    title: copy?.rating_thanks_title || 'Obrigado!',
+    title: copy?.rating_thanks_title || 'Obrigada!',
     message: (celebrate ? copy?.rating_thanks_celebrate : copy?.rating_thanks) || 'Valorizamos muito seu retorno.',
     celebrate
   }

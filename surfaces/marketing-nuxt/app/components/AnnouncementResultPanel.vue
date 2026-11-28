@@ -64,6 +64,7 @@ const result = computed(() =>
   deliveryStatePresentation(
     props.announcement.delivery.state,
     props.announcement.state,
+    props.announcement.delivery.counts,
   ),
 );
 /**
@@ -166,8 +167,8 @@ const approvalEvidence = computed(() => {
         : props.shopTimezone,
     deliveryWindow: platformRefs.includes("whatsapp")
       ? props.quietHoursSuspendedForLocalSimulation
-        ? "Ensaio local: silêncio 20:00–08:00 suspenso, sem efeito externo."
-        : "WhatsApp respeita o silêncio 20:00–08:00; o horário escolhido já foi validado."
+        ? "Ensaio local: silêncio das 20h às 8h suspenso, sem efeito externo."
+        : "WhatsApp respeita o silêncio das 20h às 8h; o horário escolhido já foi validado."
       : "Sem janela de silêncio adicional.",
     validity: props.announcement.expires_at
       ? `Expira em ${scheduleSummary(props.announcement.expires_at, props.shopTimezone)}.`

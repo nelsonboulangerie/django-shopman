@@ -1,5 +1,5 @@
 """
-Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação e pausa por item.
+Mutações dos canais de EXIBIÇÃO para o Gestor — coleções, rotação, pausa e ocultação por item.
 
 Ligar/desligar o canal (de venda OU de exibição) é o toggle "Ativo", que mora em
 ``shopman.shop.services.channel_switch``.
@@ -47,10 +47,6 @@ def _save_display(channel, display: dict) -> None:
     channel.save(update_fields=["config"])
 
 
-def _paused(channel) -> set[str]:
-    return {str(s) for s in (_display(channel).get("paused_skus") or [])}
-
-
 class FeedConflict(CatalogError):
     """The selected feed field changed after the operator read it."""
 
@@ -94,9 +90,21 @@ def set_collections(ref: str, collection_refs: list[str], *, expected_revision=N
     ordered = [r for r in cleaned if not (r in seen or seen.add(r))]
     display = _display(sc)
     if ordered != list(display.get("collections") or []):
+        before = _composition_skus(ref)
         display["collections"] = ordered
         _save_display(sc, display)
         _notify(ref)
+        # Quem entrou e quem saiu: o que ficou também, porque o custom_label pode mudar.
+        _project(ref, before | _composition_skus(ref))
+
+
+def _composition_skus(ref: str) -> set[str]:
+    """SKUs do catálogo de plataforma; quadro (menuboard) não tem catálogo externo."""
+    from shopman.shop.services import display_catalog
+
+    if not display_catalog.is_platform_channel(ref):
+        return set()
+    return set(display_catalog.composition_skus(ref))
 
 
 def _nonneg_int(value, label: str) -> int:
@@ -170,44 +178,16 @@ def set_automatic(ref: str, *, enabled: bool, idle_messages: list[str], expected
         _notify(ref)
 
 
-@transaction.atomic
-def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
-    """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
-
-    Grava em ``config.display.paused_skus``. Retorna o estado final ``paused``. A
-    pausa global do produto continua gateando por cima.
-    """
-    sku = str(sku).strip()
-    if not sku:
-        raise CatalogError("sku é obrigatório.")
-    sc = _display_channel(ref)
-
-    current = _paused(sc)
-    if paused and sku not in current:
-        current.add(sku)
-    elif not paused and sku in current:
-        current.discard(sku)
-    else:
-        return paused  # sem mudança
-
-    display = _display(sc)
-    display["paused_skus"] = sorted(current)
-    _save_display(sc, display)
-    _notify(ref)
-    return paused
-
-
-@transaction.atomic
-def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
-    """Pausa/reativa em lote vários itens neste feed. Retorna quantos mudaram."""
+def _set_skus(ref: str, key: str, skus: list[str], *, on: bool) -> int:
+    """Liga/desliga SKUs numa lista de ``config.display`` (``paused_skus``/``hidden_skus``)."""
     cleaned = [str(s).strip() for s in skus if str(s).strip()]
     if not cleaned:
         return 0
     sc = _display_channel(ref)
 
-    current = _paused(sc)
+    current = {str(s) for s in (_display(sc).get(key) or [])}
     before = set(current)
-    if paused:
+    if on:
         current.update(cleaned)
     else:
         current.difference_update(cleaned)
@@ -215,7 +195,53 @@ def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
         return 0
 
     display = _display(sc)
-    display["paused_skus"] = sorted(current)
+    display[key] = sorted(current)
     _save_display(sc, display)
     _notify(ref)
+    _project(ref, current ^ before)
     return len(current ^ before)
+
+
+def _project(ref: str, skus) -> None:
+    """A plataforma (Google, Meta) recebe na hora o que mudou neste canal."""
+    from shopman.shop.handlers.catalog_projection import enqueue_display_skus
+
+    enqueue_display_skus(ref, skus)
+
+
+@transaction.atomic
+def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
+    """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
+
+    Grava em ``config.display.paused_skus``. Retorna o estado final ``paused``. A
+    pausa global do produto continua gateando por cima.
+    """
+    if not str(sku).strip():
+        raise CatalogError("sku é obrigatório.")
+    _set_skus(ref, "paused_skus", [sku], on=paused)
+    return paused
+
+
+@transaction.atomic
+def set_items_paused(ref: str, skus: list[str], *, paused: bool) -> int:
+    """Pausa/reativa em lote vários itens neste feed. Retorna quantos mudaram."""
+    return _set_skus(ref, "paused_skus", skus, on=paused)
+
+
+@transaction.atomic
+def set_item_hidden(ref: str, sku: str, *, hidden: bool) -> bool:
+    """Oculta/exibe UM item neste feed (equivalente a ocultar num canal).
+
+    Grava em ``config.display.hidden_skus``. Oculto vence pausado: no quadro o item
+    sai da tela, no feed de plataforma ele fica fora de todos os destinos.
+    """
+    if not str(sku).strip():
+        raise CatalogError("sku é obrigatório.")
+    _set_skus(ref, "hidden_skus", [sku], on=hidden)
+    return hidden
+
+
+@transaction.atomic
+def set_items_hidden(ref: str, skus: list[str], *, hidden: bool) -> int:
+    """Oculta/exibe em lote vários itens neste feed. Retorna quantos mudaram."""
+    return _set_skus(ref, "hidden_skus", skus, on=hidden)

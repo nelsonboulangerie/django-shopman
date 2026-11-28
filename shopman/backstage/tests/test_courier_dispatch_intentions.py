@@ -7,7 +7,7 @@ from shopman.orderman.models import Directive, Order
 from shopman.shop.directives import COURIER_DISPATCH
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def context(client, django_user_model, settings):
     user = django_user_model.objects.create_user(username="dispatch-lab", is_staff=True)
     user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
     client.force_login(user)
-    order = Order.objects.create(ref="DISPATCH-LAB", status="ready", data={"fulfillment_type": "delivery"})
+    order = Order.objects.create(channel_ref="web", ref="DISPATCH-LAB", status="ready", data={"fulfillment_type": "delivery"})
     return user, order
 
 
@@ -71,7 +71,7 @@ def test_cancel_queue_receipt_and_observed_ride(client, context):
     user, order = context
     from shopman.shop.services.courier import dispatch_revision
 
-    order.data["courier"] = {"id_mch": "RIDE-CANCEL", "status": "A"}
+    order.data["courier"] = {"ride_ref": "RIDE-CANCEL", "status": "A"}
     order.save(update_fields=["data"])
     body = {"expected_actor_id": user.pk, "base_revision": dispatch_revision(order)}
     url = reverse("api-backstage-order-courier-cancel", args=[order.ref])
@@ -84,7 +84,7 @@ def test_cancel_queue_receipt_and_observed_ride(client, context):
     assert client.get(url, {"idempotency_key": "cancel-once"}).json()["outcome"] == "applied"
     replay = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-once")
     assert replay.json()["directive_id"] == response.json()["directive_id"]
-    order.data["courier"]["id_mch"] = "OTHER-RIDE"
+    order.data["courier"]["ride_ref"] = "OTHER-RIDE"
     order.save(update_fields=["data"])
     stale = client.post(url, body, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancel-another")
     assert stale.status_code == 409
@@ -166,14 +166,14 @@ def _action(order, ref):
 @pytest.mark.parametrize("state", ["started", "unknown"])
 def test_dispatch_again_releases_the_unanswered_call_and_queues_a_new_one(client, context, state):
     """Gesto "Chamar de novo": a chamada sem resposta da TaOn é liberada e outra entra na fila."""
-    from shopman.backstage.projections.order_queue import COURIER_DISPATCH_AGAIN_CONFIRMATION
+    from shopman.backstage.projections.order_queue import courier_dispatch_again_confirmation
 
     _, order = context
     stuck = _stuck_dispatch(order, state)
     assert not _action(order, "courier-dispatch").enabled
     again = _action(order, "courier-dispatch-again")
     assert again.enabled and again.label == "Chamar de novo"
-    assert again.confirmation == {"required": True, "description": COURIER_DISPATCH_AGAIN_CONFIRMATION}
+    assert again.confirmation == {"required": True, "description": courier_dispatch_again_confirmation("TaOn")}
     response = client.post(reverse("api-backstage-order-courier-dispatch-again", args=[order.ref]),
         again.payload_schema, content_type="application/json", HTTP_IDEMPOTENCY_KEY="again-once")
     assert response.status_code == 200, response.content

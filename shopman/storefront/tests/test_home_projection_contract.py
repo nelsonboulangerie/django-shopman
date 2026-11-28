@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def test_shell_projection_never_builds_catalog_or_order_history(rf, monkeypatch):
@@ -169,7 +169,7 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
     payload = projection_data(build_home(rf.get("/api/v1/storefront/home/")))
 
     assert {"is_open", "opens_at", "closes_at"}.isdisjoint(payload["omotenashi"])
-    assert set(payload["shop_status"]) == {"is_open", "label", "message", "opens_at", "closes_at"}
+    assert set(payload["shop_status"]) == {"is_open", "label", "message", "next_opening", "opens_at", "closes_at"}
     assert payload["shop"]["short_name"] == shop.short_name
     assert payload["pwa_copy"]["install_cta"]["title"] == "Instalar"
     assert payload["pwa_copy"]["offline_message"]["message"].startswith("Sem conexão agora")
@@ -280,15 +280,15 @@ def test_home_projection_promotes_whatsapp_origin_only_with_real_cart(rf):
 
 
 def _login_home_customer(client, *, ref: str, phone: str, **extra):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
     from shopman.guestman.models import Customer
 
     from shopman.shop.models import Shop
+    from shopman.storefront.tests.identity_fakes import make_identity_view
 
     Shop.load() or Shop.objects.create(name="Test Padaria")
     customer = Customer.objects.create(ref=ref, first_name="Ana", last_name="Silva", phone=phone, **extra)
-    info = AuthCustomerInfo(uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True)
+    info = make_identity_view(subject_id=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True)
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
     return customer
@@ -347,7 +347,7 @@ def test_home_fails_closed_and_says_why_when_the_lookup_breaks(rf, monkeypatch):
     monkeypatch.setattr(home, "logger", spy)
     monkeypatch.setattr(identity, "get_authenticated_customer", boom)
     request = rf.get("/api/v1/storefront/home/")
-    request.customer = SimpleNamespace(uuid="00000000-0000-0000-0000-000000000000")
+    request.customer = SimpleNamespace(subject_id="00000000-0000-0000-0000-000000000000")
 
     assert home._marketing_prompt_pending(request) is False
 

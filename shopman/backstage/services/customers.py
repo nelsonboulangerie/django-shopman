@@ -144,9 +144,11 @@ def _tags(value) -> list[str]:
     for raw in value:
         if not isinstance(raw, str):
             raise _mutation_error("Cada etiqueta precisa ser texto.", field="tags")
-        tag = re.sub(r"\s+", " ", raw).strip()
+        tag = re.sub(r"\s+", " ", raw).strip()[:100]
+        if tag.replace(" ", "") in {"[]", "{}"}:
+            raise _mutation_error("Dê um nome à etiqueta. Não use [] ou {} como nome.", field="tags")
         if tag and tag.casefold() not in {item.casefold() for item in normalized}:
-            normalized.append(tag[:100])
+            normalized.append(tag)
     if len(normalized) > 30:
         raise _mutation_error("Use no máximo 30 etiquetas.", field="tags")
     return normalized
@@ -236,11 +238,23 @@ def _save_customer(customer, *, tags: list[str], cleared: set[str]) -> None:
             owned = ContactPoint.objects.filter(type=contact_type, value_normalized=normalized)
             if customer.pk:
                 owned = owned.exclude(customer=customer)
-            if owned.exists():
-                raise _mutation_error(
-                    f"Este {'telefone' if field == 'phone' else 'e-mail'} já pertence a outro cadastro. Abra o cadastro existente para unificar.",
+            holder = owned.select_related("customer").first()
+            if holder is not None:
+                # Diz DE QUEM é o contato e leva até a ficha (GES-13): "outro
+                # cadastro" sem nome mandava a gerente procurar à mão.
+                owner = holder.customer
+                name = owner.name if owner is not None else ""
+                what = "telefone" if field == "phone" else "e-mail"
+                detail = (
+                    f"Este {what} é de {f'{name} ({owner.ref})' if name else owner.ref}. Abra o cadastro para conferir ou unificar."
+                    if owner is not None
+                    else f"Este {what} já pertence a outro cadastro. Abra o cadastro existente para unificar."
+                )
+                raise CustomerMutationError(
+                    detail,
                     field=field,
                     code="contact_conflict",
+                    owner={"ref": owner.ref, "name": name} if owner is not None else None,
                 )
         customer.full_clean()
         customer.save()
@@ -283,6 +297,7 @@ def create_customer(data: dict, *, actor: str):
     tags = _apply_payload(customer, data, creating=True)
     cleared = {field for field in ("phone", "email") if not getattr(customer, field)}
     _save_customer(customer, tags=tags, cleared=cleared)
+    _request_phone_confirmation(customer, previous_phone="")
     return customer
 
 
@@ -298,10 +313,25 @@ def update_customer(ref: str, data: dict):
     if not customer.is_active:
         raise _mutation_error("Este cadastro foi unificado ou desativado e não pode mais ser editado.", code="inactive")
     _assert_revision(customer, data)
+    previous_phone = customer.phone
     tags = _apply_payload(customer, data, creating=False)
     cleared = {field for field in ("phone", "email") if field in data and not getattr(customer, field)}
     _save_customer(customer, tags=tags, cleared=cleared)
+    _request_phone_confirmation(customer, previous_phone=previous_phone)
     return customer
+
+
+def _request_phone_confirmation(customer, *, previous_phone: str) -> None:
+    """Telefone novo digitado pela equipe: o titular confirma no WhatsApp (D4).
+
+    Até a confirmação (o toque no WhatsApp ou o código certo do SMS), o número
+    não resolve para a conta pela loja. Só pede quando o
+    telefone da ficha mudou nesta gravação; editar o nome não manda nada.
+    """
+    from shopman.shop.services import phone_confirmation
+
+    if customer.phone and customer.phone != previous_phone:
+        phone_confirmation.request_on_commit(customer.ref, customer.phone)
 
 
 # ── Cópia e lote ─────────────────────────────────────────────────────────────
@@ -537,6 +567,10 @@ def _apply_address(address, data: dict, *, creating: bool) -> None:
     unknown = sorted(set(data) - _ADDRESS_FIELDS - {"expectedRevision"})
     if unknown:
         raise _mutation_error(f"Campo desconhecido: {unknown[0]}.", field=unknown[0])
+    # O endereço sem etiqueta ("Outro" sem nome, como o que o pedido de entrega
+    # grava, #2775) pode ser editado sem ganhar um nome à força; quem ESCOLHE
+    # "Outro" agora é que precisa dar o nome.
+    was_untagged = not creating and address.label == AddressLabel.OTHER and not address.label_custom
     if creating or "label" in data:
         label = _text(data, "label") or AddressLabel.HOME
         if label not in AddressLabel.values:
@@ -572,7 +606,7 @@ def _apply_address(address, data: dict, *, creating: bool) -> None:
             setattr(address, target, value)
     address.state_code = address.state_code.upper()
     if address.label == AddressLabel.OTHER:
-        if not address.label_custom:
+        if not address.label_custom and not was_untagged:
             raise _mutation_error("Dê um nome ao endereço.", field="labelCustom")
     else:
         address.label_custom = ""

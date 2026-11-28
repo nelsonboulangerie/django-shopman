@@ -109,6 +109,29 @@ export function usePosPreorderDetail(ref: Ref<string>) {
   onScopeDispose(() => {
     if (open.value === key) open.value = "";
   });
+  // A leitura não pergunta ao gateway (A8-1): o servidor diz `payment_check_due`
+  // quando a encomenda deve cartão, e a tela pede o comando ao abrir e quando
+  // ela volta a dever. O balcão vai receber o saldo: o cartão pago cujo webhook
+  // se perdeu não pode aparecer como "a pagar" aqui. Pagou: relê o detalhe.
+  async function checkPayment() {
+    try {
+      const result = await $fetch<{ changed: boolean }>(
+        apiPath(`/api/v1/backstage/pos/preorders/${encodeURIComponent(ref.value)}/payment/check/`),
+        { method: "POST", credentials: "include" },
+      );
+      if (result.changed) await refresh();
+    } catch {
+      // Melhor esforço, como era no GET: o `reconcile_payments` do worker é a
+      // rede, e o detalhe segue com o que leu.
+    }
+  }
+  watch(
+    () => data.value?.payment_check_due === true,
+    (due) => {
+      if (due) void checkPayment();
+    },
+    { immediate: true },
+  );
   return { detail: computed(() => data.value?.order ?? null), pending, error, refresh };
 }
 

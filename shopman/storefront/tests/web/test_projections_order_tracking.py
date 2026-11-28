@@ -9,6 +9,7 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.projections.types import (
     OrderItemProjection,
@@ -24,6 +25,16 @@ from shopman.storefront.presentation.order_tracking import (
 from shopman.storefront.presentation.types import OrderProgressStepProjection
 
 pytestmark = pytest.mark.django_db
+
+
+def test_support_whatsapp_message_is_written_by_the_customer():
+    from urllib.parse import parse_qs, urlparse
+
+    from shopman.shop.projections.copy import build_copy
+    from shopman.storefront.presentation.order_tracking import _support_url
+
+    url = _support_url("https://wa.me/554333331234", "ORD-AJUDA", copy=build_copy("TRACKING"))
+    assert parse_qs(urlparse(url).query)["text"] == ["Oi! Preciso de ajuda com o pedido ORD-AJUDA."]
 
 
 def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
@@ -84,7 +95,7 @@ def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
 
 class TestPreorderTracking:
     """Pedido confirmado com ``delivery_date`` futura conta a história de
-    encomenda: estado ``preorder_scheduled``, o combinado ("amanhã · A partir
+    encomenda: estado ``preorder_scheduled``, o combinado ("Amanhã · A partir
     das 09h") e o rótulo "Encomenda confirmada"."""
 
     def _make_preorder(self, order, *, days_ahead=1, slot="slot-09"):
@@ -113,8 +124,8 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.state == "preorder_scheduled"
         assert proj.status_label == "Encomenda confirmada"
-        assert proj.when_display == "amanhã · A partir das 9h"
-        assert "garantido para amanhã · A partir das 9h" in proj.promise.message
+        assert proj.when_display == "Amanhã · A partir das 9h"
+        assert "garantido para amanhã, a partir das 9h." in proj.promise.message
 
     def test_unaccepted_future_order_never_promises_confirmation_or_guarantee(self, order):
         from shopman.orderman.models import Order as _Order
@@ -151,7 +162,7 @@ class TestPreorderTracking:
 
         proj = build_order_tracking(order)
 
-        assert proj.when_display == "amanhã · 14:00 às 14:30"
+        assert proj.when_display == "Amanhã · 14h às 14h30"
 
     def test_on_the_day_the_preorder_rejoins_the_normal_flow(self, order):
         order, _ = self._make_preorder(order, days_ahead=0)
@@ -183,7 +194,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã · A partir das 9h."
+            "Pague com o Pix abaixo para confirmar sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -211,7 +222,7 @@ class TestPreorderTracking:
         assert proj.is_preorder is True
         assert proj.promise.fulfillment_wait_kind == "preorder"
         assert proj.promise.message == (
-            "Finalize no ambiente seguro para garantir sua encomenda para amanhã · A partir das 9h."
+            "Finalize no ambiente seguro para garantir sua encomenda para amanhã, a partir das 9h."
         )
         assert "fila de espera" not in proj.promise.message.lower()
 
@@ -548,7 +559,8 @@ class TestOrderProgressSteps:
         """P1-11: o link da TaOn ia só no aviso do WhatsApp; a página não o mostrava."""
         proj = self._dispatch_with_courier(
             order,
-            {"provider": "machine", "id_mch": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc"},
+            {"provider": "machine", "ride_ref": "184532", "status": "E", "tracking_url": "https://taon.example/r/abc",
+             "tracking_match": "single"},
         )
 
         actions = {action.ref: action for action in proj.promise.actions}
@@ -564,21 +576,37 @@ class TestOrderProgressSteps:
     @pytest.mark.parametrize(
         "courier",
         [
-            {"status": "E", "tracking_url": ""},
-            {"status": "F", "tracking_url": "https://taon.example/r/abc"},
-            {"status": "E", "tracking_url": "javascript:alert(1)"},
+            {"status": "E", "tracking_url": "", "tracking_match": "single"},
+            {"status": "F", "tracking_url": "https://taon.example/r/abc", "tracking_match": "single"},
+            {"status": "E", "tracking_url": "javascript:alert(1)", "tracking_match": "single"},
+            # L1 (16/11/2026): na corrida com várias paradas todo pedido gravava o link
+            # da primeira. Sem a prova de que o link é da parada DESTE pedido, não há botão.
+            {"status": "E", "tracking_url": "https://taon.example/r/abc"},
+            {"status": "E", "tracking_url": "https://taon.example/r/abc", "tracking_match": "single",
+             "ride_orders": ["ORD-000", "ORD-001"]},
         ],
-        ids=["sem-link", "corrida-finalizada", "link-nao-http"],
+        ids=["sem-link", "corrida-finalizada", "link-nao-http", "link-sem-prova", "prova-de-corrida-de-um-so"],
     )
     def test_no_usable_courier_link_no_follow_button(self, order, courier):
         proj = self._dispatch_with_courier(order, courier)
 
         assert "track_courier" not in {action.ref for action in proj.promise.actions}
 
+    @pytest.mark.parametrize("match", ["id", "stop", "position"])
+    def test_stop_of_a_shared_ride_follows_its_own_proven_link(self, order, match):
+        proj = self._dispatch_with_courier(
+            order,
+            {"provider": "machine", "ride_ref": "184532", "status": "E", "ride_orders": ["ORD-000", "ORD-001"],
+             "tracking_url": "https://taon.example/r/parada-2", "tracking_match": match},
+        )
+
+        actions = {action.ref: action for action in proj.promise.actions}
+        assert actions["track_courier"].href == "https://taon.example/r/parada-2"
+
     def test_courier_link_waits_for_the_order_to_leave(self, order):
         order.data = {
             "fulfillment_type": "delivery",
-            "courier": {"status": "A", "tracking_url": "https://taon.example/r/abc"},
+            "courier": {"status": "A", "tracking_url": "https://taon.example/r/abc", "tracking_match": "single"},
         }
         order.save(update_fields=["data"])
         for status in ("accepted", "preparing", "ready"):
@@ -1232,6 +1260,8 @@ class TestStatusColours:
         assert proj.promise.actions[0].ref == "copy_pix"
         assert proj.promise.actions[0].label == "Copiar código Pix"
         assert proj.promise.actions[0].href == ""
+        # X3 (OC-05): a ação de copiar carrega o que copia, o mesmo código da página.
+        assert proj.promise.actions[0].value == order_with_payment.data["payment"]["pix_code"]
         assert proj.promise.payment_method == "pix"
         assert proj.promise.pix_copy_paste == order_with_payment.data["payment"]["pix_code"]
         assert proj.promise.message == (
@@ -1391,7 +1421,14 @@ class TestStatusColours:
         assert proj.promise.state == "payment_authorized"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Sua reserva está na fila de espera."
+        # O que existe é dinheiro reservado no cartão, não produto em lista de espera.
+        # Sem timer de aceite na fila não há prazo na frase; o dia vem em frase
+        # própria, e "pedido" aparece uma vez só (#2749).
+        assert proj.promise.message == (
+            "O valor está reservado no seu cartão e só é cobrado quando a loja confirmar. "
+            "Seu pedido é para hoje."
+        )
+        assert "fila de espera" not in proj.promise.message
         assert "disponibilidade" not in proj.promise.message.lower()
         assert "confirmação do estabelecimento" not in proj.promise.message.lower()
 
@@ -1423,7 +1460,8 @@ class TestStatusColours:
         assert proj.promise.state == "payment_authorized"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Sua reserva está na fila de espera. Avisamos quando estiver pronto."
+        assert proj.promise.message.startswith("Pedido aceito")
+        assert "Estamos cobrando o valor reservado no seu cartão." in proj.promise.message
         assert "confirmação do estabelecimento" not in proj.promise.message.lower()
 
     def test_paid_waitlisted_order_stays_in_waitlist_not_immediate_preparation(
@@ -1453,7 +1491,7 @@ class TestStatusColours:
         # dizê-la — como PREVISÃO, que é o que o COPY-WAITLIST-001 permite.
         assert proj.promise.message == (
             "Sua reserva está na fila de espera da fornada prevista para hoje. "
-            "Avisamos quando sair."
+            "Avisamos quando ficar pronta."
         )
         assert "começar o preparo" not in proj.promise.message.lower()
         assert "fila da fornada" not in proj.promise.message.lower()
@@ -1462,7 +1500,9 @@ class TestStatusColours:
         from django.utils import timezone
         from shopman.orderman.models import Order as _Order
 
-        preparing_at = timezone.now().replace(hour=10, minute=0, second=0, microsecond=0)
+        # Hora do DIA LOCAL: `now().replace(hour=10)` em UTC cai no dia seguinte local
+        # entre 00h e 03h UTC, e o ETA passa a trazer a data ("07:30 de 08/11").
+        preparing_at = timezone.localtime().replace(hour=10, minute=0, second=0, microsecond=0)
         created_at = preparing_at - timezone.timedelta(minutes=20)
         _Order.objects.filter(pk=order.pk).update(
             status="preparing",
@@ -1473,7 +1513,14 @@ class TestStatusColours:
 
         proj = build_order_tracking(order)
 
-        expected_eta = (timezone.localtime(preparing_at) + timezone.timedelta(minutes=30)).strftime("%H:%M")
+        # A MESMA hora do Gestor e da página do entregador (#3168): o início do
+        # preparo mais o tempo de agora (``kitchen_eta``), nunca o ``created_at``.
+        from shopman.shop.services import kitchen_eta
+
+        now = timezone.now()
+        gestor_eta = kitchen_eta.ready_eta(order, kitchen_eta.prep_expectation(now=now), now=now)
+        assert gestor_eta > preparing_at
+        expected_eta = format_clock(timezone.localtime(gestor_eta))
         assert proj.eta_display == expected_eta
         assert proj.promise.message == f"Deve ficar pronto às {proj.eta_display}. Avisamos quando estiver."
 
@@ -1527,3 +1574,424 @@ class TestOrderTrackingStatusProjection:
     def test_status_projection_does_not_expose_action_flags(self, order):
         proj = build_order_tracking_status(order)
         assert not hasattr(proj, "can_cancel")
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Resumo: a conta inteira e o que o cliente informou (beta 06/11)
+# ──────────────────────────────────────────────────────────────────────
+
+
+class TestTrackingSummary:
+    """O Resumo do acompanhamento conta o que a revisão do checkout contou."""
+
+    def _seal(self, order, *, data=None, pricing=None):
+        from shopman.orderman.models import Order as _Order
+
+        merged = {**(order.data or {}), **(data or {})}
+        snapshot = {**(order.snapshot or {}), "pricing": pricing or {}}
+        _Order.objects.filter(pk=order.pk).update(data=merged, snapshot=snapshot)
+        order.refresh_from_db()
+        return order
+
+    def test_bill_lists_list_price_subtotal_and_coupon(self, order_items):
+        # Itens já com desconto: 800 + 1600 = 2400; o cupom tirou 300.
+        order = self._seal(order_items, pricing={
+            "discount": {
+                "total_discount_q": 300,
+                "items": [{"line_id": "line-2", "type": "coupon", "name": "BEMVINDO", "discount_q": 150, "qty": 2}],
+            },
+        })
+
+        proj = build_order_tracking(order)
+
+        assert proj.subtotal_display == "R$ 27,00"
+        assert [(d.label, d.amount_display) for d in proj.discount_lines] == [("Cupom BEMVINDO", "R$ 3,00")]
+        # O cupom sai uma vez só, embaixo (beta 09/11): a linha volta ao preço
+        # sem cupom, e as linhas somam o Subtotal. Cupom não risca a linha.
+        assert [i.total_display for i in proj.items] == ["R$ 8,00", "R$ 19,00"]
+        assert proj.items[1].unit_price_display == "R$ 9,50"
+        assert [i.full_total_display for i in proj.items] == ["", ""]
+
+    def test_promotion_line_shows_discounted_price_with_full_price_struck(self, order_items):
+        # Dono, 16/11/2026 (#2570, decisão 1): na linha com promoção, o preço com
+        # desconto e o cheio riscado ao lado; o Subtotal soma as linhas com
+        # desconto, e embaixo só sai o que é da conta (cupom, pontos).
+        from shopman.orderman.models import Order as _Order
+        from shopman.orderman.models import OrderItem
+
+        OrderItem.objects.filter(order=order_items, line_id="line-2").update(meta={"_list_q": 950})
+        _Order.objects.filter(pk=order_items.pk).update(total_q=2400)
+        order = self._seal(order_items, pricing={
+            "discount": {
+                "total_discount_q": 300,
+                "items": [{"line_id": "line-2", "type": "promotion", "name": "Semana", "discount_q": 150, "qty": 2}],
+            },
+        })
+
+        proj = build_order_tracking(order)
+
+        cents = lambda display: int(display.replace("R$ ", "").replace(".", "").replace(",", ""))  # noqa: E731
+        assert [i.total_display for i in proj.items] == ["R$ 8,00", "R$ 16,00"]
+        assert [i.full_total_display for i in proj.items] == ["", "R$ 19,00"]
+        assert proj.discount_lines == ()
+        lines_q = sum(cents(i.total_display) for i in proj.items)
+        assert cents(proj.subtotal_display) == lines_q == cents(proj.total_display) == 2400
+
+    def test_edited_order_lines_show_what_was_charged(self, order_items):
+        from shopman.orderman.models import OrderItem
+
+        OrderItem.objects.filter(order=order_items, line_id="line-2").update(meta={"_list_q": 950})
+        order = self._seal(
+            order_items,
+            data={"adjustment": {"total_q": 2400, "items": [
+                {"line_id": "line-2", "sku": "CROISSANT", "name": "Croissant", "qty": 2,
+                 "unit_price_q": 800, "line_total_q": 1600, "meta": {"_list_q": 950}},
+            ]}},
+            pricing={"discount": {"items": [{"line_id": "line-2", "type": "coupon", "name": "X", "discount_q": 150, "qty": 2}]}},
+        )
+
+        proj = build_order_tracking(order)
+
+        assert proj.discount_lines == ()
+        assert [i.total_display for i in proj.items] == ["R$ 16,00"]
+        assert proj.subtotal_display == "R$ 16,00"
+
+    def test_bill_without_discount_has_items_subtotal(self, order_items):
+        proj = build_order_tracking(order_items)
+
+        assert proj.subtotal_display == "R$ 24,00"
+        assert proj.discount_lines == ()
+
+    def test_edited_order_does_not_show_the_sealed_discount(self, order_items):
+        order = self._seal(
+            order_items,
+            data={"adjustment": {"total_q": 2000, "items": []}},
+            pricing={"discount": {"items": [{"type": "coupon", "name": "X", "discount_q": 100, "qty": 1}]}},
+        )
+
+        assert build_order_tracking(order).discount_lines == ()
+
+    def test_customer_informed_data_reaches_the_summary(self, order):
+        order = self._seal(order, data={
+            "fulfillment_type": "delivery",
+            "delivery_address": "Rua Pará, 100 - Centro - Londrina/PR",
+            "is_gift": True,
+            "recipient": {"name": "Maria", "phone": "43999990000"},
+            "gift_message": "Feliz aniversário!",
+            "fiscal": {"tax_id": "12345678909"},
+            "order_notes": "Tocar o interfone",
+        })
+
+        proj = build_order_tracking(order)
+
+        assert proj.gift is not None
+        assert proj.gift.recipient_name == "Maria"
+        assert proj.gift.message == "Feliz aniversário!"
+        assert proj.tax_id_display == "***.456.789-**"
+        assert proj.customer_notes == "Tocar o interfone"
+        assert proj.delivery_address == "Rua Pará, 100 - Centro - Londrina/PR"
+
+    def test_pickup_does_not_carry_a_delivery_address(self, order):
+        order = self._seal(order, data={"fulfillment_type": "pickup", "delivery_address": "Rua velha"})
+
+        assert build_order_tracking(order).delivery_address == ""
+
+    def test_same_day_window_is_shown_even_without_preorder(self, order):
+        from django.utils import timezone
+
+        order = self._seal(order, data={
+            "fulfillment_type": "delivery",
+            "delivery_date": timezone.localdate().isoformat(),
+            "delivery_time_slot": "19:30-20:00",
+        })
+
+        proj = build_order_tracking(order)
+
+        assert proj.when_display is None
+        assert proj.schedule_display == "Hoje · 19h30 às 20h"
+
+
+class TestShareSummary:
+    """"Enviar resumo" manda texto, nunca o link privado do pedido."""
+
+    def test_share_text_tells_items_when_and_where_without_a_link(self, order_items):
+        from django.utils import timezone
+        from shopman.orderman.models import Order as _Order
+
+        data = {
+            "fulfillment_type": "delivery",
+            "delivery_address": "Rua Pará, 100 - Centro - Londrina/PR",
+            "delivery_date": timezone.localdate().isoformat(),
+            "delivery_time_slot": "19:30-20:00",
+        }
+        _Order.objects.filter(pk=order_items.pk).update(data=data)
+        order_items.refresh_from_db()
+
+        text = build_order_tracking(order_items).share_text
+
+        assert text.splitlines()[0].startswith(f"Pedido {order_items.ref} na ")
+        assert "10× " in text and "2× " in text
+        # A data vai por extenso: o texto é lido depois, por outra pessoa (WP-L06, P2-10).
+        from django.utils import formats
+
+        today = timezone.localdate()
+        assert f"Entrega: {formats.date_format(today, 'l').lower()}, {formats.date_format(today, 'd/m')} · 19h30 às 20h" in text
+        assert "hoje" not in text
+        assert "Endereço: Rua Pará, 100 - Centro - Londrina/PR" in text
+        assert "http" not in text
+        assert "/pedido/" not in text
+
+
+class TestDispatchedEtaRespectsTheWindow:
+    """Saiu antes da janela escolhida: a chegada prometida não fica antes dela."""
+
+    def test_eta_is_not_before_the_chosen_window(self, order):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        order.data = {
+            "fulfillment_type": "delivery",
+            "delivery_date": tomorrow.isoformat(),
+            "delivery_time_slot": "10:00-10:30",
+        }
+        order.save(update_fields=["data"])
+        for status in ("accepted", "preparing", "ready", "dispatched"):
+            order.transition_status(status, actor="test")
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.eta_display == f"10h de {tomorrow:%d/%m}"
+        assert "10h" in proj.promise.message
+
+
+@pytest.mark.parametrize("entries", [
+    [{"sku": "PAO", "hold_id": "7", "qty": 1}],
+    [{"sku": "PAO", "hold_id": None, "qty": 0, "untracked": True}],
+    [7],
+])
+def test_invalid_stock_reference_does_not_hide_the_order(order_paid, entries, client):
+    """Z35/N96: reserva inválida não derruba a consulta nem é normalizada no GET."""
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.services.stock import hold_pks
+
+    order_paid.data = {**order_paid.data, "hold_ids": entries}
+    order_paid.save(update_fields=["data"])
+    before = dict(order_paid.data)
+    directives_before = Directive.objects.count()
+
+    with pytest.raises(ValueError):
+        hold_pks(entries)  # O contrato da escrita continua recusando o formato.
+
+    projection = build_order_tracking(order_paid)
+    status = build_order_tracking_status(order_paid)
+
+    assert projection.order_ref == status.order_ref == order_paid.ref
+    assert projection.total_display == "R$ 25,00"
+    assert projection.promise.fulfillment_wait_kind != "planned_batch"
+    response = client.get(f"/api/v1/tracking/{order_paid.ref}/")
+    assert response.status_code == 200
+    assert response.json()["ref"] == order_paid.ref
+    order_paid.refresh_from_db()
+    assert order_paid.data == before
+    assert Directive.objects.count() == directives_before
+
+
+def test_previous_day_preparation_does_not_invent_a_new_eta(order):
+    from django.utils import timezone
+
+    from shopman.shop.projections.order_tracking import _eta_at
+
+    order.status = "preparing"
+    order.preparing_at = timezone.now() - timezone.timedelta(days=4)
+    assert _eta_at(order) is None
+
+
+def test_eta_on_another_day_keeps_its_date():
+    from django.utils import timezone
+
+    from shopman.storefront.presentation.order_tracking import _eta_display
+
+    future = timezone.localtime(timezone.now()) + timezone.timedelta(days=2)
+    assert _eta_display(future.isoformat()) == f"{format_clock(future)} de {future:%d/%m}"
+
+
+def test_historical_customer_cancellation_event_is_read_in_portuguese_without_rewriting(order):
+    from shopman.backstage.projections.order_queue import _build_timeline
+
+    order.emit_event("customer_cancellation_requested", actor="customer:self-service", payload={"reason": "Mudei de ideia"})
+    before = list(order.events.values("id", "type", "payload"))
+
+    customer = build_order_tracking(order)
+    operator = _build_timeline(order)
+
+    assert any(item.label == "Cancelamento solicitado" for item in customer.timeline)
+    assert any(item.label == "Cliente solicitou o cancelamento" for item in operator)
+    assert list(order.events.values("id", "type", "payload")) == before
+
+
+# ── A fila chama: a frase principal pede a confirmação (#2771) ───────────────
+
+
+@pytest.mark.channels("web")
+class TestWaitlistCallIsTheMainSentence:
+    """Em ``confirming`` quem age é a cliente, com prazo correndo.
+
+    A frase principal dizia "Estamos conferindo a disponibilidade. Avisamos em
+    seguida." ao lado do cartão da fila que pedia a confirmação: duas mensagens
+    para o mesmo momento, e a primeira mandava esperar.
+    """
+
+    @staticmethod
+    def _order(ref: str, *, state: str = "confirming"):
+        from decimal import Decimal
+
+        from shopman.shop.services import waitlist
+        from shopman.storefront.tests.web.test_waitlist_tracking import SKU, _fermata_order, _materialize
+
+        order = _fermata_order(ref)
+        # Fila da fornada de hoje: a cobrança nasce NA confirmação, então ainda
+        # não há intent nem código de pagamento.
+        order.data["payment"] = {"method": "pix"}
+        order.save(update_fields=["data"])
+        if state == "confirming":
+            _materialize(order)
+            waitlist.open_window(SKU, qty_available=Decimal("5"))
+            order.refresh_from_db()
+        return order
+
+    @staticmethod
+    def _frozen_at(hour: int, minute: int):
+        """O relógio parado num horário de 20/11/2026 (sexta) em Brasília: a frase depende do dia."""
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        at = datetime(2026, 11, 20, hour, minute, tzinfo=ZoneInfo("America/Sao_Paulo"))
+        return patch("django.utils.timezone.now", return_value=at.astimezone(UTC))
+
+    def test_confirming_without_a_charge_asks_for_the_confirmation_with_the_deadline(self):
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        # Meio do dia: o prazo cai no mesmo dia, e a frase diz só a hora.
+        with self._frozen_at(12, 0):
+            order = self._order("FILA-CHAMA-1")
+            proj = build_order_tracking(order)
+            clock = format_clock(timezone.localtime(parse_datetime(proj.waitlist_deadline)))
+
+        assert proj.waitlist_state == "confirming"
+        assert proj.promise.state == "waitlist_confirming"
+        assert proj.promise.tone == "info"
+        # O título fala da cliente, não da fornada (que é da casa).
+        assert proj.promise.title == "Chegou a sua vez!"
+        assert proj.promise.message == (
+            f"Confirme seu pedido até {clock} para garantir a sua vaga. "
+            "Depois desse horário, ela passa para a próxima pessoa da fila."
+        )
+        # A frase não manda esperar quando quem age é a cliente.
+        assert "conferindo" not in proj.promise.message
+        assert "Avisamos" not in proj.promise.message
+
+    def test_a_deadline_past_midnight_says_the_day(self):
+        """Chamada às 23h55 de sexta: o prazo cai no sábado, e a frase diz o dia."""
+        from django.utils import timezone
+        from django.utils.dateparse import parse_datetime
+
+        with self._frozen_at(23, 55):
+            order = self._order("FILA-CHAMA-MEIA-NOITE")
+            proj = build_order_tracking(order)
+            deadline = timezone.localtime(parse_datetime(proj.waitlist_deadline))
+
+        assert deadline.date().isoformat() == "2026-11-21"
+        assert proj.promise.message == (
+            f"Confirme seu pedido até amanhã, sábado, às {format_clock(deadline)} para garantir a sua vaga. "
+            "Depois desse horário, ela passa para a próxima pessoa da fila."
+        )
+
+    def test_the_promise_carries_the_same_deadline_the_queue_card_counts(self):
+        order = self._order("FILA-CHAMA-2")
+
+        proj = build_order_tracking(order)
+
+        assert proj.promise.deadline_at == proj.waitlist_deadline
+        assert proj.promise.deadline_kind == "waitlist"
+        assert proj.promise.deadline_action == "release_waitlist_slot"
+        # Uma contagem só na tela: a do cartão da fila, ao lado do botão.
+        assert proj.promise.timer_mode == "none"
+
+    def test_the_payment_block_stays_on_screen_during_the_call(self):
+        """O total e a forma de pagar não somem quando a loja chama.
+
+        A tela só desenha o bloco de pagamento quando a promessa diz a forma.
+        Antes do degrau do chamado, o Pix sem código caía em ``store_checking``
+        com ``payment_method="pix"``; o degrau novo tem de carregar o mesmo.
+        """
+        waiting = build_order_tracking(self._order("FILA-CHAMA-7", state="fermata"))
+        calling = build_order_tracking(self._order("FILA-CHAMA-8"))
+
+        assert waiting.promise.payment_method == "pix"
+        assert calling.promise.state == "waitlist_confirming"
+        assert calling.promise.payment_method == "pix"
+        assert not calling.promise.pix_copy_paste
+
+    def test_the_queue_card_keeps_only_the_button(self):
+        order = self._order("FILA-CHAMA-3")
+
+        copy = build_order_tracking(order).copy
+
+        assert copy.waitlist_confirm_cta == "Confirmar meu pedido"
+        # O chamado é da frase principal; o cartão não o repete com outras palavras.
+        assert not hasattr(copy, "waitlist_confirm_title")
+        assert not hasattr(copy, "waitlist_confirm_message")
+
+    def test_while_waiting_for_the_batch_the_main_sentence_is_not_the_call(self):
+        order = self._order("FILA-CHAMA-4", state="fermata")
+
+        proj = build_order_tracking(order)
+
+        assert proj.waitlist_state == "fermata"
+        assert proj.promise.state != "waitlist_confirming"
+
+    def test_after_confirming_the_call_gives_way(self):
+        from unittest.mock import patch as _patch
+
+        from shopman.shop.services import waitlist
+
+        order = self._order("FILA-CHAMA-5")
+        with _patch("shopman.shop.services.payment.initiate"), _patch("shopman.shop.services.notification.send"):
+            assert waitlist.confirm(order) is True
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.waitlist_state == "confirmed"
+        assert proj.promise.state != "waitlist_confirming"
+
+    def test_an_expired_or_missing_deadline_never_leaves_a_hole_in_the_sentence(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        order = self._order("FILA-CHAMA-6")
+        order.data["waitlist"]["deadline"] = (timezone.now() - timedelta(minutes=1)).isoformat()
+        order.save(update_fields=["data"])
+
+        message = build_order_tracking(order).promise.message
+
+        assert message == "Confirme seu pedido para garantir a sua vaga na fila."
+        assert "{" not in message
+
+    def test_the_call_speaks_the_house_words(self):
+        order = self._order("FILA-CHAMA-7")
+
+        promise = build_order_tracking(order).promise
+        text = f"{promise.title} {promise.message}".lower()
+
+        # "Ficar pronto", nunca "sair"; sem travessão; a palavra da fila é "vaga".
+        assert "saiu" not in text and "sair" not in text
+        assert "—" not in text and "–" not in text
+        assert "vaga" in text and "lugar" not in text
+        assert "fornada" not in text, "a fornada é da casa; o título fala da vez da cliente"

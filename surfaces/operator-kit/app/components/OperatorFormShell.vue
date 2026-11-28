@@ -136,6 +136,9 @@ defineExpose({ reveal });
     :class="panelClass"
     @update:open="onOpenChange"
   >
+    <template v-if="$slots.actions" #actions>
+      <slot name="actions" />
+    </template>
     <template #body>
       <div class="flex flex-col gap-4" data-form-shell :data-form-dirty="dirty ? 'true' : 'false'">
         <slot />

@@ -25,12 +25,12 @@
       "kind": "operator",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
       "capabilities": { "pwa": true },
-      "exceptions": [{ "capability": "browser", "reason": "Fluxo Playwright ainda não foi promovido ao gate canônico.", "owner": "engineering", "expires": "2026-11-14" }]
+      "exceptions": [{ "capability": "browser", "reason": "Playwright da Central reprova por mismatch de hidratação no rail (#2473); promover quando corrigir.", "owner": "engineering", "expires": "2026-11-29" }]
     },
     "pos": {
       "dir": "pos-nuxt",
       "kind": "operator",
-      "runner": "macos-15",
+      "visualRunner": "macos-15",
       "signatureViews": [
         "preorders-search-390x844-light.png",
         "preorders-week-1440x900-light.png",
@@ -38,14 +38,14 @@
         "preorders-week-768x1024-light.png"
       ],
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual", "geometry": "test:geometry", "browser": "test:e2e" }
+      "capabilities": { "pwa": true, "visual": "test:visual", "geometry": "test:geometry", "browser": "test:e2e" },
+      "concurrentPhases": ["geometry", "browser"]
     },
     "kds": {
       "dir": "kds-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" },
-      "exceptions": [{ "capability": "browser", "reason": "E2E funcional existente aguarda fixtures canônicas.", "owner": "engineering", "expires": "2026-11-14" }]
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "orders": {
       "dir": "orders-nuxt",
@@ -65,7 +65,7 @@
     "marketing": {
       "dir": "marketing-nuxt",
       "kind": "operator",
-      "runner": "macos-15",
+      "visualRunner": "macos-15",
       "browserEngines": "chromium",
       "visualConfig": "playwright.config.ts",
       "pythonMock": true,
@@ -78,26 +78,25 @@
         "simulated-preview__feed__390x844__light.png"
       ],
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "a11y": "test:a11y", "browserSuite": "test:browser-contract", "security": "test:security", "npmAudit": true }
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e", "a11y": "test:a11y", "browserSuite": "test:browser-functional", "security": "test:security", "npmAudit": true }
     },
     "bi": {
       "dir": "bi-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" }
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "purchase": {
       "dir": "purchase-nuxt",
       "kind": "operator",
       "commands": { "unit": "test:unit", "component": "test:component", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" },
-      "exceptions": [{ "capability": "browser", "reason": "A matriz visual cobre o fluxo atual; separação funcional será feita antes da expiração.", "owner": "engineering", "expires": "2026-11-14" }]
+      "capabilities": { "pwa": true, "visual": "test:visual", "browser": "test:e2e" }
     },
     "kitchensink": {
       "dir": "kitchensink-nuxt",
-      "kind": "operator",
+      "kind": "internal",
       "commands": { "unit": "test:unit", "lint": "lint", "typecheck": "typecheck", "build": "build" },
-      "capabilities": { "pwa": true, "visual": "test:visual" }
+      "capabilities": { "visual": "test:visual", "browser": "test:e2e" }
     },
     "status": {
       "dir": "status-nuxt",

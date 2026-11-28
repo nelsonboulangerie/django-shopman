@@ -15,11 +15,12 @@ function readCachedShell (
 /** Estado global da loja, sem catálogo, destaques nem histórico de pedidos. */
 export function useStorefrontShell () {
   const apiPath = useShopmanApiPath()
+  const requestFetch = import.meta.server ? useRequestFetch() : $fetch
   const headers = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 
   return useAsyncData<ShellResponse>(
     STOREFRONT_SHELL_KEY,
-    () => $fetch<ShellResponse>(apiPath('/api/v1/storefront/shell/'), {
+    () => requestFetch<ShellResponse>(apiPath('/api/v1/storefront/shell/'), {
       credentials: 'include',
       headers
     }),

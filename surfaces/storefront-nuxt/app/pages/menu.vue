@@ -22,8 +22,12 @@ import {
   installCatalogStructureSnapshot
 } from '~/presentation/continuumCatalog'
 import { collectionJsonLd, jsonLdText, listingDescription, sitePageSeo } from '~/presentation/seo'
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+import { useElementSize } from '@vueuse/core'
+
+import { initialMenuDay, isTodayChoice, needsDayBeforeAdd, shortDayLabel, showsDayStep } from '~/presentation/menuDay'
 import type { CatalogStructureState } from '~/types/continuum'
-import type { CatalogResponse } from '~/types/shopman'
+import type { CartDayChangeRefusal, CatalogResponse, ProductMutationMeta, ProductOptionSelection } from '~/types/shopman'
 
 const apiPath = useShopmanApiPath()
 const { openSearch } = useSearchOverlay()
@@ -43,6 +47,31 @@ const continuum = continuumEnabled
     })
   : null
 const structureCatalog = computed(() => catalogFromStructureSnapshot(continuum?.data.value))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// B (OC-33 B1, direção E2 do dono, 25/11/2026): quem só olha não é interrompido. O
+// primeiro "+" com a casa fechada abre a folha "Quando"; com o dia escolhido, o
+// cardápio lê aquele dia (`?date=`; hoje com data é o de sempre no servidor, X13) e o
+// dia vira a etapa feita do checkout no topo da lista.
+const { is: menuExperienceIs } = useExperience('cardapio-dia-primeiro')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayFirst = computed(() => menuExperienceIs('b'))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const chosenMenuDay = useChosenMenuDay()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDayRoute = useRoute()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+if (dayFirst.value && typeof menuDayRoute.query.dia === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(menuDayRoute.query.dia)) {
+  chosenMenuDay.value = menuDayRoute.query.dia
+}
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// Sem dia, a query é `undefined`, nunca `{}`: o servidor já começou a ler o cardápio
+// antes do shell chegar (`server/plugins/ssrRead.ts`), e o `reuseSsrRead` só reaproveita
+// essa leitura quando a página não manda query. Um `{}` é "query" para ele, e o SSR fazia
+// um segundo GET do cardápio (o contrato `tests/ssr/ssrRead.test.mjs`). Na A, a leitura
+// fica idêntica à do main: sem query, a mesma chave no servidor e no cliente.
+const menuQuery = computed((): Record<string, string> | undefined => (
+  dayFirst.value && chosenMenuDay.value ? { date: chosenMenuDay.value } : undefined
+))
 // Se o snapshot falhar ou estiver desligado, o SSR volta integralmente ao menu
 // canônico. Com snapshot utilizável, preço/estoque/sessão convergem no cliente.
 const canonicalOnServer = import.meta.server && (!continuumEnabled || !structureCatalog.value)
@@ -53,10 +82,26 @@ const {
   refresh: refreshCanonical
 } = await useFetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), {
   credentials: 'include',
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // No servidor, resolvida uma vez antes da leitura (nada muda a query depois no SSR);
+  // no cliente, o dia escolhido segue reativo.
+  query: import.meta.server ? menuQuery.value : menuQuery,
+  $fetch: useStorefrontPageFetch(),
   server: canonicalOnServer,
   lazy: import.meta.client || !canonicalOnServer
 })
 await siteSeoReady
+// Loja viva (WP-L04): disponibilidade e preço dos cards mudam sozinhos. A estrutura
+// (seções, ordem) segue no ritmo próprio do snapshot; aqui só a leitura canônica.
+useLiveRevalidate(
+  data,
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  () => $fetch<CatalogResponse>(apiPath('/api/v1/storefront/catalog/'), { credentials: 'include', query: menuQuery.value }),
+  // EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+  // A releitura que saiu com um dia e volta depois de a cliente escolher outro é
+  // descartada: o cardápio de quinta não pode cobrir a escolha de sexta.
+  { minIntervalMs: LIVE_CATALOG_MIN_INTERVAL_MS, scope: () => menuQuery.value?.date || '' }
+)
 
 const catalog = computed(() => data.value?.catalog || structureCatalog.value || null)
 const pending = computed(() => !catalog.value && (canonicalPending.value || continuum?.pending.value))
@@ -84,6 +129,160 @@ async function refresh () {
 
 requireContentOnSsr(error.value, !!catalog.value, 'Cardápio')
 
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// O dia em que o cardápio abre: o da URL, o guardado na aba ou o da sacola. Sem
+// nenhum, o cardápio é o de sempre, e ninguém é interrompido.
+const { cart: menuCart, changeCartDay, setSkuQty, addLineWithOptions } = useCartState()
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuDays = computed(() => catalog.value?.days || null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+watch([dayFirst, menuDays], ([enabled, days]) => {
+  if (!enabled || !days) return
+  const resolved = initialMenuDay(days, [chosenMenuDay.value, menuCart.value.day?.date])
+  if (resolved !== chosenMenuDay.value) chosenMenuDay.value = resolved
+}, { immediate: true })
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// Dia que o servidor recusou (passou, a casa fechou): volta ao cardápio de sempre.
+watch(canonicalError, failure => {
+  if (dayFirst.value && failure && chosenMenuDay.value) chosenMenuDay.value = ''
+})
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const menuOnDay = computed(() => dayFirst.value && !!chosenMenuDay.value && !isTodayChoice(menuDays.value, chosenMenuDay.value))
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayStepSummary = computed(() => (
+  dayFirst.value && showsDayStep(menuDays.value, chosenMenuDay.value) ? shortDayLabel(chosenMenuDay.value) : ''
+))
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// A folha "Quando": no primeiro "+" (modo "add", com o item esperando) e no "Editar"
+// da etapa feita (modo "change": a sacola inteira muda de dia, ou nada muda).
+const daySheetOpen = ref(false)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const pendingAdd = ref<{ meta: ProductMutationMeta, qty: number, options?: ProductOptionSelection[] } | null>(null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChangeRefusal = ref<CartDayChangeRefusal | null>(null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChangeError = ref('')
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const dayChanging = ref(false)
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+provideMenuDay({
+  date: computed(() => (dayFirst.value ? chosenMenuDay.value : '')),
+  onDay: menuOnDay,
+  ask: (meta, qty, options) => {
+    if (!dayFirst.value || !needsDayBeforeAdd(menuDays.value, chosenMenuDay.value)) return false
+    pendingAdd.value = { meta, qty, options }
+    openDaySheet()
+    return true
+  }
+})
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function openDaySheet () {
+  dayChangeRefusal.value = null
+  dayChangeError.value = ''
+  daySheetOpen.value = true
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// "Editar" na sacola leva a `/menu?trocar=1`: a folha abre com o dia da sacola marcado.
+if (dayFirst.value && menuDayRoute.query.trocar === '1') onMounted(openDaySheet)
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function settleMenuDay (value: string) {
+  chosenMenuDay.value = value
+  dayChangeRefusal.value = null
+  dayChangeError.value = ''
+  daySheetOpen.value = false
+  const { trocar: _closedSheet, ...query } = menuDayRoute.query
+  void router.replace({ query: { ...query, dia: value } })
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// Com a sacola cheia, trocar o dia é um comando só do servidor (X3, X4): a sacola
+// inteira vai para o dia novo, ou nada muda e o que não dá vem nomeado.
+async function moveCartTo (value: string, without: string[] = []) {
+  dayChanging.value = true
+  dayChangeError.value = ''
+  try {
+    await changeCartDay(value, without)
+    settleMenuDay(value)
+  } catch (failure: unknown) {
+    const { status, data } = httpError(failure)
+    if (status === 409 && data?.error_code === 'cart_day_change_refused') {
+      dayChangeRefusal.value = data as unknown as CartDayChangeRefusal
+    } else {
+      dayChangeRefusal.value = null
+      dayChangeError.value = String(data?.detail || 'Não conseguimos trocar o dia agora. Tente de novo.')
+    }
+  } finally {
+    dayChanging.value = false
+  }
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+async function confirmDay (value: string) {
+  const cartDayNow = menuCart.value.is_empty ? '' : (menuCart.value.day?.date || menuDays.value?.today || '')
+  if (cartDayNow && value !== cartDayNow) {
+    await moveCartTo(value)
+    return
+  }
+  settleMenuDay(value)
+  const pending = pendingAdd.value
+  pendingAdd.value = null
+  if (!pending) return
+  const meta = { ...pending.meta, date: value }
+  // O erro do Adicionar já tem a tela dele (a folha de substitutos, o aviso da sacola).
+  if (pending.options) void addLineWithOptions(meta, pending.qty, pending.options).catch(() => {})
+  else void setSkuQty(meta, pending.qty).catch(() => {})
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function proceedWithoutRefused () {
+  const refusal = dayChangeRefusal.value
+  if (refusal) void moveCartTo(refusal.date, refusal.items.map(item => item.ref || item.sku))
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+function keepCartDay () {
+  dayChangeRefusal.value = null
+  daySheetOpen.value = false
+}
+
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// A etapa feita some ao descer a lista e volta ao subir (não fica presa no topo).
+// Mostrar ou esconder a etapa muda a altura do cabeçalho, e o navegador compensa a
+// rolagem (scroll anchoring) com um evento de scroll que não é gesto da cliente: por um
+// instante depois de cada troca, a posição só é anotada, para a etapa não piscar de volta.
+const dayStepVisible = ref(true)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+// A etapa fica logo abaixo da faixa de latão, fora dela (a faixa troca as cores da casa
+// pelas suas): o topo fixo dela é o fim da faixa, que muda de altura com a largura.
+const menuFilterbar = ref<HTMLElement | null>(null)
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+const { height: menuFilterbarHeight } = useElementSize(menuFilterbar, undefined, { box: 'border-box' })
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+let lastScrollY = 0
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+let dayStepSettlingUntil = 0
+// EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22
+if (import.meta.client) {
+  useEventListener(window, 'scroll', () => {
+    const y = window.scrollY
+    if (performance.now() < dayStepSettlingUntil) {
+      lastScrollY = y
+      return
+    }
+    if (Math.abs(y - lastScrollY) < 8) return
+    const visible = y < 80 || y < lastScrollY
+    lastScrollY = y
+    if (visible === dayStepVisible.value) return
+    dayStepVisible.value = visible
+    dayStepSettlingUntil = performance.now() + 250
+  }, { passive: true })
+}
+
 const route = useRoute()
 const activeSection = ref('all')
 const pillRailTailWidth = ref(160)
@@ -99,6 +298,10 @@ const allItems = computed(() => catalog.value?.items || [])
 const uniqueItems = computed(() => uniqueItemsBySku(allItems.value))
 const favoriteRef = computed(() => catalog.value?.favorite_category_ref || '')
 const hasAppliedFilters = computed(() => appliedFilterKeys.value.length > 0)
+// Enquanto a leitura canônica não chega, o topo do cardápio (a chave de disponíveis
+// e as seções vivas) fica guardado, para o conteúdo não saltar quando ela chegar.
+// Só na visão inteira: com seção ou filtro escolhido, o topo é outro.
+const reservesTop = computed(() => confirmingCatalog.value && activeSection.value === 'all' && !hasAppliedFilters.value)
 const sectionsBySku = computed(() => buildSectionsBySku(sections.value))
 // Cartões de escolha (mesmo `choice_group`): o grupo inteiro do cardápio, para o
 // cartão abrir a mesma escolha em qualquer seção onde aparece.
@@ -424,7 +627,7 @@ watch(sectionOptions, options => {
 })
 
 onMounted(() => {
-  // A /busca aplica filtros e aponta seções por query param.
+  // A busca (overlay) aplica filtros e aponta seções por query param.
   const filtro = String(route.query.filtro || '').split(',').map(part => part.trim()).filter(Boolean)
   if (filtro.length) {
     appliedFilterKeys.value = filtro
@@ -504,7 +707,7 @@ useHead({
   <main class="min-w-0">
     <h1 class="sr-only">Cardápio</h1>
 
-    <section data-menu-filterbar class="shop-pillbar sticky top-16 z-30 bg-background shadow-sm">
+    <section ref="menuFilterbar" data-menu-filterbar class="shop-pillbar sticky top-16 z-30 bg-background shadow-sm">
       <div class="shop-container py-2">
         <div v-if="catalog" class="flex items-center gap-2">
           <UiButton
@@ -517,7 +720,9 @@ useHead({
           />
           <UiTabs v-model="activeSection" class="min-w-0 flex-1" @update:model-value="selectSection">
             <div data-menu-pillrail class="no-scrollbar overflow-x-auto scroll-smooth motion-reduce:scroll-auto">
-              <UiTabsList :pill="false" class="gap-1 bg-transparent p-0">
+              <!-- A pílula inativa herda o texto inteiro, não os 70 % da lista: sobre a barra
+                   Brass os 70 % davam 3,3:1, abaixo do AA (X9, OC-30). -->
+              <UiTabsList :pill="false" class="gap-1 bg-transparent p-0 text-muted-foreground">
                 <UiTabsTrigger
                   v-if="hasAppliedFilters"
                   :value="FILTERED_SECTION_VALUE"
@@ -575,19 +780,29 @@ useHead({
         <p class="sr-only" aria-live="polite">{{ menuFocusLabel }}</p>
       </div>
     </section>
+    <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+    <!-- O dia do pedido é a etapa feita do checkout, idêntica ("Quando", ✓ latão, "Editar"
+         com lápis), na largura toda e logo abaixo da faixa de latão. Fica fixa sob a faixa,
+         mas some ao descer a lista e volta ao subir. -->
+    <div
+      v-if="dayStepSummary"
+      v-show="dayStepVisible"
+      class="sticky z-20 bg-background shadow-sm"
+      :style="{ top: `calc(4rem + ${menuFilterbarHeight}px)` }"
+      data-menu-day-step
+    >
+      <div class="shop-container">
+        <CheckoutProgressSection title="Quando" state="done" icon="lucide:clock" @edit="openDaySheet">
+          <template #summary>
+            <span class="text-xl font-semibold text-foreground" data-decisive="availability">{{ dayStepSummary }}</span>
+          </template>
+        </CheckoutProgressSection>
+      </div>
+    </div>
 
     <div class="shop-section">
       <div class="shop-container shop-stack-block">
-        <div v-if="pending" class="grid grid-cols-1 gap-x-8 md:grid-cols-2 xl:grid-cols-3">
-          <div v-for="n in 6" :key="n" class="flex gap-3 border-b py-3">
-            <div class="min-w-0 flex-1 space-y-2 self-center">
-              <UiSkeleton class="h-4 w-3/4" />
-              <UiSkeleton class="h-3 w-full" />
-              <UiSkeleton class="h-4 w-1/4" />
-            </div>
-            <UiSkeleton class="size-28 shrink-0 rounded-lg" />
-          </div>
-        </div>
+        <MenuSkeletonRows v-if="pending" />
 
         <UiAlert v-else-if="error" variant="destructive">
           <UiAlertTitle>Não conseguimos abrir o cardápio agora</UiAlertTitle>
@@ -615,6 +830,20 @@ useHead({
             </UiAlertDescription>
           </UiAlert>
 
+          <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+          <MenuDaySheet
+            v-if="dayFirst && menuDays"
+            v-model:open="daySheetOpen"
+            :days="menuDays"
+            :chosen="chosenMenuDay"
+            :refusal="dayChangeRefusal"
+            :error="dayChangeError"
+            :busy="dayChanging"
+            @confirm="confirmDay"
+            @proceed-without="proceedWithoutRefused"
+            @keep="keepCartDay"
+          />
+
           <section data-menu-results class="min-w-0 scroll-mt-40 space-y-4">
             <!-- Mostrar só disponíveis: padrão da casa, chave do cliente. -->
             <div
@@ -632,6 +861,21 @@ useHead({
                 @update:model-value="setAvailableOnly(Boolean($event))"
               />
             </div>
+            <!-- A chave depende da disponibilidade, que só chega com a leitura canônica.
+                 Enquanto ela não chega, o lugar da chave fica guardado com a MESMA
+                 marcação (texto invisível), para a altura bater por construção. -->
+            <div
+              v-else-if="reservesTop"
+              class="relative rounded-lg border bg-card p-3"
+              aria-hidden="true"
+              data-menu-available-only-placeholder
+            >
+              <div class="invisible min-w-0">
+                <p class="shop-body font-semibold">Mostrar só disponíveis</p>
+                <p class="shop-meta">{{ availableOnlyHint(false, 0) }}</p>
+              </div>
+              <UiSkeleton class="absolute inset-3" />
+            </div>
 
             <!-- Filtro de preferências (WP-5): off por padrão, transparente e
                  reversível; só aparece quando o cliente tem preferências ativas. -->
@@ -643,14 +887,34 @@ useHead({
               <div class="min-w-0">
                 <p class="shop-body font-semibold">Só compatível com minhas preferências</p>
                 <p class="shop-meta">{{ dietaryFilterHint }}</p>
+                <p class="shop-meta">O filtro usa os ingredientes informados. Não garante ausência de alérgenos ou contaminação cruzada.</p>
               </div>
               <UiSwitch v-model="dietaryFilterOn" aria-label="Só compatível com minhas preferências" />
             </div>
 
             <!-- "Seus favoritos": prateleira pessoal no topo, só logado e sem filtro ativo. -->
-            <MenuFavoritesShelf :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" />
+            <!-- EXPERIMENT(cardapio-dia-primeiro) remove_after 2027-02-22 -->
+            <MenuFavoritesShelf v-if="!menuOnDay" :active="!hasAppliedFilters" :hide-dietary-warnings="dietaryFilterOn" :available-only="availableOnly" />
 
             <div v-if="activeSections.length" class="shop-stack-section">
+              <!-- O cardápio não salta (P2-01). "Destaques" e as outras seções vivas
+                   dependem do estoque e só chegam com a leitura canônica; antes delas a
+                   tela já mostra as seções fixas do snapshot, e a chegada empurrava tudo
+                   para baixo. O topo fica guardado por um esqueleto da altura da tela:
+                   as seções fixas nascem abaixo da dobra, e o que troca na frente da
+                   cliente é esqueleto por conteúdo, no mesmo lugar. -->
+              <div
+                v-if="reservesTop"
+                class="min-h-svh space-y-1"
+                aria-hidden="true"
+                data-menu-live-sections-placeholder
+              >
+                <div class="shop-stack-micro">
+                  <UiSkeleton class="h-7 w-40" />
+                  <UiSkeleton class="h-5 w-64 max-w-full" />
+                </div>
+                <MenuSkeletonRows />
+              </div>
               <div
                 v-for="section in activeSections"
                 :id="sectionDomId(section.ref)"

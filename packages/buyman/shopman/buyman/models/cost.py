@@ -4,16 +4,48 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils.translation import gettext_lazy as _
 
-# O dinheiro de insumo miúdo se lê por quilo (ou litro): "R$ 4,00 / kg", nunca
-# "R$ 0,00 / g". Fator = quantas unidades-base cabem na unidade de leitura.
-DISPLAY_UNIT_FOR_BASE: dict[str, tuple[Decimal, str]] = {
+# O dinheiro de insumo miúdo se lê E SE GUARDA por quilo (ou litro): "R$ 91,67
+# / kg", nunca "R$ 0,09 / g". Centavo inteiro por grama arredonda R$ 0,0917 para
+# R$ 0,09 (9% de erro numa reposição; beta 05/11, CMP-07). Fator = quantas
+# unidades-base cabem na unidade de leitura.
+READING_UNIT_FOR_BASE: dict[str, tuple[Decimal, str]] = {
     "g": (Decimal(1000), "kg"),
     "mg": (Decimal(1_000_000), "kg"),
     "ml": (Decimal(1000), "l"),
 }
 
+
+def reading_unit(base_unit: str | None) -> tuple[Decimal, str]:
+    """``(fator, rótulo)`` da unidade em que o dinheiro de ``base_unit`` se lê.
+
+    Grama e miligrama viram quilo; mililitro vira litro; o resto fica na própria
+    base, com fator 1.
+    """
+    unit = base_unit or ""
+    return READING_UNIT_FOR_BASE.get(unit, (Decimal(1), unit))
+
+
+def priced_unit_factor(material, conversion) -> Decimal:
+    """Quantas unidades-base o ``cost_q`` paga.
+
+    Com conversão, a embalagem da nota ("saco 25 kg" = 25 000 g). Sem conversão,
+    a unidade de leitura da base: o quilo de um insumo em grama, o litro de um em
+    mililitro, a própria unidade do resto. É o divisor único de todo custo de
+    insumo: ``cost_q / priced_unit_factor`` é o custo por unidade-base.
+    """
+    if conversion is not None:
+        return Decimal(conversion.to_base_factor)
+    return reading_unit(getattr(material, "unit", ""))[0]
+
+
+def priced_unit_label(material, conversion) -> str:
+    """O nome da unidade que o ``cost_q`` paga: "saco 25 kg", "kg", "l", "un"."""
+    if conversion is not None:
+        return conversion.label
+    return reading_unit(getattr(material, "unit", ""))[1]
+
 class SupplierMaterialCost(models.Model):
-    """Custo de um insumo por fornecedor, em centavos **da unidade de compra**.
+    """Custo de um insumo por fornecedor, em centavos **da unidade de preço**.
 
     Uma linha por par (fornecedor, insumo). ``is_preferred`` marca o custo
     canônico daquele insumo — o que alimenta o custeio de receita: o custo vivo
@@ -25,8 +57,11 @@ class SupplierMaterialCost(models.Model):
     impressos nela — "1 saco", "R$ 180,00", e o rótulo do saco — e quem divide é
     a máquina: ``conversion`` aponta para a linha de :class:`MaterialConversion`
     que diz quanto aquele saco vale na unidade-base, e
-    :attr:`cost_per_base_unit` deriva o resto em ``Decimal``. Sem conversão, a
-    unidade de compra **é** a base, e o fator é 1.
+    :attr:`cost_per_base_unit` deriva o resto em ``Decimal``. Sem conversão, o
+    preço é da **unidade de leitura** da base (:func:`reading_unit`): por quilo
+    quando a base é grama, por litro quando é mililitro, pela própria unidade no
+    resto. Centavo inteiro por grama não existe (R$ 110 por 1200 g é R$ 91,67 o
+    quilo, e não R$ 0,09 o grama; beta 05/11, CMP-07).
 
     O custo por unidade-base é **derivado, nunca gravado**: corrigir o fator do
     saco (o moinho passou de 25 kg para 20) reprecifica tudo sozinho, sem
@@ -65,8 +100,9 @@ class SupplierMaterialCost(models.Model):
     cost_q = models.BigIntegerField(
         verbose_name=_("Custo (centavos)"),
         help_text=_(
-            "Custo de UMA unidade de compra, em centavos — o número da nota. "
-            "O custo por unidade-base é derivado pela conversão."
+            "Custo de UMA unidade de compra (a embalagem da conversão) em "
+            "centavos: o número da nota. Sem conversão, o custo do kg (insumo em "
+            "g) ou do litro (insumo em ml), ou da própria unidade."
         ),
     )
     is_preferred = models.BooleanField(
@@ -99,22 +135,50 @@ class SupplierMaterialCost(models.Model):
 
     @property
     def purchase_unit_label(self) -> str:
-        """Como o operador chama a unidade que ele digitou o preço."""
+        """Em que unidade se CONTA o que se compra: a embalagem, ou a própria base."""
         if self.conversion_id:
             return self.conversion.label
         return getattr(self.material, "unit", "") if self.material_id else ""
 
     @property
     def base_factor(self) -> Decimal:
-        """Quanto uma unidade de compra vale na unidade-base. Sem conversão, 1."""
+        """Quanto uma unidade de compra vale na unidade-base. Sem conversão, 1.
+
+        É fator de QUANTIDADE. O de dinheiro é :attr:`priced_unit_factor`.
+        """
         if self.conversion_id:
             return Decimal(self.conversion.to_base_factor)
         return Decimal(1)
 
     @property
+    def priced_unit_factor(self) -> Decimal:
+        """Quantas unidades-base o ``cost_q`` paga (ver :func:`priced_unit_factor`)."""
+        return priced_unit_factor(
+            self.material if self.material_id else None,
+            self.conversion if self.conversion_id else None,
+        )
+
+    @property
+    def priced_unit_label(self) -> str:
+        """A unidade do ``cost_q`` na tela: "saco 25 kg", "kg", "l", "un"."""
+        return priced_unit_label(
+            self.material if self.material_id else None,
+            self.conversion if self.conversion_id else None,
+        )
+
+    @property
     def cost_per_base_unit(self) -> Decimal:
-        """Centavos por unidade-base, em ``Decimal`` — **sem arredondar**."""
-        return Decimal(self.cost_q) / self.base_factor
+        """Centavos por unidade-base, em ``Decimal``, **sem arredondar**."""
+        return Decimal(self.cost_q) / self.priced_unit_factor
+
+    def cost_for_base_qty_q(self, base_qty) -> int:
+        """Centavos de ``base_qty`` unidades-base, arredondado uma vez só, no fim.
+
+        300 g a R$ 91,67/kg = R$ 27,50; com o custo por grama arredondado antes
+        da conta, dava R$ 27,00.
+        """
+        value = Decimal(self.cost_q) * Decimal(str(base_qty)) / self.priced_unit_factor
+        return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
     @property
     def cost_per_base_unit_q(self) -> int:
@@ -131,10 +195,10 @@ class SupplierMaterialCost(models.Model):
         """``(centavos, unidade)`` na unidade em que o dinheiro se lê.
 
         Grama e miligrama viram quilo; mililitro vira litro; o resto fica na
-        própria base. Só exibição: nada é gravado nesta unidade.
+        própria base. Sem conversão, é o próprio ``cost_q``.
         """
         unit = getattr(self.material, "unit", "") if self.material_id else ""
-        scale, shown = DISPLAY_UNIT_FOR_BASE.get(unit, (Decimal(1), unit))
+        scale, shown = reading_unit(unit)
         value = (self.cost_per_base_unit * scale).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
         return int(value), shown
 

@@ -145,11 +145,11 @@ class VerificationCodeAdmin(admin.ModelAdmin):
         "created_at",
     ]
     list_filter = ["status", "purpose", "delivery_method", VerificationCodeExpiredFilter]
-    search_fields = ["target_value", "customer_id"]
+    search_fields = ["customer_id"]
     readonly_fields = [
         "id",
-        "code_hash",
-        "target_value",
+        "code_hash_short",
+        "target_masked",
         "purpose",
         "status",
         "created_at",
@@ -169,7 +169,7 @@ class VerificationCodeAdmin(admin.ModelAdmin):
     date_hierarchy = "created_at"
 
     fieldsets = [
-        (None, {"fields": ["id", "code_hash", "target_value"]}),
+        (None, {"fields": ["id", "code_hash_short", "target_masked"]}),
         ("Purpose", {"fields": ["purpose", "delivery_method"]}),
         (
             "Lifecycle",

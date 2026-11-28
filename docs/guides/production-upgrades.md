@@ -144,7 +144,7 @@ para flags config-driven em vez de `if settings.DEBUG`.
 ## Referências
 
 - [ADR-015 — backward-compat pós-prod](../decisions/adr-015-backward-compat-policy-post-prod.md)
-- [WP-GAP-07 playbook](../plans/WP-GAP-07-pre-prod-migration-playbook.md)
+- [WP-GAP-07 playbook](../plans/completed/WP-GAP-07-pre-prod-migration-playbook.md)
 - [GO-LIVE-READINESS-PLAN](../plans/GO-LIVE-READINESS-PLAN.md)
 - [data-schemas.md](../reference/data-schemas.md) — chaves de `Session.data`/`Order.data`
 - [`scripts/check_migrations.py`](../../scripts/check_migrations.py) — `make test-migrations`

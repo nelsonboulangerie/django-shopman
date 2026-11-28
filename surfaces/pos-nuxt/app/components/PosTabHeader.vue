@@ -6,6 +6,7 @@
 // what the read-side hands it and emits intent; the shell resolves the commands.
 import type { POSCustomerLookupProjection, POSCustomerSearchResult, POSSeatingSpotOption } from "~/types/pos";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
+import { renameRefusal, sanitizeTabRef } from "~/presentation/tabBoard";
 import { tabTitleView } from "~/presentation/tabTitle";
 
 const props = defineProps<{
@@ -34,6 +35,8 @@ const props = defineProps<{
   lookupBusy: boolean;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** A última busca de cliente falhou: a frase do porquê ("Não consegui buscar…"). */
+  searchError?: string;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
   /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
@@ -47,6 +50,8 @@ const props = defineProps<{
   readOnly?: boolean;
   /** Como o cliente recebe: decidido na abertura, revisto de relance aqui. */
   fulfillmentType: "pickup" | "delivery";
+  /** No balcão: comer aqui ou levar (#3193). Na encomenda, quem fala é o recebimento. */
+  counterService?: "here" | "to_go";
   /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
   fulfillmentLabel: string;
   /** Quando o cliente quer o pedido: "Para hoje", "qui, 10/09, 10:00 às 10:30". */
@@ -69,6 +74,16 @@ const props = defineProps<{
   /** O cliente não troca aqui (edição de encomenda): o chip só LÊ, e esta é a
    *  frase do porquê, que sobe no toque em vez de abrir o modal. */
   customerLockedReason?: string;
+  /** Sem o título da comanda na barra (edição de encomenda): o cabeçalho da tela
+   *  já diz "Editando a encomenda PDV-…", e repetir a ref aqui espremia os chips. */
+  hideTitle?: boolean;
+  /** Sem o seletor Balcão/Encomenda (edição de encomenda): a encomenda continua
+   *  encomenda, e um botão que nunca troca nada não fica na tela. */
+  hideSalesModes?: boolean;
+  /** Os limites do nome da comanda (do canal): o campo diz na hora, em vez de o
+   *  servidor recusar depois ("Mesa 7/8"; beta test de 05/11/2026, PDV2-21). */
+  tabMaxLength?: number;
+  tabDisallowedChars?: string[];
   loading: boolean;
 }>();
 
@@ -97,6 +112,8 @@ const emit = defineEmits<{
   /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
   applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   openFulfillment: [];
+  /** No balcão, os dois chips "Consumir aqui" e "Para levar" (#3193). */
+  counterServiceChange: ["here" | "to_go"];
   openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
@@ -106,6 +123,17 @@ const emit = defineEmits<{
   /** Toque no chip com o cliente travado (`customerLockedReason`). */
   customerLocked: [reason: string];
 }>();
+
+// No balcão, o recebimento são DOIS chips (#3193, opção A do dono): comer aqui ou
+// levar. A encomenda não mora mais aqui: ela fica no seletor de modo.
+const COUNTER_SERVICES = [
+  { ref: "here", label: "Consumir aqui", icon: "lucide:utensils" },
+  { ref: "to_go", label: "Para levar", icon: "lucide:shopping-bag" },
+] as const;
+
+const currentService = computed(() => props.counterService || "here");
+// Tocar no chip ligado troca para o outro: na barra estreita ele é o único à vista.
+const otherService = computed(() => (currentService.value === "here" ? "to_go" : "here"));
 
 const SALES_MODES = [
   { ref: "counter", label: "Balcão", icon: "lucide:store" },
@@ -123,10 +151,20 @@ const isCounter = computed(() => (props.salesMode || "counter") === "counter");
 const renaming = ref(false);
 const renameValue = ref("");
 function startRename() {
+  renameHint.value = "";
   renameValue.value = props.tabDisplay || "";
   renaming.value = true;
 }
+const renameHint = ref("");
+function onRenameInput(value: unknown) {
+  const typed = String(value ?? "");
+  const disallowed = props.tabDisallowedChars || [];
+  const clean = sanitizeTabRef(typed, { maxLength: props.tabMaxLength || 64, disallowedChars: disallowed });
+  renameValue.value = clean;
+  renameHint.value = renameRefusal(typed, clean, disallowed);
+}
 function confirmRename() {
+  renameHint.value = "";
   const next = renameValue.value.trim();
   renaming.value = false;
   if (next && next !== (props.tabDisplay || "")) emit("rename", next);
@@ -194,7 +232,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
   <div class="flex min-w-0 flex-nowrap items-center gap-2">
     <!-- MODO DE ATENDIMENTO (v4): o seletor da suíte, o ligado `solid` (o ativo único
          da suíte), com ícone que dobra a leitura e `aria-pressed` para o leitor de tela. -->
-    <div v-if="!readOnly" class="inline-flex shrink-0 items-center gap-1 max-lg:hidden" role="group" aria-label="Modo de atendimento" data-pos-sales-modes>
+    <div v-if="!readOnly && !hideSalesModes" class="inline-flex shrink-0 items-center gap-1 max-lg:hidden" role="group" aria-label="Modo de atendimento" data-pos-sales-modes>
       <NuxtButton
         v-for="mode in SALES_MODES"
         :key="mode.ref"
@@ -215,7 +253,8 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       </NuxtButton>
     </div>
     <!-- tab number (renameable) -->
-    <div v-if="renaming" class="relative flex items-center gap-1" data-pos-tab-rename>
+    <template v-if="hideTitle" />
+    <div v-else-if="renaming" class="relative flex items-center gap-1" data-pos-tab-rename>
       <!-- As mesas do Salão (vínculo OPCIONAL): um toque dá o nome e liga a mesa.
            Quem prefere escrever escreve; balcão segue sem mesa. -->
       <div
@@ -253,14 +292,24 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         />
       </div>
       <UiInput
-        v-model="renameValue"
+        :model-value="renameValue"
         class="h-10 w-40 text-lg font-semibold"
         placeholder="Mesa, nome…"
+        :maxlength="tabMaxLength || 64"
         autofocus
+        :aria-describedby="renameHint ? 'pos-tab-rename-hint' : undefined"
+        @update:model-value="onRenameInput"
         @keydown="onRenameKeydown"
       />
       <NuxtButton color="neutral" variant="ghost" icon="i-lucide-check" square aria-label="Confirmar nome" @click="confirmRename" />
       <NuxtButton color="neutral" variant="ghost" icon="i-lucide-x" square aria-label="Cancelar" @click="cancelRename" />
+      <p
+        v-if="renameHint"
+        id="pos-tab-rename-hint"
+        role="alert"
+        class="absolute left-0 top-full z-20 mt-1 w-max max-w-72 rounded-md bg-default px-2 py-1 text-xs text-error shadow-md ring ring-default"
+        data-pos-tab-rename-hint
+      >{{ renameHint }}</p>
     </div>
     <NuxtButton
       v-else-if="hasOpenTab && canRename && !readOnly"
@@ -273,7 +322,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       @click="startRename"
     >
       <span class="flex min-w-0 flex-col text-left leading-none">
-        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <h1 class="truncate op-heading tabular-nums" :title="title.title">{{ title.title }}</h1>
         <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
@@ -281,7 +330,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
     </NuxtButton>
     <span v-else-if="hasOpenTab" class="inline-flex max-w-56 shrink-0 items-center gap-1.5 px-2" data-pos-tab-title>
       <span class="flex min-w-0 flex-col leading-none">
-        <h1 class="op-heading tabular-nums [overflow-wrap:anywhere]">{{ title.title }}</h1>
+        <h1 class="truncate op-heading tabular-nums" :title="title.title">{{ title.title }}</h1>
         <span v-if="title.ref || openedAt" class="mt-0.5 op-micro text-muted-foreground tnum lg:hidden" data-pos-tab-subtitle>{{ [title.ref, openedAt ? `aberta ${openedAt}` : ""].filter(Boolean).join(" · ") }}</span>
       </span>
       <span v-if="title.ref" class="shrink-0 self-end pb-1 op-micro text-muted-foreground tnum max-lg:hidden" data-pos-tab-number>{{ title.ref }}</span>
@@ -319,7 +368,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :size="controlSize"
       :color="customerRequired ? 'primary' : 'neutral'"
       variant="outline"
-      class="h-auto min-h-8 min-w-0 shrink gap-2 py-1"
+      class="h-auto min-h-8 min-w-0 shrink gap-2 py-1 @min-[36rem]:min-w-28"
       :class="customerRequired ? 'motion-safe:animate-pulse' : ''"
       aria-haspopup="dialog"
       :title="customerLockedReason || (customerRequired ? 'A encomenda precisa de cliente: é quem a casa avisa se algo mudar até a data' : 'Cliente (F6)')"
@@ -330,7 +379,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         class="size-4 shrink-0"
         :class="customerRequired ? '' : 'text-muted-foreground'"
       />
-      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-44 text-left leading-tight font-semibold [overflow-wrap:anywhere] max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
+      <span v-if="customerName || customerLookup?.ref" class="min-w-0 max-w-44 truncate text-left leading-tight font-semibold max-sm:sr-only" :title="customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref">{{ customerName || customerLookup?.email || customerLookup?.tax_id || customerLookup?.ref }}</span>
       <span v-else class="whitespace-nowrap max-sm:sr-only" :class="customerRequired ? '' : 'text-muted-foreground'"><span class="hidden @min-[50rem]:inline">Identificar cliente</span><span class="@min-[50rem]:hidden">Cliente</span></span>
       <OperatorKbd
         v-if="!coarsePointer"
@@ -339,39 +388,16 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       >F6</OperatorKbd>
     </NuxtButton>
 
-    <!-- RECEBIMENTO: irmão do chip de cliente. Os dois são fatos do PEDIDO,
-         decididos na abertura do atendimento e revistos de relance daqui em
-         diante. Na barra eles são LEITURA com porta de saída; o lugar onde se
-         decide é o começo do fluxo, não esta barra. -->
-    <!-- NO BALCÃO os dois chips continuam (v4, `pos-sale4.html`): "Consumir aqui F7"
-         e "Agora F8" tracejado. São a porta da encomenda: entregar ou agendar troca
-         o modo e abre a mesma pergunta (`pages/index.vue`, `leaveCounterThen`). -->
-    <NuxtButton
-      v-if="hasOpenTab"
-      :size="controlSize"
-      :color="!isCounter && fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
-      variant="outline"
-      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
-      aria-haspopup="dialog"
-      :aria-label="`Recebimento: ${isCounter ? 'Consumir aqui' : fulfillmentLabel}`"
-      :title="isCounter ? 'Consumir aqui. Recebimento (F7): entregar vira encomenda' : `${fulfillmentLabel}. Recebimento (F7)`"
-      data-context-entry="fulfillment"
-      @click="$emit('openFulfillment')"
-    >
-      <Icon :name="isCounter ? 'lucide:utensils' : (fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store')" class="size-4 shrink-0 text-muted-foreground" />
-      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ isCounter ? 'Consumir aqui' : fulfillmentLabel }}</span>
-      <OperatorKbd
-        v-if="!coarsePointer"
-        class="hidden @min-[50rem]:inline-flex"
-        aria-hidden="true"
-      >F7</OperatorKbd>
-    </NuxtButton>
-
-    <!-- QUANDO: o terceiro irmão. A data morava dentro do formulário de
-         ENTREGA, e por isso a retirada agendada não existia: a casa recebe
-         encomenda por telefone e o balcão não tinha onde escrever isso.
-         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso
-         a borda tracejada (v4) enquanto nada foi agendado. -->
+    <!-- QUANDO: o segundo, logo depois do cliente, na ordem do funil da
+         encomenda (decisão do dono, 19/11/2026, #2754: a data diz o que a casa
+         pode prometer). A data morava dentro do formulário de ENTREGA, e por
+         isso a retirada agendada não existia: a casa recebe encomenda por
+         telefone e o balcão não tinha onde escrever isso. "Para hoje" é o
+         padrão e é uma AFIRMAÇÃO, não um campo vazio; por isso a borda
+         tracejada (v4) enquanto nada foi agendado. -->
+    <!-- NO BALCÃO o "Agora F7" tracejado continua sendo a porta da encomenda:
+         agendar troca o modo e abre a mesma pergunta (`pages/index.vue`,
+         `leaveCounterThen`). O recebimento do balcão são os dois chips abaixo. -->
     <NuxtButton
       v-if="hasOpenTab"
       :size="controlSize"
@@ -382,7 +408,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       data-context-entry="schedule"
       aria-haspopup="dialog"
       :aria-label="`Quando: ${isCounter ? 'Agora' : scheduleLabel}`"
-      :title="scheduleConflictReason || (isCounter ? 'Agora. Quando (F8): agendar vira encomenda' : `${scheduleLabel}. Quando (F8)`)"
+      :title="scheduleConflictReason || (isCounter ? 'Agora. Quando (F7): agendar vira encomenda' : `${scheduleLabel}. Quando (F7)`)"
       @click="$emit('openSchedule')"
     >
       <Icon
@@ -391,6 +417,83 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
       <span class="hidden whitespace-nowrap @min-[26rem]:inline" :class="scheduled || scheduleConflict ? 'font-semibold' : ''" aria-hidden="true">{{ isCounter ? 'Agora' : scheduleLabel }}</span>
+      <OperatorKbd
+        v-if="!coarsePointer"
+        class="hidden @min-[50rem]:inline-flex"
+        aria-hidden="true"
+      >F7</OperatorKbd>
+    </NuxtButton>
+
+    <!-- RECEBIMENTO: o terceiro irmão. Como o cliente, é fato do PEDIDO,
+         decidido na abertura do atendimento e revisto de relance daqui em
+         diante. Na barra ele é LEITURA com porta de saída; o lugar onde se
+         decide é o começo do fluxo, não esta barra. -->
+    <!-- BALCÃO: "Consumir aqui" e "Para levar" (#3193). Quem quer levar tinha só a
+         porta da encomenda; agora é um toque, e a Cozinha lê no ticket se monta no
+         prato ou embala. F8 troca entre os dois. O ligado é o `solid` da suíte, o
+         mesmo do seletor Balcão/Encomendas: no `soft` o desligado lia mais forte. -->
+    <div
+      v-if="hasOpenTab && isCounter"
+      class="inline-flex shrink-0 items-center gap-1 max-sm:hidden"
+      role="group"
+      aria-label="Consumir aqui ou levar (F8)"
+      data-context-entry="service"
+    >
+      <NuxtButton
+        v-for="service in COUNTER_SERVICES"
+        :key="service.ref"
+        :size="controlSize"
+        color="neutral"
+        variant="outline"
+        active-color="primary"
+        active-variant="solid"
+        class="min-w-0 gap-2"
+        :class="currentService === service.ref ? '' : 'hidden @min-[50rem]:inline-flex'"
+        :active="currentService === service.ref"
+        :aria-pressed="currentService === service.ref"
+        :data-pos-counter-service-active="currentService === service.ref ? '' : undefined"
+        :title="currentService === service.ref ? `${service.label}. Toque para trocar (F8)` : service.label"
+        :disabled="loading"
+        @click="$emit('counterServiceChange', currentService === service.ref ? otherService : service.ref)"
+      >
+        <Icon :name="service.icon" class="size-4 shrink-0" />
+        <span class="sr-only">{{ service.label }}</span>
+        <!-- A barra estreita (abaixo de 50rem, onde as teclas somem dos outros chips)
+             tem UM chip, o do estado atual, e tocar nele troca, como o F8: o mesmo
+             lugar e o mesmo corte do chip antigo, que dizia o nome a partir de 36rem
+             (no PDV de balcão, 1366 px, o operador lê "Para levar", não só o ícone).
+             A partir de 50rem os dois aparecem; o desligado diz o nome a partir de
+             72rem. Com os dois e os nomes à vista, o cliente do lado cortava em 1280
+             e 1366 px (trava de geometria). -->
+        <span
+          class="hidden whitespace-nowrap"
+          :class="currentService === service.ref ? '@min-[36rem]:inline' : '@min-[72rem]:inline'"
+          aria-hidden="true"
+        >{{ service.label }}</span>
+      </NuxtButton>
+      <!-- A tecla só aparece com a barra folgada (o mesmo corte dos dois nomes): em
+           1280 px ela empurrava o cliente para as reticências. O F8 segue no nome do
+           grupo e no dicionário de teclas. -->
+      <OperatorKbd
+        v-if="!coarsePointer"
+        class="hidden @min-[72rem]:inline-flex"
+        aria-hidden="true"
+      >F8</OperatorKbd>
+    </div>
+    <NuxtButton
+      v-if="hasOpenTab && !isCounter"
+      :size="controlSize"
+      :color="fulfillmentType === 'delivery' ? 'primary' : 'neutral'"
+      variant="outline"
+      class="min-w-0 shrink-0 gap-2 max-sm:hidden"
+      aria-haspopup="dialog"
+      :aria-label="`Recebimento: ${fulfillmentLabel}`"
+      :title="`${fulfillmentLabel}. Recebimento (F8)`"
+      data-context-entry="fulfillment"
+      @click="$emit('openFulfillment')"
+    >
+      <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
+      <span class="hidden whitespace-nowrap font-semibold @min-[36rem]:inline" aria-hidden="true">{{ fulfillmentLabel }}</span>
       <OperatorKbd
         v-if="!coarsePointer"
         class="hidden @min-[50rem]:inline-flex"
@@ -410,6 +513,7 @@ defineExpose({ openCustomer: openCustomerSheet, askRelease });
       :customer-lookup="customerLookup"
       :search-results="searchResults"
       :search-busy="searchBusy"
+      :search-error="searchError"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
       :new-customer-prefs="newCustomerPrefs"

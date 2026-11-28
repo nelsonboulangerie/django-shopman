@@ -14,6 +14,7 @@ from .day_context import DayContext, HolidayScope
 from .delivery_device import DeliveryDevice
 from .historical_sale import HistoricalSale, HistoricalSaleItem
 from .import_batch import ImportBatch
+from .incidents import IncidentAction, IncidentReaderCredential
 from .kds import KDSInstance, KDSTicket
 from .operation import (
     OperationArea,
@@ -35,6 +36,7 @@ from .operation_episode import (
 from .oven_run import OvenRun
 from .plan_carry import PlanCarryNote
 from .pos import POSTab
+from .prep_checklist import PrepChecklistMark
 from .print_job import PrintAgentCredential, PrintAttempt, PrintJob
 from .recipe_favorite import OperatorRecipeFavorite
 from .recipe_rating import RecipeRatingCriterion, RecipeVersionRating, RecipeVersionRatingScore
@@ -42,12 +44,16 @@ from .saved_view import SavedView
 from .seating import FixtureKind, SeatingFixture, SeatingSpot, SpotKind, SpotShape
 from .shelf_outage import OutageReason, ShelfOutage
 from .sign_in import SignInEvent, SignInMethod, SignInOutcome
+from .support import SupportDecision, SupportMessage, SupportTicket
 from .timer_tag import TimerTag, TimerTagOrigin
 from .workstation import Workstation
 
 __all__ = [
+    "IncidentAction",
+    "IncidentReaderCredential",
     "Workstation",
     "PlanCarryNote",
+    "PrepChecklistMark",
     "AdminTwoFactorEnrollment",
     "OperatorAlert",
     "AliasBenchmarkReport",
@@ -108,4 +114,7 @@ __all__ = [
     "TimerTagOrigin",
     "OutageReason",
     "ShelfOutage",
+    "SupportDecision",
+    "SupportMessage",
+    "SupportTicket",
 ]

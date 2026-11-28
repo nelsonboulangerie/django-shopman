@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ManagerAction } from "../../../../operator-kit/app/presentation/managerAuth";
 import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorScreenAlert } from "../../../../operator-kit/app/presentation/screenState";
+import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -15,8 +17,10 @@ import type { OperatorHeaderAction } from "../../../../operator-kit/app/presenta
 // organização (quais cards, em que ordem, com que destaque) é pura, em
 // `presentation/cash`; a página só abre o que o card nomeia.
 import { toast } from "vue-sonner";
+import { formatBRL } from "~/utils/posIntent";
 
 import {
+  amountEcho,
   amountInputError,
   amountToQ,
   attentionCount,
@@ -33,21 +37,26 @@ import {
   formatRequestedAt,
   movementLabel,
   movementReasons,
+  offlineReviewClosingNotice,
+  offlineReviewLine,
   openShiftTile,
   sessionActionTiles,
   sessionScreenState,
   stationDevicesNotice,
+  // A gaveta tem qualquer cédula: contar abertura e fechamento pela lista do
+  // troco (sem R$ 50, 100 e 200) deixava dinheiro sem onde ser contado (beta 07/11).
+  DRAWER_DENOMINATIONS,
 } from "~/presentation/cash";
 import type { SessionTile } from "~/presentation/cash";
-import type { ManagerApproval } from "~/composables/usePosCashSession";
+import type { CashGesture, ManagerApproval } from "~/composables/usePosCashSession";
 import type { DayClosingResponse } from "~/types/closing";
 
-useHead({ title: "Sessão de caixa" });
+useHead({ title: "Caixa" });
 // O ao vivo discreto do cabeçalho: estado do push e hora da última leitura.
 const liveStatus = usePosLiveStatus();
 
 const action = usePosAction();
-const { pos, shift, actions, pending, refresh } = await usePosTerminal();
+const { pos, shift, actions, station, pending, refresh } = await usePosTerminal();
 
 const OPERATOR_PERM = "cashman.operate_pos";
 const { operator: activeOperator } = useOperatorLock(OPERATOR_PERM);
@@ -56,8 +65,11 @@ const {
   busy,
   movementKinds,
   managerChallenge,
+  cashFailure,
+  dismissCashFailure,
   openCashShift,
   closeCashShift,
+  offlineReviewSales,
   registerCashMovement,
   canOpenDrawer,
   drawerUnavailableReason,
@@ -75,6 +87,18 @@ const {
   serveChangeRequest,
   cancelChangeRequest,
 } = usePosCashSession({ pos, actions, refresh, action });
+
+// O botão que resolve, dentro do aviso de falha (regra do dono, 20/11): cada gesto
+// guarda aqui como se repete, com os mesmos dados da tentativa que falhou. Um
+// registro POR GESTO, nunca "o último": o aviso de um diálogo não pode repetir o
+// gesto de outro que rodou no meio tempo.
+const retries: Partial<Record<CashGesture, () => void>> = {};
+function remember(gesture: CashGesture, again: () => void) {
+  retries[gesture] = again;
+}
+function retryCashGesture(gesture: CashGesture) {
+  retries[gesture]?.();
+}
 
 // Entrada do FECHAMENTO DO DIA (contagem cega de sobras): o gate é da API
 // (`backstage.perform_closing`) — sondagem leve; 401/403 = card não aparece.
@@ -140,8 +164,10 @@ const actionTiles = computed(() => sessionActionTiles({
 }));
 const endOfDay = computed(() => endOfDayTiles({
   shiftOpen: screen.value === "open",
+  canCloseShift: pos.value?.can_close_day === true,
   justClosedShift: justClosedShift.value,
   canAuditCash: canAuditCash.value,
+  atCounter: station?.value?.ready !== false,
   dayClosing: dayClosing.value,
 }));
 // Fim de dia EM CURSO: acabou de fechar o caixa e o dia está por fechar. Aí o
@@ -162,7 +188,7 @@ const shiftTile = computed<SessionTile>(() => (screen.value === "closed"
     // de duas gavetas o operador nunca fechava com ela. O par honesto seria
     // "vendas neste turno" pelo `sales_count` da leitura X; enquanto ele não
     // sobe até aqui, a linha diz de quem é o número.
-    description: `Turno aberto em ${openedAtDisplay.value} · ${salesCount.value} ${salesCount.value === 1 ? "venda" : "vendas"} hoje na loja`,
+    description: `${openedAtDisplay.value ? `Turno aberto em ${openedAtDisplay.value}` : "Turno aberto"} · ${salesCount.value} ${salesCount.value === 1 ? "venda" : "vendas"} hoje na loja`,
     disabled: false,
     tone: "primary",
   }));
@@ -286,6 +312,49 @@ async function goToDayClosing() {
 const headerActions = computed<OperatorHeaderAction[]>(() => [
   { label: "Atualizar", icon: "i-lucide-refresh-cw", disabled: pending.value, onSelect: () => void refresh() },
 ]);
+const screenSize = useScreen();
+// Quem opera este caixa: na mesa, à direita do cabeçalho; no celular, o topo do ⋮.
+const terminalLine = computed(() => {
+  if (!pos.value) return "";
+  const who = screen.value === "open" ? activeOperator.value?.name || cashRuntime.value?.operator_username || "" : "";
+  return who ? `${pos.value.terminal_label || "Terminal"}, ${who}` : pos.value.terminal_label || "Terminal";
+});
+// Um grupo só: no ⋮ do kit, grupo feito só de rótulos não aparece.
+const compactOptions = computed(() => [
+  { label: terminalLine.value, icon: "i-lucide-monitor", type: "label" as const },
+  ...headerActions.value.map(({ priority: _p, ...action }) => action),
+]);
+
+// Os avisos da tela moram no cabeçalho (`alerts` do kit): fecham no X e voltam enquanto
+// a causa durar. O id leva a causa, para o aviso voltar quando ela muda.
+const sessionAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alerts: OperatorScreenAlert[] = [];
+  if (screen.value === "closed" && justClosedShift.value) {
+    alerts.push({
+      id: "shift-closed",
+      color: "success",
+      icon: "i-lucide-circle-check",
+      title: "Caixa fechado. A contagem ficou registrada no turno; a conferência é da retaguarda.",
+    });
+  }
+  if (sharedStationNotice.value) {
+    alerts.push({
+      id: `shared-station:${sharedStationNotice.value}`,
+      color: "warning",
+      icon: "i-lucide-monitor-smartphone",
+      title: sharedStationNotice.value,
+    });
+  }
+  return alerts;
+});
+
+// A ação do momento na base do celular e do tablet (`OperatorActionBar`): o mesmo
+// card do topo (abrir o caixa ou continuar vendendo), com a linha que ele escreve.
+const shiftBar = computed<OperatorActionBarAction>(() => ({
+  label: shiftTile.value.label,
+  icon: shiftTile.value.icon.replace(/^lucide:/, "i-lucide-"),
+  onSelect: () => selectTile(shiftTile.value),
+}));
 
 // Movimentos de gaveta: sangria (sai) / suprimento (entra).
 //
@@ -297,6 +366,9 @@ const headerActions = computed<OperatorHeaderAction[]>(() => [
 const movementKind = ref("");
 const movementAmount = ref("");
 const movementError = computed(() => amountInputError(movementAmount.value));
+// O valor por extenso, ao lado do campo: "5000" é R$ 5.000,00 e o operador lê isso
+// antes de registrar (beta 05/11, PDV-01).
+const movementEcho = computed(() => amountEcho(movementAmount.value));
 // Escolher o tipo leva o foco direto ao valor: o toque no botão já respondeu a
 // primeira pergunta, e a mão não deveria precisar de um segundo alvo.
 const movementAmountField = useTemplateRef<{ inputRef: HTMLInputElement | null }>("movementAmountField");
@@ -306,6 +378,12 @@ const movementReasonPick = ref("");
 const movementReasonOther = ref("");
 const movementReasonOptions = computed(() => movementReasons(cashManagement.value, movementKind.value));
 const movementReason = computed(() => movementReasonPick.value || movementReasonOther.value.trim());
+// Na entrada o campo é "Observação (opcional)"; um "Motivo" dentro dele dizia o
+// contrário do rótulo (beta 05/11, PDV-24 b).
+const movementReasonPlaceholder = computed(() => {
+  if (movementKind.value !== "sangria") return "Observação";
+  return movementReasonOptions.value.length ? "Outro motivo" : "Motivo";
+});
 const canSubmitMovement = computed(
   () => canRegisterMovement(movementKind.value, movementAmount.value, movementReason.value),
 );
@@ -354,7 +432,9 @@ type ManagerIntent =
   | { action: "movement" }
   | { action: "serve_change"; ref: string }
   | { action: "refund_cash"; orderRef: string }
-  | { action: "card_machine_refund"; orderRef: string };
+  | { action: "card_machine_refund"; orderRef: string }
+  | { action: "settle_account" }
+  | { action: "close_shift" };
 const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
@@ -364,7 +444,36 @@ const managerAuthAction = computed<ManagerAction>(() => {
   if (managerIntent.value.action === "serve_change") return "serve_change";
   if (managerIntent.value.action === "refund_cash") return "refund_cash";
   if (managerIntent.value.action === "card_machine_refund") return "card_machine_refund";
+  if (managerIntent.value.action === "settle_account") return "settle_account";
+  if (managerIntent.value.action === "close_shift") return "close_shift_review";
   return "cash_out";
+});
+
+// O VALOR que o gerente assina, e o complemento do ato (beta 05/11, PDV-09). O
+// diálogo dizia só "Sai dinheiro da gaveta.", e foi assim que um R$ 5.000,00
+// digitado no lugar de R$ 50,00 passou pelo PIN.
+const managerAuthAmountQ = computed<number | null>(() => {
+  const intent = managerIntent.value;
+  const runtime = cashRuntime.value;
+  if (intent.action === "movement") return amountToQ(movementAmount.value);
+  if (intent.action === "serve_change") {
+    return runtime?.pending_change_requests?.find((row) => row.ref === intent.ref)?.amount_q ?? null;
+  }
+  if (intent.action === "refund_cash") {
+    return runtime?.pending_cash_refunds?.find((row) => row.order_ref === intent.orderRef)?.amount_q ?? null;
+  }
+  if (intent.action === "card_machine_refund") {
+    return runtime?.pending_card_machine_refunds?.find((row) => row.order_ref === intent.orderRef)?.amount_q ?? null;
+  }
+  if (intent.action === "settle_account") return amountToQ(settleAmount.value);
+  return null;
+});
+const managerAuthDetail = computed(() => {
+  if (managerIntent.value.action === "movement") return movementReason.value;
+  if (managerIntent.value.action === "settle_account") {
+    return SETTLE_METHODS.find((m) => m.value === settleMethod.value)?.label ?? "";
+  }
+  return "";
 });
 
 function onManagerAuthorize(username: string, pin: string) {
@@ -385,6 +494,8 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
   if (intent.action === "serve_change") serveChange(intent.ref, aprovacao);
   else if (intent.action === "refund_cash") refundPending(intent.orderRef, aprovacao);
   else if (intent.action === "card_machine_refund") recordMachineRefund(intent.orderRef, aprovacao);
+  else if (intent.action === "settle_account") void submitSettle(aprovacao);
+  else if (intent.action === "close_shift") confirmClose(aprovacao);
   else submitMovement(aprovacao);
 }
 
@@ -393,6 +504,7 @@ function autorizar(aprovacao: { username?: string; pin?: string; badge?: string 
 // porque dinheiro sai da gaveta, como na sangria.
 async function refundPending(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "refund_cash", orderRef };
+  remember("refund_cash", () => void refundPending(orderRef));
   const ok = await refundCash({ orderRef, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -404,6 +516,7 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 // maquininha (o sistema não fala com ela) e registra aqui, com o PIN do gerente.
 async function recordMachineRefund(orderRef: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "card_machine_refund", orderRef };
+  remember("card_machine_refund", () => void recordMachineRefund(orderRef));
   const ok = await recordCardMachineRefund({ orderRef, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -412,8 +525,9 @@ async function recordMachineRefund(orderRef: string, managerApproval: ManagerApp
 }
 
 // Conta na casa: o cliente veio acertar. Valor + método; em dinheiro entra neste
-// turno (a gaveta abre para guardar), pix/cartão é atestado no balcão. Sem PIN:
-// entrada não exige segunda assinatura (suprimento também não).
+// turno (a gaveta abre para guardar) e não pede PIN (suprimento também não). Pix,
+// cartão e "outro" não passam pela gaveta: o servidor pede o gerente, e a recusa
+// abre "Quem autoriza?" com o valor e a forma (beta 07/11).
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
 type SettleMethod = "cash" | "pix" | "credit" | "debit" | "external";
@@ -430,16 +544,31 @@ function openSettle(customerRef: string, balanceQ: number) {
   settleAmount.value = (balanceQ / 100).toFixed(2).replace(".", ",");
   settleMethod.value = "cash";
 }
-async function submitSettle() {
+async function submitSettle(managerApproval: ManagerApproval | null = null) {
   const customerRef = settleCustomerRef.value;
   if (!customerRef || !settleAmount.value.trim()) return;
-  const ok = await settleAccount({ customerRef, amount: settleAmount.value.trim(), method: settleMethod.value });
-  if (ok) settleCustomerRef.value = null;
+  managerIntent.value = { action: "settle_account" };
+  remember("settle_account", () => void submitSettle());
+  const amount = settleAmount.value.trim();
+  const method = SETTLE_METHODS.find((m) => m.value === settleMethod.value)?.label ?? "";
+  const name = accountBalances.value.find((row) => row.customer_ref === customerRef)?.customer_name || "";
+  const ok = await settleAccount({ customerRef, amount, method: settleMethod.value, managerApproval });
+  if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
+    settleCustomerRef.value = null;
+    // A conta sumia da lista sem uma palavra: o operador não sabia se tinha dado.
+    toast.success(`Acerto de R$ ${amount} recebido${name ? ` de ${name}` : ""}${method ? ` em ${method}` : ""}.`);
+  }
 }
 
 async function submitMovement(managerApproval: ManagerApproval | null = null) {
   if (!canSubmitMovement.value) return;
   managerIntent.value = { action: "movement" };
+  remember("movement", () => void submitMovement());
+  // A confirmação com o valor ("R$ 50,00 entrou na gaveta.") é do
+  // `registerCashMovement`, uma vez só: repetida aqui, o balcão via dois toasts
+  // para um movimento (beta 05/11, PDV-10/11).
   const ok = await registerCashMovement({
     kind: movementKind.value,
     amount: movementAmount.value,
@@ -477,6 +606,7 @@ function toggleDenomination(q: number) {
 
 async function submitChangeRequest() {
   if (!canSubmitChange.value) return;
+  remember("request_change", () => void submitChangeRequest());
   const ok = await requestChange({
     amount: changeAmount.value,
     denominations: [...changeDenominationsPicked.value],
@@ -490,8 +620,16 @@ async function submitChangeRequest() {
   }
 }
 
+// O pedido que o operador tentou atender: o aviso da falha mora na linha DELE,
+// não no pé da lista (com dois pedidos, "não foi atendido" sem dizer qual é
+// pergunta).
+const servingChangeRef = ref("");
 async function serveChange(ref_: string, managerApproval: ManagerApproval | null = null) {
   managerIntent.value = { action: "serve_change", ref: ref_ };
+  servingChangeRef.value = ref_;
+  remember("serve_change", () => void serveChange(ref_));
+  // A confirmação com o valor ("Troco de R$ 100,00 atendido.") é do
+  // `serveChangeRequest`, uma vez só (beta 05/11, PDV-10).
   const ok = await serveChangeRequest({ ref: ref_, managerApproval });
   if (ok) {
     managerChallenge.value = null;
@@ -504,6 +642,7 @@ async function serveChange(ref_: string, managerApproval: ManagerApproval | null
 // cancelaria o errado.
 const cancellingChangeRef = ref("");
 async function confirmCancelChange(ref_: string) {
+  remember("cancel_change", () => void confirmCancelChange(ref_));
   const ok = await cancelChangeRequest(ref_);
   if (ok) cancellingChangeRef.value = "";
 }
@@ -517,6 +656,7 @@ const drawerReason = ref("");
 async function openDrawer(reason: string) {
   const chosen = reason.trim();
   if (!chosen) return;
+  remember("open_drawer", () => void openDrawer(chosen));
   const ok = await openDrawerWithoutSale(chosen);
   if (ok) {
     drawerReason.value = "";
@@ -529,7 +669,10 @@ async function openDrawer(reason: string) {
 const drawerProbeResult = ref<{ ok: boolean; message: string } | null>(null);
 async function testDrawer() {
   drawerProbeResult.value = await probeDrawer();
-  if (drawerProbeResult.value.ok) await openDrawerWithoutSale("Teste de gaveta");
+  if (drawerProbeResult.value.ok) {
+    remember("open_drawer", () => void testDrawer());
+    await openDrawerWithoutSale("Teste de gaveta");
+  }
 }
 
 // O fechamento avisa o estorno na maquininha ainda não registrado: o caixa
@@ -581,11 +724,21 @@ watch(closingDialogOpen, (open) => { if (!open) confirmingClose.value = false; }
 // passo (fechamento do dia, se pendente e permitido) em vez de deixar o
 // operador adivinhar que existem mais duas telas.
 const justClosedShift = ref(false);
-async function confirmClose() {
+// Venda sem conexão "a conferir" (preço que o catálogo não explica): o fechamento
+// lista cada item, e o servidor só fecha com o gerente. A recusa abre "Quem
+// autoriza?" e a MESMA contagem é reenviada com a assinatura.
+const offlineReviewNotice = computed(() => offlineReviewClosingNotice(offlineReviewSales.value));
+// O valor contado, como o gerente o lê no diálogo da assinatura (P1-6).
+const closingManagerAmount = computed(() => formatBRL(amountToQ(closingAmount.value) ?? 0));
+async function confirmClose(managerApproval: ManagerApproval | null = null) {
   if (!canClose.value) return;
-  const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value });
+  managerIntent.value = { action: "close_shift" };
+  remember("close_shift", () => void confirmClose());
+  const ok = await closeCashShift({ amount: closingAmount.value, notes: closingNotes.value, managerApproval });
   confirmingClose.value = false;
   if (ok) {
+    managerChallenge.value = null;
+    managerAuthOpen.value = false;
     closingAmount.value = "";
     closingNotes.value = "";
     closingDialogOpen.value = false;
@@ -597,11 +750,19 @@ async function confirmClose() {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-session-screen>
+  <main class="flex min-h-0 flex-1 flex-col" data-session-screen data-compact-page>
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <!-- Cabeçalho de uma linha da suíte (kit): título, ao vivo, e o terminal e quem
            opera à direita. -->
-      <OperatorPageHeader title="Sessão de caixa" :actions="headerActions" actions-label="Mais ações do caixa">
+      <!-- No celular, a linha do chão (modelo de navegação): o selo troca de seção, e
+           quem opera este caixa encabeça o ⋮. -->
+      <PosCompactBar title="Caixa" :options="compactOptions" />
+      <OperatorPageHeader
+        title="Caixa"
+        :actions="headerActions"
+        actions-label="Mais ações do caixa"
+        :alerts="sessionAlerts"
+      >
         <template #status>
           <OperatorLiveStatus
             v-if="liveStatus.view.value"
@@ -612,11 +773,9 @@ async function confirmClose() {
             :detail="liveStatus.view.value.detail"
           />
         </template>
-        <template v-if="pos" #actions>
-          <span class="min-w-0 op-label text-muted-foreground" data-session-terminal>
-            {{ pos.terminal_label || "Terminal" }}
-            <template v-if="screen === 'open'"> · {{ activeOperator?.name || cashRuntime?.operator_username }}</template>
-          </span>
+        <!-- No celular quem opera encabeça o ⋮ da linha do chão; aqui seria uma faixa a mais. -->
+        <template v-if="pos && !screenSize.belowMd.value" #actions>
+          <span class="min-w-0 op-label text-muted-foreground" data-session-terminal>{{ terminalLine }}</span>
         </template>
       </OperatorPageHeader>
 
@@ -627,32 +786,16 @@ async function confirmClose() {
              caixa, dia por fechar) sobe para o topo: `order-first`. As
              Encomendas não moram aqui: a porta delas é a barra lateral. -->
         <div class="mx-auto grid w-full max-w-2xl gap-6 p-4 md:py-8">
-          <p
-            v-if="screen === 'closed' && justClosedShift"
-            class="order-first flex items-start gap-2 rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm"
-            data-shift-closed
-          >
-            <Icon name="lucide:circle-check" class="mt-0.5 size-4 shrink-0 text-success" />
-            <span>Caixa fechado. A contagem ficou registrada no turno; a conferência é da retaguarda.</span>
-          </p>
 
           <!-- CAIXA: fechado, abrir; aberto, continuar vendendo. O card É o
                gesto óbvio da tela, e por isso é o cheio. -->
-          <section class="grid gap-3" aria-labelledby="shift-title">
+          <section class="grid gap-3 max-lg:hidden" aria-labelledby="shift-title">
             <h2 id="shift-title" class="text-base font-semibold">Caixa</h2>
             <ul class="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <li class="col-span-2 sm:col-span-3">
                 <PosSessionTile :tile="shiftTile" @select="selectTile" />
               </li>
             </ul>
-            <p
-              v-if="sharedStationNotice"
-              class="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm"
-              data-shared-station
-            >
-              <Icon name="lucide:monitor-smartphone" class="mt-0.5 size-4 shrink-0 text-warning" />
-              <span>{{ sharedStationNotice }}</span>
-            </p>
           </section>
 
           <!-- PRECISA DE VOCÊ: só existe com pendência, um card por natureza,
@@ -709,8 +852,18 @@ async function confirmClose() {
               </li>
             </ul>
           </section>
+          <MoreBelow />
         </div>
       </div>
+      <!-- A ação do momento no polegar (abaixo de lg): abrir o caixa ou continuar
+           vendendo. Na mesa ela é o card cheio do topo. -->
+      <OperatorActionBar
+        v-if="pos"
+        :action="shiftBar"
+        :context-label="shiftTile.description"
+        label="Ação do caixa"
+        data-session-shift-bar
+      />
     </div>
 
     <!-- ── Diálogos, um por card ───────────────────────────────────────────
@@ -766,7 +919,7 @@ async function confirmClose() {
           </div>
           <PosDenominationCounter
             v-if="openingCounter"
-            :denominations="changeDenominationOptions"
+            :denominations="DRAWER_DENOMINATIONS"
             :disabled="busy"
             @total-q="openingAmount = formatAmountInput($event)"
           />
@@ -817,6 +970,7 @@ async function confirmClose() {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="refund_cash" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('refund_cash')" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             O dinheiro sai desta gaveta e fica registrado no turno e no pedido, com quem devolveu e quando. Um gerente autoriza com o PIN.
           </p>
@@ -862,6 +1016,7 @@ async function confirmClose() {
               />
             </li>
           </ul>
+          <PosCashFailureNotice :failure="cashFailure" gesture="card_machine_refund" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('card_machine_refund')" @dismiss="dismissCashFailure" />
           <p class="text-xs text-muted-foreground">
             Nada sai da gaveta. Um gerente autoriza com o PIN, e o estorno fica registrado no pedido com quem fez e quando.
           </p>
@@ -892,6 +1047,15 @@ async function confirmClose() {
             </div>
             <p v-if="request.note" class="text-xs text-muted-foreground">{{ request.note }}</p>
 
+            <PosCashFailureNotice
+              v-if="servingChangeRef === request.ref && cancellingChangeRef !== request.ref"
+              :failure="cashFailure"
+              gesture="serve_change"
+              action-label="Tentar de novo"
+              :busy="busy"
+              @action="retryCashGesture('serve_change')"
+              @dismiss="dismissCashFailure"
+            />
             <div v-if="cancellingChangeRef !== request.ref" class="grid grid-cols-2 gap-2">
               <NuxtButton
                 block
@@ -911,6 +1075,14 @@ async function confirmClose() {
             </div>
             <div v-else class="grid gap-2 rounded-md bg-error/10 p-3">
               <p class="text-sm font-medium">Cancelar este pedido? Ninguém vai trazer o troco.</p>
+              <PosCashFailureNotice
+                :failure="cashFailure"
+                gesture="cancel_change"
+                action-label="Tentar de novo"
+                :busy="busy"
+                @action="retryCashGesture('cancel_change')"
+                @dismiss="dismissCashFailure"
+              />
               <div class="grid grid-cols-2 gap-2">
                 <NuxtButton
                   block
@@ -976,10 +1148,10 @@ async function confirmClose() {
                       placeholder="0,00"
                       :ui="{ base: 'text-right tabular-nums' }"
                       aria-label="Valor recebido no acerto"
-                      @keydown.enter="submitSettle"
+                      @keydown.enter="submitSettle()"
                     />
                   </NuxtFormField>
-                  <!-- Lista curta e fixa: `NuxtSelect` (o `UiNativeSelect` aposentou). -->
+                  <!-- Lista curta e fixa: `NuxtSelect`. -->
                   <NuxtFormField label="Como">
                     <NuxtSelect
                       v-model="settleMethod"
@@ -1005,9 +1177,17 @@ async function confirmClose() {
                     label="Receber"
                     :disabled="busy || !settleAmount.trim()"
                     :loading="busy"
-                    @click="submitSettle"
+                    @click="submitSettle()"
                   />
                 </div>
+                <PosCashFailureNotice
+                  :failure="cashFailure"
+                  gesture="settle_account"
+                  action-label="Tentar de novo"
+                  :busy="busy"
+                  @action="retryCashGesture('settle_account')"
+                  @dismiss="dismissCashFailure"
+                />
                 <p class="text-xs text-muted-foreground">
                   O acerto é por venda inteira, da mais antiga para a mais nova; o que não couber fica em aberto.
                 </p>
@@ -1073,7 +1253,7 @@ async function confirmClose() {
                 size="xl"
                 :color="denom.shape === 'note' ? 'success' : 'warning'"
                 :variant="changeDenominationsPicked.includes(denom.q) ? 'solid' : 'outline'"
-                :class="denom.shape === 'note' ? 'min-w-16 justify-center' : 'size-12 justify-center rounded-full'"
+                :class="denom.shape === 'note' ? 'min-w-16 justify-center' : 'h-12 min-w-12 justify-center rounded-full px-2'"
                 :label="denom.label"
                 :aria-pressed="changeDenominationsPicked.includes(denom.q)"
                 :aria-label="`${denom.shape === 'note' ? 'Nota' : 'Moeda'} de ${denom.label}`"
@@ -1101,14 +1281,24 @@ async function confirmClose() {
         </div>
       </template>
       <template #footer>
-        <NuxtButton
-          size="xl"
-          block
-          label="Preciso de troco"
-          :disabled="busy || !canSubmitChange"
-          :loading="busy"
-          @click="submitChangeRequest"
-        />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice
+            :failure="cashFailure"
+            gesture="request_change"
+            action-label="Tentar de novo"
+            :busy="busy"
+            @action="retryCashGesture('request_change')"
+            @dismiss="dismissCashFailure"
+          />
+          <NuxtButton
+            size="xl"
+            block
+            label="Preciso de troco"
+            :disabled="busy || !canSubmitChange"
+            :loading="busy"
+            @click="submitChangeRequest"
+          />
+        </div>
       </template>
     </NuxtModal>
 
@@ -1131,14 +1321,14 @@ async function confirmClose() {
                 :key="kind"
                 block
                 :color="movementKind === kind ? 'primary' : 'neutral'"
-                :variant="movementKind === kind ? 'soft' : 'outline'"
+                :variant="movementKind === kind ? 'solid' : 'outline'"
                 :label="movementLabel(kind)"
                 :aria-pressed="movementKind === kind"
                 @click="pickMovementKind(kind)"
               />
             </div>
           </div>
-          <NuxtFormField label="Valor" :error="movementError || undefined">
+          <NuxtFormField label="Valor" :error="movementError || undefined" :help="movementEcho ? `${movementEcho} ${movementKind === 'sangria' ? 'saem da' : 'entram na'} gaveta` : undefined">
             <NuxtInput
               ref="movementAmountField"
               v-model="movementAmount"
@@ -1169,7 +1359,7 @@ async function confirmClose() {
                 :key="reason"
                 block
                 :color="movementReasonPick === reason ? 'primary' : 'neutral'"
-                :variant="movementReasonPick === reason ? 'soft' : 'outline'"
+                :variant="movementReasonPick === reason ? 'solid' : 'outline'"
                 :label="reason"
                 :aria-pressed="movementReasonPick === reason"
                 @click="pickMovementReason(reason)"
@@ -1178,8 +1368,8 @@ async function confirmClose() {
             <NuxtInput
               v-model="movementReasonOther"
               class="w-full"
-              :aria-label="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
-              :placeholder="movementReasonOptions.length ? 'Outro motivo' : 'Motivo'"
+              :aria-label="movementReasonPlaceholder"
+              :placeholder="movementReasonPlaceholder"
             />
           </div>
 
@@ -1190,14 +1380,17 @@ async function confirmClose() {
         </div>
       </template>
       <template #footer>
-        <NuxtButton
-          size="xl"
-          block
-          label="Registrar movimento"
-          :disabled="busy || !canSubmitMovement"
-          :loading="busy"
-          @click="submitMovement()"
-        />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="movement" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('movement')" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            size="xl"
+            block
+            label="Registrar movimento"
+            :disabled="busy || !canSubmitMovement"
+            :loading="busy"
+            @click="submitMovement()"
+          />
+        </div>
       </template>
     </NuxtModal>
 
@@ -1233,6 +1426,14 @@ async function confirmClose() {
               @click="openDrawer(drawerReason)"
             />
           </div>
+          <PosCashFailureNotice
+            :failure="cashFailure"
+            gesture="open_drawer"
+            action-label="Tentar de novo"
+            :busy="busy"
+            @action="retryCashGesture('open_drawer')"
+            @dismiss="dismissCashFailure"
+          />
           <div class="grid gap-2 border-t border-default pt-3">
             <!-- ⚠️ A sonda ABRE a gaveta e registra a abertura no turno
                  (`drawer_open`, motivo "Teste de gaveta"), como qualquer
@@ -1269,7 +1470,7 @@ async function confirmClose() {
     <NuxtModal
       v-model:open="closingDialogOpen"
       title="Fechar caixa"
-      description="Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica no gestor."
+      description="Contagem cega: conte o dinheiro do caixa e informe o valor. A conferência fica na retaguarda."
       :content="dialogContent('close_shift', 'closing')"
     >
       <template #body>
@@ -1301,6 +1502,32 @@ async function confirmClose() {
             :actions="alertActions('warning', [{ label: 'Ver estornos', onClick: openCardMachineFromClosing }])"
             data-close-shift-card-machine
           />
+          <!-- Venda sem conexão a conferir: SEGURA o fechamento até o gerente
+               autorizar. A lista é o que ele confere: item, cobrado, catálogo
+               daquela hora e quem cobrou. -->
+          <NuxtAlert
+            v-if="offlineReviewSales.length"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-scale"
+            :title="offlineReviewNotice"
+            orientation="vertical"
+            data-close-shift-offline-review
+          >
+            <template #description>
+              <p>O preço cobrado não bate com o catálogo daquela hora. O caixa fecha com a autorização do gerente.</p>
+              <ul class="mt-2 grid gap-1">
+                <li
+                  v-for="(sale, index) in offlineReviewSales"
+                  :key="`${sale.order_ref}-${index}`"
+                  class="tabular-nums"
+                  data-close-shift-offline-review-line
+                >
+                  {{ offlineReviewLine(sale) }}
+                </li>
+              </ul>
+            </template>
+          </NuxtAlert>
           <!-- Nasce focado: abrir o diálogo já foi a decisão, contar é o próximo gesto. -->
           <NuxtFormField label="Valor contado" :error="closingError || undefined">
             <NuxtInput
@@ -1325,7 +1552,7 @@ async function confirmClose() {
           />
           <PosDenominationCounter
             v-if="closingCounter"
-            :denominations="changeDenominationOptions"
+            :denominations="DRAWER_DENOMINATIONS"
             :disabled="busy"
             @total-q="closingAmount = formatAmountInput($event)"
           />
@@ -1340,25 +1567,28 @@ async function confirmClose() {
              fecha: ele arma a confirmação. O tile lá fora já se chama "Fechar
              caixa" (porta com nome do destino); repetir o verbo do ato aqui
              ensinava a apertar no automático. -->
-        <NuxtButton
-          v-if="!confirmingClose"
-          size="xl"
-          block
-          color="error"
-          label="Conferir e fechar"
-          :disabled="busy || !canClose"
-          @click="confirmingClose = true"
-        />
-        <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
-          <!-- O eco do valor: a última leitura antes de a contagem virar
-               a única palavra do operador no livro. -->
-          <p class="text-sm font-medium">
-            Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
-          </p>
-          <div class="grid grid-cols-2 gap-2">
-            <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
-            <!-- O degrau que PRATICA o ato é o único que o diz. -->
-            <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose" />
+        <div class="grid w-full gap-3">
+          <PosCashFailureNotice :failure="cashFailure" gesture="close_shift" action-label="Tentar de novo" :busy="busy" @action="retryCashGesture('close_shift')" @dismiss="dismissCashFailure" />
+          <NuxtButton
+            v-if="!confirmingClose"
+            size="xl"
+            block
+            color="error"
+            label="Conferir e fechar"
+            :disabled="busy || !canClose"
+            @click="confirmingClose = true"
+          />
+          <div v-else class="grid w-full gap-2 rounded-md bg-error/10 p-3" data-close-shift-confirm>
+            <!-- O eco do valor: a última leitura antes de a contagem virar
+                 a única palavra do operador no livro. -->
+            <p class="text-sm font-medium">
+              Confirmar fechamento do caixa? Contado: R$ {{ closingEchoDisplay }}. Esta ação encerra o turno.
+            </p>
+            <div class="grid grid-cols-2 gap-2">
+              <NuxtButton block color="neutral" variant="outline" label="Cancelar" :disabled="busy" @click="confirmingClose = false" />
+              <!-- O degrau que PRATICA o ato é o único que o diz. -->
+              <NuxtButton block color="error" label="Fechar o caixa" :disabled="busy" :loading="busy" @click="confirmClose()" />
+            </div>
           </div>
         </div>
       </template>
@@ -1367,12 +1597,36 @@ async function confirmClose() {
     <OperatorManagerAuth
       v-model:open="managerAuthOpen"
       :action="managerAuthAction"
+      :amount-q="managerAuthAmountQ"
+      :detail="managerAuthDetail"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
       @authorize="onManagerAuthorize"
       @authorize-badge="onManagerBadge"
-    />
+    >
+      <!-- Fechar com venda a conferir: o gerente assina o fechamento E as vendas
+           que o catálogo não explica. O diálogo dizia só "Há venda sem conexão a
+           conferir", e ele assinava sem ver o valor contado nem o que foi cobrado
+           (P1-6). -->
+      <template v-if="managerIntent.action === 'close_shift'" #context>
+        <div class="grid gap-2" data-close-shift-manager-context>
+          <p class="text-base font-semibold text-highlighted">
+            Fechar o caixa com <span class="tabular-nums">{{ closingManagerAmount }}</span> contados
+          </p>
+          <ul v-if="offlineReviewSales.length" class="grid gap-1 text-sm text-muted-foreground">
+            <li
+              v-for="(sale, index) in offlineReviewSales"
+              :key="`${sale.order_ref}-${index}`"
+              class="tabular-nums"
+              data-close-shift-manager-review-line
+            >
+              {{ offlineReviewLine(sale) }}
+            </li>
+          </ul>
+        </div>
+      </template>
+    </OperatorManagerAuth>
   </main>
 </template>

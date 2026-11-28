@@ -73,6 +73,14 @@ describe('order tracking presentation — timeline & polling', () => {
     expect(timelineActiveStep([step('completed'), step('cancelled')])).toBe(2)
   })
 
+  it('goes as far as the refund that came after the cancellation (WP-L06)', () => {
+    // Recebido, Pago, Cancelado, Devolvido: o dinheiro que voltou já aconteceu e
+    // não pode ficar apagado como passo futuro.
+    expect(timelineActiveStep([step('completed'), step('completed'), step('cancelled'), step('completed')])).toBe(4)
+    // Sem nada depois do cancelamento, a linha para nele.
+    expect(timelineActiveStep([step('completed'), step('completed'), step('cancelled')])).toBe(3)
+  })
+
   it('says the step state out loud, since the check mark is visual only', () => {
     // O passo `current` recebia o mesmo ✓ do `completed` — a tela dizia "já foi"
     // sobre o que está acontecendo agora, contra o próprio contrato.
@@ -130,7 +138,7 @@ describe('trackingFreshness', () => {
 
 describe('rating thank-you & celebration', () => {
   const copy = {
-    rating_thanks_title: 'Obrigado!',
+    rating_thanks_title: 'Obrigada!',
     rating_thanks_celebrate: 'Ficamos muito felizes que você gostou.',
     rating_thanks: 'Valorizamos muito seu retorno.',
   }
@@ -148,21 +156,21 @@ describe('rating thank-you & celebration', () => {
 
   it('shows the warm line and confetti flag for a positive rating', () => {
     const view = ratingThanksView(copy, 5)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Ficamos muito felizes que você gostou.')
     expect(view.celebrate).toBe(true)
   })
 
   it('thanks soberly, without confetti, below the threshold', () => {
     const view = ratingThanksView(copy, 2)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Valorizamos muito seu retorno.')
     expect(view.celebrate).toBe(false)
   })
 
   it('falls back to canonical copy when the catalog is missing', () => {
     const view = ratingThanksView(null, 5)
-    expect(view.title).toBe('Obrigado!')
+    expect(view.title).toBe('Obrigada!')
     expect(view.message).toBe('Valorizamos muito seu retorno.')
     expect(view.celebrate).toBe(true)
   })

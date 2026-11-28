@@ -58,16 +58,19 @@ def counter():
 
 
 def _sell(counter, ref: str) -> Order:
+    payload = {
+        "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
+        "customer_name": "Cliente",
+        "payment_method": "cash",
+        "tendered_q": 1200,
+        "client_request_id": ref,
+        "cash_shift_id": counter["shift"].pk,
+    }
+    review = shop_pos.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     result = shop_pos.close_sale(
         channel_ref="pdv",
-        payload={
-            "items": [{"sku": "PAO", "name": "Pão", "qty": 1, "unit_price_q": 1200}],
-            "customer_name": "Cliente",
-            "payment_method": "cash",
-            "tendered_q": 1200,
-            "client_request_id": ref,
-            "cash_shift_id": counter["shift"].pk,
-        },
+        payload=payload,
         actor="pos:marina",
         operator_username="marina",
     )

@@ -1,12 +1,13 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "django-shopman"
 version = "0.1.0"
 description = "Django Shopman — omnichannel commerce framework for Django"
-license = "MIT"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md", "NOTICE.md"]
 authors = [
     {name = "Pablo Valentini", email = "pablondrina@gmail.com"}
 ]
@@ -29,6 +30,9 @@ dependencies = [
     "shopman-fiscalman>=0.1.0",
     "shopman-cashman>=0.1.0",
     "shopman-watchman>=0.1.0",
+    # Núcleo de comércio conversacional (ADR-049): pacote puro, sem dependência;
+    # o adaptador da Concierge mora no orquestrador e implementa as portas dele.
+    "conversational-commerce>=0.1.0",
     "anthropic>=0.117,<1.0",
     "django-ratelimit>=4.1,<5.0",
     "django-csp>=4.0,<5.0",
@@ -96,6 +100,7 @@ testpaths = ["shopman/shop/tests"]
 addopts = "-m 'not browser'"
 markers = [
     "browser: Playwright browser E2E — requires running Nuxt store + Django API",
+    "channels(*refs): materialize these Channel rows for the test (the suite has no channel fallback)",
 ]
 
 [tool.coverage.run]

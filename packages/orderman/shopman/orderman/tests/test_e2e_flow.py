@@ -15,6 +15,7 @@ from shopman.orderman.exceptions import CommitError
 from shopman.orderman.ids import generate_idempotency_key, generate_session_key
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services import CommitService, ModifyService
+from shopman.orderman.tests.commit_support import seal_for
 
 
 class EndToEndFlowTests(TestCase):
@@ -89,6 +90,8 @@ class EndToEndFlowTests(TestCase):
             session_key=session_key,
             channel_ref=self.channel.ref,
             idempotency_key=idempotency_key,
+            seal=seal_for(session_key, self.channel.ref),
+            channel_config={},
         )
 
         self.assertIsNotNone(result.order_ref)
@@ -116,6 +119,8 @@ class EndToEndFlowTests(TestCase):
             session_key=session_key,
             channel_ref=self.channel.ref,
             idempotency_key=idempotency_key,
+            seal=seal_for(session_key, self.channel.ref),
+            channel_config={},
         )
         self.assertEqual(result2.order_ref, order_ref)
         self.assertEqual(Order.objects.count(), 1)  # Não cria duplicado
@@ -127,6 +132,8 @@ class EndToEndFlowTests(TestCase):
             session_key=session_key,
             channel_ref=self.channel.ref,
             idempotency_key=generate_idempotency_key(),
+            seal=seal_for(session_key, self.channel.ref),
+            channel_config={},
         )
         # Retorna o mesmo order_ref devido à idempotência por sessão
         self.assertEqual(result3.order_ref, order_ref)
@@ -226,5 +233,7 @@ class EndToEndFlowTests(TestCase):
                 session_key=session_key,
                 channel_ref=self.channel.ref,
                 idempotency_key=generate_idempotency_key(),
+                seal=seal_for(session_key, self.channel.ref),
+                channel_config={},
             )
         self.assertEqual(cm.exception.code, "blocking_issues")

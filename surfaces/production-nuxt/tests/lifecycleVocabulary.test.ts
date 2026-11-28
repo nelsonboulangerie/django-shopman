@@ -4,7 +4,7 @@
 // Planejada · Aberta · Fechada · Cancelada; quantidades planejado · previsto ·
 // realizado; indicadores perda e aproveitamento. "Produzido" chegou a
 // significar `started` no quadro e `finished` no Admin; "Estornado" nomeava o
-// `void`; "Expedição" era o nome da tela de fechamento e colidia com o posto da
+// `void`; "Expedição" era o nome da tela de finalização e colidia com o posto da
 // saída dos pedidos. Nenhuma dessas palavras volta ao app de Produção, nem em
 // comentário: quem lê o código aprende a palavra errada e a devolve à tela.
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 
 const ROOT = join(__dirname, "..");
 // O contrato gerado espelha o servidor; o servidor tem trava própria
-// (`shopman/backstage/tests/test_vocabulario_abertura_fechamento.py`).
+// (`shopman/backstage/tests/test_vocabulario_abertura_finalização.py`).
 const SKIP_DIRS = new Set(["generated", "node_modules", ".nuxt", ".output"]);
 
 function files(dir: string): string[] {
@@ -27,9 +27,11 @@ function files(dir: string): string[] {
 }
 
 const FORBIDDEN: Array<{ word: RegExp; why: string }> = [
+  { word: /\bAbertura\b/, why: "Produção (etapa open)" },
+  { word: /\bFechamento\b/, why: "Finalização (etapa close)" },
   { word: /produzid[oa]s?/i, why: "previsto (started) ou realizado (finished)" },
   { word: /estorn/i, why: "cancelar / cancelamento (void)" },
-  { word: /expedi[cç][aã]o|expedite/i, why: "Fechamento (/close)" },
+  { word: /expedi[cç][aã]o|expedite/i, why: "Finalização (/close)" },
   { word: /iniciad[oa]s?/i, why: "aberto / aberta (started)" },
   { word: /conclu[ií]d[oa]s?/i, why: "fechado / fechada (finished)" },
 ];

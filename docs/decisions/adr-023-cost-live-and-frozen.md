@@ -1,9 +1,10 @@
 # ADR-023 — Custo: vivo para precificar, congelado no fato para contar história
 
-**Status:** **Aceito** (dono, 2026-08-19) — opção A: dois custos
+**Status:** Aceito
+**Decisão:** dono, 2026-08-19; opção A, dois custos
 **Data:** 2026-08-19 (proposta e decisão no mesmo dia)
 **Escopo:** `shopman/shop` (adapter de custo composto, `OFFERMAN["COST_BACKEND"]`); `packages/craftsman` (snapshot de custo no `finish`); `packages/buyman` (leitura do custo preferencial); `docs/reference/data-schemas.md`
-**Implementado (custo vivo, 04/10/2026, V6-BI):** `shopman/shop/adapters/cost.py` (`RecipeCostBackend`), ligado em `OFFERMAN["COST_BACKEND"]`, já na base única da [ADR-024](adr-024-material-unit-base-and-purchase.md) (`SupplierMaterialCost.cost_per_base_unit`). Lê o "R$ de custo" da sobra no B.I. **Falta:** o custo congelado no `finish` do lote (§3).
+**Implementado (custo vivo, 04/10/2026, V6-BI):** `shopman/shop/adapters/cost.py` (`RecipeCostBackend`), ligado em `OFFERMAN["COST_BACKEND"]`, já na base única da [ADR-024](adr-024-material-unit-base-and-purchase.md) (`SupplierMaterialCost.cost_per_base_unit`). Lê o "R$ de custo" da sobra no B.I. **Implementado (custo congelado e revenda, 11/11/2026, F3):** `WorkOrder.meta["cost_snapshot"]` gravado no `finish` pelo receiver `shopman/shop/handlers/production_cost.py` (o total e as linhas ficam no JSON da ordem, não em `WorkOrderItem.meta`: uma escrita só, sob trava, e o ledger da fornada não é reescrito depois de fechado); produto de revenda custa o próprio `Material`; a lacuna aparece ao operador com motivo (`Product.reference_cost_gap`). **Implementado (aviso da lacuna congelada, 22/11/2026, #2360):** a fornada que congela com lacuna vira `OperatorAlert` `production_cost_gap`, um por fornada, no público financeiro (só o dono), com o motivo e o botão do Compras.
 **Origem:** auditoria do Buyman (2026-08-18), achado B1
 
 ---
@@ -49,7 +50,7 @@ do próprio campo ("não reescreve os lotes de ontem"). O custo da fornada merec
 mesmo tratamento pelo mesmo motivo: é fato, não configuração.
 
 **O B.I. está no caminho desta decisão, não depois dela.** As Frentes A e B
-([BI-DATA-FOUNDATION-PLAN](../plans/BI-DATA-FOUNDATION-PLAN.md), ADR-021)
+([BI-DATA-FOUNDATION-PLAN](../plans/completed/BI-DATA-FOUNDATION-PLAN.md), ADR-021)
 agregam sobre fatos duráveis; margem por fornada é o próximo pedido natural. Se
 o fato nascer sem custo, o B.I. vai reconstruí-lo com o custo de hoje — e o
 número vai mudar sozinho a cada compra de farinha.
@@ -69,7 +70,7 @@ número vai mudar sozinho a cada compra de farinha.
    mesmo desenho já usado pelo validador e pelo catálogo compostos
    (`shopman/shop/adapters/sku_validator.py`,
    `shopman/shop/adapters/catalog_backend.py`) e o que o
-   [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) §Fronteiras já
+   [BUYMAN-PROCUREMENT-PLAN](../plans/completed/BUYMAN-PROCUREMENT-PLAN.md) §Fronteiras já
    previa ("os adapters compostos vivem no ORQUESTRADOR").
 3. **O congelamento acontece no `finish` da fornada**, junto da partição de
    qualidade que já congela (ADR-017 §7): cada linha CONSUMPTION carrega o custo
@@ -136,5 +137,5 @@ que esse custo é expresso.
 - [ADR-021](adr-021-bi-cross-suite-read-layer.md) — agregação é leitura; o fato tem dono
 - [ADR-001](adr-001-protocol-adapter.md) — cores não se importam; composição no orquestrador
 - [ADR-024](adr-024-material-unit-base-and-purchase.md) — a unidade em que esse custo é expresso
-- [BUYMAN-PROCUREMENT-PLAN](../plans/BUYMAN-PROCUREMENT-PLAN.md) — fases e fronteiras
+- [BUYMAN-PROCUREMENT-PLAN](../plans/completed/BUYMAN-PROCUREMENT-PLAN.md) — fases e fronteiras
 - `packages/offerman/shopman/offerman/protocols/cost.py`, `packages/buyman/shopman/buyman/models/cost.py`

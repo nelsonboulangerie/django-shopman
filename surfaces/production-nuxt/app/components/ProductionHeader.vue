@@ -1,14 +1,24 @@
 <script setup lang="ts">
 // Cabeçalho das telas da Produção: o `OperatorPageHeader` do kit, com os papéis das
 // barras da fase 2 (WP-FASE2-UX-OPERADOR §5):
-//   · barra primária: título, selo ao vivo com a hora da última leitura, a busca
-//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋯ "Mais ações" (as
+//   · barra primária: título, selo de conexão com a hora da última leitura ("Ao vivo"
+//     só com o canal da Produção aberto, WP-F15; `presentation/liveSeal.ts`), a busca
+//     (nível "Esta tela" declarado: filtra a lista da tela) e o ⋮ "Mais ações" (as
 //     ações como DADOS: as da tela e Atualizar, tecla R). Avisos e o ciclo da barra
 //     lateral são do kit;
-//   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), os recortes
-//     (`#filters`, que no celular vão para o painel "Filtros") e, no fim, o progresso
-//     do dia ("4 de 28 planejados" com a barra);
+//   · toolbar: o dia ou a vista (`#primary`, no começo da linha, também no celular), o
+//     filtro único da suíte (`#filter-panel`, dono 04/11/2026: o `OperatorFilterPanel`
+//     da tela, "Filtros (n)" e os chips com × na mesa), a faixa da mesa (`#filters`: os
+//     recortes de todo dia num toque, com a contagem, e o texto que não filtra) e, no
+//     fim, o progresso do dia ("4 de 28 planejados" com a barra);
 //   · aviso da tela: `alerts`, logo abaixo da toolbar.
+// No celular (abaixo de `md`), o cabeçalho inteiro é a linha do chão do kit
+// (`OperatorCompactBar`), como no Gestor: o selo com o ponto de conexão, a busca, o sino e
+// o ⋮ no canto. A hora da leitura vai para o topo do ⋮; o filtro único, para o ícone na
+// linha, antes da busca, com o número no canto como o sino (o mesmo `#filter-panel`, com
+// `compact` verdadeiro: a tela desenha o gatilho `icon` sem chips, e põe nele os
+// recortes de todo dia, que no celular não têm faixa); o dia fica numa
+// faixa logo abaixo; o "onde estou" do registro (`#status`) fica ao lado do selo.
 // As etapas do lote (Alt+1 a Alt+5), "/" (busca) e "?" (ajuda) são do shell e da busca
 // da suíte. Este cabeçalho só segura o R, e entrega à ajuda do kit os grupos de teclas
 // da Produção.
@@ -21,6 +31,9 @@ import {
   productionGlobalKeysBlocked,
   resolveProductionGlobalShortcut,
 } from "~/presentation/keyboard";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import type { ProductionRealtime } from "~/composables/useProductionLive";
+import { productionLiveSeal } from "~/presentation/liveSeal";
 
 const props = withDefaults(
   defineProps<{
@@ -34,6 +47,13 @@ const props = withDefaults(
     pending?: boolean;
     /** A última leitura falhou e a tela mostra dado velho: o ao vivo fala por extenso. */
     stale?: boolean;
+    /** A leitura falhou e não há dado nenhum na tela: o selo diz "Sem conexão". */
+    offline?: boolean;
+    /** O tempo real da tela (`useProductionLive`): só "live" vira "Ao vivo" (WP-F15).
+     *  Ausente, a tela não declarou e o selo segue no "Ao vivo" de antes. */
+    realtime?: ProductionRealtime | null;
+    /** A cadência da tela sem o canal, que o selo anuncia ("a cada 30 s"). */
+    pollMs?: number | null;
     /** Selo ao lado do título (ex.: o dia que a tela mostra). */
     eyebrow?: string;
     /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes fechados hoje"). */
@@ -45,7 +65,7 @@ const props = withDefaults(
     searchable?: boolean;
     /** Ações da tela, antes de Atualizar, no ⋯ "Mais ações". */
     actions?: OperatorHeaderAction[];
-    /** Recortes ativos (viram número no "Filtros" e chips no celular). */
+    /** Recortes ativos: a faixa da linha do chão, com Limpar, e os chips do celular. */
     activeFilters?: { key: string; label: string; remove: () => void }[];
     alerts?: OperatorScreenAlert[];
   }>(),
@@ -56,6 +76,9 @@ const props = withDefaults(
     progress: null,
     pending: false,
     stale: false,
+    offline: false,
+    realtime: null,
+    pollMs: null,
     eyebrow: "",
     subtitle: "",
     searchPlaceholder: "Buscar produto ou SKU",
@@ -74,16 +97,21 @@ provideOperatorShortcuts(PRODUCTION_SHORTCUT_GROUPS, PRODUCTION_SHORTCUTS_DESCRI
 // A hora da última leitura útil: o selo ao vivo mostra quando a tela leu pela última
 // vez. Nasce no cliente (o SSR não sabe a hora local de quem lê).
 const readClock = ref("");
+const seal = computed(() =>
+  productionLiveSeal({
+    stale: props.stale,
+    offline: props.offline,
+    realtime: props.realtime,
+    pollMs: props.pollMs,
+  }),
+);
 function stamp() {
-  readClock.value = new Date().toLocaleTimeString("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  readClock.value = formatClock(new Date());
 }
 watch(
   () => props.pending,
   (now, before) => {
-    if (before && !now && !props.stale) stamp();
+    if (before && !now && !props.stale && !props.offline) stamp();
   },
 );
 
@@ -111,6 +139,14 @@ onMounted(() => {
 });
 onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
+// A linha do chão: os recortes ativos e a contagem dizem o que a lista mostra.
+const filterActive = computed(() => props.activeFilters.length > 0);
+const filterLabel = computed(() => props.activeFilters.map((filter) => filter.label).join(", "));
+function clearCompact() {
+  query.value = "";
+  for (const filter of props.activeFilters) filter.remove();
+}
+
 const counterText = computed(() => {
   if (props.count == null) return "";
   if (props.total != null) return `de ${props.total} ${props.countLabel}`.trim();
@@ -119,6 +155,36 @@ const counterText = computed(() => {
 </script>
 
 <template>
+  <!-- `data-compact-page`: abaixo de `md` o kit esconde a barra de cima e a linha de
+       filtros do `OperatorPageHeader`; a linha do chão toma o lugar delas. -->
+  <div class="contents" data-compact-page>
+  <OperatorCompactBar
+    :title="title"
+    :tone="seal.tone"
+    :time="readClock"
+    :conn-label="seal.label"
+    :query="query"
+    :search="searchable"
+    search-button-label="Buscar por código, SKU ou receita"
+    :filter-active="filterActive"
+    :filter-label="filterLabel"
+    :summary="count != null ? `${count} ${counterText}.` : ''"
+    :options="headerActions"
+    @clear="clearCompact"
+  >
+    <template v-if="$slots.lead" #lead><slot name="lead" /></template>
+    <template v-if="$slots.status" #identity><slot name="status" /></template>
+    <template v-if="$slots['filter-panel']" #filter-panel><slot name="filter-panel" :compact="true" /></template>
+  </OperatorCompactBar>
+  <!-- O dia (ou a vista) segue à vista no celular, logo abaixo da linha: é o que diz de
+       quando é a lista, e trocar de dia não pode custar ⋮ e Filtros. -->
+  <div
+    v-if="$slots.primary"
+    class="flex min-h-12 items-center gap-2 border-b border-default bg-card px-2 py-1.5 md:hidden"
+    data-compact-primary
+  >
+    <slot name="primary" />
+  </div>
   <OperatorPageHeader
     :title="title"
     :eyebrow="eyebrow"
@@ -130,10 +196,12 @@ const counterText = computed(() => {
     <template v-if="$slots.lead" #lead><slot name="lead" /></template>
     <template #status>
       <OperatorLiveStatus
-        :tone="stale ? 'late' : 'live'"
+        :tone="seal.tone"
         :time="readClock"
-        :label="stale ? 'Sem atualizar' : 'Ao vivo'"
-        :detail="stale ? 'A última leitura falhou: a tela mostra o que tinha.' : ''"
+        :label="seal.label"
+        :short-label="seal.shortLabel"
+        :detail="seal.detail"
+        :data-live-seal="seal.tone"
       />
       <span
         v-if="subtitle"
@@ -152,6 +220,7 @@ const counterText = computed(() => {
       />
     </template>
     <template v-if="$slots.primary" #filters-primary><slot name="primary" /></template>
+    <template v-if="$slots['filter-panel']" #filter-panel><slot name="filter-panel" :compact="false" /></template>
     <template v-if="$slots.filters" #filters><slot name="filters" /></template>
     <template v-if="count != null" #filters-end>
       <!-- O percentual mora COM o número que ele resume, nunca longe dele. -->
@@ -171,4 +240,5 @@ const counterText = computed(() => {
     </template>
     <template v-if="$slots.below" #below><slot name="below" /></template>
   </OperatorPageHeader>
+  </div>
 </template>

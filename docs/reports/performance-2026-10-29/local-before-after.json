@@ -1,0 +1,192 @@
+{
+  "catalog": {
+    "samples": {
+      "before": [
+        {
+          "ms": 13.083,
+          "queries": 27
+        },
+        {
+          "ms": 12.964,
+          "queries": 27
+        },
+        {
+          "ms": 13.291,
+          "queries": 27
+        },
+        {
+          "ms": 13.202,
+          "queries": 27
+        },
+        {
+          "ms": 13.299,
+          "queries": 27
+        },
+        {
+          "ms": 13.876,
+          "queries": 27
+        },
+        {
+          "ms": 13.304,
+          "queries": 27
+        },
+        {
+          "ms": 13.722,
+          "queries": 27
+        },
+        {
+          "ms": 13.433,
+          "queries": 27
+        },
+        {
+          "ms": 13.994,
+          "queries": 27
+        }
+      ],
+      "after": [
+        {
+          "ms": 12.503,
+          "queries": 25
+        },
+        {
+          "ms": 12.488,
+          "queries": 25
+        },
+        {
+          "ms": 11.826,
+          "queries": 25
+        },
+        {
+          "ms": 12.314,
+          "queries": 25
+        },
+        {
+          "ms": 11.976,
+          "queries": 25
+        },
+        {
+          "ms": 12.23,
+          "queries": 25
+        },
+        {
+          "ms": 11.876,
+          "queries": 25
+        },
+        {
+          "ms": 11.716,
+          "queries": 25
+        },
+        {
+          "ms": 11.842,
+          "queries": 25
+        },
+        {
+          "ms": 11.914,
+          "queries": 25
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 13.3015,
+      "after": 11.945
+    },
+    "sha256": "5cb624c36bf80c344b8fefb6f4a7e326d3f429cf4d6bfe921874362722309258",
+    "bytes": 37889,
+    "json_equal": true
+  },
+  "pdp": {
+    "samples": {
+      "before": [
+        {
+          "ms": 6.688,
+          "queries": 26
+        },
+        {
+          "ms": 6.465,
+          "queries": 26
+        },
+        {
+          "ms": 6.465,
+          "queries": 26
+        },
+        {
+          "ms": 6.427,
+          "queries": 26
+        },
+        {
+          "ms": 6.404,
+          "queries": 26
+        },
+        {
+          "ms": 6.392,
+          "queries": 26
+        },
+        {
+          "ms": 6.646,
+          "queries": 26
+        },
+        {
+          "ms": 6.406,
+          "queries": 26
+        },
+        {
+          "ms": 6.408,
+          "queries": 26
+        },
+        {
+          "ms": 6.441,
+          "queries": 26
+        }
+      ],
+      "after": [
+        {
+          "ms": 6.316,
+          "queries": 23
+        },
+        {
+          "ms": 6.276,
+          "queries": 23
+        },
+        {
+          "ms": 6.069,
+          "queries": 23
+        },
+        {
+          "ms": 5.982,
+          "queries": 23
+        },
+        {
+          "ms": 6.154,
+          "queries": 23
+        },
+        {
+          "ms": 6.0,
+          "queries": 23
+        },
+        {
+          "ms": 6.131,
+          "queries": 23
+        },
+        {
+          "ms": 6.085,
+          "queries": 23
+        },
+        {
+          "ms": 6.088,
+          "queries": 23
+        },
+        {
+          "ms": 6.015,
+          "queries": 23
+        }
+      ]
+    },
+    "p50_ms": {
+      "before": 6.433999999999999,
+      "after": 6.0865
+    },
+    "sha256": "1114ed909423325cff9304753e0654e71d6a80dd37aa15f747786deb84ab2f07",
+    "bytes": 1203,
+    "json_equal": true
+  }
+}

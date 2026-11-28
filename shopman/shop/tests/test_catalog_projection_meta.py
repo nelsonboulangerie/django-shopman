@@ -1,18 +1,20 @@
 """
-Meta Catalog Projection adapter (Arc E) — payload, batching, retract, 429, dry-run.
+Meta Catalog Projection adapter (Arc E) — payload, batching, retract, 429.
 
 All offline: ``requests.post`` is mocked and ``meta_auth`` yields a fake Bearer, so
 the suite runs green without any Meta credential. Live is gated behind
 ``META_CATALOG_PROJECTION=1`` + real ``SHOPMAN_META``; the adapter is off by default.
+
+O adapter só traduz a decisão de ``services/display_catalog`` (``metadata["display"]``):
+Pausar sai ``out of stock``, Ocultar sai ``status: archived``.
 """
 
 from __future__ import annotations
 
-from io import StringIO
+from dataclasses import replace
 from unittest import mock
 
 import pytest
-from django.core.management import call_command
 from django.test import override_settings
 from shopman.offerman.protocols.projection import ProjectedItem
 
@@ -23,6 +25,7 @@ from shopman.shop.adapters.catalog_projection_meta import (
     build_batch_requests,
     build_retract_requests,
 )
+from shopman.shop.services.display_catalog import DisplayItem
 
 _META_CFG = {
     "catalog_id": "cat-123",
@@ -30,28 +33,43 @@ _META_CFG = {
     "api_version": "v21.0",
     "api_base": "https://graph.mock.test",
     "currency": "BRL",
-    "store_url": "https://loja.test",
-    "default_brand": "Nelson",
     "batch_size": 5000,
     "timeout": 10,
 }
 
+_DECIDED = DisplayItem(
+    sku="PAO",
+    title="Pão Francês",
+    description="Crocante",
+    link="https://loja.test/produto/PAO",
+    image_link="https://cdn.test/pao.jpg",
+    brand="Nelson",
+    gtin="",
+    mpn="",
+    condition="new",
+    google_product_category="Bakery",
+    price_q=350,
+    product_type="Pães",
+    custom_label_0="paes",
+    available=True,
+    hidden=False,
+)
+
 
 def _item(**over) -> ProjectedItem:
-    base = {
-        "sku": "PAO",
-        "name": "Pão Francês",
-        "description": "Crocante",
-        "unit": "un",
-        "price_q": 350,
-        "is_published": True,
-        "is_sellable": True,
-        "image_url": "https://cdn.test/pao.jpg",
-        "category": "paes",
-        "metadata": {"social": {"brand": "Nelson", "google_product_category": "Bakery", "gtin": ""}},
-    }
-    base.update(over)
-    return ProjectedItem(**base)
+    decided = replace(_DECIDED, **over)
+    return ProjectedItem(
+        sku=decided.sku,
+        name=decided.title,
+        description=decided.description,
+        unit="",
+        price_q=decided.price_q,
+        is_published=not decided.hidden,
+        is_sellable=decided.available,
+        category=decided.custom_label_0,
+        image_url=decided.image_link,
+        metadata={"display": decided},
+    )
 
 
 class _Resp:
@@ -78,7 +96,7 @@ def fake_headers():
 @override_settings(SHOPMAN_META=dict(_META_CFG, access_token="", catalog_id=""))
 def test_project_inert_without_credentials():
     with mock.patch.object(meta.requests, "post") as post:
-        result = MetaCatalogProjection().project([_item()], channel="meta")
+        result = MetaCatalogProjection().project([_item()], channel="meta-catalog")
     assert result.success is False
     assert "não configurado" in result.errors[0]
     post.assert_not_called()
@@ -97,7 +115,7 @@ def test_project_posts_expected_batch(fake_headers):
         return _Resp(200)
 
     with mock.patch.object(meta.requests, "post", fake_post):
-        result = MetaCatalogProjection().project([_item()], channel="meta")
+        result = MetaCatalogProjection().project([_item()], channel="meta-catalog")
 
     assert result.success is True
     assert result.projected == 1
@@ -111,43 +129,46 @@ def test_project_posts_expected_batch(fake_headers):
     data = req["data"]
     assert data["title"] == "Pão Francês"
     assert data["availability"] == "in stock"
+    assert data["status"] == "active"
     assert data["condition"] == "new"
-    assert data["link"] == "https://loja.test/PAO"
+    assert data["link"] == "https://loja.test/produto/PAO"
     assert data["image_link"] == "https://cdn.test/pao.jpg"
     assert data["brand"] == "Nelson"
     assert data["google_product_category"] == "Bakery"
     assert data["custom_label_0"] == "paes"
+    assert data["product_type"] == "Pães"
 
 
-@override_settings(SHOPMAN_META=_META_CFG)
-def test_price_is_integer_cents_plus_currency(fake_headers):
-    reqs = build_batch_requests([_item(price_q=1299)], _META_CFG)
-    data = reqs[0]["data"]
+def test_price_is_integer_cents_plus_currency():
+    data = build_batch_requests([_item(price_q=1299)], _META_CFG)[0]["data"]
     assert data["price"] == 1299  # inteiro em centavos, não string "12.99 BRL"
     assert isinstance(data["price"], int)
     assert data["currency"] == "BRL"
 
 
-@override_settings(SHOPMAN_META=_META_CFG)
-def test_out_of_stock_when_not_sellable():
-    reqs = build_batch_requests([_item(is_sellable=False)], _META_CFG)
-    assert reqs[0]["data"]["availability"] == "out of stock"
+def test_paused_goes_out_of_stock_and_stays_active():
+    data = build_batch_requests([_item(available=False)], _META_CFG)[0]["data"]
+    assert data["availability"] == "out of stock"
+    assert data["status"] == "active"
 
 
-@override_settings(SHOPMAN_META=_META_CFG)
-def test_default_brand_when_pim_has_none():
-    reqs = build_batch_requests([_item(metadata={"social": {}})], _META_CFG)
-    assert reqs[0]["data"]["brand"] == "Nelson"  # cai no default_brand da config
+def test_hidden_goes_archived():
+    data = build_batch_requests([_item(available=False, hidden=True)], _META_CFG)[0]["data"]
+    assert data["status"] == "archived"
+    assert data["availability"] == "out of stock"
 
 
-@override_settings(SHOPMAN_META=_META_CFG)
 def test_gallery_becomes_additional_image_link():
-    reqs = build_batch_requests(
-        [_item(metadata={"gallery": ["https://cdn.test/pao.jpg", "https://cdn.test/2.jpg", "https://cdn.test/3.jpg"]})],
-        _META_CFG,
-    )
-    # a imagem principal é filtrada; só as extras entram, separadas por vírgula
-    assert reqs[0]["data"]["additional_image_link"] == "https://cdn.test/2.jpg,https://cdn.test/3.jpg"
+    item = _item(additional_image_links=("https://cdn.test/2.jpg", "https://cdn.test/3.jpg"))
+    data = build_batch_requests([item], _META_CFG)[0]["data"]
+    assert data["additional_image_link"] == "https://cdn.test/2.jpg,https://cdn.test/3.jpg"
+
+
+def test_item_without_channel_decision_fails_loud():
+    bare = ProjectedItem(sku="PAO", name="Pão", description="", unit="un", price_q=1,
+                         is_published=True, is_sellable=True)
+    with pytest.raises(ValueError, match="sem a decisão do canal"):
+        build_batch_requests([bare], _META_CFG)
 
 
 # ── batching ────────────────────────────────────────────────────────────────────
@@ -163,7 +184,7 @@ def test_batching_chunks_requests(fake_headers):
 
     items = [_item(sku=f"P{i}") for i in range(5)]
     with mock.patch.object(meta.requests, "post", fake_post):
-        result = MetaCatalogProjection().project(items, channel="meta")
+        result = MetaCatalogProjection().project(items, channel="meta-catalog")
 
     assert result.projected == 5
     assert calls == [2, 2, 1]  # 5 itens / batch 2 → 3 chamadas
@@ -173,7 +194,7 @@ def test_batching_chunks_requests(fake_headers):
 
 
 @override_settings(SHOPMAN_META=_META_CFG)
-def test_retract_updates_availability_out_of_stock(fake_headers):
+def test_retract_archives(fake_headers):
     captured = {}
 
     def fake_post(url, json=None, headers=None, timeout=None):
@@ -181,21 +202,20 @@ def test_retract_updates_availability_out_of_stock(fake_headers):
         return _Resp(200)
 
     with mock.patch.object(meta.requests, "post", fake_post):
-        result = MetaCatalogProjection().retract(["PAO", "BOLO"], channel="meta")
+        result = MetaCatalogProjection().retract(["PAO", "BOLO"], channel="meta-catalog")
 
     assert result.success is True
     assert result.projected == 2
     reqs = captured["json"]["requests"]
     assert [r["retailer_id"] for r in reqs] == ["PAO", "BOLO"]
     assert all(r["method"] == "UPDATE" for r in reqs)
-    assert all(r["data"] == {"availability": "out of stock"} for r in reqs)
+    assert all(r["data"] == {"status": "archived"} for r in reqs)
 
 
 def test_build_retract_requests_pure():
-    reqs = build_retract_requests(["A", "B"])
-    assert reqs == [
-        {"method": "UPDATE", "retailer_id": "A", "data": {"availability": "out of stock"}},
-        {"method": "UPDATE", "retailer_id": "B", "data": {"availability": "out of stock"}},
+    assert build_retract_requests(["A", "B"]) == [
+        {"method": "UPDATE", "retailer_id": "A", "data": {"status": "archived"}},
+        {"method": "UPDATE", "retailer_id": "B", "data": {"status": "archived"}},
     ]
 
 
@@ -209,7 +229,7 @@ def test_rate_limit_raises_with_retry_after(fake_headers):
 
     with mock.patch.object(meta.requests, "post", fake_post):
         with pytest.raises(MetaRateLimitError) as exc:
-            MetaCatalogProjection().project([_item()], channel="meta")
+            MetaCatalogProjection().project([_item()], channel="meta-catalog")
     assert exc.value.retry_after == 42
 
 
@@ -219,37 +239,9 @@ def test_http_error_degrades_to_result_error(fake_headers):
         return _Resp(500)
 
     with mock.patch.object(meta.requests, "post", fake_post):
-        result = MetaCatalogProjection().project([_item()], channel="meta")
+        result = MetaCatalogProjection().project([_item()], channel="meta-catalog")
     assert result.success is False
     assert "PAO" in result.errors[0]
-
-
-# ── dry-run command ─────────────────────────────────────────────────────────────
-
-
-@override_settings(SHOPMAN_META=_META_CFG)
-def test_dry_run_command_emits_batch_json():
-    out = StringIO()
-    with mock.patch(
-        "shopman.offerman.service.CatalogService.get_projection_items",
-        return_value=[_item()],
-    ):
-        call_command("sync_catalog_meta", "--dry-run", stdout=out)
-    output = out.getvalue()
-    assert "Dry run — 1 item(s)" in output
-    assert '"retailer_id": "PAO"' in output
-    assert '"availability": "in stock"' in output
-    assert "No changes sent to Meta (dry run)." in output
-
-
-def test_dry_run_command_empty_listing():
-    out = StringIO()
-    with mock.patch(
-        "shopman.offerman.service.CatalogService.get_projection_items",
-        return_value=[],
-    ):
-        call_command("sync_catalog_meta", "--dry-run", stdout=out)
-    assert "Nothing to sync" in out.getvalue()
 
 
 # ── auth service ────────────────────────────────────────────────────────────────

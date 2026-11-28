@@ -137,6 +137,9 @@ describe("useProductionMutationGuard", () => {
     expect(disabled.ok).toBe(false);
     if (disabled.ok) throw new Error("expected disabled-action block");
     expect(disabled.blocked.code).toBe("action_disabled");
+    // Beta 05/11: "Sem capacidade para cancelar lotes." vinha com "Atualizar os
+    // números", que nunca concede permissão. Ação desligada diz só o motivo.
+    expect(env.sonner.error).toHaveBeenLastCalledWith("Etapas concluídas.");
     const withoutProof = useProductionMutationGuard(
       projection({
         actions: [

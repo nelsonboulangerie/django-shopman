@@ -178,10 +178,54 @@ def test_pulso_que_ninguem_buscou_expira_e_a_tela_le_que_nao_abriu(shift, operat
 
     assert state.state == "expired"
     assert "não abriu" in state.message
+    # Ler não grava: o trabalho segue como estava e o livro não ganhou nota.
+    job.refresh_from_db()
+    assert job.status == PrintJob.Status.QUEUED
+    assert not Entry.objects.filter(parent=entry, kind=Entry.Kind.NOTE).exists()
     # Nem o agente que volta depois leva o pulso vencido.
     assert print_jobs.claim_next_job(credential=credential, telemetry={}) is None
+
+
+def test_a_varredura_grava_no_livro_o_pulso_que_o_agente_nao_respondeu(shift, operator, credential):
+    from django.core.management import call_command
+
+    entry, job = drawer_pulse.open_drawer(operator=operator, purpose="no_sale", reason="Troco", via="relay")
+    vencido = timezone.now() - drawer_pulse.PULSE_WINDOW - timedelta(seconds=1)
+    PrintJob.objects.filter(pk=job.pk).update(expires_at=vencido, created_at=vencido)
+    # Um pulso recém-pedido segue em envio e a varredura não toca nele.
+    _, fresco = drawer_pulse.open_drawer(operator=operator, purpose="no_sale", reason="Troco", via="relay")
+
+    call_command("sweep_drawer_pulse_jobs")
+
+    job.refresh_from_db()
+    assert job.status == PrintJob.Status.EXPIRED
     note = Entry.objects.get(parent=entry, kind=Entry.Kind.NOTE)
     assert note.payload["status"] == "expired"
+    fresco.refresh_from_db()
+    assert fresco.status == PrintJob.Status.QUEUED
+
+    # Uma nota só, mesmo com a varredura rodando de novo e a tela lendo.
+    assert drawer_pulse.sweep_stale_pulses() == 0
+    assert drawer_pulse.pulse_state(ref=job.ref, terminal_ref=shift.terminal.ref).state == "expired"
+    assert Entry.objects.filter(parent=entry, kind=Entry.Kind.NOTE).count() == 1
+
+
+def test_a_varredura_da_o_veredito_incerto_ao_lease_vencido(shift, operator, credential):
+    from shopman.backstage.models import PrintAttempt
+
+    entry, job = drawer_pulse.open_drawer(operator=operator, purpose="no_sale", reason="Troco", via="relay")
+    _, attempt, _ = print_jobs.claim_next_job(credential=credential, telemetry={})
+    vencido = timezone.now() - drawer_pulse.PULSE_WINDOW - timedelta(seconds=1)
+    PrintAttempt.objects.filter(pk=attempt.pk).update(lease_expires_at=vencido)
+    PrintJob.objects.filter(pk=job.pk).update(created_at=vencido)
+
+    assert drawer_pulse.pulse_state(ref=job.ref, terminal_ref=shift.terminal.ref).state == "uncertain"
+    assert not Entry.objects.filter(parent=entry, kind=Entry.Kind.NOTE).exists()
+
+    assert drawer_pulse.sweep_stale_pulses() == 1
+    job.refresh_from_db()
+    assert job.status == PrintJob.Status.UNCERTAIN
+    assert Entry.objects.get(parent=entry, kind=Entry.Kind.NOTE).payload["status"] == "uncertain"
 
 
 def test_sem_relay_pareado_nada_e_gravado_e_a_recusa_diz_por_que(shift, operator):

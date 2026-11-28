@@ -10,7 +10,6 @@ import type { OperatorOrderDetail } from "../types/orderDetail";
 withDefaults(defineProps<{
   order: OperatorOrderDetail;
   adminUrl: string;
-  relayExpires: string;
   compact?: boolean;
   external?: boolean;
 }>(), { compact: false, external: true });
@@ -29,34 +28,17 @@ withDefaults(defineProps<{
     :aria-label="compact ? 'WhatsApp do cliente' : 'WhatsApp'"
     data-contact-whatsapp
   />
-  <!-- Pedido do iFood: o número NÃO é do cliente. É o 0800 da central deles + um
-       código que leva até a pessoa, e o código vence. Por isso não há WhatsApp aqui,
-       e o "Ligar" disca os dois de uma vez. -->
-  <NuxtAlert
-    v-if="order.customer_relay_phone"
-    color="info"
-    variant="subtle"
-    icon="i-lucide-phone-call"
-    title="Falar pelo iFood"
-    data-contact-relay
-  >
-    <template #description>
-      <span>Central {{ order.customer_relay_phone }}</span>
-      <template v-if="order.customer_relay_code">
-        · <span data-contact-relay-code>Código {{ order.customer_relay_code }}</span>
-        <template v-if="relayExpires"> · {{ relayExpires }}</template>
-      </template>
-      <span v-else data-contact-relay-expired> · Código vencido: o iFood não repassa mais a ligação</span>
-    </template>
-  </NuxtAlert>
+  <!-- Pedido do iFood: o número NÃO é do cliente, é o 0800 da central deles com um
+       código que vence. Ele não entra aqui: fica no rodapé do detalhe, sem destaque
+       (dono, 12/11/2026: "pró-forma"). -->
   <NuxtButton
-    v-if="order.customer_phone_uri"
+    v-if="order.customer_phone_uri && !order.customer_relay_phone"
     :to="order.customer_phone_uri"
     color="neutral"
     variant="outline"
     icon="i-lucide-phone"
-    :label="compact ? undefined : (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar')"
-    :aria-label="compact ? (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar para o cliente') : (order.customer_relay_phone ? 'Ligar pela central' : 'Ligar')"
+    :label="compact ? undefined : 'Ligar'"
+    :aria-label="compact ? 'Ligar para o cliente' : 'Ligar'"
     data-contact-phone
   />
   <NuxtButton

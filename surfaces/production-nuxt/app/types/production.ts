@@ -14,6 +14,7 @@ import type {
   ProductionBoardProjection,
   ProductionDashboardProjection,
   ProductionForecastProjection as ProductionForecastContract,
+  ProductionFormulaLimitProjection as ProductionFormulaLimitContract,
   ProductionKDSCardProjection as ProductionKDSCardContract,
   ProductionKDSProjection as ProductionKDSContract,
   ProductionMiseEnPlaceProjection,
@@ -30,11 +31,13 @@ import type {
 export type {
   BaseRecipeOptionProjection,
   BaseRecipeUsageProjection,
+  DayLossByUnitProjection,
+  LossPartProjection,
   MiseEnPlaceBreakdownProjection,
   MiseEnPlaceLineProjection,
   OperatorProductivityRow,
-  OrderCommitmentProjection,
   PositionOptionProjection,
+  ProductionActionProjection,
   ProductionBlindMapProjection,
   ProductionBlindMapRowProjection,
   ProductionBoardProjection,
@@ -46,6 +49,7 @@ export type {
   ProductionMatrixGroupRowProjection,
   ProductionMatrixRowProjection,
   ProductionMiseEnPlaceProjection,
+  ProductionPromisedProjection,
   ProductionReportsProjection,
   ProductionSuggestionProjection,
   ProductionSurfaceAccess,
@@ -58,16 +62,23 @@ export type {
   RecipeWasteRow,
   SuggestionMaterialShortageProjection,
   PlanCarryNoteProjection,
+  PromisedOrderProjection,
   WorkOrderCardProjection,
   WorkOrderReportRow,
 } from "~/generated/productionContract";
 
 export type ProductionTimerStatusCode = "on_time" | "warning" | "late";
 
+export interface ProductionFormulaLimitProjection
+  extends ProductionFormulaLimitContract {
+  kind: "fixed" | "ratio";
+}
+
 // ── Live floor (KDS) ───────────────────────────────────────────────────────
 
 export interface ProductionKDSCardProjection extends ProductionKDSCardContract {
   timer_status_code: ProductionTimerStatusCode;
+  formula_limits: ProductionFormulaLimitProjection[];
 }
 
 export interface ProductionKDSProjection extends ProductionKDSContract {
@@ -85,7 +96,7 @@ export interface ProductionBoardResponse {
 }
 
 // ── O PAINEL — previsão da produção (estilo aeroporto) ──────────────────────
-// O status É a escada de confiança: Planejado → Previsto → Confirmado.
+// O status É a escada de confiança: Planejado → Previsto → Fechado.
 
 export type ForecastStatus =
   "scheduled" | "in_progress" | "delayed" | "arrived";
@@ -202,7 +213,7 @@ export interface ProductionBlindMapResponse {
   blind_map: ProductionBlindMapProjection;
 }
 
-// ── Quiosque de QC (fechamento de fornada — ADR-017 §9) ─────────────────────
+// ── Quiosque de QC (finalização de fornada — ADR-017 §9) ─────────────────────
 
 export interface ProductionQCResponse {
   qc: QCKioskProjection;

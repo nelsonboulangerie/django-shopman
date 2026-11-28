@@ -1,0 +1,113 @@
+{
+  "strict": false,
+  "checks": [
+    {
+      "context": "Testes (test-backstage)",
+      "app_id": 15368
+    },
+    {
+      "context": "Browser QA (Nuxt store + Django operator)",
+      "app_id": 15368
+    },
+    {
+      "context": "Quality + deploy contract",
+      "app_id": 15368
+    },
+    {
+      "context": "Docker deploy image",
+      "app_id": 15368
+    },
+    {
+      "context": "PostgreSQL + Redis runtime stress gate",
+      "app_id": 15368
+    },
+    {
+      "context": "operator-kit",
+      "app_id": 15368
+    },
+    {
+      "context": "storefront-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "pos-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "kds-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "orders-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "production-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "hub-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "marketing-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "purchase-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "bi-nuxt",
+      "app_id": 15368
+    },
+    {
+      "context": "Testes (test-cores)",
+      "app_id": 15368
+    },
+    {
+      "context": "Testes (test-counter-agent)",
+      "app_id": 15368
+    },
+    {
+      "context": "Testes (test-shop)",
+      "app_id": 15368
+    },
+    {
+      "context": "Testes (test-storefront)",
+      "app_id": 15368
+    },
+    {
+      "context": "Storefront E2E (Playwright)",
+      "app_id": 15368
+    },
+    {
+      "context": "Admin/Unfold gate",
+      "app_id": 15368
+    },
+    {
+      "context": "Admin CSP (production settings)",
+      "app_id": 15368
+    },
+    {
+      "context": "Gate da meia-correção",
+      "app_id": 15368
+    },
+    {
+      "context": "Coverage Gate",
+      "app_id": 15368
+    },
+    {
+      "context": "Security Gate",
+      "app_id": 15368
+    },
+    {
+      "context": "Production Contract",
+      "app_id": 15368
+    },
+    {
+      "context": "Operator Groups Contract",
+      "app_id": 15368
+    }
+  ]
+}

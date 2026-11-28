@@ -190,7 +190,7 @@ describe("useCounterAgent — impressora e gaveta são capacidades SEPARADAS", (
     expect(outcome.status).toBe("skipped");
     expect(outcome.detail).toContain("Impressora");
     expect(outcome.detail).not.toContain("Gaveta");
-    expect(counter.printUnavailableReason.value).toContain("Terminais do PDV");
+    expect(counter.printUnavailableReason.value).toBe("Impressora não configurada neste balcão. Chame o gerente.");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
@@ -227,7 +227,8 @@ describe("useCounterAgent — a tela diz por que não dá", () => {
 
   it("terminal que não mandou motivo ainda assim explica algo útil", () => {
     // Card mudo é pior que card ausente: o operador fica sem próximo passo.
-    expect(makeDrawer(null).unavailableReason.value).toContain("Terminais do PDV");
+    // Quem lê é o balcão: o próximo passo é chamar o gerente (beta 05/11, PDV-11).
+    expect(makeDrawer(null).unavailableReason.value).toBe("Gaveta não configurada neste balcão. Chame o gerente.");
   });
 });
 

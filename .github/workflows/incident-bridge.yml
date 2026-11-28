@@ -1,0 +1,47 @@
+name: Incident Bridge
+
+# Todo alerta de produção vira issue `alerta` com dono e fecha sozinha depois de
+# 24 h verdes (scripts/incident_bridge.py, docs/reference/incidents.md). O e-mail
+# crítico continua sendo o aviso imediato; a issue é o registro com dono.
+#
+# Liga quando a variável INCIDENTS_URL existe (com o segredo INCIDENTS_TOKEN,
+# emitido por `issue_incident_reader_credential`). Sem ela, o job nem sobe.
+"on":
+  schedule:
+    # A cada 2 h: a issue é o livro, não o pager. Custo: ~12 minutos de runner por dia.
+    - cron: "41 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: incident-bridge
+  cancel-in-progress: false
+
+jobs:
+  bridge:
+    name: Alertas viram issues com dono
+    if: ${{ vars.INCIDENTS_URL != '' }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Stdlib-only: não instala Django nem dependência nenhuma.
+      - name: Sincronizar issues
+        env:
+          INCIDENTS_URL: ${{ vars.INCIDENTS_URL }}
+          INCIDENTS_TOKEN: ${{ secrets.INCIDENTS_TOKEN }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          DO_READ_TOKEN: ${{ secrets.DIGITALOCEAN_READ_TOKEN }}
+          DO_APP_NAME: ${{ vars.DO_APP_NAME }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/incident_bridge.py

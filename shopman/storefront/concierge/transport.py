@@ -568,14 +568,21 @@ class ManyChatWhatsAppAdapter:
         return HandoffOutcome("accepted")
 
     def identify(self, subject: str, profile: Mapping[str, Any]):
-        from shopman.guestman.adapters.auth import CustomerResolver
+        from shopman.shop.services.auth import identify_manychat_subject
 
-        info = CustomerResolver().upsert_manychat_subscriber({"id": subject})
+        info = identify_manychat_subject(subject)
         if info is None:
             return None
+        phone_handle = info.handle("whatsapp") or info.handle("phone")
+        from shopman.shop.services.auth import number_proof_expired
+
+        phone = phone_handle.value if phone_handle else ""
+        # O assinante prova o número, não as mãos (D3). Número sem uso verificado há
+        # mais de 12 meses não reconhece a conta sozinho: a pessoa confirma o acesso.
+        expired = number_proof_expired(customer_uuid=info.subject_id, phone=phone)
         return IdentityResolution(
-            customer_uuid=info.uuid,
-            assurance="verified_customer",
-            phone=info.phone or "",
+            customer_uuid=info.subject_id,
+            assurance="unverified" if expired else "verified_customer",
+            phone=phone_handle.value if phone_handle else "",
             name=info.name or "",
         )

@@ -15,7 +15,9 @@ import type {
   POSPaymentResultProjection,
   POSPaymentTenderDraft,
 } from "~/types/pos";
+import { unplannedOrderNote } from "~/presentation/catalog";
 import { formatBRL } from "~/utils/posIntent";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const PAYMENT_ICONS: Record<string, string> = {
   cash: "lucide:banknote",
@@ -117,6 +119,19 @@ export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number)
   return excess - Math.min(excess, cashTenderSumQ(tenders));
 }
 
+/**
+ * Troco a partir da maior cédula do Real (R$ 200) é, quase sempre, um zero a mais
+ * no recebido: ninguém entrega uma nota de R$ 200 sobrando. O PDV aceitava
+ * "recebido R$ 10.000,00" numa venda de R$ 48,60 e mandava dar R$ 9.951,40 de
+ * troco sem uma palavra (beta 07/11). A tela pede a confirmação, não recusa: a
+ * conta pode estar certa, e quem decide é quem tem o dinheiro na mão.
+ */
+export const IMPLAUSIBLE_CHANGE_Q = 20000;
+
+export function isImplausibleChange(changeQ: number): boolean {
+  return changeQ >= IMPLAUSIBLE_CHANGE_Q;
+}
+
 // ── DIVIDIR A CONTA ──────────────────────────────────────────────────
 //
 // "Somos três, cada um paga o seu." O trilho de tenders já dava conta disso — o
@@ -160,6 +175,33 @@ export function splitShareQ(
   const share =
     Math.round((totalQ * (paidCount + 1)) / count) - Math.round((totalQ * paidCount) / count);
   return Math.min(Math.max(0, share), restante);
+}
+
+/**
+ * A forma que o sistema lançou sozinha com o total inteiro e ninguém tocou.
+ *
+ * Tocar num método lança uma linha do tamanho do restante (``_virgin``). Se o
+ * cliente diz "vamos dividir" logo depois, essa linha é rascunho, não pagamento:
+ * ela vira a parte da primeira pessoa e as prévias dividem o TOTAL. Sem isto a
+ * divisão partia de um restante zerado e o modal oferecia "R$ 0,00" para 2 a 6
+ * pessoas (beta test de 05/11/2026).
+ */
+export function splitDraftTender(
+  tenders: POSPaymentTenderDraft[],
+  totalQ: number,
+): POSPaymentTenderDraft | null {
+  if (tenders.length !== 1 || totalQ <= 0) return null;
+  const only = tenders[0]!;
+  return only._virgin && only.amount_q === totalQ ? only : null;
+}
+
+/** O restante que a divisão enxerga: a forma-rascunho não conta como paga. */
+export function splitBaseRemainingQ(
+  tenders: POSPaymentTenderDraft[],
+  totalQ: number,
+  remainingQ: number,
+): number {
+  return splitDraftTender(tenders, totalQ) ? totalQ : remainingQ;
 }
 
 /**
@@ -275,8 +317,8 @@ export function paymentConfirmView(options: { machine: number; pix: number }): P
     };
   }
   return {
-    title: "Passe na maquininha",
-    description: "Digite este valor no terminal e conclua a operação com o cliente.",
+    title: "Cobre na maquininha",
+    description: "Digite este valor na maquininha e passe o cartão do cliente.",
     cta: "OK, cobrei na maquininha",
   };
 }
@@ -341,16 +383,108 @@ export function cashNotesQ(contract: POSCheckoutContractProjection | null = null
   return positive.length ? positive : BRL_CASH_NOTES_Q;
 }
 
-/** Collections offered for the current fulfillment type (e.g. on-delivery vs terminal). */
+/**
+ * Collections offered for the current fulfillment type (e.g. on-delivery vs terminal).
+ *
+ * Encomenda de OUTRO dia não oferece "Na retirada" (D-041, decisão 3: "KISS"):
+ * vale a regra de 28/08, "encomenda cobra antes". Na K16 os R$ 2.747,00 de 200
+ * baguetes ficaram para a retirada, sem cobrança e sem gerente. O servidor recusa
+ * o mesmo (`pay_at_pickup_other_day`); aqui a opção simplesmente não aparece.
+ */
 export function collectionsForFulfillment(
   collections: POSPaymentCollectionProjection[],
   fulfillmentType: string,
   salesMode?: "counter" | "order",
+  otherDay = false,
 ): POSPaymentCollectionProjection[] {
   return collections.filter((collection) =>
     collection.fulfillment_types.includes(fulfillmentType as "pickup" | "delivery")
-    && !(collection.ref === "on_delivery" && fulfillmentType === "pickup" && salesMode !== "order"),
+    && !(collection.ref === "on_delivery" && fulfillmentType === "pickup" && (salesMode !== "order" || otherDay)),
   );
+}
+
+// ── O LASTRO DA ENCOMENDA (WP-E2, D-041) ──────────────────────────────────
+//
+// A encomenda para outro dia promete o que a fornada da data cobre. Na K16 a
+// Caixa prometeu 200 baguetes contra 22 planejadas, e a tela só mostrava uma
+// ressalva recolhida. Os números vêm do servidor (`/pos/schedule/` na linha,
+// `review.preorder_over_plan` no Validar); a tela só os diz.
+
+/** Quantidade na língua do balcão: `22`, `0,5`. */
+function qtyText(value: number): string {
+  return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3))).replace(".", ",");
+}
+
+/** `2026-11-17` → `17/11`. */
+function dayMonth(iso: string): string {
+  const [, month, day] = String(iso || "").split("-");
+  return day && month ? `${day}/${month}` : "";
+}
+
+export interface PlanLineFact {
+  text: string;
+  /** O pedido desta linha passa do que o lote da data ainda tem sem encomenda:
+   *  o Validar vai pedir o gerente. */
+  over: boolean;
+  /** A data ainda não tem lote planejado do item: vira pedido à Produção, e
+   *  nada pede o gerente (WP-E3, D2). */
+  unplanned?: boolean;
+}
+
+/** O que do lote ainda está sem encomenda, nunca maior que o planejado. */
+function unclaimedOf(planned: number, unclaimed: number): number {
+  return Math.min(planned, Math.max(0, unclaimed));
+}
+
+/**
+ * O fato da linha da encomenda: "22 planejadas para 17/11". Quando outras
+ * encomendas já prometeram parte do lote, o que sobra dele vem junto ("22
+ * planejadas para 17/11, 12 ainda sem encomenda"), porque é contra isso que o
+ * pedido é medido. A régua é só o lote planejado PARA a data: a sobra de hoje não
+ * lastreia encomenda (dono, 18/11/2026). Sem lote planejado informado, nada.
+ *
+ * O servidor manda os dois zeros quando a data ainda não tem lote planejado do
+ * item (WP-E3): a linha diz "Ainda sem lote planejado para 30/11: vira pedido à
+ * Produção", e não passa do plano (não há plano a passar; D2).
+ */
+export function planLineFact(
+  qty: number,
+  backing: { planned_qty: number; unclaimed_qty: number } | null | undefined,
+  dateIso: string,
+): PlanLineFact | null {
+  if (!backing) return null;
+  const day = dayMonth(dateIso);
+  if (day && backing.planned_qty === 0) return { text: unplannedOrderNote(dateIso), over: false, unplanned: true };
+  const planned = Number(backing.planned_qty) || 0;
+  if (!day || planned <= 0) return null;
+  const unclaimed = unclaimedOf(planned, Number(backing.unclaimed_qty) || 0);
+  let text = `${qtyText(planned)} planejadas para ${day}`;
+  if (unclaimed < planned) text += `, ${qtyText(unclaimed)} ainda sem encomenda`;
+  return { text, over: (Number(qty) || 0) > unclaimed };
+}
+
+/** Os números de uma linha acima do plano: "200 pedidas, 22 planejadas para 17/11". */
+export function overPlanNumbers(line: {
+  requested_qty: number;
+  planned_qty: number;
+  unclaimed_qty: number;
+  date: string;
+}): string {
+  const day = dayMonth(line.date);
+  const planned = Number(line.planned_qty) || 0;
+  const unclaimed = unclaimedOf(planned, Number(line.unclaimed_qty) || 0);
+  const base = `${qtyText(Number(line.requested_qty) || 0)} pedidas, ${qtyText(planned)} planejadas${day ? ` para ${day}` : ""}`;
+  return unclaimed < planned ? `${base} (${qtyText(unclaimed)} ainda sem encomenda)` : base;
+}
+
+/**
+ * O aviso que trava o Validar quando a encomenda passa do plano, com o produto e
+ * os dois números. É também o que o gerente lê no diálogo antes de liberar.
+ */
+export function overPlanSummary(
+  lines: Array<{ name: string; requested_qty: number; planned_qty: number; unclaimed_qty: number; date: string }> | null | undefined,
+): string {
+  return (lines ?? []).map((line) => `${line.name}: ${overPlanNumbers(line)}.`).join(" ");
 }
 
 /**
@@ -433,10 +567,7 @@ export function paymentDeadlineLabel(iso: string, now: Date = new Date()): strin
   if (!iso) return "";
   const deadline = new Date(iso);
   if (Number.isNaN(deadline.getTime())) return "";
-  const minutes = deadline.getMinutes();
-  const hora = minutes === 0
-    ? `${deadline.getHours()}h`
-    : `${deadline.getHours()}h${String(minutes).padStart(2, "0")}`;
+  const hora = formatClock(deadline);
   // Dias entre as MEIAS-NOITES locais: "amanhã" é o dia civil seguinte, não
   // "daqui a 24 h" — às 23h, um link que vence às 0h30 já é "amanhã".
   const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();

@@ -4,6 +4,8 @@ import {
   accountGreeting,
   accountNavCards,
   loyaltyView,
+  orderOpenIcon,
+  orderOpenLabel,
   ordersCountLabel,
   orderStatusAccentClass,
   orderStatusDotClass,
@@ -32,13 +34,16 @@ const greeting = computed(() => accountGreeting(
 const loyalty = computed(() => loyaltyView(summary.value?.loyalty))
 const navCards = computed(() => accountNavCards(summary.value || null))
 // Pedidos em andamento são o primeiro conteúdo da conta; o "Último pedido"
-// vira fallback quando não há nada ativo (aí sim, Refazer é o convite certo).
+// vira fallback quando não há nada ativo (aí sim, repetir é o convite certo).
 const activeOrders = computed(() => summary.value?.active_orders ?? [])
 const countLabel = computed(() => ordersCountLabel(
   summary.value?.active_order_count || 0,
   summary.value?.total_order_count || 0
 ))
 const lastOrder = computed(() => summary.value?.last_order || null)
+// O "Último pedido" só aparece quando nada está em andamento: é pedido encerrado,
+// e o botão dele diz "Ver pedido".
+const LAST_ORDER_IS_OVER = { is_active: false } as const
 const lastOrderReorder = computed(() => (lastOrder.value ? reorderActionFrom(lastOrder.value) : null))
 const conflictRef = conflict as Ref<ReorderConflictProjection | null>
 // Ação de substituição do diálogo de conflito (prefere a action 'replace'; senão a 1ª).
@@ -95,7 +100,10 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
            botão descia. Aqui a coluna da esquerda encolhe e o botão fica ancorado. -->
       <header class="flex items-start justify-between gap-3">
         <div class="min-w-0 flex-1">
-          <h1 class="truncate shop-title">{{ greeting }}</h1>
+          <!-- O h1 diz o que a página é; a saudação segue visível no mesmo lugar,
+               mas não é o assunto da página (OC-32). -->
+          <h1 class="sr-only">Sua conta</h1>
+          <p class="truncate shop-title" data-account-greeting>{{ greeting }}</p>
           <p class="mt-0.5 shop-muted">
             <template v-if="pending">Carregando sua conta…</template>
             <template v-else>{{ countLabel }}</template>
@@ -103,6 +111,9 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
         </div>
         <UiButton variant="ghost" size="sm" icon="lucide:log-out" class="shrink-0" @click="logoutOpen = true">Sair</UiButton>
       </header>
+
+      <!-- O selo da versão de teste da equipe (DEV-2026-096): só com `team_preview` no shell. -->
+      <TeamPreviewNotice placement="account" />
 
       <!-- Travessia de navegador: só aparece quando o browser embutido atrapalha uma pessoa
            já identificada. Acesso rápido fica opt-in em Segurança, não como convite no fluxo. -->
@@ -117,7 +128,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             </UiAlertDialogDescription>
           </UiAlertDialogHeader>
           <UiAlertDialogFooter>
-            <UiAlertDialogCancel :disabled="loggingOut">Ficar conectado</UiAlertDialogCancel>
+            <UiAlertDialogCancel :disabled="loggingOut">Continuar na conta</UiAlertDialogCancel>
             <UiAlertDialogAction :disabled="loggingOut" @click.prevent="logout">
               {{ loggingOut ? 'Saindo…' : 'Sair' }}
             </UiAlertDialogAction>
@@ -144,7 +155,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             :class="orderStatusAccentClass(order.status_tone)"
           >
             <div class="min-w-0">
-              <p class="flex items-center gap-2 font-semibold">
+              <p class="flex items-center gap-2 font-semibold" data-decisive="state">
                 <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
                 {{ order.status_label }}
                 <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>
@@ -207,7 +218,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
             <p class="shop-muted">{{ lastOrder.created_at_display }}</p>
           </div>
           <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" icon="lucide:radar">Acompanhar</UiButton>
+            <UiButton :to="orderTrackingRoute(lastOrder.ref)" variant="outline" size="sm" :icon="orderOpenIcon(LAST_ORDER_IS_OVER)" data-order-open>{{ orderOpenLabel(LAST_ORDER_IS_OVER) }}</UiButton>
             <UiButton
               v-if="lastOrderReorder"
               size="sm"
@@ -215,7 +226,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
               :loading="!!reorderPending[lastOrder.ref]"
               @click="performAction(lastOrderReorder)"
             >
-              Refazer
+              {{ lastOrderReorder.label }}
             </UiButton>
           </div>
         </div>

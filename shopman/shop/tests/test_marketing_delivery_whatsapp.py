@@ -279,6 +279,37 @@ def test_campaign_reaches_manychat_through_approval_outbox_ledger_and_adapter(ma
     assert _claim(campaign).targets == ()
 
 
+def test_approved_whatsapp_adapter_uses_only_the_sealed_target(manychat, campaign):
+    from shopman.shop.services.marketing_artifacts import resolve_target_dispatch_artifact
+
+    calls, _responses = manychat
+    _stage(campaign)
+    target = _listed_target(campaign)
+    artifact = resolve_target_dispatch_artifact(target)
+    token = deterministic_attempt_token(target.ref, worker_id=WORKER, now=campaign["clock"])
+    target.state = DeliveryTarget.State.SENDING
+    target.lease_owner = ""
+    target.lease_until = None
+    target.save(update_fields=["state", "lease_owner", "lease_until"])
+
+    whatsapp._require_sealed_flow(artifact, target.target_fingerprint)
+    assert whatsapp._sending_target(
+        artifact=artifact,
+        target_key=target.target_fingerprint,
+        idempotency_token=token,
+    ) == target
+    context = whatsapp.sealed_context(target.artifact, artifact)
+    outcome = whatsapp.send(
+        artifact=artifact,
+        target_key=target.target_fingerprint,
+        idempotency_token=token,
+    )
+
+    assert context["body"] == target.artifact.payload["resolved_artifacts"]["whatsapp"]["body"]
+    assert outcome.kind.value == "accepted_unconfirmed"
+    assert _flow_sends(calls) == 1
+
+
 def test_the_maintenance_worker_pass_delivers_the_approved_campaign_once(
     manychat, campaign, monkeypatch
 ):

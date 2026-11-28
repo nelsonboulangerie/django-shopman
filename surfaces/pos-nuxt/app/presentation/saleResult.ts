@@ -110,16 +110,13 @@ export function resolveFiscalState(
  * O rótulo curto do estado da NFC-e — chip das Últimas vendas e da tela de resultado.
  *
  * ⚠️ `not_expected` é o COMPORTAMENTO PADRÃO da casa (nota só quando pedem: nota,
- * CPF ou comprovante), não um defeito. Um rótulo de ausência lê como falta — o
- * operador veria uma venda normal marcada como se algo tivesse dado errado.
- * "Emissão não estabelecida" (escolha do Pablo) diz o fato sem alarme: a regra
- * não estabeleceu nota para esta venda. NÃO "revogada" — no vocabulário fiscal
- * isso é nota que existiu e foi desfeita, rótulo que mente. Os outros estados
- * falam o MESMO texto da pill do Gestor de Pedidos (`order_queue._FISCAL_PILL`).
- * ⚠️ Este não: o Gestor passou a dizer "Sem NFC-e neste pedido" (#1143), e a
- * escolha entre os dois é do dono. O alarme fica com quem merece (`failed`), e o chip
- * continua neutro (`not_requested` em `PosRecentSales`). Se o cliente voltar
- * pedindo, a emissão avulsa sai da mesma lista, com gerente.
+ * CPF ou comprovante), não um defeito. "NFC-e não solicitada" diz o fato em português
+ * claro e sem alarme (dono, 07/11/2026). NÃO
+ * "revogada": no vocabulário fiscal isso é nota que existiu e foi desfeita. Todos os
+ * estados falam o MESMO texto da pill do Gestor de Pedidos (`order_queue._FISCAL_PILL`).
+ * O alarme fica com quem merece (`failed`), e o chip continua neutro (`not_requested`
+ * em `PosRecentSales`). Se o cliente voltar pedindo, o "Solicitar NFC-e…" sai da mesma
+ * lista, com gerente.
  */
 export function fiscalStateLabel(state: PosFiscalState): string {
   switch (state) {
@@ -129,7 +126,8 @@ export function fiscalStateLabel(state: PosFiscalState): string {
     case "awaiting_pickup": return "NFC-e sai na retirada";
     case "awaiting_delivery": return "NFC-e sai na entrega";
     case "failed": return "NFC-e não autorizada";
-    default: return "Emissão não estabelecida";
+    case "not_issued": return "Sem NFC-e: o pedido foi cancelado";
+    default: return "NFC-e não solicitada";
   }
 }
 
@@ -192,8 +190,29 @@ export function saleResultTitle(
   // não entrou, e o título é a primeira coisa que o operador lê.
   if (paymentFailed(payment)) return "Venda registrada, cobrança não criada";
   if (pixAwaiting(payment, pixStatus)) return "Aguardando Pix";
+  // O Pix venceu sem pagar: a venda existe e o dinheiro não entrou. O aviso da
+  // tela diz o quê e traz o botão; o título só não pode afirmar o contrário.
+  if (pixUnpaid(payment, pixStatus)) return "Venda registrada";
   const nome = firstName(customerName);
   return nome ? `Venda concluída. Obrigado, ${nome}!` : "Venda concluída";
+}
+
+/**
+ * O título da BARRA DO TOPO na tela de resultado: o mesmo estado do título da
+ * tela, sem o obrigado nominal (a barra é curta e fica na periferia da visão).
+ *
+ * ⚠️ A barra não pode discordar da tela. Ela tinha uma regra própria, e com o
+ * Pix vencido dizia "Venda concluída" em cima de "Venda registrada" (auditoria
+ * do #2918, captura a 375 px). Agora deriva de `saleResultTitle`.
+ */
+export function saleResultBarTitle(
+  salesMode: PosSaleResultSnapshot["salesMode"],
+  payment: PaymentProofView | null,
+  pixStatus: PixPollStatus,
+): string {
+  if (paymentFailed(payment)) return "Cobrança não criada";
+  if (salesMode === "order") return "Encomenda registrada";
+  return saleResultTitle("", payment, pixStatus);
 }
 
 /**
@@ -208,6 +227,7 @@ export function saleResultTone(
   pixStatus: PixPollStatus,
 ): "failed" | "awaiting" | "settled" {
   if (paymentFailed(payment)) return "failed";
+  if (pixUnpaid(payment, pixStatus)) return "failed";
   if (pixAwaiting(payment, pixStatus)) return "awaiting";
   return "settled";
 }
@@ -227,12 +247,39 @@ export function paymentFailed(payment: PaymentProofView | null): boolean {
   return status === "error" || status === "unavailable";
 }
 
-/** PIX com prova na tela e confirmação ainda não chegada (polling vivo). */
+/** Pix com prova na tela e confirmação ainda não chegada (polling vivo). */
 export function pixAwaiting(payment: PaymentProofView | null, pixStatus: PixPollStatus): boolean {
   return Boolean(payment?.isPix && payment?.hasProof) && pixStatus === "polling";
 }
 
+/**
+ * O Pix VENCEU sem pagar (expirado, cancelado ou passou do prazo de espera).
+ *
+ * A venda fechou e o QR não vale mais: o PDV não gera outro Pix para uma venda
+ * fechada, e o pagamento se acerta no pedido, no Gestor. Até 20/11/2026 a tela
+ * caía aqui no verde de "Venda concluída", com o QR morto ainda à mostra.
+ */
+export function pixUnpaid(payment: PaymentProofView | null, pixStatus: PixPollStatus): boolean {
+  return Boolean(payment?.isPix && payment?.hasProof) && pixStatus === "expired";
+}
+
 /** Troco pronto para exibir; "" quando não há troco. */
+/**
+ * O selo do cabeçalho para os Pix ainda abertos fora da tela de resultado. Um só
+ * selo, de altura fixa, por mais que haja: com um, diz o pedido; com vários, a
+ * contagem, e os pedidos vão inteiros no `title`. `null` = nenhum Pix aberto.
+ */
+export function pendingPixBadge(orderRefs: readonly string[]): { label: string; title: string } | null {
+  if (orderRefs.length === 0) return null;
+  if (orderRefs.length === 1) {
+    return { label: `Pix aguardando · ${orderRefs[0]}`, title: `Pix do pedido ${orderRefs[0]} aguardando confirmação` };
+  }
+  return {
+    label: `${orderRefs.length} Pix aguardando`,
+    title: `Pix aguardando confirmação nos pedidos ${orderRefs.join(", ")}`,
+  };
+}
+
 export function changeDisplay(changeQ: number): string {
   return changeQ > 0 ? formatBRL(changeQ) : "";
 }
@@ -243,7 +290,7 @@ export const AUTO_ADVANCE_SECONDS = 5;
  * Auto-avanço para a próxima venda: só quando NADA na tela pede gesto.
  *
  * - Troco a conferir → NUNCA: a tela não some sozinha em cima do dinheiro.
- * - PIX aguardando ou expirado → NUNCA: prova pendente/não resolvida não é
+ * - Pix aguardando ou expirado → NUNCA: prova pendente/não resolvida não é
  *   descartada em silêncio (sair exige toque explícito).
  * - COBRANÇA FALHADA → NUNCA: a venda ficou sem cobrança, e essa é a única
  *   tela que diz isso. Sair dali é decisão de quem vai cobrar de outro jeito.
@@ -268,7 +315,7 @@ export function autoAdvanceSeconds(
 
 /**
  * Enter avança? Nunca com troco pendente de confirmação (o Enter que validou a
- * venda não pode engolir a tela do troco) nem com PIX ainda aguardando — nesses
+ * venda não pode engolir a tela do troco) nem com Pix ainda aguardando — nesses
  * dois casos sair é gesto deliberado no CTA (ou F2).
  */
 export function enterAdvances(inputs: SaleResultAdvanceInputs): boolean {
@@ -281,6 +328,9 @@ export function enterAdvances(inputs: SaleResultAdvanceInputs): boolean {
   // cobrança não foi criada.
   if (paymentFailed(inputs.payment)) return false;
   if (pixAwaiting(inputs.payment, inputs.pixStatus)) return false;
+  // Nem por cima do aviso de que o Pix venceu sem pagar: o mesmo motivo da
+  // cobrança não criada, a venda ficou com o dinheiro em aberto.
+  if (pixUnpaid(inputs.payment, inputs.pixStatus)) return false;
   // Mesmo motivo do auto-avanço: o Enter que validou a venda não pode engolir a
   // tela onde o link mora. Sair dali é gesto deliberado no CTA (ou F2).
   if (inputs.payment?.isLink && inputs.payment.hasProof) return false;

@@ -69,6 +69,19 @@ class RescheduleError(OrderError):
         self.field = field
 
 
+class CustomerNoticeError(OrderError):
+    """Aviso ao cliente recusado (``shop.services.customer_notice.CustomerNoticeRefused``).
+
+    Mesmo formato do :class:`RescheduleError`: ``field`` aponta a escolha da tela
+    (``kind``, ``eta``, ``lines``).
+    """
+
+    def __init__(self, message: str, *, code: str = "", field: str = ""):
+        super().__init__(message)
+        self.code = code
+        self.field = field
+
+
 class OrderEditError(OrderError):
     """Edição da encomenda recusada (``shop.services.order_edit.EditRefused``).
 
@@ -193,18 +206,22 @@ class CustomerNotFound(CustomerMergeError):
 class CustomerMutationError(BackstageServiceError):
     """Recusa de criar/editar cliente já traduzida para o Gestor."""
 
-    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload", owner: dict | None = None):
         super().__init__(detail)
         self.detail = detail
         self.field = field
         self.code = code
+        # O cadastro dono do contato recusado (``{ref, name}``), para a tela levar até ele.
+        self.owner = dict(owner) if owner else None
 
 
 class CustomerGroupMutationError(BackstageServiceError):
     """Recusa de criar/editar grupo comercial já traduzida para o Gestor."""
 
-    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload"):
+    def __init__(self, detail: str, *, field: str = "", code: str = "invalid_payload", owner: dict | None = None):
         super().__init__(detail)
         self.detail = detail
         self.field = field
         self.code = code
+        # O cadastro dono do contato recusado (``{ref, name}``), para a tela levar até ele.
+        self.owner = dict(owner) if owner else None

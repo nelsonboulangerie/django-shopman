@@ -13,11 +13,17 @@ memória de processo e é controlável pelo teste/dev:
 from __future__ import annotations
 
 from .courier_machine import (  # noqa: F401 — mesma semântica de status
+    BEFORE_ACCEPT_STATUSES,
+    CANCEL_REASON_BEFORE_ACCEPT,
+    CANCEL_REASON_REFUSED_CODE,
+    CANCEL_REASONS_AFTER_ACCEPT,
     CANCELLABLE_STATUSES,
+    CAPABILITIES,
     TERMINAL_STATUSES,
     CourierDispatchResult,
     CourierError,
     CourierEstimate,
+    ride_state,
 )
 
 _rides: dict[str, dict] = {}
@@ -48,6 +54,11 @@ def fail_reads(courier_ref: str, message: str = "[67] O usuário informado não 
     _rides.setdefault(courier_ref, {})["read_error"] = message
 
 
+def set_tracking_links(courier_ref: str, links) -> None:
+    """Simula a resposta de ``/obterLinkRastreio`` (lista fora de ordem, com ``id_externo``, formato único)."""
+    _rides.setdefault(courier_ref, {})["tracking_links"] = links
+
+
 def rides() -> dict[str, dict]:
     """Estado interno (payloads despachados) — para asserts em testes."""
     return _rides
@@ -57,10 +68,12 @@ def is_configured() -> bool:
     return True
 
 
-def estimate(*, pickup: dict, dropoff: dict) -> CourierEstimate | None:
+def estimate(*, pickup: dict, dropoff: dict, with_return: bool = False,
+             stops: list[dict] | None = None) -> CourierEstimate | None:
     if not all([pickup.get("lat"), pickup.get("lng"), dropoff.get("lat"), dropoff.get("lng")]):
         return None
-    return CourierEstimate(value_q=1250, minutes=18.0, km=4.2)
+    extra = len(stops or [])
+    return CourierEstimate(value_q=1250 + 400 * extra, minutes=18.0 + 6 * extra, km=round(4.2 + 1.5 * extra, 1))
 
 
 def dispatch(payload: dict) -> CourierDispatchResult:
@@ -123,25 +136,50 @@ def get_position(courier_ref: str) -> dict | None:
     return None
 
 
-def cancel(courier_ref: str, *, reason_id: int | None = None) -> bool:
+def cancel(courier_ref: str, *, reason_id: int) -> bool:
+    """Cancela como a central: o motivo tem de ser o da fase, senão erro 102.
+
+    Antes do aceite só o 10; depois do aceite, a lista de
+    ``CANCEL_REASONS_AFTER_ACCEPT``. Os motivos recebidos ficam em
+    ``rides()[ref]["cancel_reasons"]``, para o teste conferir o que foi enviado.
+    """
     ride = _rides.get(courier_ref)
     if ride is None:
         raise CourierError("Solicitação não encontrada.", transient=False)
     if ride.get("status") in TERMINAL_STATUSES:
         raise CourierError("Solicitação já finalizada/cancelada.", transient=False)
+    ride.setdefault("cancel_reasons", []).append(reason_id)
+    before_accept = (ride.get("status") or "D") in BEFORE_ACCEPT_STATUSES
+    accepted = reason_id == CANCEL_REASON_BEFORE_ACCEPT if before_accept else reason_id in CANCEL_REASONS_AFTER_ACCEPT
+    if not accepted:
+        raise CourierError(
+            f"Machine recusou (400): [{CANCEL_REASON_REFUSED_CODE}] Motivo de cancelamento inválido para o status.",
+            transient=False, codes=(CANCEL_REASON_REFUSED_CODE,),
+        )
     ride["status"] = "C"
     return True
 
 
 def tracking_links(courier_ref: str) -> list[dict]:
-    if courier_ref not in _rides:
+    """Uma entrada por parada, na ordem enviada (o formato da coleção original da TaOn).
+
+    Corrida de uma parada mantém o link de sempre; com várias, cada parada tem o
+    seu. ``set_tracking_links`` troca a resposta para o teste do casamento.
+    """
+    ride = _rides.get(courier_ref)
+    if ride is None:
         return []
+    if "tracking_links" in ride:
+        return [dict(entry) for entry in ride["tracking_links"]]
+    stops = (ride.get("payload") or {}).get("paradas") or [{}]
+    base = f"https://rastreio.mock/pedido/{courier_ref}"
     return [
         {
-            "parada_id": "1",
-            "link_rastreio": f"https://rastreio.mock/pedido/{courier_ref}",
-            "codigo_confirmacao": 1234,
+            "parada_id": str(index),
+            "link_rastreio": base if len(stops) == 1 else f"{base}/parada/{index}",
+            "codigo_confirmacao": 1233 + index,
         }
+        for index, _ in enumerate(stops, start=1)
     ]
 
 

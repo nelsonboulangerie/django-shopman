@@ -2,7 +2,7 @@
 // `cozinha-estacao4.html` e `cozinha-celular4.html`).
 //
 // Conceito (dono, 09/10/2026): cada item da operação é uma ESTAÇÃO DA CASA, pelo nome
-// que ela tem no cadastro (Cafés, Lanches, Encomendas…), e leva à bancada dela
+// que ela tem no cadastro (Cafés, Lanches, Separação…), e leva à bancada dela
 // (`/<ref>`). Estação é um posto de preparo específico: não existe estação chamada
 // "Preparo", e por isso não há item genérico "Preparo". A Saída é o atalho para a
 // coluna Saída do Gestor (SUITE-UX §15: a Cozinha não tem tela de Saída). Abaixo, na
@@ -117,4 +117,37 @@ export function kdsShellSections(input: Omit<KdsSectionsInput, "place">): Operat
       })),
     ...(settings ? [settings] : []),
   ];
+}
+
+/**
+ * O trocador (modelo de navegação, 31/10/2026): as seções na ordem da barra lateral (a das
+ * teclas Alt+N), cada uma com a forma da tela, que nunca vira palavra na tela.
+ *   · chão: as estações e a Saída. São elas que vão para a barra de baixo no celular
+ *     (dono, 03/11/2026: "seção vai para baixo"), quatro no máximo, com a estação aberta
+ *     (ou a deste dispositivo) e a Saída sempre entre elas; o resto fica no "Mais", que
+ *     abre o trocador;
+ *   · parede: o Painel de retirada, a TV do salão;
+ *   · escritório: Ajustes (não é rota: abre o painel da estação).
+ */
+export function kdsSwitcherSections(input: Omit<KdsSectionsInput, "place">): OperatorSection[] {
+  const bar = kdsSections({ ...input, place: "bar" }).filter((section) => !section.foot);
+  const onBar = new Set(bar.slice(0, KDS_BAR_SECTIONS).map((section) => section.key));
+  return kdsSections({ ...input, place: "rail" }).map((section) => {
+    if (section.key === "pickup") return { ...section, form: "wall" as const };
+    if (section.key === "settings") return { ...section, foot: undefined, form: "office" as const };
+    return { ...section, form: "floor" as const, quick: onBar.has(section.key) || undefined };
+  });
+}
+
+/**
+ * O título do quadro: o nome da estação. Enquanto o quadro dela ainda carrega (troca de
+ * estação), o nome vem do índice que a barra já tem; o ref cru ("cafes") só quando
+ * nenhum dos dois sabe (beta 05/11, KDS-14: o cabeçalho piscava "cafes").
+ */
+export function stationTitleFor(
+  ref: string,
+  boardName: string | undefined,
+  instances: ReadonlyArray<{ ref: string; name: string }> | undefined,
+): string {
+  return boardName || instances?.find((inst) => inst.ref === ref)?.name || ref;
 }

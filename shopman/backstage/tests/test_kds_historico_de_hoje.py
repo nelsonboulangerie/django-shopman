@@ -19,6 +19,7 @@ from django.contrib.auth.models import Permission
 from django.utils import timezone
 from rest_framework.test import APIClient
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.models import KDSInstance, KDSTicket
 from shopman.backstage.projections.kds import HISTORY_LIMIT, build_kds_history
@@ -91,14 +92,14 @@ def test_history_line_tells_who_did_what_and_how_long(station, people):
 
     [entry] = build_kds_history(station.ref).entries
 
-    hhmm = lambda dt: timezone.localtime(dt).strftime("%H:%M")  # noqa: E731
+    hhmm = format_clock
     assert entry.steps == (
         f"recebido {hhmm(received)}",
         f"iniciado {hhmm(started)} Rafael",
         f"Pronto {hhmm(done)} Rafael (tela)",
     )
     assert entry.prep_display == "9 min"
-    assert entry.items_summary == "2x Croque, 1x Café"
+    assert entry.items_summary == "2× Croque, 1× Café"
     assert entry.state == "done"
     assert entry.can_reopen is True
     assert entry.reopen_block_reason == ""

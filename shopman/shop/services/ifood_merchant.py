@@ -31,9 +31,12 @@ Este módulo faz três coisas, todas atrás de ``SHOPMAN_IFOOD["merchant_sync_en
 (``is-connected``), mas o polling também traz cancelamento e alteração de pedido
 já aceito. Fechar é sempre interrupção ou horário.
 
-Fuso: a documentação diz que o iFood interpreta a interrupção no fuso da LOJA e
-ignora o do payload. Mandamos a hora local da loja com o deslocamento dela
-(``2026-12-25T00:00:00-03:00``) — correto nas duas leituras possíveis.
+Fuso: o iFood lê início e fim da interrupção como hora LOCAL da loja. Medido na
+loja de teste em 17/11/2026 (#2618): ``12:51:00-03:00`` voltou como ``15:51:00`` (ele
+converte para UTC e descarta o deslocamento) e a loja NÃO fechou às 12:51; ``12:53:00``
+sem deslocamento voltou igual e a validação ``unavailabilities`` fechou a loja às
+12:53. Por isso mandamos a hora local da loja SEM deslocamento
+(``2026-12-25T00:00:00``) e lemos a resposta sem fuso como hora local.
 
 Chamadas passam por ``ifood_http.request`` (retry da recusa de borda, token do
 ``ifood_auth``), o mesmo caminho do polling e dos callbacks de pedido.
@@ -48,6 +51,7 @@ from datetime import date, datetime, time, timedelta
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.services import business_calendar, ifood_http
 
@@ -79,6 +83,52 @@ CHANNEL_OFF_RENEW_AHEAD = timedelta(days=1)
 ALERT_CLOSED_WHILE_OPEN = "ifood_store_closed_while_open"
 ALERT_OPEN_WHILE_CLOSED = "ifood_store_open_while_closed"
 ALERT_SYNC_FAILED = "ifood_store_sync_failed"
+#: O 403 do módulo de loja (Merchant) que o iFood ainda não liberou a esta conta:
+#: não é falha da casa nem pede o suporte. Vira aviso sem e-mail no Gestor, com o
+#: Portal como saída, enquanto durar (coordenação, 21/11/2026; #2618, #2622). Sem o
+#: 403, o erro volta a sair como ``ALERT_SYNC_FAILED``, crítico quando o canal está
+#: desligado, sem flag nenhuma.
+ALERT_MODULE_PENDING = "ifood_store_module_pending"
+MODULE_PENDING_WINDOW_MINUTES = 6 * 60
+
+
+#: Quem fecha os avisos do iFood quando o fato volta a dar certo (#3036).
+_RESOLVER = "system:ifood-merchant"
+
+
+def _resolve_alerts(*causes: tuple[str, str]) -> None:
+    """Fecha os avisos cuja causa deixou de existir, pelo marcador de dedupe.
+
+    O aviso do iFood nascia e nunca fechava: a gravação voltava a dar certo e o
+    sino seguia dizendo que não (#3036). Cada ``(tipo, marcador)`` é uma causa;
+    o marcador é o começo do ``dedupe_key`` gravado na mensagem.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    for alert_type, marker in causes:
+        try:
+            alert_adapter.resolve_matching(alert_type, message_contains=f"Dedupe: {marker}", actor=_RESOLVER)
+        except Exception:
+            logger.warning("ifood_merchant.resolve_alerts_failed type=%s marker=%s", alert_type, marker, exc_info=True)
+
+
+def _alert_module_pending(what: str, *, now: datetime | None = None) -> None:
+    """O iFood negou o módulo de loja (403): aviso no Gestor, sem e-mail."""
+    from shopman.shop.services.observability import create_operator_alert
+
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_MODULE_PENDING,
+        severity="warning",
+        message=(
+            f"O iFood ainda não liberou o módulo de loja para a casa, então {what} não chega lá. "
+            "Pausa e horário só pelo Portal do Parceiro até o iFood liberar."
+            + (" O iFood está desligado aqui: pause também pelo Portal." if off else "")
+        ),
+        dedupe_key=f"{ALERT_MODULE_PENDING}:{'off' if off else 'on'}",
+        debounce_minutes=MODULE_PENDING_WINDOW_MINUTES,
+        http_status=403,
+    )
 
 _IFOOD_DAYS = {
     "monday": "MONDAY",
@@ -108,7 +158,9 @@ def merchant_id() -> str:
 def enabled() -> bool:
     """Chave ligada E integração direta configurada (client_id + merchant_id)."""
     cfg = _cfg()
-    return bool(cfg.get("merchant_sync_enabled")) and bool(str(cfg.get("client_id") or "").strip()) and bool(merchant_id())
+    return (
+        bool(cfg.get("merchant_sync_enabled")) and bool(str(cfg.get("client_id") or "").strip()) and bool(merchant_id())
+    )
 
 
 def governs(shop=None) -> bool:
@@ -296,17 +348,26 @@ def _shifts_from_body(body) -> list[dict]:
 
 
 def desired_shifts(shop=None) -> list[dict]:
-    """A grade semanal da casa no formato do iFood: um turno por dia aberto."""
+    """A grade semanal da casa no formato do iFood: um turno do iFood por turno da casa.
+
+    Dia com intervalo (``breaks``) vira dois ou mais turnos no mesmo dia, que é
+    como o iFood expressa "domingo das 9h às 12h e das 13h às 16h". Os turnos
+    nunca se sobrepõem: o formulário do Admin recusa intervalo sobreposto, que o
+    iFood recusaria com 400.
+    """
     shifts = []
-    for day, (opens_at, closes_at) in business_calendar.weekly_windows(shop=shop).items():
-        duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
-        if duration <= 0:
-            continue
-        shifts.append({
-            "dayOfWeek": _IFOOD_DAYS[day],
-            "start": opens_at.strftime("%H:%M:%S"),
-            "duration": duration,
-        })
+    for day, day_shifts in business_calendar.weekly_shifts(shop=shop).items():
+        for opens_at, closes_at in day_shifts:
+            duration = (closes_at.hour * 60 + closes_at.minute) - (opens_at.hour * 60 + opens_at.minute)
+            if duration <= 0:
+                continue
+            shifts.append(
+                {
+                    "dayOfWeek": _IFOOD_DAYS[day],
+                    "start": opens_at.strftime("%H:%M:%S"),  # hora-ok: contrato do iFood
+                    "duration": duration,
+                }
+            )
     return shifts
 
 
@@ -372,7 +433,11 @@ def desired_calendar_closures(*, now: datetime | None = None, shop=None) -> list
         if ends_at <= now:
             continue
         label = next((lbl for _, lbl in run if lbl), "")
-        closures.append(CalendarClosure(key=f"{first.isoformat()}..{last.isoformat()}", starts_at=starts_at, ends_at=ends_at, label=label))
+        closures.append(
+            CalendarClosure(
+                key=f"{first.isoformat()}..{last.isoformat()}", starts_at=starts_at, ends_at=ends_at, label=label
+            )
+        )
     return closures
 
 
@@ -401,12 +466,14 @@ def channel_off_closures(*, now: datetime | None = None, shop=None) -> list[Cale
             if end is None and block_start > now and block_start - now > CHANNEL_OFF_RENEW_AHEAD:
                 break
             if block_end > now:
-                closures.append(CalendarClosure(
-                    key=f"off:{_key_stamp(block_start, tz)}-{_key_stamp(block_end, tz)}",
-                    starts_at=block_start,
-                    ends_at=block_end,
-                    label="",
-                ))
+                closures.append(
+                    CalendarClosure(
+                        key=f"off:{_key_stamp(block_start, tz)}-{_key_stamp(block_end, tz)}",
+                        starts_at=block_start,
+                        ends_at=block_end,
+                        label="",
+                    )
+                )
             if end is None and block_end - now > CHANNEL_OFF_RENEW_AHEAD:
                 break
             block_start = block_end
@@ -438,7 +505,9 @@ def _subtract(closure: CalendarClosure, cuts: list[CalendarClosure], tz) -> list
     if pieces == [(closure.starts_at, closure.ends_at)]:
         return [closure]
     return [
-        CalendarClosure(key=f"c:{_key_stamp(start, tz)}-{_key_stamp(end, tz)}", starts_at=start, ends_at=end, label=closure.label)
+        CalendarClosure(
+            key=f"c:{_key_stamp(start, tz)}-{_key_stamp(end, tz)}", starts_at=start, ends_at=end, label=closure.label
+        )
         for start, end in pieces
     ]
 
@@ -447,7 +516,8 @@ CHANNEL_OFF_DESCRIPTION = "iFood desligado no Gestor"
 
 
 def _ifood_datetime(value: datetime, tz) -> str:
-    return timezone.localtime(value, timezone=tz).isoformat(timespec="seconds")
+    """Hora local da loja, sem deslocamento: é como o iFood lê (ver a nota de fuso no topo)."""
+    return timezone.localtime(value, timezone=tz).replace(tzinfo=None).isoformat(timespec="seconds")
 
 
 def _parse_remote_datetime(value, tz) -> datetime | None:
@@ -491,6 +561,9 @@ class SyncResult:
     created: int = 0
     removed: int = 0
     failed: int = 0
+    #: O iFood recusou o horário de vez. A Directive segue (a pausa já saiu) e o
+    #: aviso já foi criado; o gesto "gravar horário" da tela relança este erro.
+    hours_error: MerchantAPIError | None = None
 
 
 def enqueue_sync(reason: str) -> None:
@@ -521,16 +594,64 @@ def sync_store(*, now: datetime | None = None) -> SyncResult:
         return SyncResult(skipped="sem grade semanal")
     result = SyncResult()
 
-    if governs(shop):
-        desired = desired_shifts(shop)
-        if not shifts_match(desired, get_opening_hours()):
-            put_opening_hours(desired)
-            result.hours_written = True
-            logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
-
+    # A pausa vem PRIMEIRO. Em 16/11/2026 o iFood recusou o horário (403) e a
+    # exceção abortou a gravação antes do calendário: a pausa do Gestor nunca
+    # saiu, e a loja seguiu aberta no iFood com a casa achando que fechou.
     _reconcile_calendar(shop, now, result, off=off)
+
+    if governs(shop):
+        try:
+            desired = desired_shifts(shop)
+            if not shifts_match(desired, get_opening_hours()):
+                put_opening_hours(desired)
+                result.hours_written = True
+                logger.info("ifood_merchant.sync: horário gravado no iFood (%s turnos)", len(desired))
+        except MerchantAPIError as exc:
+            if exc.retryable:
+                raise
+            result.failed += 1
+            result.hours_error = exc
+            alert_store_write_failed(exc, what="o horário de funcionamento", now=now)
+
     _status_row(update={"synced_at": now})
+    if not result.failed:
+        # A gravação deu certo inteira: a recusa de antes e o módulo pendente acabaram.
+        _resolve_alerts((ALERT_SYNC_FAILED, f"{ALERT_SYNC_FAILED}:store:"), (ALERT_MODULE_PENDING, f"{ALERT_MODULE_PENDING}:"))
     return result
+
+
+def alert_store_write_failed(
+    exc: Exception, *, what: str = "a pausa e o horário", now: datetime | None = None,
+) -> None:
+    """Gravação na loja do iFood recusada de vez: aviso no Gestor, nunca só no log.
+
+    Cobre o que falha ANTES de existir uma interrupção para apontar (ler as
+    pausas, gravar o horário) e a Directive que esgotou as tentativas.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    status = getattr(exc, "status", 0) or 0
+    if status == 403:
+        _alert_module_pending(what, now=now)
+        return
+    why = (
+        "O iFood negou a permissão desta loja ao aplicativo (HTTP 403): autorize o aplicativo no Portal do Parceiro."
+        if status == 403
+        else f"O iFood recusou a gravação ({exc})."
+    )
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_SYNC_FAILED,
+        severity="critical" if off else "error",
+        message=(
+            f"Não foi possível gravar {what} no iFood. {why}"
+            + (" O iFood está DESLIGADO aqui, mas pode continuar aberto lá: pause pelo Portal ou pelo widget."
+               if off else "")
+        ),
+        dedupe_key=f"{ALERT_SYNC_FAILED}:store:{status}:{'off' if off else 'on'}",
+        debounce_minutes=DIVERGENCE_ALERT_WINDOW_MINUTES,
+        http_status=status,
+    )
 
 
 def _reconcile_calendar(shop, now: datetime, result: SyncResult, *, off: bool = False) -> None:
@@ -622,7 +743,7 @@ def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: Syn
         if exc.retryable:
             raise
         record.state = S.FAILED
-        record.last_error = _refusal_copy(exc)
+        record.last_error = _format_api_error_copy(exc)
         record.save(update_fields=["state", "last_error", "updated_at"])
         if result is not None:
             result.failed += 1
@@ -634,27 +755,38 @@ def _create_remote(record, *, remote: list[dict], now: datetime, tz, result: Syn
     record.save(update_fields=["ifood_id", "state", "last_error", "updated_at"])
     if result is not None:
         result.created += 1
+    # A pausa que o iFood recusou antes chegou agora: o aviso dela fecha.
+    _resolve_alerts((ALERT_SYNC_FAILED, _pause_marker(record.pk)))
 
 
-def _refusal_copy(exc: MerchantAPIError) -> str:
+def _format_api_error_copy(exc: MerchantAPIError) -> str:
     if isinstance(exc, InterruptionOverlap):
         return "O iFood recusou: já existe outra pausa no mesmo horário (criada no Portal do Parceiro?)."
     return f"O iFood recusou o pedido (HTTP {exc.status})."
 
 
+def _pause_marker(pk) -> str:
+    """O marcador do aviso de UMA pausa. O ``:`` final fecha o número: o fecho da
+    pausa 12 não casa com o aviso da 123."""
+    return f"{ALERT_SYNC_FAILED}:pause:{pk}:"
+
+
 def _alert_sync_failed(record, exc: MerchantAPIError) -> None:
     from shopman.shop.services.observability import create_operator_alert
 
+    if exc.status == 403:
+        _alert_module_pending("a pausa")
+        return
     local_start = timezone.localtime(record.starts_at, timezone=business_calendar.shop_timezone())
     local_end = timezone.localtime(record.ends_at, timezone=business_calendar.shop_timezone())
     create_operator_alert(
         type=ALERT_SYNC_FAILED,
         severity="error",
         message=(
-            f"{record.get_kind_display()}: a pausa de {local_start:%d/%m %H:%M} a {local_end:%d/%m %H:%M} "
-            f"não foi gravada no iFood. {_refusal_copy(exc)}"
+            f"{record.get_kind_display()}: a pausa de {format_local(local_start, '%d/%m {clock}')} a {format_local(local_end, '%d/%m {clock}')} "
+            f"não foi gravada no iFood. {_format_api_error_copy(exc)}"
         ),
-        dedupe_key=f"{ALERT_SYNC_FAILED}:{record.pk}",
+        dedupe_key=_pause_marker(record.pk),
         debounce_minutes=DIVERGENCE_ALERT_WINDOW_MINUTES,
         interruption_pk=record.pk,
         http_status=exc.status,
@@ -757,7 +889,9 @@ def summarize_status(operations: list[dict]) -> tuple[bool, str, list[dict]]:
         for validation in op.get("validations") or []:
             if not isinstance(validation, dict):
                 continue
-            code = str(validation.get("code") or "")
+            # O ``id`` é o nome estável da validação (``is-connected``); o ``code`` real
+            # muda com o estado (``is.not.connected.config``). Medido em 17/11/2026.
+            code = str(validation.get("id") or validation.get("code") or "")
             vstate = str(validation.get("state") or "").upper()
             if vstate == "OK" or not code or code in seen:
                 continue
@@ -800,18 +934,26 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
     except MerchantAPIError as exc:
         _status_row(update={"last_error": str(exc)[:500]})
         logger.warning("ifood_merchant.check: status ilegível — %s", exc)
+        if not exc.retryable:
+            # Ler o status recusado de vez (403) é a conferência cega: de 12 a
+            # 16/11/2026 ela parou sem aviso, e a pausa que não chegou passou batida.
+            _alert_status_unreadable(exc, now=now)
         return None
 
+    # A leitura voltou: a conferência cega e o módulo pendente acabaram (#3036).
+    _resolve_alerts((ALERT_SYNC_FAILED, f"{ALERT_SYNC_FAILED}:status:"), (ALERT_MODULE_PENDING, f"{ALERT_MODULE_PENDING}:"))
     available, worst, problems = summarize_status(operations)
     expected, why_closed = expected_available(now=now)
-    row = _status_row(update={
-        "checked_at": now,
-        "available": available,
-        "state": worst,
-        "problems": problems,
-        "expected_available": expected,
-        "last_error": "",
-    })
+    row = _status_row(
+        update={
+            "checked_at": now,
+            "available": available,
+            "state": worst,
+            "problems": problems,
+            "expected_available": expected,
+            "last_error": "",
+        }
+    )
 
     alerted = ""
     if available == expected:
@@ -831,6 +973,35 @@ def check_store(*, now: datetime | None = None) -> StoreCheck | None:
     return StoreCheck(available=available, expected_available=expected, state=worst, problems=problems, alerted=alerted)
 
 
+ALERT_STATUS_UNREADABLE_WINDOW_MINUTES = 6 * 60
+
+
+def _alert_status_unreadable(exc: MerchantAPIError, *, now: datetime) -> None:
+    from shopman.shop.services.observability import create_operator_alert
+
+    if exc.status == 403:
+        _alert_module_pending("a conferência da loja aberta", now=now)
+        return
+    why = (
+        "o iFood negou a permissão desta loja ao aplicativo (HTTP 403); autorize o aplicativo no Portal do Parceiro"
+        if exc.status == 403
+        else f"o iFood recusou a leitura (HTTP {exc.status})"
+    )
+    off = channel_off(now=now)
+    create_operator_alert(
+        type=ALERT_SYNC_FAILED,
+        severity="critical" if off else "error",
+        message=(
+            f"A casa não consegue conferir se a loja está aberta no iFood: {why}. "
+            "Pausa e horário também não chegam lá enquanto isso durar."
+            + (" O iFood está DESLIGADO aqui: pause pelo Portal ou pelo widget." if off else "")
+        ),
+        dedupe_key=f"{ALERT_SYNC_FAILED}:status:{exc.status}",
+        debounce_minutes=ALERT_STATUS_UNREADABLE_WINDOW_MINUTES,
+        http_status=exc.status,
+    )
+
+
 def problem_copy(problems: list[dict]) -> list[str]:
     """Frases de balcão para as validações do iFood que mais explicam um fechamento."""
     codes = {p.get("code") for p in problems}
@@ -841,7 +1012,11 @@ def problem_copy(problems: list[dict]) -> list[str]:
         lines.append("Há uma pausa em vigor no iFood (se não foi o gestor, foi feita no Portal do Parceiro).")
     if "opening-hours" in codes:
         lines.append("O horário gravado no iFood não cobre este instante.")
-    others = [p.get("title") or p.get("code") for p in problems if p.get("code") not in {"is-connected", "unavailabilities", "opening-hours"}]
+    others = [
+        p.get("title") or p.get("code")
+        for p in problems
+        if p.get("code") not in {"is-connected", "unavailabilities", "opening-hours"}
+    ]
     if others:
         lines.append("O iFood também aponta: " + "; ".join(str(o) for o in others) + ".")
     return lines
@@ -857,7 +1032,7 @@ def _alert_divergence(row, *, expected: bool, why_closed: str, problems: list[di
         "problems": [p.get("code") for p in problems],
     }
     if expected:
-        head = f"O iFood está fechado desde {since:%H:%M}, com a loja aberta: nenhum pedido do iFood entra."
+        head = f"O iFood está fechado desde {format_clock(since)}, com a loja aberta: nenhum pedido do iFood entra."
         create_operator_alert(
             type=ALERT_CLOSED_WHILE_OPEN,
             severity="error",
@@ -866,7 +1041,7 @@ def _alert_divergence(row, *, expected: bool, why_closed: str, problems: list[di
             **context,
         )
         return ALERT_CLOSED_WHILE_OPEN
-    head = f"O iFood está recebendo pedidos desde {since:%H:%M}, com a loja fechada ({why_closed})."
+    head = f"O iFood está recebendo pedidos desde {format_clock(since)}, com a loja fechada ({why_closed})."
     create_operator_alert(
         type=ALERT_OPEN_WHILE_CLOSED,
         severity="error",

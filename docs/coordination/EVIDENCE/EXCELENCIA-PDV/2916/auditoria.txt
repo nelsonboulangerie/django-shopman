@@ -1,0 +1,17 @@
+#2916 · auditoria da prévia (J6, teste "Pix misto", código final com o selo "Pix", 21/11/2026)
+Régua: contraste >= 4,5:1, letra >= 12 px, dentro da tela, nada cortado, nada encoberto, transbordo horizontal 0.
+Resultado: 0 reprovações em 375 px e 1366 px.
+
+## conferência do Pix misto (375 px)
+  - "Confira o Pix": contraste 13.67:1; letra 16 px; x 32..305; dentro da tela: sim; cortado: não; encoberto: não
+  - "Veja no app do banco ou na maquininha se o valor entrou.": contraste 6.52:1; letra 14 px; x 32..305; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pix": contraste 4.95:1; letra 16 px; x 145..230; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 16,00": contraste 4.65:1; letra 48 px; x 92..283; dentro da tela: sim; cortado: não; encoberto: não
+  - "Recebi o Pix": contraste 4.95:1; letra 16 px; x 32..343; dentro da tela: sim; cortado: não; encoberto: não
+
+## conferência do Pix misto (1366 px)
+  - "Confira o Pix": contraste 13.67:1; letra 16 px; x 515..821; dentro da tela: sim; cortado: não; encoberto: não
+  - "Veja no app do banco ou na maquininha se o valor entrou.": contraste 6.52:1; letra 14 px; x 515..821; dentro da tela: sim; cortado: não; encoberto: não
+  - "Pix": contraste 4.95:1; letra 16 px; x 641..725; dentro da tela: sim; cortado: não; encoberto: não
+  - "R$ 16,00": contraste 4.65:1; letra 48 px; x 587..779; dentro da tela: sim; cortado: não; encoberto: não
+  - "Recebi o Pix": contraste 4.95:1; letra 16 px; x 515..851; dentro da tela: sim; cortado: não; encoberto: não

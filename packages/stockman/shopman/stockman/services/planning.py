@@ -21,12 +21,96 @@ from shopman.stockman.models.hold import Hold
 from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.holds import (
+    DELIVERY_CARRIED_IN,
+    DELIVERY_CARRIED_OUT,
+    DELIVERY_METADATA_KEY,
     QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
     QUALITY_GRADE_POLICY_VERSION,
     QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    delivery_entry,
+    delivery_reason,
 )
 
 logger = logging.getLogger("shopman.stockman")
+
+
+def _early_deliveries(quant, *, limit):
+    """Entregas feitas contra este saldo de produção que ainda não chegaram ao lote.
+
+    O fato é do ledger. ``fulfill`` baixa a reserva do quant em que ela está,
+    mesmo quando ele ainda é saldo de produção, e a reserva fica ``fulfilled``
+    ancorada ali. O que esse saldo deve ao lote é o líquido, por reserva, da
+    conta da entrega: a baixa, menos o que já seguiu adiante, menos o que foi
+    devolvido. Nenhum contador além dos ``Move``.
+
+    A conta é lida SÓ pela chave estruturada de ``Move.metadata``
+    (:func:`~shopman.stockman.services.holds.delivery_entry`), nunca pelo
+    ``reason``: a frase pode mudar sem desligar o abatimento, e um ``Move`` sem
+    a chave não é entrega conhecida, tenha a frase que tiver.
+
+    Devolve ``[(hold, quantidade, kind, quita)]`` na ordem das entregas, até
+    ``limit``. Entrega maior que o que cabe segue em parte, e o resto continua
+    devido ao mesmo saldo (a reserva só muda de quant quando quita).
+    """
+    holds = list(quant.holds.filter(status=HoldStatus.FULFILLED).order_by("resolved_at", "pk"))
+    if not holds:
+        return []
+
+    account_of = {hold.hold_id: hold.pk for hold in holds}
+    owed = dict.fromkeys(account_of.values(), Decimal("0"))
+    kinds = {}
+    ledger = Move.objects.filter(
+        quant=quant,
+        **{f"metadata__{DELIVERY_METADATA_KEY}__hold_id__in": list(account_of)},
+    ).order_by("pk")
+    for metadata, delta, kind in ledger.values_list("metadata", "delta", "kind"):
+        hold_pk = account_of[metadata[DELIVERY_METADATA_KEY]["hold_id"]]
+        owed[hold_pk] -= delta
+        kinds.setdefault(hold_pk, kind)
+
+    room = Decimal(str(limit))
+    deliveries = []
+    for hold in holds:
+        if room <= 0:
+            break
+        pending = owed[hold.pk]
+        if pending <= 0:
+            continue
+        part = min(pending, room)
+        deliveries.append((hold, part, kinds[hold.pk], part == pending))
+        room -= part
+    return deliveries
+
+
+def _return_early_deliveries(quant, deliveries, *, user=None) -> Decimal:
+    """Perna de origem: o saldo de produção recebe de volta o que segue adiante."""
+    for hold, quantity, kind, _settles in deliveries:
+        Move.objects.create(
+            quant=quant,
+            delta=quantity,
+            reason=f"{delivery_reason(hold.pk)} segue com o lote",
+            kind=kind,
+            user=user,
+            metadata=delivery_entry(hold.pk, DELIVERY_CARRIED_OUT),
+        )
+    return sum((quantity for _hold, quantity, _kind, _settles in deliveries), Decimal("0"))
+
+
+def _charge_early_deliveries(quant, deliveries, *, user=None) -> None:
+    """Perna de destino: a entrega passa a pesar em ``quant``, e a reserva o acompanha."""
+    for hold, quantity, kind, settles in deliveries:
+        Move.objects.create(
+            quant=quant,
+            delta=-quantity,
+            reason=delivery_reason(hold.pk),
+            kind=kind,
+            user=user,
+            metadata=delivery_entry(hold.pk, DELIVERY_CARRIED_IN),
+        )
+        if settles:
+            hold.quant = quant
+            hold.save(update_fields=["quant"])
+
 
 # Default TTL for holds after stock materializes (minutes).
 #
@@ -34,6 +118,25 @@ logger = logging.getLogger("shopman.stockman")
 # it behaves like any other ready-stock reservation. Client-side activity
 # (``bump_session_hold_expiry``) extends it normally from this point on.
 DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES = 30
+
+
+def _service_order(holds):
+    """As reservas na ordem em que a produção as atende.
+
+    ``metadata.priority`` crescente (ausente = por último), depois FIFO por
+    ``created_at``. A prioridade é um inteiro neutro que quem reserva carimba
+    (o pedido fechado passa na frente da sacola quando a fornada é curta). É a
+    ordem do ``realize`` e do ``settle_holds``: uma fila só.
+    """
+
+    def _priority(hold):
+        value = (hold.metadata or {}).get("priority")
+        try:
+            return (0, int(value)) if value is not None else (1, 0)
+        except (TypeError, ValueError):
+            return (1, 0)
+
+    return sorted(holds, key=lambda hold: (*_priority(hold), hold.created_at))
 
 
 class StockPlanning:
@@ -81,6 +184,52 @@ class StockPlanning:
         StockMovements.adjust(quant, quantity, reason, user)
         quant.refresh_from_db()
         return quant
+
+    @classmethod
+    def carry_deliveries(cls, from_quant, to_quant, *, limit, user=None) -> Decimal:
+        """Leva de um saldo de produção para o seguinte o que já foi entregue contra ele.
+
+        É o passo de quem move a contribuição de um lote entre saldos de
+        produção (o "Iniciar": do planejado para o que está em produção). A
+        entrega feita contra a origem acompanha a contribuição, até ``limit``;
+        sem isso o destino nasce cheio e oferece de novo o que já saiu. O
+        ``realize`` faz o mesmo ao fechar, do saldo de produção para o lote.
+
+        Par de pernas que soma zero, no ``kind`` da entrega original: a venda
+        continua contada uma vez só, agora no saldo que de fato a pagou.
+
+        Returns:
+            Quantidade levada.
+
+        Raises:
+            StockError('INVALID_CARRY'): origem não é saldo de produção, ou
+                origem e destino não são saldos distintos do mesmo SKU.
+        """
+        if from_quant.target_date is None or from_quant.pk == to_quant.pk or from_quant.sku != to_quant.sku:
+            raise StockError("INVALID_CARRY", from_quant=from_quant.pk, to_quant=to_quant.pk)
+
+        with transaction.atomic():
+            locked = {
+                quant.pk: quant
+                for quant in Quant.objects.select_for_update()
+                .filter(pk__in=[from_quant.pk, to_quant.pk])
+                .order_by("pk")
+            }
+            source, destination = locked[from_quant.pk], locked[to_quant.pk]
+            early = _early_deliveries(source, limit=limit)
+            carried = _return_early_deliveries(source, early, user=user)
+            _charge_early_deliveries(destination, early, user=user)
+            if carried:
+                logger.info(
+                    "stock.carry_deliveries",
+                    extra={
+                        "sku": source.sku,
+                        "from_quant": source.pk,
+                        "to_quant": destination.pk,
+                        "qty": str(carried),
+                    },
+                )
+            return carried
 
     @classmethod
     def realize(
@@ -189,7 +338,15 @@ class StockPlanning:
             # Rendimento MAIOR que o planejado (forno rendeu 55 de 50): o
             # débito é limitado ao saldo planejado e o físico recebe o total
             # real — o excedente é ganho de produção, nunca perda do lote.
-            planned_balance = Decimal(str(locked_quant.quantity))
+            #
+            # Saldo MENOR que o realizado também acontece quando parte do lote
+            # foi entregue antes de ele fechar (#2724). Não é ganho: a entrega
+            # segue para o lote (o saldo de produção a recebe de volta aqui, o
+            # lote a paga logo abaixo), as pernas de produção continuam dizendo
+            # o realizado inteiro e a vitrine recebe só o que ainda não saiu.
+            early = _early_deliveries(locked_quant, limit=actual_quantity)
+            delivered_early = _return_early_deliveries(locked_quant, early, user=user)
+            planned_balance = Decimal(str(locked_quant.quantity)) + delivered_early
             planned_debit = min(actual_quantity, max(planned_balance, Decimal("0")))
             if planned_debit > 0:
                 Move.objects.create(
@@ -203,20 +360,20 @@ class StockPlanning:
                 kind=kind,
                 user=user,
             )
+            _charge_early_deliveries(physical_quant, early, user=user)
 
             # Transfer holds up to actual_quantity. The pool covers the holds
             # anchored on the planned quant AND floating demand holds
             # (quant=None) for the same sku/date — demand registered before a
             # plan existed materializes together with the batch.
             #
-            # Order: ``metadata.priority`` ascending (missing = last), then
-            # FIFO by created_at. Priority is a neutral integer the caller
-            # stamps at hold creation (e.g. committed orders outrank cart
-            # reservations when the batch is short).
+            # Order: :func:`_service_order` (priority, then FIFO).
             #
             # Holds that were against planned stock get a TTL now
             # (the clock starts when stock materializes).
-            transferred = Decimal("0")
+            #
+            # O que já foi entregue ocupa o lote antes de qualquer reserva.
+            transferred = delivered_early
             materialized_hold_ids = []
             now = timezone.now()
             hold_ttl_minutes = getattr(
@@ -235,13 +392,6 @@ class StockPlanning:
                 status__in=active_statuses,
             ).filter(Q(expires_at__isnull=True) | Q(expires_at__gte=now))
 
-            def _priority(hold):
-                value = (hold.metadata or {}).get("priority")
-                try:
-                    return (0, int(value)) if value is not None else (1, 0)
-                except (TypeError, ValueError):
-                    return (1, 0)
-
             def _accepts_output_grade(hold):
                 metadata = hold.metadata or {}
                 if metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
@@ -253,10 +403,7 @@ class StockPlanning:
                     return True
                 return bool(to_quality_grade_ref and to_quality_grade_ref in set(allowlist))
 
-            pool = sorted(
-                filter(_accepts_output_grade, [*anchored, *floating]),
-                key=lambda hold: (*_priority(hold), hold.created_at),
-            )
+            pool = _service_order(filter(_accepts_output_grade, [*anchored, *floating]))
 
             for hold in pool:
                 if transferred >= actual_quantity:
@@ -302,3 +449,68 @@ class StockPlanning:
                 transaction.on_commit(_emit_signal)
 
             return physical_quant
+
+    @classmethod
+    def settle_holds(cls, quants):
+        """
+        Reassenta as reservas entre saldos PLANEJADOS irmãos (mesmo SKU e data).
+
+        O plano de uma data pode estar em mais de um saldo: o que já entrou em
+        produção e o que segue só planejado. Quando a quantidade muda de saldo
+        (o lote abre, um lote é cancelado, o plano encolhe), a reserva tem de
+        acompanhar: cada hold ancora em UM quant, e o ``realize`` só
+        materializa as reservas do saldo de onde o lote sai. Reserva que fica
+        num saldo zerado some da leitura e nunca chega à prateleira.
+
+        ``quants`` vem na ordem em que os saldos são servidos (o lote aberto
+        antes do só planejado). As reservas ativas ancoradas neles são
+        percorridas na ordem de atendimento (:func:`_service_order`, a mesma do
+        ``realize``), e cada uma vai, INTEIRA, para o primeiro saldo em que
+        ainda cabe. A que não cabe em nenhum fica onde está: é reserva sem
+        lastro, e quem decide o destino dela é o chamador.
+
+        Não mexe em quantidade, prazo nem estado: a reserva continua de fornada
+        planejada, e o relógio dela só começa no ``realize``.
+
+        Returns:
+            ``hold_id`` das reservas que mudaram de saldo.
+        """
+        ids = list(dict.fromkeys(quant.pk for quant in quants if quant is not None))
+        if len(ids) < 2:
+            return []
+
+        with transaction.atomic():
+            # Quant antes de Hold, como em ``hold``, ``fulfill`` e ``realize``.
+            locked = {quant.pk: quant for quant in Quant.objects.select_for_update().filter(pk__in=ids).order_by("pk")}
+            siblings = [locked[pk] for pk in ids if pk in locked]
+            coordinates = {(quant.sku, quant.target_date) for quant in siblings}
+            if len(coordinates) != 1 or siblings[0].target_date is None:
+                raise StockError(
+                    "INVALID_SETTLE",
+                    reason="saldos planejados do mesmo SKU e data",
+                    quants=ids,
+                )
+
+            room = {quant.pk: Decimal(str(quant.quantity)) for quant in siblings}
+            holds = Hold.objects.select_for_update().filter(quant_id__in=list(room)).active()
+            moved = []
+            for hold in _service_order(holds):
+                home = next((quant.pk for quant in siblings if room[quant.pk] >= hold.quantity), None)
+                if home is None:
+                    continue
+                room[home] -= hold.quantity
+                if hold.quant_id != home:
+                    hold.quant_id = home
+                    hold.save(update_fields=["quant"])
+                    moved.append(hold.hold_id)
+
+            if moved:
+                logger.info(
+                    "stock.settle_holds",
+                    extra={
+                        "sku": siblings[0].sku,
+                        "target": str(siblings[0].target_date),
+                        "moved": len(moved),
+                    },
+                )
+            return moved

@@ -30,21 +30,25 @@ surface depends on it.
 | --- | --- | --- | --- |
 | POS projection | GET | `/api/v1/backstage/pos/` | `build_pos`, `build_pos_shift_summary`, `build_pos_tabs` |
 | Create tab | POST | `/api/v1/backstage/pos/tabs/` | `register_pos_tab` |
-| Open tab | POST | `/api/v1/backstage/pos/tabs/{tab_ref}/open/` | `open_pos_tab` |
+| Open tab (responde `created`: esta abertura pôs a comanda em uso) | POST | `/api/v1/backstage/pos/tabs/{tab_ref}/open/` | `open_pos_tab_reporting` |
+| Próxima livre, reservada pelo servidor (#2443) | POST | `/api/v1/backstage/pos/tabs/next-free/` | `reserve_next_free_pos_tab` |
 | Save tab | POST | `/api/v1/backstage/pos/tabs/save/` | `save_pos_tab` |
 | Clear tab | DELETE | `/api/v1/backstage/pos/tabs/{session_key}/clear/` | `clear_pos_tab` |
 | Review sale | POST | `/api/v1/backstage/pos/sale/review/` | `review_sale` |
 | Close sale | POST | `/api/v1/backstage/pos/sale/close/` | `close_sale` |
+| Manager approval check | POST | `/api/v1/backstage/pos/manager-approval/check/` | `validate_manager_override` + `issue_sale_approval` (confere o PIN ou o crachá no próprio diálogo, com a mesma trava, e devolve `token`: o carimbo assinado preso a `scope` = operador, `tab_ref`, `discount_q` e `account_over_q` que o diálogo mostrou) |
 | Cancel recent sale | POST | `/api/v1/backstage/pos/sale/recent/cancel/` | `cancel_recent_order` / `reopen_recent_order_for_correction` |
 | Open cash shift | POST | `/api/v1/backstage/pos/cash/open/` | `open_cash_shift` |
 | Close cash shift | POST | `/api/v1/backstage/pos/cash/close/` | `close_cash_shift` |
 | Cash movement | POST | `/api/v1/backstage/pos/cash/movement/` | `register_cash_movement` |
-| Customer lookup | GET | `/api/v1/backstage/pos/customer/lookup/?phone={phone}` | `build_pos_customer_lookup` |
+| Customer lookup | POST (`phone`/`ref` no corpo, fora da URL) | `/api/v1/backstage/pos/customer/lookup/` | `build_pos_customer_lookup` |
 | Preorders (search · day · week) | GET | `/api/v1/backstage/pos/preorders/?date_from=&date_to=&q=` | `projections.preorders.build_preorder_list` |
 | Preorder detail | GET | `/api/v1/backstage/pos/preorders/{ref}/` | `projections.preorders.build_preorder_detail` |
-| Preorder hand-over (receive balance + deliver) | POST | `/api/v1/backstage/pos/preorders/{ref}/hand-over/` | `operator_orders.hand_over_at_counter` (settle in this station's open shift + advance to completed, one transaction; idempotent by `client_request_id`) |
+| Preorder hand-over (receive balance + deliver) | POST | `/api/v1/backstage/pos/preorders/{ref}/hand-over/` | `operator_orders.hand_over_at_counter` (settle in this station's open shift + advance to completed, one transaction; idempotent by `client_request_id`). `tenders[]` takes cash, debit, credit and, only beside one of them, a Pix attested at the counter (`pix_confirmed: true`, #2916) |
+| Preorder balance in Pix (counter, #2897) | POST | `/api/v1/backstage/pos/preorders/{ref}/pix/` | `counter_pix.start` (Pix charge for the balance in the sale's payment shape; adopts the customer's live online Pix or cancels the pending digital charge first, never two live charges; idempotent) |
 | Preorder cancel | POST | `/api/v1/backstage/orders/{ref}/cancel/` (the Gestor route) | `operator_orders.cancel_order` + `operator_cancel_policy` + manager PIN |
 | Preorder edit (sale screen in edit mode) | POST | `/api/v1/backstage/pos/preorders/{ref}/edit-session/` | `pos_edit_session.open_edit_session` (virtual tab, no `tab_ref`; saved by `orders/{ref}/edit/preview/` + `orders/{ref}/edit/`) |
+| Preorder swap (the missing item, from the Gestor's "Trocar por" link `?swap=<sku>`) | GET · POST | `/api/v1/backstage/pos/preorders/{ref}/swap/?sku=` | GET: `projections.pos_preorder_swap.build_preorder_swap` (alternatives by `order_promise.alternatives_for`, price difference by `order_edit.plan`, the line's quantity; SKUs not in the order are ignored). POST `{sku, offer, base_revision, expected_actor_id, idempotency_key, manager_approval?}`: re-reads the alternatives and saves through `order_edit.edit`; an alternative that no longer fits is refused (`swap_offer_gone`) |
 | Preorder redo (after "Cancelar e refazer") | POST | `/api/v1/backstage/pos/preorders/{ref}/redo-tab/` | `pos_edit_session.open_redo_tab` (a regular sale tab `Refazer {ref}` pre-filled with the cancelled preorder; only after the cancel; resumed while open; refused once a sale closed on it) |
 | Preorders realtime (SSE) | GET | BFF `/sse/orders` → `/events/orders/` (`backstage-orders-main`) | push-only; the Encomendas screens refetch the list on each event (ADR-016) |
 | Reverse geocode | POST | `/api/v1/geocode/reverse` | storefront geocode API |
@@ -136,7 +140,7 @@ Expected action refs:
 | `clear_tab` | mutation | none | destructive | Orderman session service |
 | `review_sale` | mutation | none | no | POS intent/service |
 | `close_sale` | mutation | required | submit confirmation by UX | POS service + Orderman |
-| `cancel_recent_sale` | mutation | none | destructive | cancellation service |
+| `cancel_recent_sale` | mutation | client_request_id | destructive | cancellation service |
 | `open_cash_shift` | mutation | none | no | `cashman.services.open_shift` |
 | `close_cash_shift` | mutation | none | destructive | `cashman.services.close_shift` |
 | `cash_movement` | mutation | none | no | `cashman.services.record` (`cash_out`/`cash_in`) |
@@ -220,7 +224,21 @@ Demais chaves canônicas (cliente e data são obrigatórios em `order`, como aci
   Quando o valor já é de outro cadastro, a resposta é o conflito rico
   (`customer_conflict`, 422, com `field` e `candidates`), nunca 500.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
-  carries type/value/reason; backend normalizes `discount_q`.
+  carries type/value/reason; backend normalizes `discount_q`. No fechamento da
+  venda, `manager_approval` é `{token}` (o carimbo do check), nunca usuário e PIN
+  (#2558): o servidor recusa com `manager_approval_invalid` carimbo de outro
+  operador, de outra comanda, de outro valor ou já gasto por outra venda (a mesma
+  venda, com o mesmo `client_request_id`, pode reapresentá-lo). Vale 15 minutos;
+  na venda que sincroniza da fila sem conexão, a janela dela (24 h).
+  Encomenda de outro dia acima do plano da data (D-041, WP-E2) também pede o
+  gerente: a review publica `preorder_over_plan` (pedido, lote planejado para a
+  data e o que dele está sem encomenda, por linha; a sobra de hoje nunca conta)
+  com o motivo `preorder_over_plan`, o check recebe as linhas em
+  `scope.over_plan`, e o fechamento recusa carimbo de outros números. Sem carimbo,
+  `manager_approval_required` com os dois números na mensagem.
+- `payment_collection = on_delivery` em RETIRADA de outro dia é recusado com
+  `pay_at_pickup_other_day` (D-041: encomenda de outro dia cobra antes; a tela não
+  oferece "Na retirada").
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
 
 Unknown fields are rejected with `unexpected_intent_field`. Unknown versions are
@@ -252,8 +270,9 @@ capture. Gateway/webhook/Payman status remains authoritative.
 - `fiscal_expected` (bool, kept for compatibility): the emission rule says a
   NFC-e will exist for this sale.
 - `fiscal_state`: one of `not_expected` | `queued` | `awaiting_payment` |
-  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed`
-  (`shopman.shop.services.fiscal.fiscal_state`). A counter sale (takes the
+  `awaiting_pickup` | `awaiting_delivery` | `authorized` | `failed` |
+  `not_issued` (`shopman.shop.services.fiscal.fiscal_state`). `not_issued` is a
+  cancelled order with no emission attempt: no note will ever exist. A counter sale (takes the
   goods now) emits at sale close, or at capture for `pix`/card; an order with a
   pickup/delivery ahead (encomenda) gets only the non-fiscal receipt at payment
   and the note is born when the goods leave — at pickup (`awaiting_pickup`) or
@@ -376,8 +395,13 @@ Minimum audit artifacts:
 - customer POS capture metadata;
 - cancellation event plus correction reason when supplied.
 
-Future event streams may expose POS refresh, but current contract is polling via
-projection refresh. A surface must not invent push state as authoritative.
+Realtime is SSE push on top of the canonical projection fetch (ADR-016). The
+terminal subscribes, through the same-origin BFF (`usePosEvents.ts`), to
+`/sse/cash`, `/sse/tabs` and `/sse/stock`, and the Encomendas screen to
+`/sse/orders`. Each event re-fetches only the projection scope it touches
+(`refreshScopeForChannel`). The projection fetch stays the source of truth:
+polling runs only as a calm fallback (60 s) while the stream is down, and a
+surface must not treat a pushed payload as authoritative state.
 
 ## Errors And Recovery
 
@@ -409,6 +433,7 @@ Expected important codes:
 - `cash_tendered_amount_too_low`
 - `manager_approval_required`
 - `manager_approval_invalid`
+- `pay_at_pickup_other_day`
 - `receipt_email_required`
 - `cart_empty`
 

@@ -27,13 +27,13 @@ pytestmark = pytest.mark.django_db
 REMOTE_REFS = ("web", "whatsapp", "ifood")
 
 
-def _seed_channels():
-    from config.management.commands.seed import Command
+def _instance_channels():
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, Command
 
-    Shop.objects.get_or_create(name="Seed Test Shop")
     command = Command()
     command.stdout = StringIO()
-    return command._seed_channels()
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    return command._instance_channels()
 
 
 def _tracked_product(sku: str, qty: int):
@@ -61,13 +61,13 @@ def _tracked_product(sku: str, qty: int):
 
 @pytest.mark.parametrize("ref", REMOTE_REFS)
 def test_seeded_remote_channel_keeps_two_units_back(ref):
-    channels = _seed_channels()
+    channels = _instance_channels()
 
     assert ChannelConfig.for_channel(channels[ref]).stock.safety_margin == 2
 
 
 def test_seeded_pos_has_no_margin():
-    channels = _seed_channels()
+    channels = _instance_channels()
 
     assert ChannelConfig.for_channel(channels["pdv"]).stock.safety_margin == 0
     # Explícito, não herdado: um default de loja não chega ao caixa em silêncio.
@@ -80,7 +80,7 @@ def test_seeded_pos_has_no_margin():
 def test_remote_channel_sees_shelf_minus_margin_and_pos_sees_everything():
     from shopman.shop.services import availability
 
-    _seed_channels()
+    _instance_channels()
     _tracked_product("MARGEM-PAO", 3)
 
     web = availability.check("MARGEM-PAO", Decimal("1"), channel_ref="web")
@@ -93,7 +93,7 @@ def test_remote_channel_sees_shelf_minus_margin_and_pos_sees_everything():
 def test_remote_channel_shows_sold_out_when_shelf_is_at_the_margin():
     from shopman.shop.services import availability
 
-    _seed_channels()
+    _instance_channels()
     _tracked_product("MARGEM-ULTIMOS", 2)
 
     web = availability.check("MARGEM-ULTIMOS", Decimal("1"), channel_ref="web")
@@ -107,7 +107,7 @@ def test_remote_channel_shows_sold_out_when_shelf_is_at_the_margin():
 def test_cart_hold_on_remote_channel_respects_margin():
     from shopman.shop.adapters.stock import create_hold
 
-    _seed_channels()
+    _instance_channels()
     _tracked_product("MARGEM-SACOLA", 3)
 
     too_much = create_hold("MARGEM-SACOLA", Decimal("2"), channel_ref="web")
@@ -121,7 +121,7 @@ def test_cart_hold_on_remote_channel_respects_margin():
 
 
 def test_channel_override_wins_over_default():
-    _seed_channels()
+    _instance_channels()
     web = Channel.objects.get(ref="web")
     web.config = {**web.config, "stock": {**web.config["stock"], "safety_margin": 5}}
     web.save(update_fields=["config"])

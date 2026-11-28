@@ -313,6 +313,9 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
             # A seção Encomendas do PDV (ENCOMENDAS-PDV-PLAN): API headless
             # `/api/v1/backstage/pos/preorders/`, consumida pelo pos-nuxt.
             ROOT / "shopman/backstage/projections/preorders.py",
+            # Trocar o item que falta da encomenda (#2765): as alternativas e a
+            # diferença de preço, `GET /api/v1/backstage/pos/preorders/<ref>/swap/`.
+            ROOT / "shopman/backstage/projections/pos_preorder_swap.py",
             # PDV › Ajustes › Salão (V5-SALAO): a planta das mesas e o registro de
             # cada mudança, API headless `/api/v1/backstage/pos/seating/`.
             ROOT / "shopman/backstage/projections/seating.py",
@@ -350,6 +353,17 @@ RUNTIME_BACKSTAGE_SURFACES: tuple[Surface, ...] = (
             "self-contained por design, fora do shell Unfold."
         ),
     ),
+    Surface(
+        id="runtime-admin-403",
+        kind="registered-runtime-backstage",
+        templates=(ROOT / "shopman/backstage/templates/403.html",),
+        replacement=(
+            "Página de acesso negado do Django (`403.html`): o permission_denied a "
+            "renderiza sem o contexto do Admin, então ela usa o layout "
+            "`unfold/layouts/unauthenticated.html` com componentes canônicos e um "
+            "caminho de volta. Não é tela de gestão."
+        ),
+    ),
 )
 
 EXCEPTION_SURFACES: tuple[Surface, ...] = (
@@ -368,16 +382,41 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/order_attention.py",
             # Histórico do Gestor (pedidos fechados, filtros no servidor).
             ROOT / "shopman/backstage/projections/order_history.py",
+            # Seção Entregas do Gestor (corridas da TaOn: aguardando, editando, corridas).
+            ROOT / "shopman/backstage/projections/deliveries.py",
+            # A posição do entregador com a hora e quem disse, nas Entregas e no Painel do pedido (F7b).
+            ROOT / "shopman/backstage/projections/courier_position.py",
+            # Corridas do entregador da casa na seção Entregas do Gestor (M3b).
+            ROOT / "shopman/backstage/projections/house_rides.py",
             # Comprovante de entrega dos avisos ao cliente, no detalhe do pedido.
             ROOT / "shopman/backstage/projections/notification_receipts.py",
+            # Itens a preço de tabela e o desconto (cupom) em linha própria, no detalhe do pedido.
+            ROOT / "shopman/backstage/projections/order_pricing.py",
+            # A prévia da devolução (o que volta, o valor e o destino do dinheiro), no detalhe do pedido.
+            ROOT / "shopman/backstage/projections/order_return.py",
+            # A prévia do "Não retirado" (destino de cada linha e do dinheiro), no detalhe do pedido.
+            ROOT / "shopman/backstage/projections/order_no_show.py",
+            # "O que falta neste pedido": as pendências do detalhe, cada uma com o gesto que resolve.
+            ROOT / "shopman/backstage/projections/order_pending.py",
+            # "Promessa em risco": a saúde da reserva de cada pedido (lastro, lote), no cartão e no detalhe.
+            ROOT / "shopman/backstage/projections/order_promise.py",
+            # O diálogo "Resolver" da promessa em risco: as escolhas, o dinheiro e a mensagem ao cliente.
+            ROOT / "shopman/backstage/projections/order_promise_resolution.py",
             ROOT / "shopman/backstage/projections/ifood.py",
             ROOT / "shopman/backstage/projections/ifood_handshake.py",
             ROOT / "shopman/backstage/projections/ifood_store.py",
+            # A loja no iFood ao vivo (módulo Merchant): lojas, detalhe, status, pausas, horário.
+            ROOT / "shopman/backstage/projections/ifood_merchant_console.py",
+            # Avaliações do iFood (Review API, DEV-2026-044): lista, resposta e prazo no Gestor.
+            ROOT / "shopman/backstage/projections/ifood_reviews.py",
             ROOT / "shopman/backstage/projections/kds.py",
             ROOT / "shopman/backstage/projections/catalog.py",
             ROOT / "shopman/backstage/projections/catalog_bindings.py",
             ROOT / "shopman/backstage/projections/customers.py",
             ROOT / "shopman/backstage/projections/customer_groups.py",
+            # A execução diária dos checklists vive no Gestor; configuração e
+            # trilha permanecem nos ModelAdmins correspondentes.
+            ROOT / "shopman/backstage/projections/operation_checklists.py",
             ROOT / "shopman/backstage/projections/feeds.py",
             ROOT / "shopman/backstage/projections/channel_health.py",
             ROOT / "shopman/backstage/projections/channel_attention.py",
@@ -401,7 +440,10 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/bi_explore.py",
             ROOT / "shopman/backstage/projections/bi_forecast.py",
             ROOT / "shopman/backstage/projections/bi_change.py",
+            ROOT / "shopman/backstage/projections/bi_ai.py",
+            ROOT / "shopman/backstage/projections/bi_delivery_cost.py",
             ROOT / "shopman/backstage/projections/bi_delivery_timing.py",
+            ROOT / "shopman/backstage/projections/bi_preorder_kitchen.py",
             ROOT / "shopman/backstage/projections/bi_payments.py",
             ROOT / "shopman/backstage/projections/bi_profiles.py",
             ROOT / "shopman/backstage/projections/sales_series.py",
@@ -875,7 +917,7 @@ def scan_surface_registry(
     surfaces: tuple[Surface, ...] | None = None,
     enforce_global_contract: bool = True,
 ) -> list[Violation]:
-    """Ensure backstage UI growth is routed through registered Admin/Unfold surfaces."""
+    """Ensure backstage UI growth stays inside its registered product surface."""
     violations: list[Violation] = []
     surfaces_to_check = surfaces or CANONICAL_ADMIN_SURFACES
 

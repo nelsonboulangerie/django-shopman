@@ -82,9 +82,21 @@ def _payload(counter, *, ref: str, qty: int = 1, **over) -> dict:
 
 
 def _close(counter, **kw):
+    payload = _payload(counter, **kw)
+    review = shop_pos.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     return shop_pos.close_sale(
-        channel_ref="pdv", payload=_payload(counter, **kw), actor="pos:marina", operator_username="marina",
+        channel_ref="pdv", payload=payload, actor="pos:marina", operator_username="marina",
     )
+
+
+def _assinar(username: str, pin: str, *, over_q: int, operador: str = "marina") -> dict:
+    """O diálogo do gerente: confere o PIN e devolve o carimbo preso ao que ele viu (#2558)."""
+    approver = shop_pos.validate_manager_override(
+        {"username": username, "pin": pin}, operator_username=operador, action="sale_approval_check",
+    )
+    scope = shop_pos.SaleApprovalScope(account_over_q=over_q)
+    return {"token": shop_pos.issue_sale_approval(approver, operator_username=operador, scope=scope)}
 
 
 def _review(counter, **kw):
@@ -126,11 +138,16 @@ def test_acima_do_limite_pede_o_gerente_e_a_review_diz_os_numeros(counter):
     assert house_account.balance_q("CLI-ANA") == 2000
 
     with pytest.raises(PosIntentError) as exc:
-        _close(counter, ref="c-3", qty=2, manager_approval={"username": "gerente", "pin": "0000"})
+        _assinar("gerente", "0000", over_q=1000)
     assert exc.value.code == "manager_approval_invalid"
-    assert "outro meio de pagamento" in exc.value.recovery
 
-    result = _close(counter, ref="c-4", qty=2, manager_approval={"username": "gerente", "pin": "4321"})
+    # O gerente viu "passa R$ 10,00"; carimbo de outro valor não serve.
+    with pytest.raises(PosIntentError) as exc:
+        _close(counter, ref="c-3", qty=2, manager_approval=_assinar("gerente", "4321", over_q=500))
+    assert exc.value.code == "manager_approval_invalid"
+    assert house_account.balance_q("CLI-ANA") == 2000
+
+    result = _close(counter, ref="c-4", qty=2, manager_approval=_assinar("gerente", "4321", over_q=1000))
     assert house_account.balance_q("CLI-ANA") == 4000
     order = Order.objects.get(ref=result.order_ref)
     assert order.data["payment"]["house_account_over_limit"] == {
@@ -138,12 +155,14 @@ def test_acima_do_limite_pede_o_gerente_e_a_review_diz_os_numeros(counter):
     }
 
 
-def test_o_operador_nao_assina_o_proprio_limite(counter):
+def test_o_operador_gerente_assina_o_proprio_limite_com_o_PIN(counter):
+    """Decisão do dono, 28/10/2026: o gerente que opera assina com o PIN dele."""
     _set_limit(counter["ana"], 500)
     _grant(counter["operator"], "adjust_shift")
     PinCredential.set_for(counter["operator"], "1111")
+    _close(counter, ref="c-1", qty=1, manager_approval=_assinar("marina", "1111", over_q=500))
     with pytest.raises(PosIntentError) as exc:
-        _close(counter, ref="c-1", qty=1, manager_approval={"username": "marina", "pin": "1111"})
+        _assinar("marina", "2222", over_q=500)
     assert exc.value.code == "manager_approval_invalid"
 
 

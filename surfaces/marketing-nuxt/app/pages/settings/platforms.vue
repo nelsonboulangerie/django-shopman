@@ -4,13 +4,14 @@
 // ⚠️ Esta tela existe porque o estado das plataformas não tinha casa. O seletor do template
 // aprovado do WhatsApp e o teste de envio moravam DENTRO de um painel de configuração
 // DENTRO da tela de revisão, e o botão que os abria vivia no cabeçalho do painel — remendo
-// que o dono apontou. Ver `docs/plans/MARKETING-UX-PLAN.md`.
+// que o dono apontou. Ver `docs/plans/completed/MARKETING-UX-PLAN.md`.
 //
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";
 import { canaryText } from "~/presentation/platformReadiness";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 import { alertActions } from "../../../../operator-kit/app/utils/alertActions";
+import { formatDateClock } from "../../../../operator-kit/app/presentation/clock";
 
 const { platforms, loading, error, load: loadPlatforms } = usePlatforms();
 const route = useRoute();
@@ -221,10 +222,7 @@ function alertColor(color: ToneColor): "info" | "error" | "warning" | "success" 
 
 function checkedAt(value: string): string {
   if (!value) return "sem verificação registrada";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatDateClock(value, { dateStyle: "short" });
 }
 
 // "Sem modelo" é a primeira opção da lista, não um cartão à parte: ela é uma
@@ -524,7 +522,8 @@ useHead({ title: "Plataformas" });
               <h2 class="text-sm font-semibold">Modelo aprovado</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
                 Com um modelo aprovado, o anúncio alcança quem não conversou nas
-                últimas 24 horas. Sem ele, só a janela.
+                últimas 24 horas. Sem ele, só chega a quem escreveu para a loja nas
+                últimas 24 horas.
               </p>
             </div>
 

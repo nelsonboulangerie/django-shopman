@@ -88,3 +88,23 @@ class CatalogProjectionBackend(Protocol):
             ProjectionResult with success status.
         """
         ...
+
+
+@runtime_checkable
+class IncrementalCatalogProjectionBackend(CatalogProjectionBackend, Protocol):
+    """
+    Projeção que sabe mudar só o preço ou só o estado de um item já publicado.
+
+    Marketplace com API granular (o iFood) aceita esses dois gestos sem
+    reenviar o item inteiro. Quem projeta pergunta pelo contrato
+    (``isinstance``), nunca por ``hasattr``: o verbo opcional fica declarado
+    em vez de adivinhado.
+    """
+
+    def update_price(self, item: ProjectedItem, *, channel: str) -> ProjectionResult:
+        """Update only the price of an already projected item."""
+        ...
+
+    def set_availability(self, item: ProjectedItem, *, channel: str) -> ProjectionResult:
+        """Update only the published/sellable state of an already projected item."""
+        ...

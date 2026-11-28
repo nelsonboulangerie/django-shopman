@@ -9,6 +9,7 @@ import type { POSCartItem, POSCollectionProjection, POSProductProjection, POSTab
 import {
   FAVORITES_COLLECTION,
   HIDE_UNAVAILABLE_STORAGE_KEY,
+  collapseViewControls,
   favoriteProducts,
   matchOpenTabs,
   cartQtyForSku,
@@ -20,7 +21,10 @@ import {
   hideUnavailableProducts,
   orderCollections,
   parseHideUnavailable,
+  productSearchPlaceholder,
 } from "~/presentation/catalog";
+import { isNumericQuery } from "~/presentation/customerSearch";
+import type { OperatorViewGroup } from "../../../operator-kit/app/presentation/viewMenu";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -45,10 +49,34 @@ const emit = defineEmits<{
 // Toque (tablet, celular): sem teclas impressas, chips de 48 px com "Favoritos"
 // primeiro, tile sem SKU, grade pela largura do dedo e "Ler código" pela câmera.
 const coarsePointer = useMediaQuery("(pointer: coarse)");
+const searchBarRef = ref<HTMLElement | null>(null);
+const { width: searchBarWidth } = useElementSize(searchBarRef);
+const searchPlaceholder = computed(() => productSearchPlaceholder({
+  coarse: coarsePointer.value,
+  customerSearch: Boolean(props.customerSearch),
+  width: searchBarWidth.value,
+}));
+// A faixa das coleções: setas, roda do mouse e a escolhida sempre à vista.
+const collectionsStrip = useTemplateRef<HTMLElement>("collectionsStrip");
+const strip = useScrollStrip(collectionsStrip);
+const stripScrolls = computed(() => strip.canBack.value || strip.canForward.value);
+// O esmaecer na borda diz que há mais daquele lado (os dois, no meio da faixa).
+const stripMask = computed(() => {
+  if (strip.canBack.value && strip.canForward.value) {
+    return "[mask-image:linear-gradient(to_right,transparent,#000_1.5rem,#000_calc(100%-1.5rem),transparent)]";
+  }
+  if (strip.canForward.value) return "[mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]";
+  if (strip.canBack.value) return "[mask-image:linear-gradient(to_right,transparent,#000_1.5rem)]";
+  return "";
+});
 const scannerOpen = ref(false);
 
 const search = ref("");
 const activeCollection = ref("");
+// A coleção escolhida (por toque, atalho ou leitura) nunca fica fora da faixa.
+watch(activeCollection, () => {
+  void nextTick(() => strip.reveal(collectionsStrip.value?.querySelector('[aria-pressed="true"]')));
+});
 
 // Grid density is a grid-local presentation preference (not data, not policy).
 // Persisted per terminal in localStorage; defaults to "cozy" on the server so
@@ -71,6 +99,25 @@ const density = ref<Density>("cozy");
 const densityCols = computed(() => coarsePointer.value
   ? TOUCH_COLS
   : DENSITIES.find((d) => d.key === density.value)?.cols ?? DENSITIES[1]!.cols);
+// Grade ou Lista (dono, 03/11/2026: "caso o operador prefira"): os mesmos nomes da
+// visão do Gestor (dono, 07/10/2026). Preferência do dispositivo, como a densidade e o
+// olho; vale no toque também. A densidade é só da grade.
+type ProductLayout = "grid" | "list";
+const LAYOUT_STORAGE_KEY = "pos.productLayout";
+const LAYOUTS: { key: ProductLayout; label: string; icon: string }[] = [
+  { key: "grid", label: "Grade", icon: "lucide:layout-grid" },
+  { key: "list", label: "Lista", icon: "lucide:list" },
+];
+const layout = ref<ProductLayout>("grid");
+const itemsCols = computed(() => (layout.value === "list" ? "grid-cols-1 gap-1.5 @3xl:grid-cols-2" : `gap-2.5 ${densityCols.value}`));
+function setLayout(value: ProductLayout) {
+  layout.value = value;
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, value);
+  } catch {
+    // Sem storage, a escolha vale até recarregar.
+  }
+}
 // O ponto colorido do chip de cada coleção (v4): a cor que os produtos dela já trazem.
 const collectionColors = computed(() => collectionColorMap(props.products));
 
@@ -82,6 +129,12 @@ onMounted(() => {
   if (coarsePointer.value && props.favoriteRefs.length) activeCollection.value = FAVORITES_COLLECTION;
   const stored = localStorage.getItem(DENSITY_STORAGE_KEY);
   if (stored === "compact" || stored === "cozy" || stored === "roomy") density.value = stored;
+  try {
+    const storedLayout = localStorage.getItem(LAYOUT_STORAGE_KEY);
+    if (storedLayout === "grid" || storedLayout === "list") layout.value = storedLayout;
+  } catch {
+    layout.value = "grid";
+  }
   try {
     hideUnavailable.value = parseHideUnavailable(localStorage.getItem(HIDE_UNAVAILABLE_STORAGE_KEY));
   } catch {
@@ -105,6 +158,8 @@ function setDensity(value: Density) {
 }
 
 const orderedCollections = computed(() => orderCollections(props.collections, props.favoriteRefs));
+// Coleção nova (ou que sumiu) muda a largura da faixa: as setas se medem de novo.
+watch(orderedCollections, () => { void nextTick(strip.measure); });
 const matchedProducts = computed(() => {
   // A busca procura em TUDO: o chip ligado é filtro de navegação, não de busca.
   if (activeCollection.value === FAVORITES_COLLECTION && !search.value.trim()) {
@@ -142,6 +197,44 @@ const visibility = computed(() => hideUnavailableProducts(matchedProducts.value,
 const filteredProducts = computed(() => visibility.value.products);
 const hiddenCount = computed(() => visibility.value.hiddenCount);
 
+// Exibir no estreito (dono, 07/11/2026): na área de produtos de celular, a vista, a
+// densidade e o olho viram UM botão com menu, no fim da faixa das coleções. A busca
+// fica com a linha inteira. Na mesa e no tablet, os segmentados continuam à vista.
+const gridRoot = useTemplateRef<HTMLElement>("gridRoot");
+const { width: gridWidth } = useElementSize(gridRoot);
+const narrowView = computed(() => collapseViewControls(gridWidth.value));
+const viewGroups = computed<OperatorViewGroup[]>(() => [
+  {
+    kind: "choice",
+    key: "layout",
+    label: "Vista",
+    value: layout.value,
+    options: LAYOUTS.map(({ key, label, icon }) => ({ value: key, label, icon })),
+    select: (value) => setLayout(value as ProductLayout),
+  },
+  // A densidade é só da grade e só na mesa (no toque a grade vai pela largura do dedo).
+  ...(layout.value === "grid" && !coarsePointer.value
+    ? [{
+        kind: "choice" as const,
+        key: "density",
+        label: "Densidade",
+        value: density.value,
+        options: DENSITIES.map(({ key, label, icon }) => ({ value: key, label, icon })),
+        select: (value: string) => setDensity(value as Density),
+      }]
+    : []),
+  {
+    kind: "toggle",
+    key: "hide-unavailable",
+    label: "Ocultar indisponíveis",
+    onLabel: "indisponíveis ocultos",
+    checked: hideUnavailable.value,
+    detail: hiddenCount.value ? `${hiddenCount.value} ${hiddenCount.value === 1 ? "oculto" : "ocultos"}` : undefined,
+    icon: "lucide:eye-off",
+    toggle: setHideUnavailable,
+  },
+]);
+
 // Cartão de escolha: sem busca, produtos do mesmo `choice_group` viram um tile só
 // que abre a escolha; com busca, cada produto aparece sozinho (o Enter lança).
 // Oculto, a opção indisponível também sai da escolha.
@@ -168,9 +261,13 @@ defineExpose({ focusSearch });
 function onSearchEnter() {
   const target = enterTargetProduct(filteredProducts.value, search.value);
   if (!target) {
-    // Sem produto: a comanda que casou sozinha abre; senão, a busca vira cliente.
+    // Sem produto: a comanda que casou sozinha abre. A busca só vira cliente
+    // quando o termo tem cara de telefone ou CPF: um código de produto que não
+    // existe ("BAGUETE-3") ou um nome digitado errado abria o cadastro de
+    // cliente com ele (beta test de 05/11/2026, PDV-15). Para o resto, o botão
+    // "Buscar cliente" ao lado está à vista.
     if (matchedTabs.value.length === 1) openMatchedTab(matchedTabs.value[0]!.ref);
-    else if (!matchedTabs.value.length && props.customerSearch) findCustomer();
+    else if (!matchedTabs.value.length && props.customerSearch && isNumericQuery(search.value)) findCustomer();
     return;
   }
   emit("add", target);
@@ -192,16 +289,16 @@ function onSearchEscape() {
 </script>
 
 <template>
-  <section class="@container flex h-full min-h-0 flex-col gap-2.5">
+  <section ref="gridRoot" class="@container flex h-full min-h-0 flex-col gap-2.5">
     <!-- Busca + densidade (v4): a busca é o instrumento do balcão (44 px, Enter
          adiciona, F3 ou / focam); a densidade é um seletor segmentado à vista. -->
-    <div class="flex shrink-0 items-center gap-2">
+    <div ref="searchBarRef" class="flex shrink-0 items-center gap-2">
       <PosSearchField
         ref="searchInputRef"
         v-model="search"
         :kbd="coarsePointer ? undefined : ['F3', '/']"
         :hint="coarsePointer ? undefined : 'Enter adiciona'"
-        :placeholder="coarsePointer ? 'Buscar produto ou comanda' : (customerSearch ? 'Buscar produto, código, comanda ou cliente' : 'Buscar produto, código ou comanda')"
+        :placeholder="searchPlaceholder"
         :class="coarsePointer ? 'h-14' : ''"
         :autofocus="!coarsePointer"
         @keydown.enter.prevent="onSearchEnter"
@@ -220,7 +317,7 @@ function onSearchEscape() {
         <Icon name="lucide:scan-barcode" class="size-6" aria-hidden="true" />
         <span class="max-sm:sr-only">Ler código</span>
       </NuxtButton>
-      <NuxtFieldGroup v-else class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
+      <NuxtFieldGroup v-else-if="layout === 'grid' && !narrowView" class="shrink-0" role="group" aria-label="Densidade da grade" title="Densidade da grade">
         <NuxtButton
           v-for="opt in DENSITIES"
           :key="opt.key"
@@ -265,7 +362,9 @@ function onSearchEscape() {
         @click="findCustomer"
       >
         <Icon name="lucide:user-round-search" class="size-4 text-muted-foreground" aria-hidden="true" />
-        Buscar cliente “<span class="max-w-40 truncate">{{ search.trim() }}</span>”
+        <!-- Aspas e termo num span só (o gap do botão separava as aspas do termo,
+             "“ croisant ”"); só o termo digitado corta, o rótulo da casa não. -->
+        <span>Buscar cliente <span class="inline-block max-w-40 truncate align-bottom" :title="search.trim()">“{{ search.trim() }}”</span></span>
       </NuxtButton>
     </div>
 
@@ -275,8 +374,29 @@ function onSearchEscape() {
     <!-- As coleções rolam na faixa (com o esmaecer na borda dizendo que há mais); o
          "Ocultar indisponíveis" fica FORA dela, sempre à vista, e vira só o olho
          quando a área de produtos estreita. -->
+    <!-- As setas ‹ › existem enquanto a faixa rola, e cada uma se desliga no seu extremo
+         (nunca some: sumir mudaria a largura da faixa debaixo do dedo). A roda do mouse
+         também rola (dono, 03/11/2026: no mouse as últimas eram inalcançáveis). -->
     <div class="flex shrink-0 items-start" :class="coarsePointer ? 'gap-2' : 'gap-1'">
-    <div class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar [mask-image:linear-gradient(to_right,#000_calc(100%-1.5rem),transparent)]" :class="coarsePointer ? 'gap-2' : 'gap-1'" data-pos-collections>
+    <NuxtButton
+      v-if="stripScrolls"
+      :disabled="!strip.canBack.value"
+      :size="coarsePointer ? 'xl' : 'md'"
+      color="neutral"
+      variant="ghost"
+      square
+      icon="i-lucide-chevron-left"
+      class="shrink-0 rounded-full"
+      aria-label="Coleções anteriores"
+      data-pos-collections-back
+      @click="strip.step(-1)"
+    />
+    <div
+      ref="collectionsStrip"
+      class="-mx-1 flex min-w-0 flex-1 overflow-x-auto px-1 pb-1 no-scrollbar"
+      :class="[coarsePointer ? 'gap-2' : 'gap-1', stripMask]"
+      data-pos-collections
+    >
       <NuxtButton
         v-if="coarsePointer && favoriteRefs.length"
         size="xl"
@@ -331,7 +451,66 @@ function onSearchEscape() {
       </NuxtButton>
       <span class="w-4 shrink-0" aria-hidden="true" />
     </div>
+    <NuxtButton
+      v-if="stripScrolls"
+      :disabled="!strip.canForward.value"
+      :size="coarsePointer ? 'xl' : 'md'"
+      color="neutral"
+      variant="ghost"
+      square
+      icon="i-lucide-chevron-right"
+      class="shrink-0 rounded-full"
+      aria-label="Mais coleções"
+      data-pos-collections-forward
+      @click="strip.step(1)"
+    />
+      <!-- No toque a faixa das coleções é estreita: um botão só alterna a vista (o ícone e o
+           nome dizem a vista que ele abre). Na mesa, o par Grade | Lista. -->
+      <!-- No celular, a vista, a densidade e o olho são um botão só ("Exibir", o mesmo
+           gesto das tabelas): ícone da vista atual, menu com cada opção marcada. -->
+      <OperatorViewMenu
+        v-if="narrowView"
+        :groups="viewGroups"
+        :size="coarsePointer ? 'xl' : 'md'"
+        class="shrink-0 rounded-full"
+        data-pos-view-menu
+      />
       <NuxtButton
+        v-else-if="coarsePointer"
+        size="xl"
+        color="neutral"
+        variant="outline"
+        class="shrink-0 whitespace-nowrap rounded-full"
+        :aria-label="layout === 'grid' ? 'Ver em lista' : 'Ver em grade'"
+        :title="layout === 'grid' ? 'Ver em lista' : 'Ver em grade'"
+        :data-pos-product-layout-option="layout === 'grid' ? 'list' : 'grid'"
+        data-pos-product-layout-toggle
+        @click="setLayout(layout === 'grid' ? 'list' : 'grid')"
+      >
+        <!-- O mesmo desenho do olho ao lado: pílula do mesmo tamanho, ícone pequeno. -->
+        <Icon :name="layout === 'grid' ? 'lucide:list' : 'lucide:layout-grid'" class="size-3.5" aria-hidden="true" />
+      </NuxtButton>
+      <NuxtFieldGroup v-else class="shrink-0" role="group" aria-label="Ver os produtos em grade ou em lista" data-pos-product-layout>
+        <NuxtButton
+          v-for="opt in LAYOUTS"
+          :key="opt.key"
+          color="neutral"
+          variant="outline"
+          active-color="primary"
+          active-variant="solid"
+          square
+          :active="layout === opt.key"
+          :aria-label="opt.label"
+          :aria-pressed="layout === opt.key"
+          :title="opt.label"
+          :data-pos-product-layout-option="opt.key"
+          @click="setLayout(opt.key)"
+        >
+          <Icon :name="opt.icon" class="size-4" aria-hidden="true" />
+        </NuxtButton>
+      </NuxtFieldGroup>
+      <NuxtButton
+        v-if="!narrowView"
         :size="coarsePointer ? 'xl' : 'md'"
         color="neutral"
         variant="outline"
@@ -368,18 +547,19 @@ function onSearchEscape() {
         data-pos-hidden-unavailable-empty
       >
         <p>Nenhum produto disponível encontrado. {{ hiddenUnavailableLabel(hiddenCount) }}.</p>
-        <UiButton variant="outline" @click="setHideUnavailable(false)">
+        <NuxtButton color="neutral" variant="outline" @click="setHideUnavailable(false)">
           <Icon name="lucide:eye" class="size-4" />
           Mostrar indisponíveis
-        </UiButton>
+        </NuxtButton>
       </div>
       <div v-else-if="!filteredProducts.length" class="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
         Nenhum produto encontrado.
       </div>
-      <div v-else class="grid content-start gap-2.5 pb-2" :class="densityCols">
+      <div v-else class="grid content-start pb-2" :class="itemsCols" :data-pos-product-layout-view="layout">
         <template v-for="entry in entries" :key="entry.key">
           <PosProductGroupTile
             v-if="entry.kind === 'group'"
+            :row="layout === 'list'"
             :touch="coarsePointer"
             :group="entry.group"
             :cart-items="cartItems"
@@ -387,6 +567,7 @@ function onSearchEscape() {
           />
           <PosProductTile
             v-else
+            :row="layout === 'list'"
             :touch="coarsePointer"
             :product="entry.product"
             :qty="productQty(entry.product.sku)"

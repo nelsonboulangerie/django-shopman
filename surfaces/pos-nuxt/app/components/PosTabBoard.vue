@@ -7,7 +7,7 @@ import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGr
 // and emits intent; it owns no orchestration. `move_lines` is Arc 4 — here the
 // board only lists, selects and opens.
 import type { POSTabProjection } from "~/types/pos";
-import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
+import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs, tabCardAccessibleName, tabCardBadge, tabCardView, type TabCardView, type TabFilter } from "~/presentation/tabBoard";
 import { nextFreeNumericTabRef } from "~/utils/posTabLifecycle";
 
 const props = defineProps<{
@@ -28,6 +28,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [string];
   open: [POSTabProjection | string];
+  openNextFree: [];
   requestAssociation: [];
 }>();
 
@@ -56,12 +57,12 @@ const nextFit = computed(() => ({
   icon: "i-lucide-arrow-right-circle",
 }));
 const barActions = computed(() => [openFit, nextFit.value]);
+// O número do botão é a leitura deste quadro; quem escolhe e reserva a comanda é o
+// servidor, para duas estações nunca abrirem a mesma (#2443).
 function openNextFree() {
   if (!nextFreeRef.value) return;
-  const existing = props.tabs.find((tab) => tab.ref === nextFreeRef.value);
-  if (existing) activateTab(existing);
-  else if (props.hasDraft) emit("requestAssociation");
-  else emit("open", nextFreeRef.value);
+  if (props.hasDraft) emit("requestAssociation");
+  else emit("openNextFree");
 }
 
 // Board color = a traffic-light semantic (Pablo, 2026-06-10): cor só onde tem
@@ -83,6 +84,16 @@ function updateInput(value: unknown) {
     maxLength: props.maxLength,
     disallowedChars: props.disallowedChars,
   }));
+}
+
+// Enter no campo vazio é a "Próxima livre": o mesmo toque do botão, sem a mão sair
+// do teclado (P2-3 do WP-E8). Antes era mudo, porque o "Abrir comanda" fica
+// desabilitado sem referência e o navegador não envia o formulário.
+function onEmptyEnter(event: KeyboardEvent) {
+  if ((event.target as HTMLElement | null)?.tagName !== "INPUT") return;
+  if (props.modelValue.trim() || event.isComposing || props.busy) return;
+  event.preventDefault();
+  openNextFree();
 }
 
 function submitInput() {
@@ -110,7 +121,7 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
   <section class="flex h-full min-h-0 flex-col gap-3">
     <!-- No celular a busca ocupa a linha inteira e os dois botões dividem a de baixo:
          nada colapsa num quadrado vazio nem sai da tela (régua da v4). -->
-    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput">
+    <form class="flex shrink-0 flex-wrap gap-2" @submit.prevent="submitInput" @keydown.enter="onEmptyEnter">
       <!-- Autofocus: o board remonta a cada volta (inclusive pós-venda) e a
            primeira ação do operador é digitar a comanda — o foco já espera lá. -->
       <div class="relative min-w-0 max-sm:basis-full sm:max-w-xs sm:flex-1">
@@ -233,6 +244,8 @@ defineExpose({ focus: () => inputRef.value?.inputRef?.focus() });
         variant="ghost"
         class="@container flex h-[5.5rem] flex-col gap-0.5 overflow-hidden rounded-md border px-3 py-2 text-left transition hover:border-primary/50 hover:bg-accent items-stretch justify-start font-normal"
         :class="cardTone(view)"
+        :aria-label="tabCardAccessibleName(view, badge, tabTitleView(view.displayRef, '').title)"
+        data-pos-tab-card
         @click="activateTab(tab)"
       >
         <div class="flex items-center justify-between gap-2">

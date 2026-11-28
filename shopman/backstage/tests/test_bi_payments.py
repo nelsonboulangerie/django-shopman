@@ -322,3 +322,26 @@ def test_payment_method_is_not_offered_where_it_makes_no_sense():
         validate_config("revenue", "payment_method", "")
     with pytest.raises(ExploreError, match="não vale para Quantidade produzida"):
         validate_config("qty_produced", "payment_method", "")
+
+
+def test_closing_mix_sums_what_was_captured_not_the_intent_amount(db):
+    """M4 (laudo 23/10): captura parcial conta o capturado, líquido de estorno."""
+    from shopman.payman.models import PaymentIntent, PaymentTransaction
+
+    from shopman.backstage.services.closing import _payment_method_totals
+
+    intent = PaymentIntent.objects.create(
+        ref="PI-CLOSING-PARTIAL",
+        order_ref="ORD-CLOSING-PARTIAL",
+        method="card",
+        amount_q=2000,
+        status=PaymentIntent.Status.REFUNDED,
+        gateway="stripe",
+        captured_at=timezone.now(),
+    )
+    PaymentTransaction.objects.create(intent=intent, type=PaymentTransaction.Type.CAPTURE, amount_q=1500)
+    PaymentTransaction.objects.create(intent=intent, type=PaymentTransaction.Type.REFUND, amount_q=500)
+
+    totals = _payment_method_totals(timezone.localdate())
+
+    assert totals["card"] == 1000

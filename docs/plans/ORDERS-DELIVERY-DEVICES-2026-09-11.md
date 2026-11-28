@@ -39,7 +39,8 @@ legado, não identidade física; não inventar vínculos históricos por migraç
 M00→M01→M02→M03→M04, integrados a WP01/02/03/06/07/09 do plano principal.
 Estado em11/09: M00–M03 implementados; M04 com provas funcionais/concorrência/
 migração executadas e aceite de capacidade aberto (budgets reprovados). Commits,
-negativos e limites em `../reports/execution/orders-20260910/delivery_devices/README.md`.
+negativos e limites ficavam no diário do laboratório orders-isolated, aposentado e apagado
+em 21/11/2026 por decisão do dono (#2972); a história está no git.
 Não declara fase técnica global, piloto ou rollout concluídos.
 
 ## Integração e rollback

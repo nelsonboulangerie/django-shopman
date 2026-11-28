@@ -31,15 +31,17 @@ const atLineCeiling = computed(() =>
   && availableQty.value != null && availableQty.value > 0
 )
 const substitutes = computed(() => cartIssue.value?.substitutes ?? [])
-// Planejado = há próximo lote conhecido. Enquadra a escassez como pré-reserva
-// ("garantir o seu"), não como "esgotou". A reserva é o planned-hold do carrinho.
+// Planejado = há próximo lote conhecido. A folha diz quando o item fica disponível
+// ("Disponível a partir das 15h", do servidor) e oferece "Reservar" (dono,
+// 24/11/2026, KISS). A reserva é o planned-hold do carrinho.
 const isPlanned = computed(() => !!cartIssue.value?.is_planned)
 // Esgotado honesto e assinável (WP-3): oferece "Me avise quando disponível" no lugar
 // de um beco sem saída. O StockNotifyButton já faz o POST para o sku do item.
 const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable && !atLineCeiling.value)
 // Intro dos substitutos e headlines de escassez vêm do registro omotenashi (Kintsugi);
 // o fallback cobre só o intervalo até o payload chegar.
-const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Que tal um destes no lugar?')
+// A frase já vem com o nome do item ("Que tal um destes no lugar de Melonpan?", #2907).
+const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || `Que tal um destes no lugar de ${itemName.value}?`)
 
 // Sem saldo, o aviso é o mesmo para todo mundo: o cliente nunca sabe se o item
 // esgotou, se a casa o pausou ou se ele saiu do canal (AVAILABILITY-PLAN §2).
@@ -61,18 +63,29 @@ const description = computed(() => {
       ? `Todas as unidades de ${itemName.value} desta fornada já estão na sua sacola.`
       : `Todas as unidades de ${itemName.value} que temos agora já estão na sua sacola.`
   }
-  if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message
+  // O título já diz quando; a frase do Admin é opcional, e vazia não puxa outra.
+  if (isPlanned.value && cartIssue.value?.planned_offer_title) return cartIssue.value.planned_offer_message || ''
   if (hasAvailable.value) return `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
-  if (substitutes.value.length) return `${itemName.value} está indisponível agora. Veja boas alternativas.`
+  // O título já disse que ficou indisponível: a descrição leva direto à lista, sem
+  // repetir a palavra, e a lista dispensa o rótulo de cima (#2907).
+  if (substitutes.value.length) return substitutesIntro.value
   if (isNotifiable.value) return `${itemName.value} acabou agora. Dá para avisarmos você quando voltar.`
   return `${itemName.value} acabou agora, e não temos substituto para oferecer hoje.`
 })
 // Linha que já existe: o número é o TOTAL que ela passa a ter, e o rótulo diz
-// isso. "Pré-reservar 4 unidades" com 2 já na sacola leria como mais quatro.
+// isso. "Reservar 4" com 2 já na sacola leria como mais quatro.
+//
+// Próximo lote (dono, 24/11/2026): "Reservar" quando o lote cobre o que ela pediu;
+// só quando cobre MENOS, "Reservar 4", porque aí o número é a verdade que ela
+// precisa ver.
 const primaryQtyLabel = computed(() => {
-  const n = formatCount(availableQty.value!, 'unidade', 'unidades')
   const total = lineQty.value != null && lineQty.value > 0 ? ' no total' : ''
-  return isPlanned.value ? `Pré-reservar ${n}${total}` : `Levar ${n}${total}`
+  if (isPlanned.value) {
+    const requested = cartIssue.value?.requested_qty ?? null
+    const covers = requested != null && availableQty.value! >= requested
+    return covers ? 'Reservar' : `Reservar ${availableQty.value}${total}`
+  }
+  return `Levar ${formatCount(availableQty.value!, 'unidade', 'unidades')}${total}`
 })
 
 function useAvailable () {
@@ -103,7 +116,7 @@ function chooseSubstitute (sub: typeof substitutes.value[number]) {
       </UiButton>
 
       <div v-if="substitutes.length">
-        <p class="mb-1 shop-meta">{{ hasAvailable ? 'Ou troque por:' : substitutesIntro }}</p>
+        <p v-if="hasAvailable" class="mb-1 shop-meta">Ou troque por:</p>
         <ul class="divide-y overflow-hidden rounded-lg border">
           <li v-for="sub in substitutes" :key="sub.sku">
             <UiButton

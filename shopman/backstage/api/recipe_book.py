@@ -6,8 +6,9 @@ chama a orquestração fina (``services.recipe_book``) e devolve a projection
 (``projections.recipe_book``) já formatada.
 
 Permissão: **ler** é o gate do app de Produção (``backstage.operate_production``,
-ou ver a ficha); **escrever** é ``shop.manage_production`` (ou mudar a ficha),
-a mesma régua de "mexer acontece no app de Produção". A régua vive em
+ou ver a ficha); **escrever** é ``craftsman.change_recipe``: criar, editar,
+conferir e publicar ficha é da gestão da produção (Gerente e Dono), e a Cozinha,
+que opera lotes com ``shop.manage_production``, só lê. A régua vive em
 ``resolve_recipe_book_access``; aqui só se pergunta.
 
 A estrela (``recipes/<ref>/favorite/``) é preferência do operador, não edição
@@ -31,6 +32,7 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.craftsman.models import ProductionMode
 
 from shopman.backstage.projections.recipe_book import (
     build_capture_draft,
@@ -40,13 +42,14 @@ from shopman.backstage.projections.recipe_book import (
     build_recipe_compare,
     build_recipe_entry,
     build_recipe_reference,
+    build_recipe_review_queue,
     build_recipe_sheet,
     build_recipe_sheet_list,
     resolve_recipe_book_access,
     wire_formula,
 )
 from shopman.backstage.services import recipe_book as recipe_book_service
-from shopman.backstage.services import recipe_favorites, recipe_ratings
+from shopman.backstage.services import recipe_favorites, recipe_ratings, recipe_review
 from shopman.backstage.services.exceptions import (
     RecipeBookServiceError,
     RecipeEntryNotFound,
@@ -54,6 +57,7 @@ from shopman.backstage.services.exceptions import (
     RecipeVersionNotFound,
 )
 from shopman.backstage.services.recipe_capture import RecipeCaptureError, RecipeCaptureNotConfigured
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services.remote_mutations import (
     RemoteMutationConflict,
     RemoteMutationInProgress,
@@ -65,15 +69,27 @@ from .permissions import HasBackstagePermission
 from .projections import projection_data
 
 _MSG_VIEW = "O inventário de receitas exige backstage.operate_production."
-_MSG_EDIT = "Alterar o inventário de receitas exige shop.manage_production."
+_MSG_EDIT = "Só a gestão da produção cria, edita e publica ficha técnica."
 
 #: Códigos do Craftsman que são conflito de ESTADO, não de campo: 409, não 400.
-_STATE_CONFLICT_CODES = ("VERSION_NOT_DRAFT", "ENTRY_ARCHIVED", "NO_ACTIVE_CRITERIA", "RECIPE_CHANGED")
+_STATE_CONFLICT_CODES = (
+    "VERSION_NOT_DRAFT",
+    "ENTRY_ARCHIVED",
+    "NO_ACTIVE_CRITERIA",
+    "RECIPE_CHANGED",
+    "REVIEW_NOT_CURRENT",
+    # Publicar pede confirmação explícita (``replace_active`` / ``new_output_sku``):
+    # a tela lê o código e pergunta, em vez de mostrar só o erro.
+    "SKU_ALREADY_IN_USE",
+    "OUTPUT_SKU_UNKNOWN",
+)
 
 _KINDS = ("bread", "viennoiserie", "sweet_dough", "cookie", "filling", "cream", "sauce", "beverage", "other")
 _RECIPE_SORTS = ("updated", "name", "kind")
 #: Ordenação do cadastro direto da ficha de execução.
 _RECIPE_SHEET_SORTS = ("updated", "name", "output", "active")
+#: ``?mode=`` do inventário e das fichas: os valores de ``ProductionMode``.
+_PRODUCTION_MODES = tuple(str(value) for value in ProductionMode.values)
 
 
 def _positive_int(value, *, default: int, maximum: int) -> int:
@@ -92,7 +108,11 @@ def _actor(request) -> str:
 def _service_error_response(exc: RecipeBookServiceError) -> Response:
     """``RecipeBookServiceError`` no dialeto canônico: 409 para estado, 400 com ``field`` para campo."""
     if exc.code in _STATE_CONFLICT_CODES:
-        return Response({"detail": exc.detail, "error": {"code": exc.code.lower()}}, status=409)
+        payload = {"detail": exc.detail, "error": {"code": exc.code.lower()}}
+        if exc.field:
+            payload["field"] = exc.field
+            payload["errors"] = {exc.field: [exc.detail]}
+        return Response(payload, status=409)
     payload: dict = {"detail": exc.detail}
     if exc.field:
         payload["field"] = exc.field
@@ -191,7 +211,7 @@ class RecipeBookAccessView(_RecipeBookBase):
         responses={201: OpenApiResponse(description="The entry with its versions.")},
     ),
 )
-class RecipeBookListView(_RecipeBookBase):
+class RecipeBookListView(ServerTimingMixin, _RecipeBookBase):
     def get(self, request):
         kind = str(request.query_params.get("kind") or "").strip()
         if kind and kind not in _KINDS:
@@ -206,6 +226,12 @@ class RecipeBookListView(_RecipeBookBase):
                 {"detail": "Ordenação desconhecida.", "field": "sort", "errors": {"sort": ["Ordenação desconhecida."]}},
                 status=400,
             )
+        mode = str(request.query_params.get("mode") or "").strip()
+        if mode and mode not in _PRODUCTION_MODES:
+            return Response(
+                {"detail": "Modo de produção desconhecido.", "field": "mode", "errors": {"mode": ["Modo de produção desconhecido."]}},
+                status=400,
+            )
         book = build_recipe_book(
             query=request.query_params.get("q", ""),
             kind=kind,
@@ -214,6 +240,8 @@ class RecipeBookListView(_RecipeBookBase):
             only_without_sku=request.query_params.get("without_sku", "") in ("1", "true", "yes"),
             only_with_draft=request.query_params.get("with_draft", "") in ("1", "true", "yes"),
             only_favorites=request.query_params.get("favorites", "") in ("1", "true", "yes"),
+            only_unreviewed=request.query_params.get("unreviewed", "") in ("1", "true", "yes"),
+            production_mode=mode,
             sort=sort,
             page=_positive_int(request.query_params.get("page"), default=1, maximum=100000),
             page_size=_positive_int(request.query_params.get("page_size"), default=48, maximum=100),
@@ -390,6 +418,51 @@ class RecipeFavoriteView(_RecipeBookBase):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="The baker's check queue: current versions not confirmed yet, best sellers first",
+        responses={200: OpenApiResponse(description="queue + access.")},
+    ),
+)
+class RecipeReviewQueueView(_RecipeBookBase):
+    """A fila do padeiro (WP-RECEITAS-DA-CASA F2). Leitura do inventário basta para ver."""
+
+    def get(self, request):
+        return Response({
+            "queue": projection_data(build_recipe_review_queue()),
+            "access": projection_data(self.access),
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Confirm the version in use was checked by someone from the house",
+        responses={200: OpenApiResponse(description="The entry with the signed check.")},
+    ),
+)
+class RecipeVersionReviewView(_RecipeBookBase):
+    """"Está certa": assina a conferência da versão em uso (``meta["review"]``).
+
+    Pede a escrita do inventário: conferir é declarar a receita da casa. Repetir
+    renova o carimbo, então não precisa de chave de intenção.
+    """
+
+    requires_edit = True
+
+    def post(self, request, ref: str, number: int):
+        entry = self._entry(ref)
+        version = self._version(entry, number)
+        user = request.user
+        name = (user.get_full_name() if hasattr(user, "get_full_name") else "") or _actor(request)
+        try:
+            recipe_review.confirm(version, actor=_actor(request), actor_name=name)
+        except RecipeBookServiceError as exc:
+            return _service_error_response(exc)
+        return Response({"entry": self._entry_payload(entry.ref), "ok": True})
+
+
+@extend_schema_view(
     put=extend_schema(
         tags=["backstage"],
         summary="Rate a closed version 0 to 5 per active criterion (one rating per operator, replaced on re-rate)",
@@ -548,7 +621,7 @@ class RecipeVersionPublishView(_RecipeBookBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Formula lens preview (baker's percentages, metrics, parts, final mix, BOM)",
+        summary="Formula lens preview (baker's percentages, metrics, preps, final mix, BOM)",
         responses={200: OpenApiResponse(description="The lens over the given formula.")},
     ),
 )
@@ -677,7 +750,7 @@ class IngredientOptionsView(_RecipeBookBase):
 class RecipeCaptureView(_RecipeBookBase):
     """Lê uma anotação ou foto e devolve o rascunho. Nada é gravado aqui.
 
-    503 sem ``AI_ASSIST_API_KEY``: a tela mostra "sem leitura automática neste
+    503 sem conexão de IA para ``recipe``: a tela mostra "sem leitura automática neste
     ambiente" e aponta a porta manual, não um erro.
     """
 
@@ -729,9 +802,16 @@ class RecipeSheetListView(_RecipeBookBase):
                 {"detail": "Ordenação desconhecida.", "field": "sort", "errors": {"sort": ["Ordenação desconhecida."]}},
                 status=400,
             )
+        mode = str(request.query_params.get("mode") or "").strip()
+        if mode and mode not in _PRODUCTION_MODES:
+            return Response(
+                {"detail": "Modo de produção desconhecido.", "field": "mode", "errors": {"mode": ["Modo de produção desconhecido."]}},
+                status=400,
+            )
         sheets = build_recipe_sheet_list(
             query=request.query_params.get("q", ""),
             active=request.query_params.get("active", ""),
+            production_mode=mode,
             sort=sort,
             page=_positive_int(request.query_params.get("page"), default=1, maximum=100000),
             page_size=_positive_int(request.query_params.get("page_size"), default=48, maximum=100),

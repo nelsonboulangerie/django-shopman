@@ -1,5 +1,5 @@
 import { mountSuspended } from "@nuxt/test-utils/runtime";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 
 import OperatorPageHeader from "../../app/components/OperatorPageHeader.vue";
@@ -31,7 +31,7 @@ describe("a frase de cada estado, uma só na suíte", () => {
   });
 
   it("nenhuma frase usa travessão", () => {
-    for (const kind of ["loading", "empty", "error", "offline"] as const) {
+    for (const kind of ["loading", "empty", "error", "offline", "forbidden"] as const) {
       const copy = screenStateCopy(kind, { what: "a fila", since: "10:42" });
       expect(`${copy.title} ${copy.description}`).not.toMatch(/[—–]/);
     }
@@ -46,11 +46,16 @@ describe("OperatorScreenState", () => {
     });
     expect(state().getAttribute("data-operator-screen-state")).toBe("error");
     expect(state().getAttribute("role")).toBe("alert");
+    expect(state().getAttribute("data-orientation")).toBe("vertical");
     expect(state().textContent).toContain("Não foi possível carregar a fila");
     const retry = [...state().querySelectorAll("button")].find((button) =>
       button.textContent?.includes("Tentar de novo"),
     )!;
     expect(retry).toBeDefined();
+    expect(state().className).toContain("max-sm:flex-wrap");
+    expect(state().querySelector<HTMLElement>('[data-slot="actions"]')?.className).toContain(
+      "max-sm:basis-full",
+    );
     retry.click();
     expect(mounted.emitted("retry")).toHaveLength(1);
   });
@@ -68,6 +73,21 @@ describe("OperatorScreenState", () => {
     });
     expect(state().getAttribute("data-operator-screen-state")).toBe("empty");
     expect(state().textContent).toContain("Nenhum lote fechado no período");
+  });
+
+  it("sem permissão: diz de quem é, e não oferece Tentar de novo (beta 05/11, CEN-05)", async () => {
+    expect(screenStateCopy("forbidden", { what: "o Catálogo" })).toEqual({
+      title: "Sua conta não abre o Catálogo",
+      description: "Peça o acesso a um gerente.",
+    });
+    mounted = await mountSuspended(OperatorScreenState, {
+      attachTo: document.body,
+      props: { state: "forbidden", what: "o Catálogo" },
+    });
+    expect(state().getAttribute("data-operator-screen-state")).toBe("forbidden");
+    expect(state().textContent).toContain("Sua conta não abre o Catálogo");
+    expect(state().textContent).not.toContain("Sem conexão");
+    expect(state().querySelector("button")).toBeNull();
   });
 
   it("sem conexão: aviso warning com a hora do que está na tela", async () => {
@@ -97,6 +117,7 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     });
     const shown = () => document.querySelectorAll("[data-page-header-alert]");
     expect(shown()).toHaveLength(1);
+    expect(shown()[0]!.getAttribute("data-orientation")).toBe("vertical");
     expect(shown()[0]!.textContent).toContain("2 pedidos passaram do horário");
     const more = document.querySelector<HTMLButtonElement>("[data-page-header-alerts-more]")!;
     expect(more.textContent?.trim()).toBe("e mais 2 avisos");
@@ -106,11 +127,146 @@ describe("OperatorPageHeader: o lugar do aviso da tela", () => {
     expect(document.querySelector("[data-page-header-alerts-more]")).toBeNull();
   });
 
+  it("o selo do posto vira ícone abaixo de xl e não quebra em duas linhas (beta 05/11, PDV2-17)", async () => {
+    useNuxtData("operator-session").data.value = {
+      workstation: { context_label: "Posto PDV principal" },
+    };
+    try {
+      mounted = await mountSuspended(OperatorPageHeader, {
+        attachTo: document.body,
+        props: { title: "Encomendas", search: false, inbox: false },
+      });
+      const full = document.querySelector<HTMLElement>("[data-page-header-eyebrow]")!;
+      // O selo leva iniciais maiúsculas (NuxtBadge, #2130); o nome lido não.
+      expect(full.textContent).toContain("Posto PDV principal · Este dispositivo");
+      expect(full.className).toContain("max-xl:hidden");
+      expect(full.className).toContain("whitespace-nowrap");
+      const icon = document.querySelector<HTMLElement>("[data-page-header-eyebrow-icon]")!;
+      expect(icon.className).toContain("xl:hidden");
+      expect(icon.getAttribute("aria-label")).toBe("Posto PDV principal · este dispositivo");
+    } finally {
+      useNuxtData("operator-session").data.value = undefined;
+    }
+  });
+
+  it("o eyebrow que a tela declara fica escrito (é o assunto dela)", async () => {
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props: { title: "Croissant", eyebrow: "Rascunho · Versão 3", search: false, inbox: false },
+    });
+    expect(document.querySelector("[data-page-header-eyebrow]")?.className).toContain("max-sm:hidden");
+    expect(document.querySelector("[data-page-header-eyebrow-icon]")).toBeNull();
+  });
+
   it("sem avisos, nenhuma faixa", async () => {
     mounted = await mountSuspended(OperatorPageHeader, {
       attachTo: document.body,
       props: { title: "Pedidos", search: false, inbox: false },
     });
     expect(document.querySelector("[data-page-header-alerts]")).toBeNull();
+  });
+
+  it("dispensa sem resolver: libera a tela agora e volta numa nova montagem", async () => {
+    const props = {
+      title: "Pedidos",
+      search: false,
+      inbox: false,
+      alerts: [{ id: "late", color: "warning" as const, title: "2 pedidos passaram do horário" }],
+    };
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props,
+    });
+
+    const close = document.querySelector<HTMLButtonElement>('[data-slot="close"]')!;
+    expect(close).toBeDefined();
+    close.click();
+    await nextTick();
+    expect(document.querySelector("[data-page-header-alerts]")).toBeNull();
+
+    mounted.unmount();
+    document.body.innerHTML = "";
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props,
+    });
+    expect(document.querySelector("[data-page-header-alert]")?.textContent).toContain(
+      "2 pedidos passaram do horário",
+    );
+  });
+});
+
+describe("OperatorPageHeader: a pergunta que espera resposta vira aviso de tela", () => {
+  const NOW = Date.now();
+  const question = (minutes: number) => ({
+    key: 31,
+    tone: "warning" as const,
+    message: "“Amanhã tem croissant?”",
+    subject: "Ana espera a resposta da equipe",
+    respondByIso: new Date(NOW + minutes * 60_000).toISOString(),
+    deadlineKind: "house" as const,
+    answer: { label: "Responder ao cliente", placeholder: "", maxLength: 300 },
+  });
+  afterEach(() => {
+    useOperatorInboxAlerts().value = null;
+    useAnswerWindowRequest().value = null;
+  });
+  const alert = () => document.querySelector<HTMLElement>("[data-page-header-alert]");
+  const props = { title: "Pedidos", search: false, inbox: false, alerts: [{ id: "x", color: "info" as const, title: "Outro aviso" }] };
+
+  it("no topo, antes dos da tela, na cor da atenção, com Responder; vencida, vermelho", async () => {
+    useOperatorInboxAlerts().value = { items: [question(7)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.textContent).toMatch(/Ana espera a resposta da equipe\s·\saté\s\d{1,2}h(\d{2})?/);
+    expect(alert()!.outerHTML).toMatch(/warning/);
+    const reply = [...alert()!.querySelectorAll("button")].find((b) => b.textContent?.includes("Responder"))!;
+    reply.click();
+    await nextTick();
+    expect(useAnswerWindowRequest().value).toBe(31);
+    mounted.unmount();
+    useOperatorInboxAlerts().value = { items: [question(-1)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.outerHTML).toMatch(/error/);
+    expect(alert()!.textContent).toMatch(/Ana espera a resposta da equipe\s·\spassou\sdo\sprazo\shá\s1\smin/);
+  });
+
+  it("o X dispensa nesta montagem e o aviso volta na próxima, enquanto ninguém responde", async () => {
+    useOperatorInboxAlerts().value = { items: [question(7)], count: 1, answer: vi.fn() };
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    const close = [...alert()!.querySelectorAll("button")].find((b) => !b.textContent?.trim())!;
+    close.click();
+    await nextTick();
+    expect(document.body.textContent).not.toContain("Ana espera a resposta da equipe");
+    mounted.unmount();
+    mounted = await mountSuspended(OperatorPageHeader, { attachTo: document.body, props });
+    expect(alert()!.textContent).toContain("Ana espera a resposta da equipe");
+    // Respondida, a pergunta sai da fonte e o aviso some.
+    useOperatorInboxAlerts().value = { items: [], count: 0, answer: vi.fn() };
+    await nextTick();
+    expect(document.body.textContent).not.toContain("Ana espera a resposta da equipe");
+  });
+});
+
+describe("OperatorPageHeader: o alerta da operação que pede o topo", () => {
+  afterEach(() => {
+    useOperatorInboxAlerts().value = null;
+  });
+
+  it("aparece no topo, na cor de erro, antes dos avisos da tela", async () => {
+    useOperatorInboxAlerts().value = {
+      items: [{ key: 77, tone: "critical" as const, message: "A Concierge está atendendo sem modelo.", subject: "Concierge sem modelo", onScreen: true,
+        href: "https://admin.exemplo/admin/shop/aiconnection/", hrefLabel: "Abrir conexões de IA" }],
+      count: 1,
+    };
+    mounted = await mountSuspended(OperatorPageHeader, {
+      attachTo: document.body,
+      props: { title: "Pedidos", search: false, inbox: false, alerts: [{ id: "x", color: "info" as const, title: "Outro aviso" }] },
+    });
+    const first = document.querySelector<HTMLElement>("[data-page-header-alert]")!;
+    expect(first.textContent).toContain("Concierge sem modelo");
+    expect(first.textContent).toContain("atendendo sem modelo");
+    expect(first.outerHTML).toMatch(/error/);
+    const button = [...first.querySelectorAll("a")].find((a) => a.textContent?.includes("Abrir conexões de IA"));
+    expect(button?.getAttribute("href")).toBe("https://admin.exemplo/admin/shop/aiconnection/");
   });
 });

@@ -19,6 +19,8 @@ import type {
   ReceiptLine,
   ReceiptLineDifference,
   ReceiptLinePreview,
+  ReceiptPreferredCostChange,
+  ReceiptPriceCheck,
   ReceiptLineRow,
   ReceiptLineStatus,
   ReceiptLineStatusBadge,
@@ -157,25 +159,162 @@ export function conversionFor(
   return conversions.find((conversion) => conversion.id === cost.conversionId) ?? null;
 }
 
-export function purchaseUnitLabel(
+/**
+ * A unidade em que o dinheiro de um insumo se lê E se guarda: o kg de quem é
+ * contado em g ou mg, o litro de quem é em ml, a própria unidade no resto.
+ *
+ * Centavo inteiro por grama não existe: R$ 110 por 1200 g é R$ 91,67 o kg, e
+ * por grama virava R$ 0,09 (beta 05/11, CMP-07). Espelho de
+ * `buyman.models.cost.reading_unit` no servidor.
+ */
+export function readingUnit(unit: string | undefined): { scale: number; label: string } {
+  if (unit === "g") return { scale: 1000, label: "kg" };
+  if (unit === "mg") return { scale: 1_000_000, label: "kg" };
+  if (unit === "ml") return { scale: 1000, label: "l" };
+  return { scale: 1, label: unit ?? "" };
+}
+
+/** Quantas unidades-base o `costQ` paga: a embalagem da conversão, ou a unidade de leitura. */
+export function pricedUnitFactor(material: Pick<Material, "unit"> | undefined, conversion: MaterialConversion | null): number {
+  return conversion?.toBaseFactor ?? readingUnit(material?.unit).scale;
+}
+
+/** O nome da unidade que o `costQ` paga: "saco 25 kg", "kg", "l", "un". */
+export function pricedUnitLabel(
   cost: SupplierMaterialCost,
   material: Material | undefined,
   conversions: MaterialConversion[],
 ): string {
-  return conversionFor(cost, conversions)?.label ?? material?.unit ?? "";
+  return conversionFor(cost, conversions)?.label ?? readingUnit(material?.unit).label;
 }
 
-export function baseFactor(cost: SupplierMaterialCost, conversions: MaterialConversion[]): number {
-  return conversionFor(cost, conversions)?.toBaseFactor ?? 1;
+/** O nome da opção "sem embalagem" no seletor de unidade de compra. */
+export function basePricedOptionLabel(unit: string | undefined): string {
+  const reading = readingUnit(unit);
+  return reading.scale === 1 ? `Unidade-base (${unit ?? ""})` : `Por ${reading.label} (insumo em ${unit})`;
 }
 
 export function isApproximateCost(cost: SupplierMaterialCost, conversions: MaterialConversion[]): boolean {
   return conversionFor(cost, conversions)?.kind === "approximate";
 }
 
-export function costPerBaseUnitQ(cost: SupplierMaterialCost, conversions: MaterialConversion[]): number {
-  const factor = baseFactor(cost, conversions);
-  return Math.round(cost.costQ / factor);
+/** Custo na unidade de leitura do insumo (R$/kg do que é em g), arredondado só aqui. */
+export function costPerReadingUnitQ(
+  cost: SupplierMaterialCost,
+  material: Pick<Material, "unit"> | undefined,
+  conversions: MaterialConversion[],
+): number {
+  const factor = pricedUnitFactor(material, conversionFor(cost, conversions));
+  return Math.round((cost.costQ * readingUnit(material?.unit).scale) / factor);
+}
+
+/** Centavos de `baseQty` unidades-base: 300 g a R$ 91,67/kg = R$ 27,50, arredondado no fim. */
+export function costForBaseQtyQ(
+  cost: SupplierMaterialCost,
+  material: Pick<Material, "unit"> | undefined,
+  conversions: MaterialConversion[],
+  baseQty: number,
+): number {
+  const factor = pricedUnitFactor(material, conversionFor(cost, conversions));
+  return Math.round((cost.costQ * baseQty) / factor);
+}
+
+/**
+ * Os itens desta entrada que trocariam o custo preferencial do insumo.
+ *
+ * Confirmar a entrada grava o preço pago no custo do fornecedor. Quando esse
+ * custo é o preferencial e o preço mudou, a troca não pode acontecer em
+ * silêncio (beta 05/11, CMP-06): cada item daqui pede "Atualizar" ou "Manter".
+ * A conta é a mesma do servidor: o preço recebido levado à unidade de preço
+ * do custo preferencial (embalagem, ou kg/L sem embalagem), arredondado ao centavo.
+ */
+export function receiptPreferredCostChanges(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): ReceiptPreferredCostChange[] {
+  return receiptPriceComparisons(previews, costs, supplierRef, conversions).flatMap(({ preview, cost, incomingQ }) =>
+    incomingQ === cost.costQ ? []
+    : [
+        {
+          lineId: preview.line.id,
+          materialName: preview.material.name,
+          unitLabel: pricedUnitLabel(cost, preview.material, conversions),
+          currentQ: cost.costQ,
+          incomingQ,
+          decision: preview.line.preferredCost ?? "",
+        },
+      ],
+  );
+}
+
+/**
+ * Quantos itens desta entrada têm o preço conferido contra o custo preferencial
+ * do fornecedor, e em quantos deles o preço é o mesmo. É a mesma conta de
+ * `receiptPreferredCostChanges`: só entra quem tem esse custo para comparar.
+ */
+export function receiptPriceCheck(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): ReceiptPriceCheck {
+  const comparisons = receiptPriceComparisons(previews, costs, supplierRef, conversions);
+  return {
+    compared: comparisons.length,
+    same: comparisons.filter(({ cost, incomingQ }) => incomingQ === cost.costQ).length,
+  };
+}
+
+/**
+ * O preço recebido de cada item, levado à unidade de preço do custo
+ * preferencial deste fornecedor (embalagem, ou kg/L sem embalagem; CMP-07),
+ * arredondado ao centavo. A conta é a mesma do servidor. Item sem esse custo
+ * fica de fora: não há com o que comparar.
+ */
+function receiptPriceComparisons(
+  previews: ReceiptLinePreview[],
+  costs: SupplierMaterialCost[],
+  supplierRef: string,
+  conversions: MaterialConversion[],
+): { preview: ReceiptLinePreview; cost: SupplierMaterialCost; incomingQ: number }[] {
+  if (!supplierRef) return [];
+  return previews.flatMap((preview) => {
+    const { line } = preview;
+    const purchaseQty = Number(line.purchaseQty);
+    if (!line.materialSku || preview.totalCostQ <= 0 || !(purchaseQty > 0)) return [];
+    const cost = costs.find(
+      (item) => item.isPreferred && item.materialSku === line.materialSku && item.supplierRef === supplierRef,
+    );
+    if (!cost) return [];
+    const baseQty = purchaseQty * (preview.conversion?.toBaseFactor ?? 1);
+    const incomingQ = Math.round(
+      (preview.totalCostQ / baseQty) * pricedUnitFactor(preview.material, conversionFor(cost, conversions)),
+    );
+    return [{ preview, cost, incomingQ }];
+  });
+}
+
+/**
+ * O que o sistema conferiu sozinho numa entrada em que tudo bate com a nota.
+ *
+ * Cada frase só existe se foi medida: o número vem da conferência, nunca de um
+ * texto fixo. Hoje só o preço é medido aqui. Que o item foi reconhecido pelo
+ * cadastro do fornecedor e que a embalagem confere com a nota não chegam à tela
+ * como fato (a linha não diz de onde veio o insumo, e o servidor cala a sugestão
+ * de embalagem tanto quando concorda quanto quando a nota não diz nada), e por
+ * isso não são ditos. Lista vazia: o bloco some.
+ */
+export function receiptAutoFacts(priceCheck: ReceiptPriceCheck | null | undefined, lineCount: number): string[] {
+  const facts: string[] = [];
+  if (priceCheck && priceCheck.compared > 0) {
+    const { compared, same } = priceCheck;
+    const base = `Preço igual ao custo preferencial do fornecedor em ${same} de ${compared} ${compared === 1 ? "item" : "itens"}`;
+    const left = lineCount - compared;
+    facts.push(left > 0 ? `${base} (${left} sem custo preferencial para comparar)` : base);
+  }
+  return facts;
 }
 
 export function quotePreview(
@@ -185,12 +324,12 @@ export function quotePreview(
 ): QuotePreview | null {
   const costQ = parseMoneyInput(input);
   if (!material || costQ <= 0) return null;
-  const factor = conversion?.toBaseFactor ?? 1;
+  const reading = readingUnit(material.unit);
   return {
     costQ,
-    purchaseUnitLabel: conversion?.label ?? material.unit,
-    baseFactor: factor,
-    baseCostQ: Math.round(costQ / factor),
+    pricedUnitLabel: conversion?.label ?? reading.label,
+    readingUnitLabel: reading.label,
+    readingCostQ: Math.round((costQ * reading.scale) / pricedUnitFactor(material, conversion)),
     approximate: conversion?.kind === "approximate",
   };
 }
@@ -208,6 +347,31 @@ export function invoiceProbe(raw: string) {
     accessKey,
     valid: Boolean(accessKey),
   };
+}
+
+/**
+ * O aviso junto do campo quando o que se digitou é só número e não fecha os 44
+ * dígitos da chave. Antes a chave curta ia ao servidor e voltava num aviso que
+ * sumia (beta 05/11, CMP-10). QR e código de barras (com letras ou URL) passam
+ * direto: quem decide é a leitura.
+ */
+export function invoiceKeyHint(raw: string): string {
+  const text = raw.trim();
+  if (!text || /[^\d\s.\-/]/.test(text)) return "";
+  const digits = text.replace(/\D/g, "").length;
+  if (digits === 44) return "";
+  return digits > 44 ?
+      `A chave da NF tem 44 dígitos; aqui há ${digits}.`
+    : `A chave da NF tem 44 dígitos; faltam ${44 - digits}.`;
+}
+
+/**
+ * O começo de Receber (com NF ou sem NF) some só quando a entrada tem item. Digitar
+ * a chave ou a referência em papel não pode tirar as abas de baixo do dedo e
+ * subir a tela inteira (beta 05/11, CMP-10).
+ */
+export function receiptHasStarted(lines: readonly unknown[]): boolean {
+  return lines.length > 0;
 }
 
 /**
@@ -722,7 +886,9 @@ export function receiptLinePreview(
     purchaseUnitLabel: receiptPurchaseUnitLabel(line, matchedMaterial, conversion),
     baseQty,
     baseQtyKnown,
-    baseCostQ: baseQtyKnown && baseQty > 0 ? Math.round(totalCostQ / baseQty) : 0,
+    readingUnitLabel: readingUnit(material.unit).label,
+    readingCostQ:
+      baseQtyKnown && baseQty > 0 ? Math.round((totalCostQ * readingUnit(material.unit).scale) / baseQty) : 0,
     totalCostQ,
     approximate: conversion?.kind === "approximate",
     suggestion: receiptLineSuggestion(line, materials),
@@ -793,7 +959,7 @@ export function enrichMaterial(
     ...material,
     coverageDays: coverageDays(material),
     preferredCost,
-    preferredBaseCostQ: preferredCost ? costPerBaseUnitQ(preferredCost, conversions) : null,
+    preferredReadingCostQ: preferredCost ? costPerReadingUnitQ(preferredCost, material, conversions) : null,
     supplierCount: new Set(materialCosts.map((cost) => cost.supplierRef)).size,
     conversionCount: conversions.filter((conversion) => conversion.materialSku === material.sku && conversion.isActive).length,
     tone: materialTone(material, issues),
@@ -872,31 +1038,31 @@ export function supplierCostRows(
   conversions: MaterialConversion[],
 ): SupplierCostRow[] {
   const materialCosts = costs.filter((cost) => cost.materialSku === material.sku);
-  const preferredBaseCost =
+  const preferredReadingCost =
     materialCosts.find((cost) => cost.isPreferred) ?
-      costPerBaseUnitQ(materialCosts.find((cost) => cost.isPreferred) as SupplierMaterialCost, conversions)
-    : Math.min(...materialCosts.map((cost) => costPerBaseUnitQ(cost, conversions)), Number.POSITIVE_INFINITY);
+      costPerReadingUnitQ(materialCosts.find((cost) => cost.isPreferred) as SupplierMaterialCost, material, conversions)
+    : Math.min(...materialCosts.map((cost) => costPerReadingUnitQ(cost, material, conversions)), Number.POSITIVE_INFINITY);
 
   return materialCosts
     .map((cost) => {
       const supplier = suppliers.find((item) => item.ref === cost.supplierRef);
       if (!supplier) return null;
-      const baseCostQ = costPerBaseUnitQ(cost, conversions);
-      const deltaQ = Number.isFinite(preferredBaseCost) ? baseCostQ - preferredBaseCost : 0;
-      const deltaPercent = preferredBaseCost ? Math.round((deltaQ * 1000) / preferredBaseCost) / 10 : 0;
+      const readingCostQ = costPerReadingUnitQ(cost, material, conversions);
+      const deltaQ = Number.isFinite(preferredReadingCost) ? readingCostQ - preferredReadingCost : 0;
+      const deltaPercent = preferredReadingCost ? Math.round((deltaQ * 1000) / preferredReadingCost) / 10 : 0;
       return {
         cost,
         supplier,
         conversion: conversionFor(cost, conversions),
-        purchaseUnitLabel: purchaseUnitLabel(cost, material, conversions),
-        baseCostQ,
+        pricedUnitLabel: pricedUnitLabel(cost, material, conversions),
+        readingCostQ,
         approximate: isApproximateCost(cost, conversions),
         deltaQ,
         deltaPercent,
       };
     })
     .filter((row): row is SupplierCostRow => Boolean(row))
-    .sort((a, b) => a.baseCostQ - b.baseCostQ);
+    .sort((a, b) => a.readingCostQ - b.readingCostQ);
 }
 
 /**
@@ -927,8 +1093,8 @@ export function reorderRows(
       const preferred = enriched.preferredCost;
       const supplier = preferred ? (suppliers.find((item) => item.ref === preferred.supplierRef) ?? null) : null;
       const suggestedQty = material.suggestedQty ?? 0;
-      const estimatedCostQ =
-        enriched.preferredBaseCostQ === null ? null : Math.round(enriched.preferredBaseCostQ * suggestedQty);
+      // Do custo guardado, arredondado uma vez só: 300 g a R$ 91,67/kg = R$ 27,50.
+      const estimatedCostQ = preferred ? costForBaseQtyQ(preferred, material, conversions, suggestedQty) : null;
       return { material: enriched, supplier, suggestedQty, estimatedCostQ };
     })
     .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
@@ -1087,11 +1253,40 @@ export function skuRoleBadges(roles: SkuRoles | undefined): string[] {
  */
 export function resaleCopy(unit: string, priceInput: string) {
   const byWeight = unit === "kg";
+  const error = moneyInputError(priceInput);
+  const reading = readingUnit(unit);
   return {
+    // Não se vende por grama: o preço é centavo inteiro por unidade, e R$ 0,055/g
+    // virava R$ 0,06 (beta 05/11, CMP-07). O servidor recusa do mesmo jeito.
+    blocked:
+      reading.scale === 1 ? "" : (
+        `Item contado em ${unit} não se vende: o preço por ${unit} perde os centavos. Para vender, cadastre o item em ${reading.label} ou por unidade.`
+      ),
     priceLabel: byWeight ? "Preço por kg (R$)" : `Preço de venda (R$ por ${unit})`,
     reach: byWeight ? "Vendido só no balcão, por peso." : "Entra no PDV. Na loja online, só com foto.",
-    ready: parseMoneyInput(priceInput) > 0,
+    ready: !error && parseMoneyInput(priceInput) > 0,
+    // O motivo junto do campo: botão só apagado não diz o que falta (CMP-07, CMP-16).
+    error,
   };
+}
+
+/**
+ * Por que o valor digitado não serve, ou "" quando serve (ou está vazio).
+ * Dinheiro se guarda em centavos: 0,055 virava R$ 0,06 em silêncio, 9% acima do
+ * digitado (beta 05/11, CMP-07). O servidor recusa do mesmo jeito.
+ */
+export function moneyInputError(value: string): string {
+  const text = value.trim().replace(/[R$\s]/g, "");
+  if (!text) return "";
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return "Escreva só o número, como 12,50.";
+  if (parsed <= 0) return "O preço precisa ser maior que zero.";
+  const decimals = normalized.includes(".") ? normalized.split(".")[1]!.length : 0;
+  if (decimals > 2) {
+    return `O valor guarda centavos: escreva até duas casas, como ${(Math.round(parsed * 100) / 100).toFixed(2).replace(".", ",")}.`;
+  }
+  return "";
 }
 
 /**
@@ -1321,4 +1516,25 @@ export function receiptVolumesStep(view: ReceiptExceptionView): string {
   if (!view.available || view.countOk) return "";
   if (view.countedVolumes === null) return "Contar os volumes da entrega";
   return `Contou ${view.countedVolumes} de ${view.expectedVolumes}: ache o item que não bate`;
+}
+
+/**
+ * Os números do insumo aberto: estoque, mínimo, cobertura e custo preferencial.
+ * O detalhe só tinha selos e "Permitir revenda"; no celular, onde a tabela não
+ * cabe, não havia onde ver o estoque nem o custo (beta 05/11, CMP-13).
+ */
+export function materialFacts(material: Pick<EnrichedMaterial, "unit" | "stockOnHand" | "minStock" | "minStockDeclared" | "coverageDays" | "preferredReadingCostQ">) {
+  return [
+    { key: "stock", label: "Estoque", value: formatQty(material.stockOnHand, material.unit) },
+    { key: "minimum", label: "Mínimo", value: material.minStockDeclared ? formatQty(material.minStock, material.unit) : "nenhum" },
+    { key: "coverage", label: "Cobertura", value: coverageLabel(material.coverageDays) },
+    {
+      key: "cost",
+      label: "Custo preferencial",
+      value:
+        material.preferredReadingCostQ == null ?
+          "sem custo"
+        : `${formatMoney(material.preferredReadingCostQ)} / ${readingUnit(material.unit).label}`,
+    },
+  ];
 }

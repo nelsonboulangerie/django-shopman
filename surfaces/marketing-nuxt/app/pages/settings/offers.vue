@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Ajustes › Ofertas e cupons: um lugar, um nome (`depois-navegacao.jpg`). Oferta dá o
-// benefício sozinha; cupom pede o código na sacola e nasce com a regra dele, sem mexer
+// benefício sozinha; cupom pede o código na etapa Pagamento e nasce com a regra dele, sem mexer
 // em oferta que já está no ar.
+import { offerCampaignNote } from "~/presentation/offers";
+
 const {
   offers,
   options: offerOptions,
@@ -11,11 +13,13 @@ const {
   problem,
   refresh,
   create,
+  update,
   clearProblem,
 } = useMarketingOffers();
 const { refresh: refreshCampaigns } = useCampaigns();
 
 const dialog = ref<"offer" | "coupon" | null>(null);
+const editing = ref<(typeof offers.value)[number] | null>(null);
 const createdRef = ref("");
 
 watch(dialog, (current, previous) => {
@@ -23,15 +27,23 @@ watch(dialog, (current, previous) => {
 });
 
 async function onCreate(payload: Record<string, unknown>) {
-  const created = await create(payload);
+  const created = editing.value
+    ? await update(editing.value.ref, payload)
+    : await create(payload);
   if (!created) return;
   createdRef.value = created.ref;
   dialog.value = null;
+  editing.value = null;
   await refreshCampaigns();
   await nextTick();
   document
     .querySelector<HTMLElement>(`[data-marketing-offer="${created.ref}"]`)
     ?.focus();
+}
+
+function editOffer(offer: (typeof offers.value)[number]) {
+  editing.value = offer;
+  dialog.value = offer.coupons.length ? "coupon" : "offer";
 }
 
 function money(cents: number): string {
@@ -153,7 +165,7 @@ useHead({ title: "Ofertas e cupons" });
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <p class="max-w-2xl text-sm text-muted-foreground">
-          Oferta dá o benefício sozinha. Cupom pede o código na sacola e nasce
+          Oferta dá o benefício sozinha. Cupom pede o código na etapa Pagamento e nasce
           com a regra dele, sem mexer em oferta que já está no ar.
         </p>
 
@@ -202,13 +214,7 @@ useHead({ title: "Ofertas e cupons" });
                       {{ offer.coupons.map((coupon) => coupon.code).join(", ") }}
                       · {{ couponUses(offer) }} usos
                     </template>
-                    <template v-else-if="offer.available_for_campaign"
-                      >Pode ir numa campanha.</template
-                    >
-                    <template v-else
-                      >Regra comercial cadastrada; não pode ir numa campanha
-                      nova agora.</template
-                    >
+                    <template v-else>{{ offerCampaignNote(offer) }}</template>
                   </span>
                   <NuxtButton
                     v-if="offer.available_for_campaign"
@@ -221,6 +227,15 @@ useHead({ title: "Ofertas e cupons" });
                     icon="i-lucide-megaphone"
                     label="Criar campanha com esta oferta"
                     class="mt-4"
+                  />
+                  <NuxtButton
+                    color="neutral"
+                    variant="ghost"
+                    icon="i-lucide-pencil"
+                    label="Editar"
+                    class="mt-2"
+                    :data-offer-edit="offer.ref"
+                    @click="editOffer(offer)"
                   />
                 </div>
               </div>
@@ -255,7 +270,7 @@ useHead({ title: "Ofertas e cupons" });
 
     <MarketingWorkspaceDialog
       :open="dialog !== null"
-      :title="dialog === 'coupon' ? 'Novo cupom' : 'Nova oferta'"
+      :title="editing ? 'Editar oferta' : dialog === 'coupon' ? 'Novo cupom' : 'Nova oferta'"
       :description="
         dialog === 'coupon'
           ? 'O código e a regra de desconto num passo só, sem mexer em oferta automática que já existe.'
@@ -263,19 +278,21 @@ useHead({ title: "Ofertas e cupons" });
       "
       @update:open="
         (value) => {
-          if (!value) dialog = null;
+          if (!value) { dialog = null; editing = null; }
         }
       "
     >
       <MarketingOfferForm
         v-if="dialog"
+        :key="editing?.ref ?? dialog"
         :kind="dialog"
+        :initial="editing ?? undefined"
         :options="offerOptions"
         :busy="saving"
         :global-error="problem?.detail"
         :field-errors="problem?.fieldErrors"
         @submit="onCreate"
-        @cancel="dialog = null"
+        @cancel="dialog = null; editing = null"
       />
     </MarketingWorkspaceDialog>
   </main>

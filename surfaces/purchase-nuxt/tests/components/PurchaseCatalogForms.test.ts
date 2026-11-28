@@ -93,6 +93,7 @@ const moinho: Supplier = {
   isActive: true,
   lastDeliveryAt: "2026-10-06",
   paymentTerm: "28 dias",
+  sendDirectly: false,
 };
 
 function mountMaterial(props: Record<string, unknown>) {
@@ -206,6 +207,53 @@ describe("PurchaseMaterialFormPanel", () => {
 });
 
 describe("PurchaseSupplierFormPanel", () => {
+  it("abrir e cancelar contato sem edição não cria alteração pendente", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    const edit = wrapper.findAll("button").find((button) => button.text() === "Editar");
+    await edit!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    const cancel = wrapper.get('[data-testid="contact-form"]').findAll("button").find((button) => button.text() === "Cancelar");
+    await cancel!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    expect(wrapper.emitted("save-contact")).toBeUndefined();
+  });
+
+  it("cancelar ou salvar contato não apaga a alteração pendente da empresa", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho, savedVersion: 0 });
+    await wrapper.find('[data-testid="supplier-name"]').setValue("Moinho com nome novo");
+    const edit = wrapper.findAll("button").find((button) => button.text() === "Editar");
+    await edit!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    await wrapper.find('[data-testid="contact-email"]').setValue("novo@moinho.example");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(2);
+    const cancel = wrapper.get('[data-testid="contact-form"]').findAll("button").find((button) => button.text() === "Cancelar");
+    await cancel!.trigger("click");
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    await edit!.trigger("click");
+    await wrapper.find('[data-testid="contact-email"]').setValue("novo@moinho.example");
+    await wrapper.find('[data-testid="contact-form"]').trigger("submit");
+    await wrapper.setProps({
+      source: { ...moinho, contacts: moinho.contacts.map((person) => ({ ...person, email: "novo@moinho.example" })) },
+      savedVersion: 1,
+    });
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(true);
+    expect(wrapper.findComponent(ShellStub).props("dirtyCount")).toBe(1);
+    expect((wrapper.find('[data-testid="supplier-name"]').element as HTMLInputElement).value).toBe("Moinho com nome novo");
+  });
+
+  it("salvar a empresa fecha a edição e reabrir compara com o cadastro confirmado", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    const name = "Moinho com nome confirmado";
+    await wrapper.find('[data-testid="supplier-name"]').setValue(name);
+    await wrapper.find('[data-testid="shell-save"]').trigger("click");
+    expect(wrapper.emitted("save")![0]![0]).toMatchObject({ name });
+    // saveSupplier fecha a gaveta no sucesso; savedVersion é exclusivo do contato.
+    await wrapper.setProps({ open: false, source: { ...moinho, name } });
+    await wrapper.setProps({ open: true });
+    expect(wrapper.findComponent(ShellStub).props("dirty")).toBe(false);
+    expect((wrapper.find('[data-testid="supplier-name"]').element as HTMLInputElement).value).toBe(name);
+  });
+
   it("criar: exige a razão social", async () => {
     const wrapper = mountSupplier({ mode: "create" });
     expect(wrapper.find('[data-testid="save-reason"]').text()).toBe("Informe a razão social para salvar.");
@@ -222,7 +270,16 @@ describe("PurchaseSupplierFormPanel", () => {
       isActive: true,
       leadTimeDays: 0,
       paymentTerm: "",
+      sendDirectly: false,
     });
+  });
+
+  it("editar: permite enviar direto somente por decisão do fornecedor", async () => {
+    const wrapper = mountSupplier({ mode: "edit", source: moinho });
+    await wrapper.find('[data-testid="supplier-send-directly"]').trigger("click");
+    await wrapper.find('[data-testid="shell-save"]').trigger("click");
+
+    expect(wrapper.emitted("save")![0][0]).toMatchObject({ sendDirectly: true });
   });
 
   it("duplicar: sugere ref e nome, e recusa repetir a referência", async () => {

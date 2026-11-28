@@ -60,14 +60,6 @@ def is_pos_counter_order(order) -> bool:
     return origin == "pos" and order_sales_mode(order) == "counter"
 
 
-def is_pos_order_mode(order) -> bool:
-    """True para encomenda/entrega registrada pelo operador no PDV."""
-    data = getattr(order, "data", None) or {}
-    snapshot_data = (getattr(order, "snapshot", None) or {}).get("data") or {}
-    origin = data.get("origin_channel") or snapshot_data.get("origin_channel")
-    return origin == "pos" and order_sales_mode(order) == "order"
-
-
 def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
     """Rascunho vazio pode completar o funil; itens exigem combinado completo."""
     mode = payload.get("sales_mode")
@@ -85,15 +77,13 @@ def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
         return
     if not require_ready:
         return
+    # A ordem do funil é a da tela (`orderSetupIssue` no PDV): cliente, para
+    # quando, recebimento. A data vem em segundo porque é ela que diz o que a
+    # casa pode prometer (decisão do dono, 19/11/2026, #2754).
     if not str(payload.get("customer_ref") or "").strip():
         raise PosIntentError(
             "order_customer_required", "Selecione ou cadastre o cliente antes de adicionar produtos.",
             field="customer_ref", focus="customer",
-        )
-    if fulfillment not in ("pickup", "delivery"):
-        raise PosIntentError(
-            "order_fulfillment_required", "Escolha Entrega ou Retirada antes de adicionar produtos.",
-            field="fulfillment_type", focus="fulfillment",
         )
     try:
         day = date.fromisoformat(str(payload.get("delivery_date") or ""))
@@ -103,6 +93,11 @@ def validate_sales_mode(payload: dict, *, require_ready: bool) -> None:
         raise PosIntentError(
             "order_date_required", "Informe a data da encomenda antes de adicionar produtos.",
             field="delivery_date", focus="schedule",
+        )
+    if fulfillment not in ("pickup", "delivery"):
+        raise PosIntentError(
+            "order_fulfillment_required", "Escolha Entrega ou Retirada antes de adicionar produtos.",
+            field="fulfillment_type", focus="fulfillment",
         )
     from shopman.guestman.models import Customer
 

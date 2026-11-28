@@ -85,7 +85,7 @@ def test_exactly_the_noncritical_tail_is_wrapped_and_only_stock_screams():
     """
     from shopman.craftsman.contrib.stockman.handlers import handle_production_changed
 
-    from shopman.shop.handlers import _sse_emitters, _stock_receivers, campaign, production_alerts
+    from shopman.shop.handlers import _sse_emitters, _stock_receivers, campaign, production_alerts, production_cost
     from shopman.shop.handlers.production_order_sync import link_work_order_to_orders
     from shopman.shop.production_lifecycle import on_production_changed_receiver
     from shopman.storefront.handlers import on_production_finished_for_stock_alerts
@@ -94,6 +94,7 @@ def test_exactly_the_noncritical_tail_is_wrapped_and_only_stock_screams():
     non_critical = [
         _stock_receivers.on_production_voided,
         production_alerts.on_production_changed,
+        production_cost.on_production_changed,
         link_work_order_to_orders,
         _sse_emitters._on_production_changed,
         campaign.on_production_changed,

@@ -465,7 +465,7 @@ threshold + condições (price override, total R$ 0, D-1) editáveis. UX do diá
 + crachá) segue recomendada.
 
 **3. Encomendas × cozinha.** ✅ **DECIDIDO (2026-07-13):** roteamento em três destinos por TEMPO,
-não dispatch imediato único. Ver [docs/plans/ENCOMENDA-ROUTING-PLAN.md](../plans/ENCOMENDA-ROUTING-PLAN.md).
+não dispatch imediato único. Ver [docs/plans/ENCOMENDA-ROUTING-PLAN.md](../plans/completed/ENCOMENDA-ROUTING-PLAN.md).
 Resumo: encomenda com lead time disponível → Planejamento de Produção (demanda); pós-lead-time e
 antes do estoque realizado → Gestor em espera ("fermata"); contra estoque realizado → KDS/picking.
 

@@ -16,6 +16,7 @@ import type { QuickFilterItem } from "../../../operator-kit/app/presentation/qui
 import type { BISalesReport } from "~/types/bi";
 import {
   SALES_COMPARE_LABELS,
+  averageTicketText,
   channelIcon,
   csvMoney,
   delta,
@@ -35,6 +36,8 @@ import {
   channelRows as toChannelRows,
   discountCsv as toDiscountCsv,
   discountRows as toDiscountRows,
+  noShowCsv as toNoShowCsv,
+  noShowRows as toNoShowRows,
   hourPoints as toHourPoints,
   revenueReading,
   revenueSeries as toRevenueSeries,
@@ -84,7 +87,7 @@ const hasHistory = computed(() => (report.value?.historical_days ?? 0) > 0);
 const sourcesNote = computed(() => sourcesCaption(report.value?.sources ?? []));
 const conflicts = computed(() => (report.value?.source_conflicts ?? []).map(sourceConflictLabel));
 const compareCaption = computed(() =>
-  report.value ? rangeCaption(report.value.previous.date_from, report.value.previous.date_to) : "",
+  report.value ? rangeCaption(report.value.previous.date_from, report.value.previous.date_to, bounds.value.today) : "",
 );
 
 // Faturamento por balde, com o traço tracejado do período de comparação.
@@ -160,6 +163,15 @@ const discountColumns = [
   { id: "amount", accessorFn: (row: DiscountKindRow) => row.amount_q, header: "Desconto", enableSorting: true, meta: { class: { th: "text-right", td: "text-right tnum" } } },
 ];
 
+// Não retirados (#2698): o servidor soma o bloco que o gesto do Gestor grava; a tela
+// só escreve. Já contados em "Cancelados", fora do faturamento.
+const noShowRows = computed(() => (report.value ? toNoShowRows(report.value) : []));
+const noShowCsv = computed(() => (report.value ? toNoShowCsv(report.value) : undefined));
+const noShowColumns = [
+  { accessorKey: "label", header: "O que aconteceu", meta: { class: { td: "font-medium text-highlighted" } } },
+  { accessorKey: "value", header: "Quanto", meta: { class: { th: "text-right", td: "text-right tnum" } } },
+];
+
 // "Maior canal" leva ao quadro Por canal pelo próximo foco da suíte (linha de foco sob
 // o chrome fixo e foco de teclado no quadro), não por um scrollIntoView da tela.
 const { reveal } = useNextFocus();
@@ -196,7 +208,31 @@ const activeFilters = computed(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes. O período e o canal ficam na faixa logo
+         abaixo; comparar vai para "Filtros", no ⋮. -->
+    <BiCompactBar title="Vendas" :options="readingActions" :active-filters="activeFilters">
+      <template #primary>
+        <OperatorPeriodPicker
+          v-model="selection"
+          :presets="presets"
+          custom
+          compact
+          :today="bounds.today"
+          :max="bounds.max"
+          :epoch="bounds.epoch"
+          align="start"
+          label="Período de análise"
+        />
+        <OperatorQuickFilters v-if="report" v-model="channelPick" :items="channelTabs" label="Recorte por canal" />
+      </template>
+      <template v-if="report" #filters>
+        <NuxtFormField label="Comparar com" :help="compareCaption">
+          <NuxtSelect :model-value="compare" :items="compareItems" class="w-full" @update:model-value="pickCompare" />
+        </NuxtFormField>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="Quanto vendemos?" :actions="readingActions" :actions-label="readingLabel" :active-filters="activeFilters">
       <!-- Período e o recorte por canal (filtro rápido) na linha; comparar no painel
            "Filtros". O canal escolhido também vira chip removível. -->
@@ -271,14 +307,14 @@ const activeFilters = computed(() => {
           <OperatorMetric
             title="Ticket médio"
             icon="i-lucide-ticket"
-            :value="formatMoney(report.average_ticket_q)"
-            :delta="delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against })"
+            :value="averageTicketText(report.orders_total, report.average_ticket_q)"
+            :delta="report.orders_total ? delta(report.average_ticket_q, report.previous.average_ticket_q, { base: formatMoney(report.previous.average_ticket_q), against }) : undefined"
           />
           <OperatorMetric
             title="Cancelados"
             icon="i-lucide-circle-x"
             :value="formatInt(report.cancelled_total)"
-            hint="Fora do faturamento ao lado"
+            hint="Não entram no faturamento."
           />
         </div>
 
@@ -407,6 +443,28 @@ const activeFilters = computed(() => {
             </OperatorTable>
           </OperatorReadingCard>
         </div>
+
+        <!-- Não retirados (#2698): o pedido pronto que o cliente não buscou termina
+             cancelado; aqui o destino do dinheiro e o valor do que se perdeu. -->
+        <OperatorReadingCard
+          title="Não retirados"
+          description="Pedidos de retirada prontos que o cliente não buscou. Já estão em Cancelados, fora do faturamento"
+          :csv="noShowRows.length ? noShowCsv : undefined"
+          class="shrink-0"
+          data-bi-no-show
+        >
+          <OperatorTable
+            in-card
+            :data="noShowRows"
+            :columns="noShowColumns"
+            :row-key="(row) => row.key"
+            caption="Não retirados"
+            empty-icon="i-lucide-package-x"
+            empty-title="Nenhum pedido não retirado no período"
+            empty-description="Aparece aqui quando o Gerente encerra no Gestor um pedido pronto que o cliente não buscou."
+            data-bi-no-show-table
+          />
+        </OperatorReadingCard>
 
         <!-- Descontos por tipo de grupo: o tipo vem do cadastro de grupos ("Tipo para
              o B.I.") e só a venda nativa o registra; o histórico não tem a dimensão. -->

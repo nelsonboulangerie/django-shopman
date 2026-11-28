@@ -35,7 +35,7 @@ class DynamicCollectionMeta:
 
     ref: str            # "featured", "fresh_from_oven", ...
     label: str          # "Destaques"
-    icon: str           # Material Symbols ligature
+    icon: str           # nome Lucide, como o metadata.icon das coleções
     description: str    # Subtítulo para a seção
 
 
@@ -112,7 +112,7 @@ class FeaturedResolver:
     meta = DynamicCollectionMeta(
         ref="featured",
         label="Destaques",
-        icon="local_fire_department",
+        icon="flame",
         description="Os mais vendidos e curados pela casa.",
     )
 
@@ -179,13 +179,13 @@ class FeaturedResolver:
 
 
 class FreshFromOvenResolver:
-    """Recém saídos do forno: WorkOrders finalizadas nos últimos 60 minutos."""
+    """Acabaram de ficar prontos: WorkOrders finalizadas nos últimos 60 minutos."""
 
     meta = DynamicCollectionMeta(
         ref="fresh_from_oven",
-        label="Recém saídos do forno",
-        icon="schedule",
-        description="Saíram do forno nos últimos 60 minutos.",
+        label="Acabaram de ficar prontos",
+        icon="clock",
+        description="Ficaram prontos nos últimos 60 minutos.",
     )
 
     WINDOW_MINUTES = 60
@@ -226,7 +226,7 @@ class NewArrivalsResolver:
     meta = DynamicCollectionMeta(
         ref="new_arrivals",
         label="Novidades",
-        icon="fiber_new",
+        icon="sparkles",
         description="Chegaram recentemente ao cardápio.",
     )
 

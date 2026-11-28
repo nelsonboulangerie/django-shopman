@@ -41,9 +41,18 @@ export function useGridEdit<T>() {
     draft.value = next;
   }
 
-  function clear() {
-    draft.value = {};
-    history.value = [];
+  function clear(keys?: readonly string[]) {
+    if (!keys) {
+      draft.value = {};
+      history.value = [];
+      return;
+    }
+    // Um lote pode confirmar só o recorte visível. O restante continua editável.
+    const saved = new Set(keys);
+    draft.value = Object.fromEntries(
+      Object.entries(draft.value).filter(([key]) => !saved.has(key)),
+    );
+    history.value = history.value.filter((entry) => !saved.has(entry.key));
   }
 
   const dirty = computed(() => Object.keys(draft.value).length);

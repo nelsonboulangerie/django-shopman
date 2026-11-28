@@ -43,6 +43,8 @@ def _refusal(exc: CustomerMergeError) -> Response:
 def _mutation_refusal(exc: CustomerMutationError) -> Response:
     status = 409 if exc.code in {"customer_changed", "contact_conflict", "inactive"} else 400
     payload = {"detail": exc.detail, "error": {"code": exc.code}}
+    if getattr(exc, "owner", None):
+        payload["error"]["owner"] = exc.owner
     if exc.field:
         payload["field"] = exc.field
         payload["errors"] = {exc.field: [exc.detail]}
@@ -79,6 +81,7 @@ class CustomerListView(_CustomersBase):
         listing = build_customer_list(
             query=request.query_params.get("q") or "",
             filter_ref=request.query_params.get("filter") or "all",
+            group_ref=request.query_params.get("group") or "",
             page=as_int(request.query_params.dict(), "page", default=1, min_value=1),
             sort=sort,
         )

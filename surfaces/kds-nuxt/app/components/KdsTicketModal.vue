@@ -18,6 +18,7 @@ import {
   slaPercent,
   splitRef,
   targetLabel,
+  ticketArrivalLine,
   ticketClockLabel,
   ticketTone,
   toneBar,
@@ -42,7 +43,10 @@ const canDeclareVolumes = computed(
 );
 const volumesEditing = ref(false);
 const volumesDraft = ref(0);
-watch(() => [props.open, props.ticket?.pk], () => { volumesEditing.value = false; });
+// Multi-fonte: compara valor a valor. O quadro entrega um objeto de ticket NOVO a cada
+// leitura (poll ou SSE); um getter que devolve array literal dispararia a cada refresh e
+// fecharia o rascunho no meio da edição (beta 05/11, KDS-01).
+watch([() => props.open, () => props.ticket?.pk], () => { volumesEditing.value = false; });
 function openVolumes() {
   const t = props.ticket;
   if (!t) return;
@@ -62,7 +66,7 @@ const ref_ = computed(() =>
   props.ticket ? splitRef(props.ticket.order_ref) : { prefix: "", code: "" },
 );
 const tone = computed(() =>
-  props.ticket ? ticketTone(props.ticket.timer_class) : "ok",
+  props.ticket ? ticketTone(props.ticket.timer_class, props.ticket.status) : "neutral",
 );
 const timerClasses = computed(() => toneTimer(tone.value));
 const barFill = computed(() => toneBar(tone.value));
@@ -99,8 +103,8 @@ const fill = computed(() =>
     <div v-if="ticket" class="flex min-h-0 flex-1 flex-col overflow-hidden" data-kds-ticket-modal>
       <!-- header -->
       <div class="border-b">
-        <div class="flex items-start justify-between gap-3 p-5">
-          <div class="min-w-0">
+        <div class="relative flex flex-wrap items-start justify-between gap-3 p-5 pr-14 sm:flex-nowrap sm:pr-5">
+          <div class="min-w-0 w-full sm:w-auto sm:flex-1">
             <p
               class="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground"
             >
@@ -114,9 +118,7 @@ const fill = computed(() =>
                 :name="`lucide:${lucideIcon(ticket.fulfillment_icon)}`"
                 class="size-3.5"
               />
-              <span class="tabular-nums"
-                >{{ ref_.prefix }}{{ ticket.created_at_display }}</span
-              >
+              <span class="tabular-nums" data-kds-ticket-arrival>{{ ticketArrivalLine(ticket) }}</span>
             </p>
             <p
               class="break-words text-4xl font-extrabold tracking-tight tabular-nums leading-none"
@@ -128,7 +130,7 @@ const fill = computed(() =>
               class="mt-1.5 text-sm font-semibold text-muted-foreground"
             >
               <span class="line-through">Comanda {{ ticket.previous_tab_ref }}</span>
-              <span class="ml-1">· já liberada após o pagamento</span>
+              <span class="ml-1">· referência anterior</span>
             </p>
             <p
               v-if="ticket.customer_name"
@@ -178,7 +180,7 @@ const fill = computed(() =>
             color="neutral"
             variant="ghost"
             icon="i-lucide-x"
-            class="-mt-1 -mr-2 shrink-0"
+            class="absolute top-4 right-4 shrink-0 sm:static sm:-mt-1 sm:-mr-2"
             aria-label="Fechar o detalhe"
             data-kds-ticket-close
             @click="$emit('update:open', false)"

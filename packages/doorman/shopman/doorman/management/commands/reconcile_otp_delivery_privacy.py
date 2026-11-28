@@ -37,8 +37,9 @@ class Command(BaseCommand):
         with transaction.atomic(durable=True):
             locked_customer = None
             if code_hint.customer_id is not None:
-                locked_customer = adapter.lock_active_customer_by_uuid(
-                    code_hint.customer_id
+                locked_customer = adapter.lock_active_identity(
+                    code_hint.customer_id,
+                    purpose="login",
                 )
             code = (
                 VerificationCode.objects.select_for_update()
@@ -58,7 +59,7 @@ class Command(BaseCommand):
                 code.purpose != VerificationCode.Purpose.LOGIN
                 or adapter.login_target_belongs_to_customer(
                     locked_customer,
-                    code.target_value,
+                    adapter.login_handle(code.target_value),
                 )
             )
             if (

@@ -1,73 +1,74 @@
-// Mise en place read-side. Single source for the day's aggregated ingredient
-// list (GET /api/v1/backstage/production/mise-en-place/):
-//   - expand=false (default): immediate ingredients with per-recipe breakdown;
-//   - expand=true: sub-recipes exploded down to raw materials.
-// The "separado" checkmark is shift-local state (localStorage), never persisted
-// server-side. It is scoped to station + date + projection digest so a changed
-// plan cannot inherit marks from the list the operator actually checked.
+// Preparação: a lista do dia e o "Separado" da bancada.
+//
+// Leitura da lista (GET /api/v1/backstage/production/mise-en-place/):
+//   - expand=false (padrão): ingredientes imediatos, com a quebra por receita;
+//   - expand=true: pré-preparos abertos até a matéria-prima.
+//
+// O "Separado" mora no servidor e vale para a bancada inteira (D-042, item 5;
+// WP-F09a): GET/POST em /production/mise-en-place/marks/. A marca é presa ao item,
+// à data e à quantidade que a pessoa viu; mudou a quantidade daquele item, ela cai
+// no servidor, e só então. Nada de "Separado" no dispositivo.
+//   - item de "Por insumo": `<sku>`;
+//   - ingrediente de "Por preparo": `<recipe_ref>/<sku>`.
+// A tela marca na hora (otimista) e desfaz com aviso se o servidor recusar.
+//
+// Tempo real (ADR-016, WP-F15): a lista e as marcas ouvem o MESMO canal da Produção
+// (`useProductionLive`, uma conexão por app). Outro tablet marca, ou a Cozinha
+// planeja e muda a quantidade, e a tela relê as duas leituras; o poll de 60 s fica de
+// reserva.
 import type { Ref } from "vue";
 import type { MiseEnPlaceLineProjection, MiseEnPlaceResponse } from "~/types/production";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import { useProductionLive } from "~/composables/useProductionLive";
 
-interface ChecklistStorage {
-  getItem(key: string): string | null;
-  setItem(key: string, value: string): void;
-  removeItem(key: string): void;
+export const PREP_MARKS_PATH = "/api/v1/backstage/production/mise-en-place/marks/";
+/** A cadência da Preparação enquanto o canal não está aberto. */
+const PREP_POLL_MS = 60_000;
+
+export interface PrepMark {
+  item_ref: string;
+  quantity: string;
+  marked_by: string;
+  marked_at: string;
 }
 
-interface ChecklistScope {
-  stationRef: string;
-  selectedDate: string;
-  sourceRevision: string;
+export interface PrepMarksResponse {
+  date: string;
+  marks: PrepMark[];
 }
 
-interface LoadedChecklist {
-  checked: Set<string>;
-  revisionChanged: boolean;
+interface PrepMarkWriteResponse extends PrepMarksResponse {
+  mark: PrepMark | null;
 }
 
-function revisionDigest(sourceRevision: string): string {
-  const match = /^sha256:([0-9a-f]{16,64}):/.exec(sourceRevision);
-  return match?.[1] ?? "";
+/** A chave do item numa linha de "Por insumo". */
+export function lineItemRef(sku: string): string {
+  return sku;
 }
 
-export function checklistStorageKeys(scope: ChecklistScope) {
-  const digest = revisionDigest(scope.sourceRevision);
-  if (!scope.selectedDate || !digest) return null;
-  const station = encodeURIComponent(scope.stationRef.trim() || "unprovisioned-device");
-  const base = `preparacao:v2:${station}:${scope.selectedDate}`;
-  return {
-    activeRevision: `${base}:active-revision`,
-    items: `${base}:items:${digest}`,
-    digest,
-    base,
-  };
+/** A chave do ingrediente de um preparo ("Por preparo"). */
+export function prepIngredientItemRef(recipeRef: string, sku: string): string {
+  return `${recipeRef}/${sku}`;
 }
 
-export function loadChecklist(storage: ChecklistStorage, scope: ChecklistScope): LoadedChecklist {
-  const keys = checklistStorageKeys(scope);
-  if (!keys) return { checked: new Set(), revisionChanged: false };
-
-  const previousDigest = storage.getItem(keys.activeRevision);
-  const revisionChanged = Boolean(previousDigest && previousDigest !== keys.digest);
-  if (revisionChanged) storage.removeItem(`${keys.base}:items:${previousDigest}`);
-  storage.setItem(keys.activeRevision, keys.digest);
-
-  try {
-    const parsed = JSON.parse(storage.getItem(keys.items) ?? "[]");
-    return {
-      checked: new Set(
-        Array.isArray(parsed)
-          ? parsed.filter((value): value is string => typeof value === "string")
-          : [],
-      ),
-      revisionChanged,
-    };
-  } catch {
-    return { checked: new Set(), revisionChanged };
-  }
+/** A marca que vale para o item na quantidade que a tela mostra, ou `null`. */
+export function markFor(
+  marks: readonly PrepMark[],
+  itemRef: string,
+  quantity: string,
+): PrepMark | null {
+  return marks.find((mark) => mark.item_ref === itemRef && mark.quantity === quantity) ?? null;
 }
 
-export function useMiseEnPlace(selectedDate: Ref<string>, stationRef: Ref<string>) {
+/** "Separado por Ana às 5h40": quem e quando, como o servidor gravou. */
+export function markAuthorLine(mark: PrepMark | null): string {
+  if (!mark) return "";
+  const time = formatClock(mark.marked_at);
+  const who = mark.marked_by ? ` por ${mark.marked_by}` : "";
+  return `Separado${who}${time ? ` às ${time}` : ""}`;
+}
+
+export function useMiseEnPlace(selectedDate: Ref<string>) {
   const expand = ref(false);
 
   const { data, pending, error, refresh } = useFetch<MiseEnPlaceResponse>(
@@ -82,61 +83,74 @@ export function useMiseEnPlace(selectedDate: Ref<string>, stationRef: Ref<string
   const projection = computed(() => data.value?.mise_en_place ?? null);
   const lines = computed<MiseEnPlaceLineProjection[]>(() => projection.value?.lines ?? []);
 
-  useAdaptivePoll(refresh, () => 60_000);
+  const { realtime, fallbackPollMs } = useProductionLive(refresh, () => PREP_POLL_MS);
 
-  const checklistScope = computed<ChecklistScope>(() => ({
-    stationRef: stationRef.value,
-    selectedDate: projection.value?.selected_date ?? "",
-    sourceRevision: projection.value?.source_revision ?? "",
-  }));
-  const checkedKey = computed(() => checklistStorageKeys(checklistScope.value)?.items ?? "");
-  const checked = ref<Set<string>>(new Set());
-  const checklistRevisionChanged = ref(false);
+  return { projection, lines, expand, pending, error, refresh, realtime, fallbackPollMs };
+}
 
-  function loadChecked() {
-    checklistRevisionChanged.value = false;
-    if (!import.meta.client || !projection.value || !checkedKey.value) {
-      checked.value = new Set();
-      return;
-    }
+export function usePrepMarks(selectedDate: Ref<string>, onQuantityChanged: () => unknown = () => {}) {
+  const { data, error, refresh } = useFetch<PrepMarksResponse>(PREP_MARKS_PATH, {
+    key: "production-prep-marks",
+    server: true,
+    query: computed(() => ({ date: selectedDate.value })),
+    onResponseError: operatorSessionOnError,
+  });
+
+  const marks = computed<PrepMark[]>(() => data.value?.marks ?? []);
+
+  // O gesto em voo: a tela já mostra o resultado, o servidor ainda não respondeu.
+  const optimistic = ref<Map<string, boolean>>(new Map());
+  const inFlight = new Set<string>();
+
+  function isMarked(itemRef: string, quantity: string): boolean {
+    const pendingState = optimistic.value.get(itemRef);
+    if (pendingState !== undefined) return pendingState;
+    return markFor(marks.value, itemRef, quantity) !== null;
+  }
+
+  function markOf(itemRef: string, quantity: string): PrepMark | null {
+    if (optimistic.value.has(itemRef)) return null;
+    return markFor(marks.value, itemRef, quantity);
+  }
+
+  function setOptimistic(itemRef: string, state: boolean | undefined) {
+    const next = new Map(optimistic.value);
+    if (state === undefined) next.delete(itemRef);
+    else next.set(itemRef, state);
+    optimistic.value = next;
+  }
+
+  async function toggle(itemRef: string, quantity: string, name: string): Promise<boolean> {
+    if (inFlight.has(itemRef)) return false;
+    const checked = !isMarked(itemRef, quantity);
+    inFlight.add(itemRef);
+    setOptimistic(itemRef, checked);
     try {
-      const loaded = loadChecklist(localStorage, checklistScope.value);
-      checked.value = loaded.checked;
-      checklistRevisionChanged.value = loaded.revisionChanged;
-    } catch {
-      checked.value = new Set();
+      const response = await $fetch<PrepMarkWriteResponse>(PREP_MARKS_PATH, {
+        method: "POST",
+        body: { date: selectedDate.value, item_ref: itemRef, quantity, checked },
+      });
+      data.value = { date: response.date, marks: response.marks };
+      return true;
+    } catch (err) {
+      const status = httpError(err).status;
+      const fallback = checked
+        ? `Não deu para marcar ${name} como separado. Marque de novo.`
+        : `Não deu para desmarcar ${name}. Tente de novo.`;
+      useSonner.error(httpErrorMessage(err, fallback));
+      // 409: a quantidade mudou desde que a lista abriu; a tela relê para mostrar a de agora.
+      if (status === 409) onQuantityChanged();
+      refresh();
+      return false;
+    } finally {
+      setOptimistic(itemRef, undefined);
+      inFlight.delete(itemRef);
     }
   }
-  watch(checkedKey, loadChecked, { immediate: true });
 
-  function toggleChecked(sku: string) {
-    const next = new Set(checked.value);
-    if (next.has(sku)) next.delete(sku);
-    else next.add(sku);
-    checked.value = next;
-    if (import.meta.client && checkedKey.value) {
-      try {
-        localStorage.setItem(checkedKey.value, JSON.stringify([...next]));
-      } catch {
-        // storage cheio/indisponível: o check vive só na sessão.
-      }
-    }
-  }
-  const isChecked = (sku: string) => checked.value.has(sku);
-  const checkedCount = computed(
-    () => lines.value.filter((line) => checked.value.has(line.sku)).length,
-  );
+  // SSE primeiro (ADR-016): outro tablet marcou, esta tela relê as marcas. O poll de
+  // reserva cobre o canal caído.
+  useProductionLive(refresh, () => PREP_POLL_MS);
 
-  return {
-    projection,
-    lines,
-    expand,
-    pending,
-    error,
-    refresh,
-    isChecked,
-    toggleChecked,
-    checkedCount,
-    checklistRevisionChanged,
-  };
+  return { marks, error, refresh, isMarked, markOf, toggle };
 }

@@ -2,7 +2,7 @@
 
 - **Proprietário:** Produto/Marketing (operação), Platform/SRE (entrega) e DPO
   (consentimento/auditoria)
-- **Última verificação:** 2026-10-04
+- **Última verificação:** 2026-10-19
 - **Verificado contra:** rotas, projeções, permissões e specs de deploy do `HEAD`
 - **Gate de deriva:** `make marketing-docs`
 
@@ -62,6 +62,15 @@ sai do conteúdo GRAVADO do anúncio mais as edições do card (`body`, `hashtag
 `platforms`, `google_business`), montada como a aprovação monta — nunca com produto de exemplo. Se o
 anúncio não tem link, a prévia não mostra link, porque o post não terá
 (`campaign.preview_announcement`).
+
+**Conteúdo público nunca sai com link relativo** (MKT-20, beta 05/11). Sem o endereço do
+site da loja (`SHOPMAN_STOREFRONT_BASE_URL`, lido por `storefront_links`), o link nasce `/produto/<sku>` ou `/oferta/<ref>`, e fora da loja
+isso não abre. O rascunho automático continua nascendo; as duas prévias devolvem o motivo
+em `publish_blockers` (`marketing_link_store_address_missing`, aviso com X na revisão), e a
+aprovação e o envio recusam. A decisão mora em `policies/marketing_public_link.py`
+(`public_link_problem`), chamada em `marketing_approval._validate_content`, em
+`marketing_facts.validate_for_dispatch` e nas duas prévias. Ela olha o `link` do conteúdo
+e de cada variante, e o caminho da loja solto no texto.
 
 ### Post do Google Meu Negócio
 
@@ -139,8 +148,12 @@ alimentam `/scheduled`), `scheduled_today_count` e `active_campaign_count`, que 
 a linha "+N agendados hoje · M campanhas ligadas". A fila não decide nada: a revisão
 do anúncio revalida as Actions do operador.
 
-O sino deixou de ter lista própria: é um link para `/` que diz quantas decisões
-esperam. Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
+O sino é a caixa de **Avisos** do kit, a mesma dos outros apps (V6-KIT): as decisões
+entram nela como UM resumo que leva a `/` (a fila), sem repetir a lista (decisão do
+dono, 03/10/2026), e ao lado mora a aba **Para você** (a caixa pessoal: acessos da
+conta, avisos da operação). O número do sino soma as duas e só aparece depois da
+primeira leitura da caixa pessoal, para não pintar "1" e pular para "9+" (beta 05/11,
+MKT-22). Ele mora na barra do topo onde a barra lateral não está (celular e tablet); na
 mesa o selo de Decisões na barra lateral faz o papel dele. A caixa pessoal (SSE `/sse/notifications` e poll de 60 s, que
 só invalidam; a fila refaz o fetch) tem um dono só, o `MarketingInboxLive`, montado
 uma vez no shell em qualquer largura, que também registra os avisos como vistos quando
@@ -148,7 +161,9 @@ a fila está na tela. O push continua abrindo `/announcements/:id#review`, que �
 "Revisar" do cartão daquele anúncio.
 
 Seções de operação: **Decisões** (`/`), **Agendados** (`/scheduled`) e **Enviados**
-(`/history`); **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
+(`/history`). O título canônico Enviados reúne envios, tentativas e encerramentos
+sem envio; a página explicita esse alcance antes da lista, inclusive para anúncios
+expirados sem publicação. **Ajustes** (`/settings`) entra por um item só, no pé da barra lateral, e é
 a página que lista as quatro sub-seções, cada uma com rota própria embaixo dela:
 Campanhas (`/settings/campaigns`), Modelos (`/settings/templates`), Ofertas e cupons
 (`/settings/offers`) e Plataformas (`/settings/platforms`). Dentro de uma sub-seção, a
@@ -156,9 +171,15 @@ faixa esquerda da toolbar (`MarketingSettingsNav`: abas na mesa, lista de escolh
 celular) leva às outras três sem voltar. Desde a fase 2 (WP-FASE2-UX-OPERADOR) o Marketing
 mora no shell da suíte, o mesmo do Gestor (`OperatorSuiteShell`): na mesa, a barra
 lateral em três estados (aberta, compacta, oculta) com Decisões, Agendados e Enviados em
-cima e Ajustes no pé; abaixo de `lg`, a gaveta pelo ☰ (o menu completo) e a barra
-inferior com as quatro seções. Cada tela abre com o `OperatorPageHeader` do kit: título,
-busca, a ação primária da tela e o ⋯ "Mais ações" (as ações como dados; "Atualizar" com a
+cima e Ajustes no pé (Alt+1 a Alt+3 nas três de cima). Desde o modelo de navegação
+(dono, 31/10/2026) o selo do app abre o trocador: Decisões, Agendados e Enviados, depois
+as quatro sub-seções de Ajustes, numa lista só e na ordem do app. As três da operação
+são telas do chão: abaixo de `lg` levam a barra de baixo com elas três, e abaixo de `md`
+o cabeçalho inteiro é a linha do chão do kit (`OperatorCompactBar`): o selo com o ponto
+de conexão, a busca, o sino e o ⋮ no canto, com a hora da leitura e a cadência no topo
+do ⋮ (sem selo "Ao vivo" numa segunda linha). Ajustes é escritório: a barra de baixo traz
+as quatro sub-seções. Na mesa, cada tela abre com o `OperatorPageHeader` do kit: título,
+busca, a ação primária da tela e o ⋮ "Mais ações" (as ações como dados; "Atualizar" com a
 tecla R mora ali), o "ao vivo" no estado da barra, os recortes na toolbar e o aviso da
 tela no lugar declarado (`alerts`).
 
@@ -203,6 +224,28 @@ canônico e sempre leva `base_updated_at`. Action ausente/desatualizada ou reló
 leitura ausente falham fechado, sem chamada de rede; `409` recarrega a projeção e não
 aplica estado otimista. Enquanto um PATCH está em voo, outro gesto de liga/desliga é
 bloqueado para não duplicar a intenção.
+
+**Campanha exclusiva de grupo.** No passo "Público e momento", com WhatsApp
+escolhido, o gestor marca em "Exclusiva do grupo" os grupos de clientes (`guestman.PriceTier`) que
+têm a campanha como exclusiva. Na tela o conceito se chama **Grupo** (também no filtro de
+público e na contagem), o mesmo nome do Gestor: decisão do dono de 20/10/2026, que aposentou
+"Faixa de preço" ([suite-vocabulary.md](suite-vocabulary.md)). O CRUD recebe `exclusive_price_tiers` (`POST`/`PATCH
+marketing/rules/`; ausente no `PATCH` = não mexe) e grava `campaign:<pk>` em
+`PriceTierAdvantage(kind="exclusive_notifications").config.campaign_refs` pela porta única
+`shop/services/campaign_exclusivity.py` (dono da chave, ver
+[data-schemas.md](data-schemas.md#guestmanpricetieradvantageconfig)); apagar a campanha retira
+a referência, e antes disso os anúncios dela herdam os grupos
+(`Announcement.trigger_context.exclusive_price_tiers`, `campaign_exclusivity.forget_campaign`,
+também no `pre_delete` de `Campaign`): o anúncio de campanha exclusiva apagada nunca vira envio
+para todos. A projeção da campanha devolve `exclusive_price_tiers`. Campanha exclusiva só
+alcança membros dos grupos que a declaram, qualquer que seja o público: o resolvedor recebe
+`campaign_id` na contagem do disparo (`POST marketing/audience/count/` com `campaign_id`) e no
+disparo, e o anúncio (`announcement`, exclusividade viva ou herdada) na aprovação, no
+planejamento e no envio das ondas, e quem sai conta em
+`excluded_by_reason.outside_exclusive_groups`. Vantagem desligada no Gestor tira os membros
+daquele grupo; a campanha nunca vira campanha para todos. Exclusiva sai só por mensagem
+direta: o CRUD recusa postagem pública no mesmo salvamento e a aprovação recusa com
+`exclusive_campaign_public_post`.
 
 “Preparar disparo” obedece separadamente à Action `fire_campaign`: recurso, versão,
 href, método, idempotência e exigência de token precisam coincidir. O primeiro POST
@@ -252,6 +295,7 @@ A lista abaixo é comparada por máquina com `shopman/backstage/api/urls.py`. `:
 - `/api/v1/backstage/marketing/history/`
 - `/api/v1/backstage/marketing/options/`
 - `/api/v1/backstage/marketing/offers/`
+- `/api/v1/backstage/marketing/offers/:ref/`
 - `/api/v1/backstage/marketing/platforms/`
 - `/api/v1/backstage/marketing/preview/`
 - `/api/v1/backstage/marketing/rules/`
@@ -285,6 +329,10 @@ loja. `POST /marketing/offers/` exige `shop.edit_marketing_campaigns`, aceita so
 os campos documentados pela própria tela e cria a regra inteira em uma transação.
 Erro de validação não deixa `Promotion` nem `Coupon` parcial.
 
+`PATCH /marketing/offers/:ref/` usa a mesma permissão e validação para editar,
+ativar ou desativar uma oferta existente sem trocar sua referência nem zerar o
+contador de usos de um cupom.
+
 Cupom sempre recebe uma `Promotion` própria. Essa separação preserva o motor canônico:
 uma promoção que possui cupom é excluída das promoções automáticas e só é resolvida
 quando a sessão carrega o código. A API não muda precedência nem empilhamento.
@@ -300,8 +348,12 @@ quando a sessão carrega o código. A API não muda precedência nem empilhament
 | cupom | código normalizado em maiúsculas, único e necessário para ativar sua promoção |
 | limite de usos | `0` é ilimitado; contagem continua no mecanismo atômico existente |
 
-O cockpit permite somente criar e listar. Editar, desativar ou excluir uma regra já
-criada permanece fora desta superfície.
+O cockpit cria, lista e edita (`PATCH offers/<ref>/`, inclusive ativar e desativar).
+Excluir uma regra já criada permanece fora desta superfície. O nome da oferta é o
+que o cliente vê na loja (página da oferta e resumo da sacola), por isso o campo se
+chama "Nome que o cliente vê". O cartão diz por que a oferta não pode ir numa
+campanha: fora de vigor, com cupom, valendo para o catálogo todo ou com coleções
+vazias.
 
 ## Projeção e comandos
 
@@ -570,8 +622,11 @@ significa "na próxima passada" e pode levar alguns minutos** — não é defeit
   --platform instagram`: preflight somente leitura a partir do número já visível na
   URL; imprime a consequência e o comando exato, sem publicar;
 - `make admin`: garante o corte Nuxt operacional/Admin audit-only;
-- job `Marketing — cadeia completa`: instalação, unit/component, lint, tipos, build,
-  E2E, acessibilidade, visual e segurança — só o que o Marketing precisa provar;
+- job `marketing-nuxt` do Surfaces Gate (check obrigatório, Linux): instalação,
+  unit/component, lint, tipos, E2E, acessibilidade e segurança; o retrato visual,
+  gravado em `macos-15`, roda em `Retratos macOS — marketing-nuxt`
+  (`surfaces-visual-pinned.yml`), no PR que toca o app e toda noite no `main`,
+  fora do caminho da fila (ver [ci-escopo.md](ci-escopo.md));
 - job `Supply chain — npm audit`: o `npm audit --audit-level=high` de `operator-kit` e
   `marketing-nuxt`, com a allowlist versionada em `surfaces/npm-audit-allowlist.json`.
   Ele saiu de dentro do job de Marketing para que um vermelho de Marketing volte a

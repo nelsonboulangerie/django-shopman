@@ -135,9 +135,15 @@ def build_catalog_export_dict(**kwargs) -> dict[str, Any]:
 
 
 def _item_status(*, product, listing_item) -> str:
-    if product.is_published and product.is_sellable and listing_item.is_published and listing_item.is_sellable:
+    if (
+        product.is_active
+        and product.is_published
+        and product.is_sellable
+        and listing_item.is_published
+        and listing_item.is_sellable
+    ):
         return "active"
-    if product.is_published and listing_item.is_published:
+    if product.is_active and product.is_published and listing_item.is_published:
         return "paused"
     return "inactive"
 

@@ -144,8 +144,11 @@ def test_checkout_empty_cart_is_rejected(client):
     J.otp_login(client, J.DEFAULT_PHONE)
 
     status, body = J.checkout(client, payment_method="pix")
-    assert status == 400, body
+    # Estado da sacola, não erro de formulário (#3267): 409 com a saída para o cardápio.
+    assert status == 409, body
     assert "vazia" in body["detail"].lower()
+    assert body["error_code"] == "cart_empty"
+    assert body["actions"][0]["href"] == "/menu"
 
 
 def test_add_beyond_stock_is_rejected_with_rich_payload(client):

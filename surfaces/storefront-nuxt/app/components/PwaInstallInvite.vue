@@ -8,6 +8,7 @@
 // só para todo mundo, e o caminho não é: dizia "Safari" para quem estava no Chrome, no
 // Firefox ou dentro do navegador do WhatsApp — e isso não é copy, é erro de fato.
 import type { PwaCopyProjection } from '~/types/shopman'
+import { isShopInviteRouteExcluded } from '~/presentation/invites'
 
 const props = defineProps<{ copy?: PwaCopyProjection }>()
 const route = useRoute()
@@ -16,32 +17,38 @@ const {
   install,
   isStandalone,
   isDismissed,
+  hasOrdered,
+  refreshHasOrdered,
   markShown,
   dismiss,
   dismissAsDone
 } = usePwaInstall()
 const open = ref(false)
-// UM convite por página: divide a vez com o sheet de novidades (useShopInvite).
+// UM convite por visita: divide a vez com o sheet de novidades (useShopInvite).
 const invite = useShopInvite()
 
 const manual = computed(() => plan.value.kind === 'steps')
-const excluded = computed(() => isPwaInviteRouteExcluded(route.path))
+const excluded = computed(() => isShopInviteRouteExcluded(route.path))
 const eligible = computed(() => Boolean(props.copy)
   && !excluded.value
   && !isStandalone.value
   && !isDismissed.value
+  // Só depois do pedido enviado nesta visita (decisão 3, 16/11/2026): antes disso
+  // ela ainda está comprando, e o convite atrapalha.
+  && hasOrdered.value
   // `invite` é falso onde não há caminho honesto (Firefox de computador, Safari antigo)
   // e onde o caminho existe mas subir sozinho seria adivinhação (Chromium já instalado).
   && plan.value.invite
-  && invite.canOpen('pwa-install', route.path))
+  && invite.canOpen('pwa-install'))
 
 // Síncrono: a vez fica marcada no mesmo instante em que o convite abre, antes de
 // o outro convite reavaliar se pode subir.
 watch(open, value => {
-  if (value) invite.claim('pwa-install', route.path)
-  else invite.release('pwa-install', route.path)
+  if (value) invite.claim('pwa-install')
+  else invite.release('pwa-install')
 }, { flush: 'sync' })
-watch(() => route.path, path => invite.leavePage(path))
+// O pedido se conclui no acompanhamento (rota sem convite); a próxima página já pode convidar.
+watch(() => route.path, refreshHasOrdered)
 
 watch(eligible, (value) => {
   if (!value || open.value) return

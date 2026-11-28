@@ -131,7 +131,7 @@ o PDP seguia mostrando o número velho com cara de atual.
 - **Carimbo de origem.** Toda derivação grava
   `Product.metadata["derived_from"][<fato>] = {source, recipe_ref, version_ref, by, at}`
   (`shop.services.derived_provenance`). O `version_ref` sai de `Recipe.meta["version_ref"]`,
-  que o inventário já escreve ao publicar (ADR-026).
+  que o inventário já escreve ao publicar (ADR-027).
 - **Vencido é comparação exata**, nunca heurística: versão de origem gravada ≠ versão atual
   da ficha. Sem limiar, sem tolerância, sem data — data sabe que o tempo passou, não que a
   ficha andou.
@@ -158,7 +158,7 @@ o PDP seguia mostrando o número velho com cara de atual.
 - [`do../plans/completed/PDP-DATA-FIELDS-PLAN.md`](../plans/completed/PDP-DATA-FIELDS-PLAN.md)
 - [`packages/offerman/shopman/offerman/nutrition.py`](../../packages/offerman/shopman/offerman/nutrition.py) — dataclass `NutritionFacts`
 - [`shopman/shop/services/nutrition_from_recipe.py`](../../shopman/shop/services/nutrition_from_recipe.py) — derivação
-- [`shopman/shop/projections/product_detail.py`](../../shopman/shop/projections/product_detail.py) — leitura
+- [`shopman/storefront/presentation/product_detail.py`](../../shopman/storefront/presentation/product_detail.py) — leitura
 - **Nota de atualização (2026-09-10):** a RDC 360/2003 foi substituída. O
   schema desta ADR continua sendo uma projeção legada de PDP, não um contrato
   completo de rótulo comercial. A norma vigente de informação nutricional é a

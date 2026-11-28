@@ -1,4 +1,5 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { orderSecuredThisVisit } from '../utils/orderSecured'
 import { installPlan, readInstallEnvironment, type InstallEnvironment, type InstallPlan } from '../utils/installGuide'
 
 const DISMISS_STORAGE_KEY = 'storefront-pwa-install-dismissed-until'
@@ -15,16 +16,15 @@ interface NavigatorWithStandalone extends Navigator {
   standalone?: boolean
 }
 
-export function isPwaInviteRouteExcluded (path: string): boolean {
-  return path === '/finalizar' || path.startsWith('/finalizar/') || path.startsWith('/pedido/')
-}
-
 export function usePwaInstall (options: { now?: () => number, environment?: InstallEnvironment } = {}) {
   const now = options.now || Date.now
   const deferredPrompt = ref<BeforeInstallPromptEvent | null>(null)
   const isStandalone = ref(false)
   const dismissedUntil = ref<number | null>(null)
   const environment = ref<InstallEnvironment | null>(options.environment || null)
+  // O convite só existe depois do pedido enviado NESTA visita
+  // (`~/utils/orderSecured`). Falso até o mount: no servidor ninguém sabe.
+  const hasOrdered = ref(false)
 
   const isDismissed = computed(() => (dismissedUntil.value || 0) > now())
 
@@ -36,7 +36,12 @@ export function usePwaInstall (options: { now?: () => number, environment?: Inst
     return installPlan({ ...env, canPrompt: Boolean(deferredPrompt.value) })
   })
 
+  function refreshHasOrdered () {
+    hasOrdered.value = orderSecuredThisVisit()
+  }
+
   function readEnvironment () {
+    refreshHasOrdered()
     environment.value = options.environment || readInstallEnvironment(Boolean(deferredPrompt.value))
     isStandalone.value = window.matchMedia('(display-mode: standalone)').matches
       || Boolean((navigator as NavigatorWithStandalone).standalone)
@@ -97,6 +102,8 @@ export function usePwaInstall (options: { now?: () => number, environment?: Inst
     isStandalone,
     dismissedUntil,
     isDismissed,
+    hasOrdered,
+    refreshHasOrdered,
     markShown: () => suppressFor(DISMISS_DAYS),
     dismiss: () => suppressFor(DISMISS_DAYS),
     dismissAsDone: () => suppressFor(DONE_DISMISS_DAYS)

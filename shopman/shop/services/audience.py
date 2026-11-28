@@ -302,6 +302,8 @@ def resolve(
     *,
     sku: str = "",
     now: datetime | None = None,
+    campaign_id: int | None = None,
+    announcement=None,
 ) -> AudienceResult:
     """Resolver a audiência segundo as regras da Campaign.
 
@@ -325,6 +327,15 @@ def resolve(
 
             Entrega: ``vip_first_minutes``, ``preferred_hour_window_hours``.
         sku: SKU do evento, quando houver.
+        campaign_id: a campanha que vai enviar. Campanha EXCLUSIVA de grupo
+            (``services/campaign_exclusivity``) só alcança membros dos grupos que a
+            declaram, qualquer que seja o público das regras; quem fica de fora conta em
+            ``excluded_by_reason["outside_exclusive_groups"]``. Sem campanha (contagem
+            avulsa) nada é restringido.
+        announcement: o anúncio que vai enviar (aprovação, planejamento e ondas). A
+            exclusividade é a dele (``campaign_exclusivity.for_announcement``): a da
+            campanha viva ou, se a campanha foi apagada, a que o anúncio HERDOU dela.
+            Anúncio de campanha exclusiva apagada nunca vira envio para todos.
 
     Returns:
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
@@ -436,6 +447,23 @@ def resolve(
         by_phone = _narrow_to_all(by_phone, applied)
     rule_mismatch = before_intersection - len(by_phone)
 
+    outside_exclusive = 0
+    exclusive_groups = 0
+    if campaign_id or announcement is not None:
+        try:
+            by_phone, outside_exclusive, exclusive_groups = _keep_exclusive_members(
+                by_phone, campaign_id=campaign_id, announcement=announcement
+            )
+        except Exception:
+            # Falha fechada: sem saber quem é membro, ninguém recebe, e a fonte
+            # degradada bloqueia disparo e aprovação como qualquer outra.
+            logger.warning("audience.source_degraded source=exclusive_groups", exc_info=True)
+            degraded.add("exclusive_groups")
+            outside_exclusive = len(by_phone)
+            by_phone = {}
+    if exclusive_groups:
+        counts["exclusive_groups_count"] = exclusive_groups
+
     eligible_recipients, age_exclusions = _exclude_without_adult_declaration(
         by_phone.values()
     )
@@ -447,6 +475,8 @@ def resolve(
         excluded_by_reason["rule_mismatch"] = rule_mismatch
     if invalid_contact_count:
         excluded_by_reason["invalid_contact"] = invalid_contact_count
+    if outside_exclusive:
+        excluded_by_reason["outside_exclusive_groups"] = outside_exclusive
     excluded_by_reason.update(age_exclusions)
     window = max(int(rules.get("preferred_hour_window_hours") or 0), 0)
     common = {
@@ -504,6 +534,47 @@ def _match_mode(rules: dict) -> str:
     return mode
 
 
+def _keep_exclusive_members(
+    by_phone: dict[str, Recipient], *, campaign_id: int | None = None, announcement=None
+) -> tuple[dict[str, Recipient], int, int]:
+    """Campanha exclusiva: manter só membros ativos dos grupos que a declaram.
+
+    Devolve ``(mantidos, quantos saíram, quantos grupos declaram)``. Campanha que nenhum
+    grupo declara volta intacta. Assinante anônimo de alerta (sem cadastro) não é membro
+    de grupo nenhum e sai. Cliente em vários grupos continua sendo um destinatário só,
+    porque a chave é o telefone.
+
+    Em lote: uma consulta para a exclusividade e uma por fatia de
+    ``AUDIENCE_LOOKUP_BATCH_SIZE`` clientes para a filiação, nunca uma por pessoa.
+    """
+    from shopman.shop.services import campaign_exclusivity
+
+    exclusivity = (
+        campaign_exclusivity.for_announcement(announcement)
+        if announcement is not None
+        else campaign_exclusivity.for_campaign(campaign_id)
+    )
+    if not exclusivity.is_exclusive:
+        return by_phone, 0, 0
+    refs = sorted({r.customer_ref for r in by_phone.values() if r.customer_ref})
+    members: set[str] = set()
+    if refs and exclusivity.reachable:
+        from shopman.guestman.models import Customer
+
+        for batch in _batches(refs, AUDIENCE_LOOKUP_BATCH_SIZE):
+            members.update(
+                Customer.objects.filter(
+                    ref__in=batch,
+                    is_active=True,
+                    price_tiers__ref__in=exclusivity.reachable,
+                )
+                .values_list("ref", flat=True)
+                .distinct()
+            )
+    kept = {phone: r for phone, r in by_phone.items() if r.customer_ref in members}
+    return kept, len(by_phone) - len(kept), len(exclusivity.declared)
+
+
 def _narrow_to_all(by_phone: dict[str, Recipient], applied: list[str]) -> dict[str, Recipient]:
     """Interseção: manter só quem satisfaz TODAS as regras que rodaram.
 
@@ -523,6 +594,8 @@ def select_wave(
     sku: str = "",
     now=None,
     available_wave_keys=None,
+    campaign_id: int | None = None,
+    announcement=None,
 ) -> tuple[Recipient, ...]:
     """Os destinatários de uma onda, resolvidos agora.
 
@@ -530,7 +603,7 @@ def select_wave(
     novas, o conjunto inteiro aprovado em ``available_wave_keys``. Isso mantém
     ``all@H`` estável quando H chega. Onda legada que sumiu devolve tupla vazia.
     """
-    result = resolve(rules, sku=sku)
+    result = resolve(rules, sku=sku, campaign_id=campaign_id, announcement=announcement)
     if available_wave_keys is None and "@" not in str(wave_key or ""):
         return {
             "vip": result.vip,

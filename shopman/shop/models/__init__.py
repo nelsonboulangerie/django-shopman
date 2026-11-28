@@ -1,6 +1,8 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
 from .affinity import ProductAffinity
+from .ai_connection import AIConnection, AIProtocol
+from .ai_invocation import AiInvocation, AiOutcome, AiSpendDay
 from .attributes import (
     AttributeDefinition,
     AttributePurpose,
@@ -33,8 +35,9 @@ from .campaign import (
     Trigger,
 )
 from .catalog_binding import CatalogBinding, CatalogSnapshot
-from .catalog_sync import CatalogSyncState, SyncStatus
+from .catalog_sync import CatalogImageUpload, CatalogSyncState, SyncStatus
 from .channel import Channel
+from .channel_addon import ChannelAddon, ChannelAddonGroup
 from .concierge import (
     Conversation,
     ConversationBinding,
@@ -42,7 +45,16 @@ from .concierge import (
     OutboundAttempt,
 )
 from .contact_release import ContactRelease, ReleasedContactKind
+from .conversational import (
+    ConversationalCommitment,
+    ConversationalDecision,
+    ConversationalEpisode,
+    ConversationalOutcome,
+    ConversationalRecord,
+    ConversationalWork,
+)
 from .delivery import DeliveryDistanceBand, DeliveryZone
+from .delivery_service import Courier, CourierLink, CourierRate, DeliveryService
 from .faq import FAQEntry
 from .ifood_merchant import (
     IFoodInterruption,
@@ -50,8 +62,11 @@ from .ifood_merchant import (
     IFoodInterruptionState,
     IFoodStoreStatus,
 )
+from .instance_apply import InstanceApplyRecord
+from .kitchen_note import KitchenNoteTag
 from .omotenashi_copy import OmotenashiCopy
 from .operator_passkey import OperatorPasskey
+from .paid_api_call import PaidApiCall, PaidApiOutcome
 from .privacy import (
     PrivacyRequestOperation,
     PrivacyRequestReceipt,
@@ -65,7 +80,6 @@ from .push_subscription import (
     PushSurface,
 )
 from .quality import QualityDefect, QualityGrade
-from .retired_product import RetiredProduct
 from .rules import RuleConfig
 from .settings_proxies import (
     ShopAppearance,
@@ -80,6 +94,7 @@ from .settings_proxies import (
     ShopSearch,
 )
 from .shop import NotificationTemplate, Shop
+from .usd_brl_quote import UsdBrlQuote
 from .user_notification import (
     NotificationCategory,
     NotificationEventType,
@@ -91,6 +106,14 @@ from .user_notification import (
 
 __all__ = [
     "Shop",
+    "AIConnection",
+    "AIProtocol",
+    "AiInvocation",
+    "UsdBrlQuote",
+    "AiOutcome",
+    "AiSpendDay",
+    "PaidApiCall",
+    "PaidApiOutcome",
     "AttributeDefinition",
     "AttributePurpose",
     "AttributeSource",
@@ -101,6 +124,12 @@ __all__ = [
     "ConversationMessage",
     "OutboundAttempt",
     "ContactRelease",
+    "ConversationalCommitment",
+    "ConversationalDecision",
+    "ConversationalEpisode",
+    "ConversationalOutcome",
+    "ConversationalRecord",
+    "ConversationalWork",
     "ReleasedContactKind",
     "Channel",
     "Promotion",
@@ -110,15 +139,23 @@ __all__ = [
     "PrivacyRequestState",
     "DeliveryZone",
     "DeliveryDistanceBand",
+    "DeliveryService",
+    "Courier",
+    "CourierRate",
+    "CourierLink",
     "FAQEntry",
+    "KitchenNoteTag",
     "IFoodInterruption",
     "IFoodInterruptionKind",
     "IFoodInterruptionState",
     "IFoodStoreStatus",
+    "InstanceApplyRecord",
     "CatalogBinding",
-    "RetiredProduct",
     "CatalogSnapshot",
     "CatalogSyncState",
+    "CatalogImageUpload",
+    "ChannelAddon",
+    "ChannelAddonGroup",
     "SyncStatus",
     "NotificationTemplate",
     "QualityDefect",

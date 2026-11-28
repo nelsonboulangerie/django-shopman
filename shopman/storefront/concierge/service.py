@@ -33,7 +33,7 @@ from shopman.shop.models import (
     OutboundAttempt,
 )
 
-from . import metrics
+from . import metrics, observation_privacy
 from .contracts import IdentityResolution, InboundEvent, TransportScope
 
 logger = logging.getLogger(__name__)
@@ -81,9 +81,10 @@ def operation_mode() -> str:
 def disabled_reason() -> str:
     """Por que o concierge não atende, ou vazio quando atende.
 
-    Duas chaves, dois motivos com nome: a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``)
-    e a credencial da Anthropic (``AI_ASSIST_API_KEY``). Um ``disabled`` sem motivo
-    custou uma noite: a chave estava ligada e a credencial, vazia no painel.
+    Contrato, modo e a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``), cada um com nome:
+    um ``disabled`` sem motivo custou uma noite. A conexão de IA NÃO é motivo (WP-03 do
+    plano da Concierge): sem ela, ou com o freio cortando, o turno segue pelo caminho sem
+    modelo (porteiro, divisão local, executores) e o check avisa ``sem leitura por modelo``.
     """
     if config().get("contract_version") != 3:
         return "contract_gate"
@@ -94,13 +95,23 @@ def disabled_reason() -> str:
         return "operation_mode_gate"
     if not config().get("enabled"):
         return "switch_off"
-    if not (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip():
-        return "ai_key_missing"
     return ""
 
 
 def is_enabled() -> bool:
     return not disabled_reason()
+
+
+def transfer_bridge_channel() -> str:
+    """O canal da Nice quando a ponte de sacola com ela está ligada; vazio quando não.
+
+    A ponte é a Concierge atendendo e a chave ``CONCIERGE_TRANSFER_ENABLED`` ligada
+    (OC-18 a liga). É a única pergunta que a loja faz antes de oferecer "Continuar
+    pelo WhatsApp" ou "Trazer a sacola do WhatsApp" (X1): desligada, a ação não aparece.
+    """
+    if not is_enabled() or config().get("transfer_enabled") is not True:
+        return ""
+    return str(config().get("channel_ref") or "")
 
 
 # ── Copy ──────────────────────────────────────────────────────────────
@@ -456,11 +467,52 @@ def receive_inbound(event: InboundEvent) -> IntakeResult:
                 claim_until=None,
             )
             ConversationBinding.objects.filter(pk=binding.pk).update(last_inbound_at=event.received_at)
-        if conversation.state != Conversation.State.ACTIVE:
-            return IntakeResult(conversation.pk, message.pk, False, "handoff")
-        # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
-        _enqueue_turn(conversation, binding)
+        with_team = conversation.state != Conversation.State.ACTIVE
+        if not with_team:
+            # Replay repara trabalho perdido; efeito e agendamento têm o mesmo commit.
+            _enqueue_turn(conversation, binding)
+    if with_team:
+        if created and conversation.state == Conversation.State.HANDOFF:
+            from . import verification
+
+            if verification.returns_on_new_message(conversation) and return_to_concierge(
+                conversation, answer_waiting=True
+            ):
+                # Foi à equipe só pelo prazo do "vou verificar" e o cliente escreveu de novo
+                # (dono, 20/11/2026, #2836): volta à Concierge, que responde (a devolução
+                # agenda o turno das mensagens sem resposta, esta inclusive).
+                verification.mark_returned(conversation.pk)
+                return IntakeResult(conversation.pk, message.pk, True, "returned")
+            if _login_while_with_team(conversation, binding, message):
+                return IntakeResult(conversation.pk, message.pk, False, "login")
+            _wrote_while_with_team(conversation, binding)
+        return IntakeResult(conversation.pk, message.pk, False, "handoff")
     return IntakeResult(conversation.pk, message.pk, True, "queued" if created else "duplicate")
+
+
+
+
+def _wrote_while_with_team(conversation: Conversation, binding: ConversationBinding) -> None:
+    """Mensagem nova com a conversa na equipe: nunca cai em silêncio.
+
+    Se a mensagem chegou aqui, o fornecedor a mandou para o bot: a marca de atendimento
+    humano dele (``concierge_handoff``) não está ligada, ou foi desligada fora daqui. A
+    posse continua da equipe (só ela, ou a devolução no Admin, a devolve à Concierge):
+    a marca volta a ser ligada, para a próxima mensagem ir ao Live Chat, e o cartão no
+    sino diz que o cliente escreveu. Fora da transação da entrada: é chamada de rede.
+    """
+    outcome = _execute_handoff(binding, True)
+    if outcome.state != "accepted":
+        logger.warning(
+            "concierge.handoff.reassert_unconfirmed conversation=%s binding=%s", conversation.pk, binding.pk
+        )
+    from .triage import customer_quote
+
+    # A fala nova, entre aspas: o título e o "há N min" saem da projeção, pela conversa.
+    latest = (
+        conversation.messages.filter(kind=ConversationMessage.Kind.INBOUND).order_by("-pk").values_list("text", flat=True).first()
+    )
+    _alert(conversation, "concierge_handoff", customer_quote(latest or "") or "Escreveu de novo.")
 
 
 def _enqueue_turn(conversation: Conversation, binding: ConversationBinding) -> None:
@@ -589,6 +641,66 @@ def _scope_connection(scope: TransportScope):
     if not _subject_allowed(connection, scope.subject):
         return None
     return connection
+
+
+def detach_reassigned_number(customer_ref: str, phone: str) -> int:
+    """O número saiu do cadastro (``contact_reassigned``, D3): a conversa dele se desliga.
+
+    No WhatsApp o endereço do transporte é o assinante, e o assinante é o número: quem
+    herda o número escreve pelo MESMO vínculo e cairia na conversa, na sacola e na
+    identidade de quem tinha o número. O vínculo é rebaixado (sem verificação), sai
+    de serviço e solta o endereço, para que a próxima mensagem daquele número abra
+    uma conversa nova, sem herdar nada; a conversa antiga fica intacta, com o dono
+    de antes. Turno em andamento perde a autoridade (cerca). Devolve quantos
+    vínculos soltou.
+    """
+    if not customer_ref or not phone:
+        return 0
+    now = timezone.now()
+    detached = 0
+    conversation_ids = list(
+        Conversation.objects.filter(customer_ref=customer_ref, phone=phone).values_list("pk", flat=True)
+    )
+    for conversation_id in conversation_ids:
+        conversation = Conversation.objects.select_for_update().get(pk=conversation_id)
+        bindings = ConversationBinding.objects.select_for_update().filter(
+            conversation=conversation,
+        ).exclude(status=ConversationBinding.Status.DISABLED)
+        for binding in bindings:
+            binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+            binding.status = ConversationBinding.Status.DISABLED
+            binding.deactivated_at = now
+            # O endereço é único por provedor: só solto ele nasce o vínculo do novo titular.
+            binding.subject = f"{binding.subject}#desligado-{binding.pk}"[:512]
+            binding.save(update_fields=["identity_assurance", "status", "deactivated_at", "subject", "updated_at"])
+            detached += 1
+        Conversation.objects.filter(pk=conversation.pk).update(
+            turn_fence=F("turn_fence") + 1,
+            claim_until=None,
+        )
+    if detached:
+        logger.warning("concierge.binding_detached_number_left customer=%s bindings=%s", customer_ref, detached)
+    return detached
+
+
+def _number_proof_lapsed(conversation: Conversation, binding: ConversationBinding) -> bool:
+    """O vínculo verificado vale enquanto o número tiver prova recente (D3b).
+
+    Acesso de número sem uso verificado há mais de 12 meses volta a pedir prova: o
+    vínculo cai para sem verificação, e o turno segue sem autoridade comercial até a
+    pessoa confirmar o acesso pelo site (o caminho de prova que a Concierge já usa).
+    """
+    if binding.identity_assurance != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER:
+        return False
+    if not conversation.customer_ref or not conversation.phone:
+        return False
+    from shopman.shop.services import auth as auth_service
+
+    if not auth_service.number_proof_expired(customer_ref=conversation.customer_ref, phone=conversation.phone):
+        return False
+    binding.identity_assurance = ConversationBinding.IdentityAssurance.UNVERIFIED
+    binding.save(update_fields=["identity_assurance", "updated_at"])
+    return True
 
 
 def attach_binding(
@@ -789,6 +901,10 @@ class TurnRevoked(Exception):
     """O claim não tem mais autoridade; preservar entradas e efeitos."""
 
 
+#: O nível de autoridade da sacola (ADR-050), para ``assert_turn_authority(for_mutation=...)``.
+CART_AUTHORITY = "cart"
+
+
 def assert_turn_authority(conversation, *, for_mutation=True):
     from . import transport
 
@@ -812,7 +928,11 @@ def assert_turn_authority(conversation, *, for_mutation=True):
         raise TurnRevoked("new_input")
     if not current.claim_until or current.claim_until <= timezone.now():
         raise TurnRevoked("claim_expired")
-    if for_mutation and not getattr(conversation, "_commercial_authority", False):
+    if for_mutation == CART_AUTHORITY:
+        # Sacola (ADR-050): a autoridade comercial completa serve, e a de sacola também.
+        if not (getattr(conversation, "_commercial_authority", False) or getattr(conversation, "_cart_authority", False)):
+            raise TurnRevoked("commercial_authority_missing")
+    elif for_mutation and not getattr(conversation, "_commercial_authority", False):
         raise TurnRevoked("commercial_authority_missing")
     return current
 
@@ -838,6 +958,7 @@ def _claim(conversation_id: int, binding_id: int):
         conversation.turn_fence += 1
         conversation.claim_until = timezone.now() + timedelta(seconds=120)
         conversation.save(update_fields=["turn_fence", "claim_until"])
+        _number_proof_lapsed(conversation, binding)
         adapter = transport.adapter_for(binding)
         connection = transport.connection_for(binding)
         conversation._turn_fence = conversation.turn_fence
@@ -855,7 +976,22 @@ def _claim(conversation_id: int, binding_id: int):
             not conversation._limited_event_assurance
             and binding.identity_assurance == "verified_customer"
         )
+        # Autoridade de SACOLA (ADR-050): mudança reversível e em valor absoluto, que um
+        # reenvio repete sem dobrar. Basta cliente verificado e conexão que não seja só
+        # leitura, mesmo sem identificador de mensagem. Fechar pedido pede mais (o código).
+        conversation._cart_authority = bool(
+            not (config().get("read_only") or (connection and connection.options.get("read_only")))
+            and binding.identity_assurance == "verified_customer"
+        )
         return conversation, binding, inbound
+
+
+def _read_only(binding) -> bool:
+    """A conexão (ou a Concierge inteira) está em só leitura: nada muda a sacola."""
+    from . import transport
+
+    connection = transport.connection_for(binding)
+    return bool(config().get("read_only") or (connection and connection.options.get("read_only")))
 
 
 def _bump_turn_counter(conversation: Conversation) -> int:
@@ -889,10 +1025,86 @@ def _best_window_evidence(
     return max(candidates, default=(None, None, None))[2]
 
 
+#: Por que o motor encaminhou, como a equipe lê no cartão e na conversa.
+FRAMEWORK_HANDOFF_REASON = "A Concierge encaminhou a conversa à equipe"
+FRAMEWORK_HANDOFF_REASONS = {
+    "customer_request": "Cliente pediu para falar com alguém da equipe",
+    "risk": "A Concierge encaminhou por risco na conversa",
+    "rule": "A Concierge encaminhou por regra da casa",
+}
+
+
+def _login_while_with_team(conversation, binding, message) -> bool:
+    """Com a conversa na equipe, o pedido de entrada no site ainda é atendido pela casa.
+
+    A entrada não é conversa: a equipe não precisa fazer nada e a pessoa não pode ficar
+    sem entrar. Só a entrada que saiu (``""``) fecha aqui; a que não saiu segue para a
+    equipe como qualquer mensagem, que é quem fala com a pessoa enquanto a conversa é dela.
+    """
+    from . import login_door
+
+    if not login_door.is_login(message.text or ""):
+        return False
+    try:
+        sent = login_door.answer(conversation, binding, message.text or "") == ""
+    except Exception:
+        logger.exception("concierge.login_door.with_team_failed conversation=%s", conversation.pk)
+        return False
+    if sent:
+        ConversationMessage.objects.filter(pk=message.pk, consumed_by__isnull=True).update(
+            consumed_by=conversation.turn_fence
+        )
+    return sent
+
+
+def _cart_arrival(conversation, binding, turn_text: str):
+    """A resposta da casa quando a mensagem traz a sacola da loja (OC-16); ``None`` se não traz."""
+    from . import cart_arrival
+
+    return cart_arrival.receive(conversation, binding, turn_text)
+
+
+def _site_passage(conversation, binding, turn_text: str, decision):
+    """A resposta da casa quando a cliente pede o site ou a sacola de volta (OC-18); ``None`` se não pede."""
+    from . import site_passage
+
+    return site_passage.handle(conversation, binding, turn_text, decision=decision)
+
+
+def _site_passage_lead(conversation, binding) -> str:
+    """Onde a sacola está, na mensagem seguinte ao aceite no site (OC-18); vazio quando não há o que dizer."""
+    from . import site_passage
+
+    return site_passage.lead(conversation, binding)
+
+
 @_observed("turn")
-def run_turn(
-    conversation_id: int, binding_id: int, *, client=None, triage_client=None, intents_client=None
-) -> TurnResult:
+def _framework_turn(conversation, inbound):
+    """O turno pelo motor do framework (N9b), ou ``None``: só com UMA entrada e a chave da classe.
+
+    ``interrupted``: a conversa mudou de dono no meio (a equipe assumiu, o turno foi revogado);
+    o motor confere antes de enviar e, aí, não envia.
+    """
+    if len(inbound) != 1:
+        return None
+    from . import turn_framework
+
+    fence = conversation.turn_fence
+
+    def interrupted() -> bool:
+        return not Conversation.objects.filter(
+            pk=conversation.pk, turn_fence=fence, state=Conversation.State.ACTIVE
+        ).exists()
+
+    return turn_framework.run(conversation, inbound[0], interrupted=interrupted)
+
+
+#: A entrada que a varredura reingeriu (``inbound_sweep``): a resposta dela começa pela desculpa.
+LATE_SOURCE = "inbound_sweep"
+LATE_REPLY_COPY_KEY = "CONCIERGE_LATE_REPLY"
+
+
+def run_turn(conversation_id: int, binding_id: int, *, triage_client=None, intents_client=None) -> TurnResult:
     """Processa uma entrada pelo vínculo causal e preserva a conversa lógica."""
     conversation, binding, inbound = _claim(conversation_id, binding_id)
     result = TurnResult(
@@ -903,7 +1115,7 @@ def run_turn(
         return result
     ids = [message.pk for message in inbound]
     window_evidence = _best_window_evidence(binding, inbound)
-    from shopman.storefront.concierge import agent as agent_module
+    from .turn_outcome import TurnOutcome
 
     # A régua (OBS0310-K): custo e tempo do turno, gravados no primeiro bloco
     # da resposta. O relógio de ponta a ponta parte da última entrada do turno,
@@ -911,14 +1123,23 @@ def run_turn(
     meter = metrics.TurnMeter()
     meter.received_at = max(message.created_at for message in inbound)
     conversation._meter = meter
+    # O nome que a casa conhece desta conversa sai de todo texto que vai a um leitor
+    # de IA no turno (Jev, leitura de partes), pelo redator, sem a triagem saber dele.
+    names_token = observation_privacy.bind_known_names(conversation.customer_name or "")
     try:
         assert_turn_authority(conversation, for_mutation=False)
         from . import triage as triage_module
 
-        # Triagem (D32): toda entrada ganha intenção, urgência e destino ANTES
-        # do modelo de resposta. O que não é para o bot responder sai daqui
-        # para a equipe (ou para a outra mesa), com o resumo gravado.
-        turn_text = "\n".join(message.text for message in inbound if message.text)
+        # Triagem (D32): toda entrada ganha intenção, urgência e destino antes da
+        # leitura em partes, pela regra local e pelo Jev (sem modelo de texto).
+        from .turn_outcome import collapse_repeats
+
+        turn_text = "\n".join(
+            collapse_repeats(
+                (message.text for message in inbound),
+                limited=bool(getattr(conversation, "_limited_event_assurance", False)),
+            )
+        )
         previous_triage = (conversation.flags or {}).get("triage")
         from . import cancellation
 
@@ -929,70 +1150,121 @@ def run_turn(
             # Cancelamento que o cliente poderia fazer pelo site: a Concierge
             # pergunta e cancela. Fora da janela, a triagem manda para a equipe (R4).
             concierge_answers = "self_cancel"
-        with meter.stage("triage"):
-            decision = triage_module.decide(
-                turn_text,
-                context=triage_module.context_for(conversation),
-                previous=previous_triage,
-                message_ids=ids,
-                commercial_authority=bool(conversation._commercial_authority),
-                client=metrics.triage_client_for(meter, triage_client),
-                channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
-                concierge_answers=concierge_answers,
-            )
-        meter.triage_source = decision.source
-        triage_module.record(conversation, inbound, decision)
+        from . import login_door
+
+        # O pedido de entrada no site não é conversa (dono, 25/11/2026): não passa pela
+        # triagem, que o lia como "falar com uma pessoa", e é atendido abaixo, sem modelo.
+        login_message = login_door.is_login(turn_text)
+        decision = None
+        if not login_message:
+            with meter.stage("triage"):
+                decision = triage_module.decide(
+                    turn_text,
+                    context=triage_module.context_for(conversation),
+                    previous=previous_triage,
+                    message_ids=ids,
+                    commercial_authority=bool(conversation._commercial_authority),
+                    contender=metrics.triage_contender_for(meter, triage_client),
+                    channel_ref=str(conversation.channel_ref or config().get("channel_ref") or ""),
+                    concierge_answers=concierge_answers,
+                )
+            meter.triage_source = decision.source
+            triage_module.record(conversation, inbound, decision)
         result.triage = decision
         from . import intents as intents_module
 
-        # Intenções no plural (OBS0310-Q), atrás da chave: a parte sensível não cala as
-        # outras. A decisão de equipe vai junto para o turno, que responde as dúvidas
-        # simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
-        plural = intents_module.enabled_for(binding)
-        if decision.escalates and not plural:
-            meter.layer = metrics.LAYER_TEAM
-            mark_handoff(
-                conversation, binding, decision.reason_line(), consumed_ids=ids, triage=decision, meter=meter
-            )
-            return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids, triage=decision)
-        if (
-            binding.identity_assurance
-            != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER
-            and not conversation._limited_event_assurance
-        ):
-            identify(conversation, binding, inbound[0].envelope.get("profile") or {})
-            conversation._commercial_authority = bool(
-                conversation.customer_ref
-                and binding.identity_assurance == "verified_customer"
-            )
+        # Intenções no plural (OBS0310-Q), o único caminho (WP-08): a parte sensível não
+        # cala as outras. A decisão de equipe vai junto para o turno, que responde as
+        # dúvidas simples, não mexe no pedido e chama a equipe (decisão do dono, 03/10/2026).
+        if binding.identity_assurance != ConversationBinding.IdentityAssurance.VERIFIED_CUSTOMER:
+            # Ingresso sem identificador de mensagem (o do ManyChat, ADR-050): a identidade vem
+            # do provedor pelo assinante (``getInfo`` no ManyChat), nunca do perfil que veio no
+            # corpo. Sem isto, o vínculo verificado nunca nascia por esse ingresso, e a sacola
+            # do ADR-050 não abria para ninguém.
+            limited = conversation._limited_event_assurance
+            identify(conversation, binding, {} if limited else (inbound[0].envelope.get("profile") or {}))
+            # O nome que a identificação trouxe agora também sai do que vai à leitura.
+            observation_privacy.bind_known_names(conversation.customer_name or "")
+            verified = bool(conversation.customer_ref and binding.identity_assurance == "verified_customer")
+            conversation._commercial_authority = verified and not limited
+            conversation._cart_authority = conversation._cart_authority or (verified and not _read_only(binding))
         assert_turn_authority(conversation, for_mutation=False)
         if all(
             (message.envelope or {}).get("message_type", "text") not in CONVERSATIONAL_MESSAGE_TYPES
             for message in inbound
         ):
-            outcome = agent_module.AgentOutcome(
+            outcome = TurnOutcome(
                 reply_text=copy_message("CONCIERGE_MEDIA_UNSUPPORTED"), layer=metrics.LAYER_MEDIA
             )
             result.fallback = "media"
         elif _bump_turn_counter(conversation) > int(config().get("max_turns_per_day") or 80):
-            outcome = agent_module.AgentOutcome(
+            outcome = TurnOutcome(
                 reply_text=copy_message("CONCIERGE_TURN_LIMIT"), layer=metrics.LAYER_TURN_LIMIT
             )
             result.fallback = "turn_limit"
+        elif login_message:
+            login = login_door.answer(conversation, binding, turn_text)
+            if not login:
+                # A entrada saiu pela casa (a mensagem do link de acesso, com o botão): a Nice
+                # não responde por cima. O turno só consome a mensagem, como o do motor.
+                meter.layer = metrics.LAYER_CONTEXT
+                with transaction.atomic():
+                    Conversation.objects.select_for_update().get(pk=conversation.pk)
+                    assert_turn_authority(conversation, for_mutation=False)
+                    ConversationMessage.objects.filter(
+                        pk__in=ids, binding=binding, consumed_by__isnull=True
+                    ).update(consumed_by=conversation.turn_fence)
+                    Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=0)
+                result.processed_message_ids = ids
+                result.replies = []
+                return result
+            outcome = TurnOutcome(reply_text=login, layer=metrics.LAYER_CONTEXT)
+        elif (arrival := _cart_arrival(conversation, binding, turn_text)) is not None:
+            # A sacola da loja pelo código NB de "Continuar pelo WhatsApp" (OC-16): o
+            # aceite é do serviço de transferência, e a frase é da casa, sem modelo.
+            outcome = arrival
+        elif (passage := _site_passage(conversation, binding, turn_text, decision)) is not None:
+            # A cliente pediu o site ou a sacola de volta (OC-18): o link pela ferramenta, a
+            # passagem pelo serviço de transferência, e a frase da casa, sem modelo.
+            outcome = passage
         else:
+            # A sacola desta conversa foi aceita no site (OC-18, §4.4): o turno responde como
+            # sempre e diz, uma vez, onde ela está. Com o aviso, o turno vai pelo caminho de
+            # hoje, que é o que leva o aviso junto da resposta.
+            passage_lead = _site_passage_lead(conversation, binding)
+            # N9b: o turno pelo motor do framework, só onde a loja ligou a classe e a casa tem a
+            # frase de hoje (``turn_framework``). Com as chaves desligadas, nada muda. Feito pelo
+            # motor, a resposta já saiu pelo mesmo caminho do envio; aqui só se fecha o turno.
+            framework = None if passage_lead else _framework_turn(conversation, inbound)
+            if framework is not None:
+                meter.layer = metrics.LAYER_FRAMEWORK
+                with transaction.atomic():
+                    Conversation.objects.select_for_update().get(pk=conversation.pk)
+                    assert_turn_authority(conversation, for_mutation=False)
+                    ConversationMessage.objects.filter(
+                        pk__in=ids, binding=binding, consumed_by__isnull=True
+                    ).update(consumed_by=conversation.turn_fence)
+                    Conversation.objects.filter(pk=conversation.pk).update(consecutive_failures=0)
+                result.processed_message_ids = ids
+                result.replies = [framework.text] if framework.text else []
+                handoff = getattr(conversation, "_framework_handoff", None)
+                if handoff:
+                    # O motor encaminhou (``handoff``): a MESMA entrega à equipe de hoje, depois do turno fechado,
+                    # com o cartão de "cliente esperando atendente". O aviso ao cliente foi a frase do motor.
+                    mark_handoff(conversation, binding, FRAMEWORK_HANDOFF_REASONS.get(handoff, FRAMEWORK_HANDOFF_REASON))
+                    result.handoff = True
+                    return result
+                result.pending_more = bool(unanswered_inbound(conversation, binding))
+                return result
             try:
-                if plural:
-                    outcome = intents_module.run(
-                        conversation, binding=binding, decision=decision, client=intents_client
-                    )
-                    meter.intents = getattr(outcome, "intents", {}) or {}
-                else:
-                    with meter.stage("agent"):
-                        outcome = agent_module.run_agent(
-                            conversation=conversation,
-                            history=agent_module.history_for(conversation),
-                            client=meter.wrap(client, "model", factory=agent_module.build_client),
-                        )
+                outcome = intents_module.run(
+                    conversation, binding=binding, decision=decision, client=intents_client
+                )
+                meter.intents = getattr(outcome, "intents", {}) or {}
+                if passage_lead:
+                    from . import site_passage
+
+                    outcome = site_passage.with_lead(outcome, passage_lead)
             except TurnRevoked:
                 raise
             except Exception:
@@ -1027,7 +1299,7 @@ def run_turn(
                     "concierge_unavailable",
                     "Resposta automática indisponível; contexto preservado.",
                 )
-                outcome = agent_module.AgentOutcome(
+                outcome = TurnOutcome(
                     reply_text=copy_message("CONCIERGE_UNAVAILABLE"), layer=metrics.LAYER_ERROR
                 )
                 result.fallback = "error"
@@ -1056,7 +1328,7 @@ def run_turn(
                     )
                     ack_text = "" if reviewed_ack.held else reviewed_ack.texts[0]
             else:
-                meter.layer = metrics.LAYER_AGENT_HANDOFF
+                meter.layer = metrics.LAYER_HANDOFF
                 # Quem chamou a equipe pode ter montado o aviso com o motivo (a
                 # Concierge recusando o acréscimo numa encomenda): ele substitui o
                 # padrão e passa pelas regras da casa em ``_prepare_reply``.
@@ -1101,6 +1373,24 @@ def run_turn(
             )
             return TurnResult(conversation.pk, handoff=True, processed_message_ids=ids)
         reply_text, *extra_replies = reviewed.texts
+        if reply_text and any((message.envelope or {}).get("correlation_ref") == LATE_SOURCE for message in inbound):
+            # A mensagem chegou pela varredura (o webhook a perdeu): a resposta sai atrasada,
+            # e a casa diz, numa frase, antes de responder (dono, 24/11/2026).
+            apology = (copy_message(LATE_REPLY_COPY_KEY) or "").strip()
+            reply_text = "\n".join(part for part in (apology, reply_text) if part)
+        # A conferência antes do envio (dono, 21/11/2026), em sombra: correta, útil e
+        # aceitável. Roda fora da transação (o juiz é rede) e nunca derruba o turno; o
+        # veredito vai para o envelope e o placar de conversa mede antes de ela valer.
+        from . import conference as conference_module
+
+        conference = conference_module.confer_turn(
+            conversation=conversation,
+            outcome=outcome,
+            customer_text=turn_text,
+            texts=reviewed.texts,
+            held=False,
+            meter=meter,
+        )
         primary = semantic_blocks(binding, reply_text) if reply_text else []
         extras = [
             block
@@ -1112,8 +1402,13 @@ def run_turn(
         with transaction.atomic():
             Conversation.objects.select_for_update().get(pk=conversation.pk)
             assert_turn_authority(conversation, for_mutation=False)
-            _persist_outcome(conversation, outcome)
             _save_memory(conversation, outcome)
+            _remember_unclear(conversation, outcome)
+            from . import verification
+
+            # "Vou verificar" (WP-05): a pergunta à equipe nasce com a resposta, no
+            # mesmo fence; turno revogado não grava nem cria cartão.
+            verifying = verification.record_turn(conversation, outcome)
             prepared = []
             for index, text in enumerate(texts):
                 prepared.append(
@@ -1139,6 +1434,7 @@ def run_turn(
                         customer_text=turn_text,
                         # O que a tabela já consertou no turno vai no primeiro bloco.
                         house_rules_found=reviewed.violations if index == 0 else (),
+                        conference=conference.as_record() if conference is not None and index == 0 else None,
                     )
                 )
             if not prepared:
@@ -1158,24 +1454,48 @@ def run_turn(
                 consecutive_failures=(
                     0 if not result.fallback else F("consecutive_failures")
                 ),
-                input_tokens=F("input_tokens") + int(outcome.usage.get("input_tokens") or 0),
-                output_tokens=F("output_tokens") + int(outcome.usage.get("output_tokens") or 0),
-                cache_read_tokens=F("cache_read_tokens")
-                + int(outcome.usage.get("cache_read_input_tokens") or 0),
                 last_order_ref=outcome.order_ref or conversation.last_order_ref,
             )
         result.processed_message_ids = ids
         for message in prepared:
             _dispatch_reply(conversation, message)
+        verification.notify_team(conversation, verifying)
         result.replies = texts
+        # A escada, em sombra e DEPOIS do envio (o cliente não espera): se a conferência
+        # reprovou, o que a reescrita teria mandado fica no envelope para o placar comparar.
+        conference_module.shadow_climb(
+            conversation=conversation,
+            message_pk=prepared[0].pk,
+            outcome=outcome,
+            customer_text=turn_text,
+            house_text="\n".join(text for text in reviewed.texts if text),
+            house_conference=conference,
+        )
     except TurnRevoked:
         result.fallback = "revoked"
     finally:
+        observation_privacy.release_known_names(names_token)
         Conversation.objects.filter(
             pk=conversation.pk, turn_fence=conversation.turn_fence
         ).update(claim_until=None)
     result.pending_more = bool(unanswered_inbound(conversation, binding))
     return result
+
+
+def _remember_unclear(conversation: Conversation, outcome) -> None:
+    """A casa disse "não entendi": a conversa guarda, com o fence do turno (no máximo uma vez)."""
+    if not getattr(outcome, "unclear", False):
+        return
+    from .intents import UNCLEAR_FLAG
+
+    fence = getattr(conversation, "_turn_fence", conversation.turn_fence)
+    locked = Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).first()
+    if locked is None:
+        return
+    flags = dict(locked.flags or {})
+    flags[UNCLEAR_FLAG] = True
+    Conversation.objects.filter(pk=conversation.pk, turn_fence=fence).update(flags=flags)
+    conversation.flags = flags
 
 
 def _save_memory(conversation: Conversation, outcome) -> None:
@@ -1190,25 +1510,6 @@ def _save_memory(conversation: Conversation, outcome) -> None:
         ref for ref, status in memory.facts.order_status.items() if status in dialogue.OPEN_ORDER_STATUSES
     ]
     dialogue.save_turn(conversation, memos, previous=memory.state, open_order_refs=open_refs)
-
-
-def _persist_outcome(conversation: Conversation, outcome) -> None:
-    kinds = {
-        "assistant": ConversationMessage.Kind.TOOL_CALL,
-        "user": ConversationMessage.Kind.TOOL_RESULT,
-    }
-    for message in outcome.messages:
-        role = message["role"]
-        content = message["content"]
-        if role == "assistant" and not any(block.get("type") == "tool_use" for block in content):
-            continue
-        ConversationMessage.objects.create(
-            conversation=conversation,
-            role=role,
-            kind=kinds[role],
-            content=content,
-            text="",
-        )
 
 
 def _prepare_reply(
@@ -1226,6 +1527,8 @@ def _prepare_reply(
     customer_text="",
     house_rules_held=None,
     house_rules_found=(),
+    conference=None,
+    send_key="",
 ):
     """Grava a resposta para envio. Toda resposta passa aqui, e aqui passa pelas regras da casa.
 
@@ -1280,6 +1583,15 @@ def _prepare_reply(
             "window_evidence": window_evidence,
             "content_hash": hashlib.sha256(text.encode()).hexdigest(),
             "house_rules": rules_envelope,
+            # O que de fato aconteceu no turno (``house_rules``: verify, handoff, order...). O
+            # corpus anonimizado lê daqui o resultado da conversa (``concierge/corpus``).
+            "receipts": sorted(receipts),
+            # A conferência antes do envio, em sombra (``concierge/conference``): só no
+            # primeiro bloco do turno.
+            **({"conference": conference} if conference else {}),
+            # A chave de envio do motor do framework (``send:<decisão>``): a mesma chave nunca
+            # envia duas vezes (``send_out_of_turn``).
+            **({"send_key": send_key} if send_key else {}),
         },
         usage=_turn_usage(meter),
     )
@@ -1438,6 +1750,58 @@ def _send_reply(
     )
 
 
+def send_out_of_turn(
+    conversation: Conversation, text: str, *, purpose: str = "reply", receipts=frozenset(), send_key: str = ""
+) -> ConversationMessage | None:
+    """Uma mensagem da casa ao cliente FORA de um turno, pelo mesmo caminho da resposta.
+
+    A resposta da equipe a uma verificação (WP-05) e os avisos dos prazos (WP-06):
+    nada aqui é texto de modelo. Vale tudo o que vale para a resposta do turno: as
+    regras da casa (``_prepare_reply``, com os ``receipts`` de quem chama), a conversa
+    ativa (``handoff_ack`` só com ela na equipe), o vínculo liberado e a janela de 24
+    horas do WhatsApp (``transport.response_authorization``), com a prova de janela
+    da última entrada do cliente. Não mexe no ``turn_fence``: um turno em andamento
+    segue valendo. Devolve a mensagem com o desfecho do envio (``transport_state`` e
+    ``envelope["code"]``), ou ``None`` quando a conversa não tem entrada por vínculo ativo.
+
+    ``send_key``: a chave de envio do motor do framework. Com ela, a mesma chave devolve a
+    mensagem já gravada e nunca grava outra (a conferência é feita com a conversa travada); se
+    a gravada ficou só preparada (o processo caiu antes do envio), o envio dela é retomado.
+    """
+    with transaction.atomic():
+        current = Conversation.objects.select_for_update().get(pk=conversation.pk)
+        sent = (current.messages.filter(kind=ConversationMessage.Kind.REPLY, envelope__send_key=send_key).first()
+                if send_key else None)
+        if sent is not None:
+            message = sent
+        else:
+            message = _prepare_out_of_turn(current, text, purpose=purpose, receipts=receipts, send_key=send_key)
+            if message is None:
+                return None
+    return _dispatch_reply(current, message)  # só envia o que ainda está ``prepared``
+
+
+def _prepare_out_of_turn(current, text, *, purpose, receipts, send_key):
+    """A mensagem fora de turno, preparada com a conversa já travada por quem chama."""
+    inbound = list(
+        current.messages.filter(
+            kind=ConversationMessage.Kind.INBOUND,
+            binding__status=ConversationBinding.Status.ACTIVE,
+        ).order_by("-pk")[:20]
+    )
+    if not inbound:
+        return None
+    binding = ConversationBinding.objects.get(pk=inbound[0].binding_id)
+    evidence = _best_window_evidence(
+        binding, [message for message in inbound if message.binding_id == binding.pk], purpose=purpose
+    )
+    current._inbound_max_id = inbound[0].pk
+    return _prepare_reply(
+        current, binding, text, purpose=purpose, window_evidence=evidence, receipts=frozenset(receipts),
+        send_key=send_key,
+    )
+
+
 # ── Handoff ───────────────────────────────────────────────────────────
 
 
@@ -1475,6 +1839,7 @@ def mark_handoff(
     meter=None,
     house_rules_held=None,
     ack_text: str = "",
+    notify_team: bool = True,
 ) -> bool:
     """Transfere a posse local e sincroniza cada vínculo ativo.
 
@@ -1487,6 +1852,9 @@ def mark_handoff(
     ``meter`` (a régua do turno) vai para o aviso de handoff, quando há aviso.
     ``house_rules_held`` é a resposta que as regras da casa seguraram
     (``house_rules.Review.as_envelope``), gravada no envelope do aviso.
+
+    ``notify_team=False`` quando quem passa a conversa à equipe JÁ é a equipe (alguém
+    assumiu pelo cartão da verificação): sem cartão de "cliente esperando atendente".
     """
     with transaction.atomic():
         current = Conversation.objects.select_for_update().get(pk=conversation.pk)
@@ -1535,7 +1903,9 @@ def mark_handoff(
     for binding in bindings:
         outcome = _execute_handoff(binding, True)
         accepted &= outcome.state == "accepted"
-    if triage is not None:
+    if not notify_team:
+        pass
+    elif triage is not None:
         _triage_alert(current, triage, synced=accepted)
     else:
         _alert(
@@ -1577,8 +1947,28 @@ def mark_handoff(
     return accepted
 
 
-def return_to_concierge(conversation: Conversation) -> bool:
-    """Reativa somente após aceite remoto em todos os vínculos ativos."""
+#: ``ConversationMessage.envelope["kind"]`` da nota da devolução. Ver docs/reference/data-schemas.md.
+RETURN_NOTE = "returned_from_team"
+
+
+def return_to_concierge(conversation: Conversation, *, answer_waiting: bool = False) -> bool:
+    """Reativa somente após aceite remoto em todos os vínculos ativos.
+
+    A Concierge retoma relendo o domínio, não o diálogo (OC-13, J8 do plano omnicanal):
+    o ManyChat não entrega ao Shopman o que a equipe escreve no Live Chat (D6: a Page API
+    não tem leitura de mensagens nem assinatura de evento,
+    ``evidence/conversational/whatsapp-window/message-identity-audit.json``; o External
+    Request só dispara com a fala do cliente), então nada do que a casa perguntou antes
+    da equipe vale. A
+    memória recomeça do pedido aberto (``dialogue.after_team``), a pergunta de
+    cancelamento no ar cai, e a nota da devolução grava o que o domínio dizia na hora
+    (sacola, pedido aberto, avisos que saíram enquanto a equipe atendia).
+
+    ``answer_waiting=False`` (a equipe devolveu, pelo Admin ou pela porta do framework):
+    o que o cliente escreveu até aqui foi lido e respondido pela equipe, e a Concierge
+    não executa de novo (N19). ``True`` só na volta sozinha do "vou verificar" vencido
+    (#2836): ninguém da equipe assumiu, e a mensagem que acabou de chegar é respondida.
+    """
     if not config().get("human_return_enabled") or not is_enabled():
         return False
     with transaction.atomic():
@@ -1628,30 +2018,58 @@ def return_to_concierge(conversation: Conversation) -> bool:
                 handoff_sync_state="routing_mismatch"
             )
         if synced:
-            # A equipe falou coisas que o sistema não viu: a memória da conversa zera.
-            from . import dialogue
+            from . import cancellation, dialogue, order_amendment
 
-            dialogue.forget(current.pk)
-            current.refresh_from_db(fields=["flags"])
+            team_since = current.handoff_at
             current.state = Conversation.State.ACTIVE
             current.turn_fence += 1
             current.handoff_reason = ""
             current.handoff_at = None
+            # A equipe falou coisas que o sistema não vê (D6): a memória do diálogo cai e
+            # recomeça do domínio, relido agora. A pergunta de cancelamento no ar cai junto:
+            # um "sim" depois da volta nunca cancela pedido (C08). A alteração de pedido no ar
+            # também (OC-11): um "confirmo" depois da volta nunca altera pedido.
+            facts = dialogue.load_facts(current)
+            flags = dict(current.flags or {})
+            flags.pop(cancellation.PENDING_FLAG, None)
+            flags.pop(order_amendment.PENDING_FLAG, None)
+            memory = dialogue.after_team(facts, fence=current.turn_fence)
+            if memory:
+                flags[dialogue.FLAG_KEY] = memory
+            else:
+                flags.pop(dialogue.FLAG_KEY, None)
+            current.flags = flags
             current.save(
                 update_fields=[
                     "state",
                     "turn_fence",
                     "handoff_reason",
                     "handoff_at",
+                    "flags",
                     "updated_at",
                 ]
             )
+            revoked = []
+            if not answer_waiting:
+                # O que o cliente escreveu até a devolução é do episódio da equipe: ela leu e
+                # respondeu no Live Chat. A Concierge não executa de novo (N19).
+                waiting = current.messages.filter(
+                    kind=ConversationMessage.Kind.INBOUND, automation_eligible=True, consumed_by__isnull=True
+                )
+                revoked = list(waiting.order_by("pk").values_list("pk", flat=True))
+                waiting.update(consumed_by=current.turn_fence)
             ConversationMessage.objects.create(
                 conversation=current,
                 role=ConversationMessage.Role.ASSISTANT,
                 kind=ConversationMessage.Kind.NOTE,
                 text="Voltou para o concierge.",
-                envelope={"version": 3, "turn_fence": current.turn_fence},
+                envelope={
+                    "version": 3,
+                    "kind": RETURN_NOTE,
+                    "turn_fence": current.turn_fence,
+                    "domain": _domain_on_return(current, facts, team_since=team_since),
+                    "revoked_inbound_ids": revoked,
+                },
             )
             for binding in bindings:
                 if unanswered_inbound(current, binding):
@@ -1666,7 +2084,53 @@ def return_to_concierge(conversation: Conversation) -> bool:
             "Retorno não confirmado em todos os vínculos. Atendimento humano mantido.",
         )
     conversation.refresh_from_db()
+    if synced:
+        # Voltou à Concierge: o cartão de atendimento humano desta conversa acabou.
+        _close_card(conversation, "concierge_handoff", actor="concierge")
     return synced
+
+
+def give_back_by_alert(alert_pk: int, *, actor: str):
+    """O "Devolver à Concierge" do cartão do handoff no sino do Gestor (#3578): a mesma devolução do Admin
+    (``return_to_concierge``), que fecha o cartão. Só a conversa daquele cartão, e só se ela está com a equipe."""
+    from shopman.shop.concierge_verification import DeskResult
+
+    conversation = (Conversation.objects.filter(**{f"flags__{ALERTS_FLAG}__concierge_handoff": int(alert_pk)})
+                    .order_by("-pk").first())
+    if conversation is None:
+        return DeskResult(False, "not_found")
+    if conversation.state != Conversation.State.HANDOFF:
+        return DeskResult(False, "not_with_team")
+    if not return_to_concierge(conversation):
+        return DeskResult(False, "not_returned")
+    logger.info("concierge.give_back conversation=%s actor=%s", conversation.pk, actor)
+    return DeskResult(True)
+
+
+def _domain_on_return(conversation: Conversation, facts, *, team_since) -> dict:
+    """O que o domínio dizia na devolução: o que a Concierge relê, gravado para quem audita.
+
+    Sacola e pedidos vêm dos fatos já lidos (``dialogue.load_facts``); os avisos de pedido
+    são as notas que a notificação gravou na conversa (OC-10) desde que a equipe assumiu.
+    """
+    from shopman.shop.services.notification import ORDER_NOTICE_NOTE
+
+    notices = []
+    if team_since is not None:
+        notices = [
+            {"order_ref": (envelope or {}).get("order_ref", ""), "template": (envelope or {}).get("template", ""),
+             "at": created_at.isoformat()}
+            for envelope, created_at in conversation.messages.filter(
+                kind=ConversationMessage.Kind.NOTE, envelope__kind=ORDER_NOTICE_NOTE, created_at__gte=team_since
+            ).order_by("pk").values_list("envelope", "created_at")
+        ]
+    open_order = facts.open_order
+    return {
+        "session_key": conversation.session_key,
+        "cart": [{"sku": sku, "qty": str(line.get("qty") or "")} for sku, line in facts.cart.items()],
+        "open_order": {"ref": open_order.ref, "status": open_order.status} if open_order else None,
+        "notices": notices,
+    }
 
 
 #: Falhas seguidas da resposta automática antes de a conversa ir para a equipe.
@@ -1681,47 +2145,95 @@ def _triage_alert(conversation: Conversation, triage, *, synced: bool) -> None:
     pedido na conversa; ``concierge_other_desk`` fica na operação geral, no
     Admin, e não acorda o balcão.
     """
-    from .triage import OTHER_DESK, alert_message
+    from .triage import OTHER_DESK, alert_message, handoff_message
 
     alert_type = "concierge_other_desk" if triage.destination == OTHER_DESK else "concierge_handoff"
-    message = alert_message(conversation, triage)
+    # O handoff traz só a fala do cliente: o título (quem e por quê) a projeção escreve,
+    # e o botão diz onde responder. A outra mesa segue com o resumo para o Admin.
+    if alert_type != "concierge_handoff":
+        message = alert_message(conversation, triage)
+    elif triage.escalated_by == "verification_timeout":
+        # O prazo do "vou verificar" venceu: o motivo e a pergunta do cliente, juntos
+        # (coordenação, 20/11/2026), pelo resumo que a verificação já escreve.
+        message = triage.summary
+    else:
+        message = handoff_message(conversation)
     if not synced:
-        message += "\nA marca de atendimento humano não foi confirmada no ManyChat em todos os vínculos."
+        message = "\n".join(
+            line for line in (message, "O ManyChat não confirmou que a conversa passou para a equipe.") if line
+        )
+    _conversation_card(
+        conversation,
+        alert_type,
+        message,
+        intent=triage.intent,
+        urgency=triage.urgency,
+        destination=triage.destination,
+    )
+
+
+def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+    _conversation_card(conversation, alert_type, message)
+
+
+#: ``Conversation.flags["alerts"]`` = ``{tipo: pk}``: o cartão aberto de cada tipo da conversa.
+ALERTS_FLAG = "alerts"
+#: Os cartões que pedem gente agora: cor de erro e no topo do Gestor (``AlertSpec.on_screen``).
+_URGENT_CARDS = frozenset({"concierge_handoff"})
+
+
+def _conversation_card(conversation: Conversation, alert_type: str, message: str, **fields) -> None:
+    """UM cartão aberto por conversa e tipo, e todo acontecimento novo o traz de volta.
+
+    Medido em 19/11/2026 às 22h16Z: o handoff abriu e NENHUM aviso nasceu. O cartão de
+    antes da mesma conversa ainda estava aberto (já visto), e o debounce por texto calou o
+    novo. Agora o cartão aberto é reaberto (mensagem nova, sem o Visto, de novo na tela);
+    fechado ou inexistente, nasce outro. O ``pk`` fica na conversa, e o botão "Abrir
+    conversa" sai da projeção do sino por ele (sem caminho escrito na mensagem).
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    severity = "error" if alert_type in _URGENT_CARDS else "warning"
     try:
+        known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+        if known and alert_adapter.revise(int(known), message=message, severity=severity, reopen=True):
+            return
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type=alert_type,
-            severity="warning",
+            severity=severity,
             message=message,
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
+            stamp_dedupe=False,
             order_ref=conversation.last_order_ref,
             conversation_id=conversation.pk,
             owner_role="atendimento",
             action="inspect_conversation",
-            intent=triage.intent,
-            urgency=triage.urgency,
-            destination=triage.destination,
+            **fields,
         )
+        if alert is None:
+            return
+        with transaction.atomic():
+            locked = Conversation.objects.select_for_update().get(pk=conversation.pk)
+            flags = dict(locked.flags or {})
+            flags[ALERTS_FLAG] = {**(flags.get(ALERTS_FLAG) or {}), alert_type: alert.pk}
+            Conversation.objects.filter(pk=conversation.pk).update(flags=flags)
+            conversation.flags = flags
     except Exception:
         logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
-def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
+def _close_card(conversation: Conversation, alert_type: str, *, actor: str) -> None:
+    """A causa do cartão acabou (a conversa voltou à Concierge): ele sai do sino e do topo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    known = ((conversation.flags or {}).get(ALERTS_FLAG) or {}).get(alert_type)
+    if not known:
+        return
     try:
-        from shopman.shop.services.observability import create_operator_alert
-
-        create_operator_alert(
-            type=alert_type,
-            severity="warning",
-            message=f"{message} Conversa #{conversation.pk}: /admin/shop/conversation/{conversation.pk}/change/; responsável: atendimento; consultar transcrição e próximo efeito autorizado.",
-            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
-            order_ref=conversation.last_order_ref,
-            conversation_id=conversation.pk, owner_role="atendimento", action="inspect_conversation",
-
-        )
+        alert_adapter.resolve_pk(int(known), actor=actor)
     except Exception:
-        logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
+        logger.warning("concierge.alert_close_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)
 
 
 def recover_pending(*, limit=100):

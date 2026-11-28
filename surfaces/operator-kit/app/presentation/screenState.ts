@@ -10,7 +10,7 @@
 //
 // Funções puras: o componente só desenha o que elas decidem.
 
-export type OperatorScreenStateKind = "loading" | "empty" | "error" | "offline";
+export type OperatorScreenStateKind = "loading" | "empty" | "error" | "offline" | "forbidden";
 
 export interface OperatorScreenStateCopy {
   title: string;
@@ -36,6 +36,12 @@ export function screenStateCopy(
         title: what ? `Não foi possível carregar ${what}` : "Não foi possível carregar esta tela",
         description: "",
       };
+    case "forbidden":
+      // Sem "Tentar de novo": nem repetir nem entrar de novo concede a permissão.
+      return {
+        title: what ? `Sua conta não abre ${what}` : "Sua conta não abre esta tela",
+        description: "Peça o acesso a um gerente.",
+      };
     case "offline":
       return {
         title: "Sem conexão.",
@@ -60,6 +66,8 @@ export interface OperatorScreenAlert {
   icon?: string;
   /** A saída do aviso, na cor dele (exceção declarada do conjunto mínimo). */
   action?: { label: string; to?: string; onSelect?: (event: Event) => void };
+  /** A segunda saída, em contorno na mesma cor (só junto da principal). */
+  secondaryAction?: { label: string; to?: string };
 }
 
 /** Quantos avisos aparecem inteiros; o resto fica em "e mais N". */

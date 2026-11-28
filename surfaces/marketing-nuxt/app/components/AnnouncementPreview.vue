@@ -6,6 +6,7 @@ import {
   scenesFromDraftArtifacts,
 } from "~/presentation/simulatedPreview";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   body: string;
@@ -71,6 +72,12 @@ type PreviewBatch = {
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
   } | null;
+  /** Plataformas que ficaram fora desta prévia, com o motivo (a do formulário e a da
+   *  revisão mandam). Uma plataforma não derruba a prévia das outras. */
+  platform_problems?: Record<string, { code: string; detail: string }>;
+  /** O que impede a aprovação sem derrubar a prévia (MKT-20: link sem o endereço do
+   *  site da loja). A prévia mostra; a aprovação recusa pelo mesmo motivo. */
+  publish_blockers?: { code: string; detail: string; field_detail: string }[];
   previews: Record<
     string,
     {
@@ -94,6 +101,14 @@ const preview = ref<PreviewBatch | null>(null);
 const problem = ref<PreviewProblem | null>(null);
 const pending = ref(false);
 const activePlatform = ref("");
+// Aviso de tela tem X e volta enquanto a causa durar (dono, 02/11): fechado, some até a
+// próxima prévia; se a causa continuar, a prévia seguinte traz o aviso de novo.
+const dismissedBlockers = ref<string[]>([]);
+const visibleBlockers = computed(() =>
+  (preview.value?.publish_blockers ?? []).filter(
+    (blocker) => !dismissedBlockers.value.includes(blocker.code),
+  ),
+);
 
 let timer: ReturnType<typeof setTimeout> | null = null;
 let controller: AbortController | null = null;
@@ -182,6 +197,7 @@ async function load(requestEpoch: number) {
     );
     if (requestEpoch !== epoch) return;
     preview.value = result;
+    dismissedBlockers.value = [];
     const available = Object.keys(result.previews || {});
     if (!available.includes(activePlatform.value))
       activePlatform.value = available[0] || "";
@@ -297,10 +313,7 @@ const factTime = computed(() => {
   if (!raw) return "";
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return "";
-  return new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  return formatClock(parsed);
 });
 const shortHash = computed(
   () => selected.value?.artifact_hash.slice(0, 8) || "",
@@ -390,11 +403,37 @@ const simulatedScenes = computed(() =>
     >
       <template #description>
         <p>{{ problem.detail }}</p>
-        <p v-if="problem.fieldDetail" class="mt-1">{{ problem.fieldDetail }}</p>
+        <!-- O detalhe do campo só quando acrescenta: repetir a frase do topo era o
+             "mesma instrução duas vezes" do beta 05/11 (ge:MKT-08). -->
+        <p v-if="problem.fieldDetail && problem.fieldDetail !== problem.detail" class="mt-1">{{ problem.fieldDetail }}</p>
       </template>
     </NuxtAlert>
 
     <template v-else-if="preview && artifact">
+      <NuxtAlert
+        v-for="(trouble, platform) in preview.platform_problems ?? {}"
+        :key="platform"
+        class="mt-2"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        :title="`${platformLabels[platform] || platform} fica fora desta prévia.`"
+        :description="trouble.detail"
+        :data-preview-platform-problem="platform"
+      />
+      <NuxtAlert
+        v-for="blocker in visibleBlockers"
+        :key="blocker.code"
+        class="mt-2"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-link-2-off"
+        :title="blocker.detail"
+        :description="blocker.field_detail"
+        close
+        :data-preview-publish-blocker="blocker.code"
+        @update:open="dismissedBlockers = [...dismissedBlockers, blocker.code]"
+      />
       <NuxtTabs
         v-if="platformTabs.length > 1"
         v-model="activePlatform"

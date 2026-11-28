@@ -93,7 +93,6 @@ DATABASE_URL=postgres://...
 REDIS_URL=redis://... ou rediss://...
 DOORMAN_ACCESS_LINK_API_KEY=<segredo>
 EFI_WEBHOOK_TOKEN=<segredo>
-IFOOD_WEBHOOK_TOKEN=<segredo>
 MANYCHAT_API_TOKEN=<segredo>
 MANYCHAT_WEBHOOK_SECRET=<segredo>
 SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_efi

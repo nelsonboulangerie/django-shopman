@@ -54,6 +54,8 @@ export const WORKSTATION_COPY_KEYS = [
   "manage_devices_none",
   "manage_device_last_used",
   "manage_device_never_used",
+  "manage_device_name_label",
+  "manage_device_name_hint",
   "manage_error",
 ] as const;
 

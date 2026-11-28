@@ -1,33 +1,32 @@
-import { useOperatorResourceKey } from "./useOperatorResourceKey";
-// Quem está operando GERENCIA pedidos, ou só EXPEDE? (SUITE-UX §15: uma Saída só,
-// no Gestor.) O Gestor deixa entrar as duas pessoas (`GESTOR_SURFACE_PERM`); quem só
-// expede opera a coluna Saída e não ganha o resto do Gestor (detalhe do pedido,
-// Catálogo, Canais, Clientes, Histórico). A pergunta é a mesma da antessala, sobre
-// quem está operando: o servidor responde sim/não, sem listar permissões. Troca de
-// operador relê. O servidor recusa de todo modo; isto só evita oferecer o que ele
-// vai recusar.
+import {
+  gestorLandingPath,
+  type GestorSurfaceRole,
+} from "~/presentation/gestorAccess";
+// O Gestor atende três trabalhos sem misturar grants: gestão de pedidos, posto de
+// Saída e catálogo diário. A antessala devolve a persona efetiva e a landing; cada
+// endpoint continua conferindo sua capability. Assim catálogo não herda Pedidos ou
+// Clientes, e quem só expede continua restrito à operação da Saída.
 
-/** A permissão da superfície: quem gerencia pedidos OU quem expede (a trava é a primeira). */
-export const GESTOR_SURFACE_PERM = "shop.manage_orders|backstage.operate_kds";
+/** A porta comum: pedidos, posto de saída ou catálogo diário. */
+export const GESTOR_SURFACE_PERM =
+  "shop.manage_orders|backstage.operate_kds|shop.manage_catalog";
 
 export function useGestorAccess() {
-  const { data: session } = useNuxtData<{ operator?: { id: number } }>(
+  const { data: session } = useNuxtData<{
+    operator?: { id: number };
+    surface_role?: GestorSurfaceRole | null;
+    landing_path?: string;
+  }>(
     "operator-session",
   );
-  const operatorId = computed(() => session.value?.operator?.id ?? null);
-  const { data } = useFetch<{ authorized?: boolean }>(
-    "/api/v1/backstage/operator/session/",
-    {
-      key: useOperatorResourceKey("manage-orders-access"),
-      query: { perm: "shop.manage_orders" },
-      server: true,
-      watch: [operatorId],
-    },
+  const role = computed<GestorSurfaceRole | null>(
+    () => session.value?.surface_role ?? null,
   );
-  // Só uma resposta "não" encolhe o Gestor. Enquanto a leitura não chega, a tela
-  // fica como sempre foi para quem gerencia (o caso comum), e o servidor segue
-  // recusando o que não é de quem só expede.
-  const expeditesOnly = computed(() => data.value?.authorized === false);
-  const canManageOrders = computed(() => !expeditesOnly.value);
-  return { canManageOrders, expeditesOnly };
+  const canManageOrders = computed(() => role.value === "orders");
+  const expeditesOnly = computed(() => role.value === "expedition");
+  const catalogOnly = computed(() => role.value === "catalog");
+  const landingPath = computed(() =>
+    gestorLandingPath(role.value, session.value?.landing_path),
+  );
+  return { role, canManageOrders, expeditesOnly, catalogOnly, landingPath };
 }

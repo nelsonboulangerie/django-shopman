@@ -7,7 +7,7 @@ On subsequent logins from the same device, we skip the full OTP flow.
 Security:
 - Device identified by a secure random token stored in a HttpOnly cookie.
 - Token stored as HMAC digest in DB (never plaintext).
-- TTL-based expiration (default 30 days).
+- Vence depois de N dias SEM USO (default 180): cada uso renova o prazo.
 - Can be revoked per-customer or globally.
 """
 
@@ -152,9 +152,19 @@ class TrustedDevice(models.Model):
         return self.is_active and not self.is_expired
 
     def touch(self):
-        """Update last_used_at timestamp."""
-        self.last_used_at = timezone.now()
-        self.save(update_fields=["last_used_at"])
+        """Registra o uso e RENOVA a confiança: vence ``DEVICE_TRUST_TTL_DAYS`` depois
+        deste uso, não depois da criação.
+
+        Uma gravação só, a mesma que já existia para ``last_used_at``. O cookie
+        acompanha: ``DeviceTrustService`` o reemite com o mesmo prazo (ver
+        ``DeviceTrustService.renew_cookies``).
+        """
+        from ..conf import doorman_settings
+
+        now = timezone.now()
+        self.last_used_at = now
+        self.expires_at = now + timedelta(days=doorman_settings.DEVICE_TRUST_TTL_DAYS)
+        self.save(update_fields=["last_used_at", "expires_at"])
 
     def revoke(self):
         """Revoke this trusted device."""
@@ -199,6 +209,16 @@ class TrustedDevice(models.Model):
         Returns the TrustedDevice if valid, None otherwise.
         Uses HMAC comparison for timing-safety.
         """
+        device = cls.find_valid_token(raw_token)
+        if device is None:
+            return None
+
+        device.touch()
+        return device
+
+    @classmethod
+    def find_valid_token(cls, raw_token: str) -> "TrustedDevice | None":
+        """Return a valid token without recording it as used."""
         token_hash = _hash_token(raw_token)
         try:
             device = cls.objects.get(token_hash=token_hash)
@@ -207,8 +227,6 @@ class TrustedDevice(models.Model):
 
         if not device.is_valid:
             return None
-
-        device.touch()
         return device
 
     @classmethod

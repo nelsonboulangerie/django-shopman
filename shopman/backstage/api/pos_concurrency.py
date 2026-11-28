@@ -31,9 +31,13 @@ def tab_command(method):
         if not target_key and body.get("to_tab_ref"):
             from shopman.shop.services.pos import _get_open_pos_tab_session, normalize_tab_ref
 
-            target = _get_open_pos_tab_session(
-                channel_ref=POS_CHANNEL_REF, tab_ref=normalize_tab_ref(body["to_tab_ref"])
-            )
+            try:
+                target_ref = normalize_tab_ref(body["to_tab_ref"])
+            except ValueError:
+                # Referência fora do formato ("77/2"): sem destino a travar. O serviço
+                # recusa com a voz dele (422 ``invalid_tab_ref``, "Use um hífen").
+                target_ref = ""
+            target = _get_open_pos_tab_session(channel_ref=POS_CHANNEL_REF, tab_ref=target_ref) if target_ref else None
             target_key = target.session_key if target else None
         keys = sorted({str(key), str(target_key or key)})
         with transaction.atomic():

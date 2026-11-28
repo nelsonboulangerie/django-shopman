@@ -21,3 +21,10 @@ def ensure_tab(*, ref: str, display: str) -> str:
 
     tab, _ = POSTab.objects.get_or_create(ref=ref, defaults={"label": display})
     return tab.display_ref
+
+
+def active_tab_refs() -> list[str]:
+    """As referências das comandas cadastradas e ativas (o quadro do PDV)."""
+    from shopman.backstage.models import POSTab
+
+    return list(POSTab.objects.filter(is_active=True).values_list("ref", flat=True))

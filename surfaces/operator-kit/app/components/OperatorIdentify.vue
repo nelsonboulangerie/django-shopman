@@ -21,6 +21,9 @@ import { useIdentityCapture } from "../composables/useIdentityCapture";
 export interface IdentifiablePerson {
   username: string;
   name: string;
+  /** O PIN desta pessoa tem tamanho fixo (4, #3223): o teclado envia sozinho
+   *  no último dígito. Ausente ou `null` = PIN antigo, com o Confirmar. */
+  pin_digits?: number | null;
 }
 
 const props = withDefaults(
@@ -35,42 +38,46 @@ const props = withDefaults(
     /** Rótulo do voltar. "Trocar operador" / "Trocar gerente". */
     changeLabel?: string;
     /**
-     * Rótulo do campo de nome livre. "Nome do gerente" diz de quem é o nome —
-     * num diálogo de autorização, "Nome" sozinho deixa o leitor de tela (e a
-     * pessoa apressada) sem saber se é o dela ou o de quem assina.
+     * Lista vazia: ninguém para escolher. NUNCA vira campo de nome digitado.
+     *
+     * ⚠️ Existiu um campo de nome livre aqui, "porta de saída" da lista vazia
+     * (19/08). Ele virou o caminho normal sem ninguém notar: no alpha a Joyce era
+     * a única gerente com PIN, a lista tirava quem está operando, e todo
+     * cancelamento do Gestor pedia o nome DIGITADO (dono, 28/10/2026: "erro
+     * crasso, já tínhamos resolvido"). Nome digitado não abre porta nenhuma: o
+     * servidor só aceita quem tem PIN e permissão, e esses estão na lista. Sem
+     * ninguém nela, o que resta é o crachá, e a tela diz isso.
      */
-    nameLabel?: string;
-    /**
-     * Lista vazia libera digitar o nome. É a ÚNICA porta quando ninguém foi
-     * provisionado ou a leitura falhou — esconder deixaria o balcão sem saída no
-     * meio de uma sangria.
-     */
-    allowTypedName?: boolean;
+    emptyTitle?: string;
+    emptyDescription?: string;
   }>(),
   {
     people: () => [],
     badgeEnabled: true,
     prompt: "Quem está operando?",
     changeLabel: "Trocar operador",
-    nameLabel: "Nome",
-    allowTypedName: false,
+    emptyTitle: "Ninguém para escolher",
+    emptyDescription: "",
   },
 );
 
 const emit = defineEmits<{
   pin: [{ person: IdentifiablePerson | null; username: string; pin: string }];
   badge: [string];
+  /** Quem está escolhido agora (`null` ao voltar à lista). A trava precisa saber
+   *  ANTES do PIN: o "Trocar meu PIN" é da pessoa escolhida, e sem este aviso a
+   *  trava só descobria quem era no primeiro PIN digitado (beta 05/11, CEN-02 e
+   *  PDV-03: o botão não fazia nada, e depois trocava o PIN de outra pessoa). */
+  pick: [IdentifiablePerson | null];
 }>();
 
 const picked = ref<IdentifiablePerson | null>(null);
-const typedName = ref("");
+watch(picked, (person) => emit("pick", person));
 
 const hasList = computed(() => props.people.length > 0);
-const username = computed(() =>
-  (picked.value?.username ?? typedName.value).trim(),
-);
-// Sem lista o pad aparece de cara, junto do campo de nome: é o modo de emergência.
-const showPad = computed(() => !hasList.value || picked.value !== null);
+const username = computed(() => picked.value?.username ?? "");
+// O PIN só faz sentido depois de escolher DE QUEM é.
+const showPad = computed(() => picked.value !== null);
 const canSubmit = computed(() =>
   canSubmitPin(username.value || null, pin.value),
 );
@@ -98,6 +105,7 @@ const { pin, pressDigit, backspace, clear } = useIdentityCapture({
   onBadge: (token) => emit("badge", token),
   onSubmit: () => submit(),
   onDigitPick: (digit) => pickByNumber(digit),
+  autoSubmitAt: () => picked.value?.pin_digits ?? null,
 });
 
 // A lista é numerada: "2" escolhe o segundo. Antes só o dedo escolhia, e num
@@ -130,6 +138,25 @@ watch(
   },
 );
 
+// A recusa está à vista no teclado até a pessoa voltar a digitar (o teclado
+// dispensa o aviso no primeiro dígito). Enquanto está, ela ocupa o lugar da dica
+// do crachá: com as duas, a trava passava da tela do celular (pin-erro em
+// 375x548, matriz `operator-lock.spec.ts`), e quem acabou de errar precisa ler o
+// erro. A dica volta com o próximo dígito.
+const errorShowing = ref(Boolean(props.error));
+watch(
+  () => props.error,
+  (e) => {
+    errorShowing.value = Boolean(e);
+  },
+);
+watch(
+  () => pin.value.length,
+  (length) => {
+    if (length > 0) errorShowing.value = false;
+  },
+);
+
 function pick(person: IdentifiablePerson) {
   picked.value = person;
   clear();
@@ -154,7 +181,6 @@ function reset(keepPicked = false) {
   clear();
   if (keepPicked) return;
   picked.value = null;
-  typedName.value = "";
 }
 
 defineExpose({ reset });
@@ -188,6 +214,7 @@ defineExpose({ reset });
         >
           <NuxtKbd
             v-if="index < numberedCount"
+            class="pointer-coarse:hidden"
             :value="String(index + 1)"
             aria-hidden="true"
           />
@@ -196,10 +223,22 @@ defineExpose({ reset });
           </span>
         </NuxtButton>
       </div>
-      <p v-if="numberedCount" class="text-center text-xs text-muted-foreground">
+      <!-- O número é atalho de TECLADO: só aparece onde há um (ponteiro fino).
+           No toque, a instrução é o toque (beta 05/11, CEN-12). -->
+      <p
+        v-if="numberedCount"
+        class="hidden text-center text-xs text-muted-foreground pointer-fine:block"
+        data-operator-identify-hint="keyboard"
+      >
         Digite o número para escolher{{
           badgeEnabled !== false ? ", ou passe o crachá" : ""
         }}.
+      </p>
+      <p
+        class="text-center text-xs text-muted-foreground pointer-fine:hidden"
+        data-operator-identify-hint="touch"
+      >
+        Toque no seu nome{{ badgeEnabled !== false ? ", ou passe o crachá" : "" }}.
       </p>
       <NuxtAlert
         v-if="error && !showPad"
@@ -207,6 +246,24 @@ defineExpose({ reset });
         variant="subtle"
         :title="error"
       />
+    </template>
+
+    <!-- Ninguém na lista: diz por quê e deixa o crachá valendo. -->
+    <template v-if="!hasList">
+      <NuxtEmpty
+        variant="soft"
+        icon="i-lucide-user-x"
+        :title="emptyTitle"
+        :description="emptyDescription || undefined"
+        data-operator-identify-empty
+      />
+      <p
+        v-if="badgeEnabled !== false"
+        class="text-center text-xs text-muted-foreground"
+      >
+        Passe o crachá no leitor.
+      </p>
+      <NuxtAlert v-if="error" color="error" variant="subtle" :title="error" />
     </template>
 
     <!-- PIN -->
@@ -225,21 +282,13 @@ defineExpose({ reset });
           @click="unpick"
         />
       </div>
-      <NuxtInput
-        v-else-if="allowTypedName"
-        v-model="typedName"
-        class="w-full"
-        :placeholder="nameLabel"
-        :aria-label="nameLabel"
-        autocomplete="off"
-        size="xl"
-      />
 
       <OperatorPinPad
         :pin="pin"
         :error="error"
         :can-submit="canSubmit"
         :busy="busy"
+        :fixed-digits="picked?.pin_digits ?? null"
         @digit="pressDigit"
         @backspace="backspace"
         @submit="submit"
@@ -248,8 +297,9 @@ defineExpose({ reset });
       <!-- O crachá segue valendo aqui: a frase existe para o operador saber que
            não precisa terminar de digitar se estiver com ele no pescoço. -->
       <p
-        v-if="badgeEnabled !== false"
+        v-if="badgeEnabled !== false && !errorShowing"
         class="text-center text-xs text-muted-foreground"
+        data-operator-identify-badge-hint
       >
         Ou passe o crachá no leitor.
       </p>

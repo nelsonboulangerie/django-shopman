@@ -253,6 +253,42 @@ describe('useNextFocus — a página segue o foco', () => {
     wrapper.unmount()
   })
 
+  it('bloco perto do topo: a régua desce a altura da status bar, que não vai recolher (#3477)', async () => {
+    // A régua base vem do CSS, como no app (tailwind.css: 4rem + 6px = 70px).
+    const ruler = document.createElement('style')
+    ruler.textContent = '[data-focus-target] { scroll-margin-top: 70px; }'
+    document.head.appendChild(ruler)
+    const page = await mountFocusPage('contact')
+    const when = document.querySelector<HTMLElement>('[data-focus-target="when"]')!
+
+    page.key.value = 'when'
+    await settle()
+
+    // happy-dom: tudo no topo, rolagem 0. A parada fica antes do colapso, então a
+    // régua de 70 vira 106 só neste bloco, inline, e o CSS continua sendo a base.
+    expect(lastScroll()?.element).toBe(when)
+    expect(when.style.scrollMarginTop).toBe('106px')
+    page.unmount()
+    ruler.remove()
+  })
+
+  it('bloco lá embaixo: a status bar recolhe, a régua fica a do CSS', async () => {
+    const page = await mountFocusPage('contact')
+    const when = document.querySelector<HTMLElement>('[data-focus-target="when"]')!
+    when.style.scrollMarginTop = '106px'
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 1400, bottom: 1700, left: 0, right: 0, width: 0, height: 300, x: 0, y: 1400, toJSON: () => ({})
+    })
+    vi.spyOn(document.documentElement, 'scrollHeight', 'get').mockReturnValue(4000)
+
+    page.key.value = 'when'
+    await settle()
+
+    expect(lastScroll()?.element).toBe(when)
+    expect(when.style.scrollMarginTop).toBe('')
+    page.unmount()
+  })
+
   it('respeita prefers-reduced-motion: mesmo destino, sem animação', async () => {
     withReducedMotion(true)
     const page = await mountFocusPage('contact')

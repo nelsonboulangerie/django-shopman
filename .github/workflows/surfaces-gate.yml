@@ -2,9 +2,14 @@ name: Surfaces Gate
 
 # Rede de segurança das superfícies Nuxt: vitest + typecheck para CADA app de
 # surfaces/ (incluindo o layer operator-kit, dono dos guardrails de design system
-# que leem os tailwind.css dos apps irmãos). Roda em TODO pull_request, sem
-# paths filter: os jobs são required checks do main, e required check que não
-# reporta (workflow pulado pelo filtro) trava o merge para sempre.
+# que leem os tailwind.css dos apps irmãos). O workflow dispara em TODO
+# pull_request, sem `paths:` no gatilho: os jobs são required checks do main, e
+# required check que não reporta (workflow pulado pelo filtro) trava o merge.
+#
+# Escopo (17/11/2026, docs/reference/ci-escopo.md): no pull_request cada app
+# roda só o leve (unit, component, lint, typecheck) e só se o PR o tocou; os
+# outros reportam verde em segundos com o MESMO nome. Navegador, visual, PWA,
+# supply chain e imagem rodam inteiros na fila (merge_group), que é o portão.
 #
 # Node 22 SEMPRE (buildpack DigitalOcean = node 22; locks regenerados com outro
 # node quebram `npm ci` no deploy — ver memória do projeto).
@@ -23,26 +28,96 @@ name: Surfaces Gate
   # ⚠️ Vale para os GATES. O `deploy-images.yml` mantém `push: main` de propósito:
   # lá o push É o deploy (publica a tag no DOCR).
 
+# Um grupo por branch do PR (pull_request) ou por branch da fila (merge_group,
+# `gh-readonly-queue/main/pr-N-<sha>`, único): só um push NOVO no mesmo PR
+# cancela o run anterior dele. Um PR não cancela o de outro. Revisado em
+# 06/11/2026: os três CANCELLED do production-nuxt daquele dia eram o
+# `timeout-minutes` do job estourado pelo espelho apt lento, não concorrência.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      surfaces: ${{ steps.scope.outputs.surfaces }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   surface-contract:
     name: Contrato canônico das superfícies
-    runs-on: ubuntu-latest
+    needs: scope
+    # `!cancelled()`: escopo que falha não pode pular a matriz (os nomes dos
+    # apps são checks obrigatórios); sem escopo, CI_SURFACES cai em `all`.
+    if: ${{ !cancelled() }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
     outputs:
       quality: ${{ steps.matrix.outputs.quality }}
       pwa: ${{ steps.matrix.outputs.pwa }}
       audit: ${{ steps.matrix.outputs.audit }}
+      browser_runner: ${{ steps.browser-runner.outputs.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Validar manifestos, capabilities e exceções
         run: node scripts/surface_contract.mjs validate
+      # Piloto DEV-2026-098 (plano §9.3): os apps de NAVEGADOR em `CI_BROWSER_SURFACES`
+      # vão para `CI_BROWSER_RUNNER` (Ubicloud: 1,6–1,7x medido) só na fila, e só até o
+      # orçamento do piloto (`CI_BROWSER_BUDGET_USD`). Esgotou, erro, ou variável ausente:
+      # grátis. Nunca falha: errar aqui custa velocidade, nunca a fila.
+      - name: Runner dos jobs de navegador
+        id: browser-runner
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          CI_LINUX_RUNNER: ${{ vars.CI_LINUX_RUNNER }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          CI_BROWSER_SINCE: ${{ vars.CI_BROWSER_SINCE }}
+          CI_BROWSER_BUDGET_USD: ${{ vars.CI_BROWSER_BUDGET_USD }}
+          CI_BROWSER_COST_PER_GROUP_USD: ${{ vars.CI_BROWSER_COST_PER_GROUP_USD }}
+        run: python3 scripts/ci_browser_runner.py >> "$GITHUB_OUTPUT"
+      # A queda para o grátis NÃO é silenciosa (dono, 26/11): piloto ligado que caiu
+      # (orçamento esgotado, erro, configuração incompleta) abre UMA issue; voltou ao
+      # pago, ela é comentada e fechada. Só aqui (um aviso por grupo, não por workflow).
+      - name: Aviso se o piloto caiu para o grátis
+        if: ${{ !cancelled() && github.event_name == 'merge_group' && vars.CI_BROWSER_RUNNER != '' }}
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          ALERT: ${{ steps.browser-runner.outputs.alert }}
+          REASON: ${{ steps.browser-runner.outputs.reason }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ASSIGNEE: ${{ vars.CI_ALERT_ASSIGNEE }}
+        run: python3 scripts/ci_browser_runner.py notify
       - name: Gerar matrizes por capability
         id: matrix
+        env:
+          CI_HEAVY: ${{ github.event_name != 'pull_request' }}
+          CI_SURFACES: ${{ github.event_name == 'pull_request' && needs.scope.outputs.surfaces || 'all' }}
         run: |
           echo "quality=$(node scripts/surface_contract.mjs matrix quality)" >> "$GITHUB_OUTPUT"
           echo "pwa=$(node scripts/surface_contract.mjs matrix pwa)" >> "$GITHUB_OUTPUT"
@@ -57,7 +132,7 @@ jobs:
   # de qualquer um deles.
   surface-versions:
     name: Versões das superfícies
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
 
     steps:
@@ -116,7 +191,9 @@ jobs:
   supply-chain:
     name: Supply chain — ${{ matrix.id }}
     needs: surface-contract
-    runs-on: ubuntu-latest
+    # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     strategy:
@@ -140,9 +217,15 @@ jobs:
         run: node ../../scripts/check_npm_audit_gate.mjs --audit-level=high --allowlist=../npm-audit-allowlist.json
 
   app-quality:
-    name: ${{ matrix.dir }}
+    name: ${{ matrix.kind == 'internal' && format('Preview interno — {0}', matrix.dir) || matrix.dir }}
     needs: surface-contract
-    runs-on: ${{ matrix.runner }}
+    if: ${{ !cancelled() && needs.surface-contract.result == 'success' }}
+    # Linux com trabalho vai para o runner maior (CI_LINUX_RUNNER); macOS e a
+    # entrada `skip` (verde em segundos) ficam no runner que o contrato dá.
+    # Piloto DEV-2026-098 (§9.3): apps de navegador listados em `CI_BROWSER_SURFACES`
+    # (JSON, ex. ["pos-nuxt"]) usam o runner que o `surface-contract` escolheu (com teto de
+    # gasto). Sem as variáveis ou fora da fila, nada muda.
+    runs-on: ${{ (matrix.runner == 'ubuntu-latest' && !matrix.skip) && ((contains(fromJSON(vars.CI_BROWSER_SURFACES || '[]'), matrix.dir) && needs.surface-contract.outputs.browser_runner) || vars.CI_LINUX_RUNNER || 'ubuntu-latest') || matrix.runner }}
     timeout-minutes: 45
 
     strategy:
@@ -154,17 +237,37 @@ jobs:
         working-directory: surfaces/${{ matrix.dir }}
 
     steps:
+      # Entrada com `skip`: o PR não tocou este app. O job existe para o check
+      # obrigatório reportar verde com o nome do app; o trabalho roda na fila.
+      - name: Fora do escopo deste PR
+        if: matrix.skip
+        working-directory: .
+        run: echo "${{ matrix.id }} não mudou neste PR; a suíte inteira roda na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: ${{ !matrix.skip }}
         uses: actions/checkout@v7
 
       - name: Set up Node
+        if: ${{ !matrix.skip }}
         uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/${{ matrix.dir }}/package-lock.json
-            surfaces/operator-kit/package-lock.json
+
+      # Cache do npm só RESTAURA na fila; quem grava é o PR e o
+      # `playwright-cache-main.yml` no `main`. Medido em 19/11/2026: o
+      # `cache: npm` do setup-node gravava ~170 MB por app em cada grupo da fila
+      # (12 GB em 71 entradas numa hora e meia), cache que só o próprio grupo lê,
+      # e a cota estourada despejava o cache de navegadores do `main`.
+      # Regra: docs/reference/ci-escopo.md ("Cache dos navegadores mora no main").
+      - name: Restore npm cache
+        if: ${{ !matrix.skip }}
+        id: npm-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Set up Python for declared browser mock
         if: matrix.python_mock
@@ -176,18 +279,28 @@ jobs:
       # no `nuxt prepare` do postinstall. Portanto o kit precisa existir antes
       # do `npm ci` da surface, não apenas antes do typecheck.
       - name: Install operator-kit layer deps
-        if: matrix.install_layer
+        if: ${{ !matrix.skip && matrix.install_layer }}
         working-directory: surfaces/operator-kit
         run: npm ci
 
       - name: Install dependencies
+        if: ${{ !matrix.skip }}
         run: npm ci
 
+      - name: Save npm cache
+        if: ${{ !matrix.skip && github.event_name != 'merge_group' && steps.npm-cache.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ~/.npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
+
       - name: Unit tests
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" unit
 
       - name: Component tests
-        if: matrix.component
+        if: ${{ !matrix.skip && matrix.component }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" component
 
       # `eslint .` roda a partir do diretório de cada app e NUNCA alcança
@@ -198,45 +311,97 @@ jobs:
       # opt-in (só Marketing e Produção o rodavam, nos seus jobs de browser).
       # `--if-present` pelo mesmo motivo do typecheck: mantém a matriz uniforme.
       - name: Lint
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" lint
 
       # `--if-present`: o operator-kit (layer, sem app Nuxt próprio) não tem
       # typecheck; todos os 6 apps têm — storefront e pos ganharam o script
       # junto com este gate.
       - name: Typecheck
+        if: ${{ !matrix.skip }}
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" typecheck
 
       - name: Build do catálogo canônico
         if: matrix.catalog
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" build
 
+      # Navegadores do Playwright: cache por versão do Playwright + motores + imagem.
+      # A chave é gravada no `main` pelo playwright-cache-main.yml (mesma fórmula).
+      # Medido em 06/11/2026: o `install --with-deps chromium webkit` do
+      # production-nuxt travou 3 vezes; os 114 MB de .deb do WebKit vinham do
+      # espelho apt da Azure a 47 kB/s e o job morria aos 45 min, CANCELLED.
+      # O cache guarda os navegadores E os .deb; o script põe teto e nova
+      # tentativa (trocando de espelho) em cada parte. Ver
+      # scripts/install_playwright_browsers.mjs.
+      - name: Resolve Playwright cache key
+        id: playwright
+        if: matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite
+        env:
+          ENGINES: ${{ matrix.browser_engines }}
+          WITH_DEPS: ${{ matrix.browser_with_deps }}
+        run: |
+          version="$(npx --no-install playwright --version | awk '{print $2}')"
+          engines="$(echo "$ENGINES" | tr ' ' '-')"
+          deps="$([ "$WITH_DEPS" = "true" ] && echo "-deps" || true)"
+          echo "key=playwright-${ImageOS:-$RUNNER_OS}-${RUNNER_ARCH}-${version}-${engines}${deps}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        if: steps.playwright.outputs.key
+        uses: actions/cache/restore@v6
+        with:
+          key: ${{ steps.playwright.outputs.key }}
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+            ~/.cache/playwright-apt
+
       - name: Install declared browser engines
         if: matrix.visual || matrix.geometry || matrix.browser || matrix.a11y || matrix.browser_suite
-        run: ${{ matrix.browser_install }}
+        timeout-minutes: 25
+        run: node ../../scripts/install_playwright_browsers.mjs "${{ matrix.browser_engines }}" ${{ matrix.browser_with_deps && '--with-deps' || '' }}
+
+      # Sem "Save" aqui (19/11/2026): o grupo da fila grava num ref que nenhum
+      # outro grupo lê (`gh-readonly-queue/...`), ~500 MB por grupo, e enchia a
+      # cota de cache do repositório até expulsar o que servia. Quem grava é o
+      # `playwright-cache-main.yml`, no `main`, que todo ref enxerga.
 
       - name: Visual and responsive contract
         if: matrix.visual && !matrix.browser_suite
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" visual
 
+      # DEV-2026-098: fases que o app declara em `concurrentPhases` (contracts.json)
+      # rodam JUNTAS — cada uma com o próprio mock, app, portas e outputDir, o que o
+      # `surface_contract.mjs validate` prova antes. O `pos-nuxt` é o caminho crítico do
+      # Surfaces Gate (14,6 min, geometria 6,2 + navegador 3,9 em série). Os passos
+      # individuais abaixo pulam o que já rodou aqui; nenhuma fase deixa de rodar.
+      - name: Contratos de navegador ao mesmo tempo (concurrentPhases)
+        if: matrix.concurrent != ''
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: node ../../scripts/surface_contract.mjs run-many "${{ matrix.id }}" ${{ matrix.concurrent }}
+
       - name: Geometry contract
-        if: matrix.geometry
+        if: matrix.geometry && !contains(matrix.concurrent, 'geometry')
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" geometry
 
       - name: Functional browser contract
-        if: matrix.browser && !matrix.browser_suite
+        if: matrix.browser && !matrix.browser_suite && !contains(matrix.concurrent, 'browser')
         env:
           MARKETING_E2E_MANAGED: "1"
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browser
 
       - name: Accessibility contract
-        if: matrix.a11y && !matrix.browser_suite
+        if: matrix.a11y && !matrix.browser_suite && !contains(matrix.concurrent, 'a11y')
         env:
           MARKETING_E2E_MANAGED: "1"
           MARKETING_E2E_USERNAME: operadora-e2e
           MARKETING_E2E_PASSWORD: senha-sintetica-ci
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" a11y
 
-      - name: Shared browser contract (functional, a11y, visual)
+      - name: Shared browser contract
         if: matrix.browser_suite
         env:
           MARKETING_E2E_MANAGED: "1"
@@ -245,7 +410,7 @@ jobs:
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" browserSuite
 
       - name: Security contract
-        if: matrix.security
+        if: matrix.security && !contains(matrix.concurrent, 'security')
         run: node ../../scripts/surface_contract.mjs run "${{ matrix.id }}" security
 
       - name: Upload canonical browser evidence
@@ -260,7 +425,9 @@ jobs:
   pwa-quality:
     name: PWA — ${{ matrix.id }}
     needs: surface-contract
-    runs-on: ubuntu-latest
+    # Só na fila (não é check obrigatório): docs/reference/ci-escopo.md.
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     strategy:
@@ -275,10 +442,14 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: |
-            surfaces/${{ matrix.dir }}/package-lock.json
-            surfaces/operator-kit/package-lock.json
+
+      # Só restaura, pelo mesmo motivo do app-quality (o PWA roda só na fila).
+      - name: Restore npm cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles(format('surfaces/{0}/package-lock.json', matrix.dir), 'surfaces/operator-kit/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install operator-kit capability dependencies
         if: matrix.install_layer
@@ -335,6 +506,6 @@ jobs:
         run: >-
           docker build --file surfaces/Dockerfile.surface
           --build-arg SURFACE=${{ matrix.dir }}
-          --build-arg NODE_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/node:22-alpine
-          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          --build-arg NODE_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
           .

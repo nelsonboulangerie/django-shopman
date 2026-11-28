@@ -1,4 +1,4 @@
-// V6-GESTOR (auditoria v4): recortes da Fila, "+N" pela atenção, tempo sempre âmbar,
+// V6-GESTOR (auditoria v4): recortes da Fila, "+N" pela atenção, mapa único do tempo,
 // prazo duro na frente e a previsão "próximo pronto em ~N min". Travas das classes
 // de divergência que podem voltar (G01, G02, G03, G10, G11).
 import { readFileSync } from "node:fs";
@@ -15,7 +15,6 @@ import {
   queueToneClass,
   restLine,
   workingOrders,
-  type QueueTone,
 } from "../app/presentation/queue";
 import type { OrderCardProjection } from "../app/types/orders";
 
@@ -26,7 +25,7 @@ const ahead = (s: number) => new Date(NOW + s * 1000).toISOString();
 function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
   return {
     ref: "WEB-261004-R7K", status: "ready", status_label: "Pronto", attention: "dispatch", attention_since_iso: ago(27 * 60),
-    goal_minutes: 30, goal_label: "meta 30", elapsed_seconds: 1620, created_at_iso: ago(1620), dispatched_at_iso: "",
+    goal_minutes: 30, goal_label: "meta 30 min", elapsed_seconds: 1620, created_at_iso: ago(1620), dispatched_at_iso: "",
     fulfillment_type: "delivery", fulfillment_label: "Entrega", delivery_address: "", customer_name: "João",
     actions: [], confirmation_deadline_iso: "", confirmation_action: "", ready_eta_iso: "",
     ...over,
@@ -51,21 +50,26 @@ describe("P1-8: o tempo da Lista corre com o relógio, como a Grade", () => {
   });
 });
 
-describe("G03: o tempo nunca é vermelho", () => {
-  it("atraso é âmbar com intensidade; vermelho é só do bloqueio", () => {
-    for (const tone of ["ok", "warning", "late"] as QueueTone[]) {
-      expect(queueToneClass(tone)).not.toMatch(/destructive|red-/);
-    }
-    expect(queueToneClass("late")).toContain("text-warning");
+describe("mapa único da cor do tempo", () => {
+  it("atraso é vermelho, proximidade é âmbar e dentro do prazo é neutro", () => {
+    expect(queueToneClass("late")).toContain("text-destructive");
     expect(queueToneClass("late")).toContain("font-bold");
-    for (const tone of ["ok", "warning", "late", "muted"] as const) expect(timerChip(tone)).not.toMatch(/destructive|red-/);
+    expect(queueToneClass("warning")).toContain("text-warning");
+    expect(queueToneClass("neutral")).toBe("text-foreground");
+    expect(timerChip("late")).toContain("destructive");
+    expect(timerChip("warning")).toContain("warning");
+    expect(timerChip("neutral")).toContain("muted");
+    expect(timerChip("ready")).toContain("success");
   });
 
-  it("a Fila e o cartão não pintam o relógio de vermelho", () => {
+  it("a Fila e o cartão reservam o vermelho ao atraso do relógio", () => {
     const queueView = readFileSync(new URL("../app/components/QueueView.vue", import.meta.url), "utf8");
     expect(queueView).not.toMatch(/data-queue-time[^>]*destructive/);
     const orderCard = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
-    expect(orderCard).not.toMatch(/clock\.tone === 'late' \? '[^']*text-destructive/);
+    expect(orderCard).toContain("clock.tone === 'late'");
+    expect(orderCard).toContain("? 'error'");
+    expect(orderCard).toContain("clock.tone === 'ready'");
+    expect(orderCard).toContain("? 'success'");
   });
 });
 
@@ -80,14 +84,18 @@ describe("G05: a cópia da Fila não se corta", () => {
   });
 });
 
-describe("Grade G | Lista L, dois segmentos genéricos (dono, 07/10/2026)", () => {
-  it("a Lista é a tabela densa; as colunas saem do alternador", () => {
+describe("Painel · Fila · Tabela, um controle só de ícones (dono, 14/11/2026)", () => {
+  it("os três modos no alternador, Painel primeiro; a Fila só onde cabe", () => {
     const page = readFileSync(new URL("../app/pages/index.vue", import.meta.url), "utf8");
     const items = page.slice(page.indexOf("const viewTabs"), page.indexOf("function pickView"));
     const control = page.slice(page.lastIndexOf("<NuxtTabs", page.indexOf("data-view-switch")), page.indexOf("/>", page.indexOf("data-view-switch")));
-    expect(items).toContain('value: "queue", label: "Grade"');
-    expect(items).toContain('value: "table", label: "Lista"');
-    expect(items).not.toContain('value: "board"');
+    expect(items).toContain('value: "board", icon: "i-lucide-columns-3", title: "Painel"');
+    expect(items).toContain('value: "queue", icon: "i-lucide-rows-3", title: "Fila"');
+    expect(items).toContain('value: "table", icon: "i-lucide-table-2", title: "Tabela"');
+    expect(items.indexOf('"board"')).toBeLessThan(items.indexOf('"queue"'));
+    // O nome não aparece na tela: só para o leitor de tela e na dica.
+    expect(control).toContain(`<span class="sr-only">{{ item.title }}</span>`);
+    expect(items).toContain("queueAvailable.value");
     expect(control).toContain(':items="viewTabs"');
     expect(control).toContain('@update:model-value="pickView"');
   });
@@ -178,9 +186,12 @@ describe("Seguem sozinhos: o que está de fato na cozinha (dono, 07/10/2026)", (
         station({ station_ref: "lanches", station_name: "Lanches", prints: true, paper_failed: true, items: ["1x Misto"] }),
       ] },
     } as Partial<OrderCardProjection>);
-    const fresh = card({ ref: "W-NEW", status: "accepted", created_at_iso: ago(2 * 60), kitchen: null });
+    // Aceito com ticket aberto (preparo automático) está na cozinha, ainda sem estação
+    // pronta; aceito SEM ticket ainda espera "Iniciar preparo" e fica fora (beta 05/11).
+    const fresh = card({ ref: "W-NEW", status: "preparing", created_at_iso: ago(2 * 60), kitchen: null });
+    const waiting = card({ ref: "W-WAIT", status: "accepted", created_at_iso: ago(30 * 60), kitchen: null });
     const road = card({ ref: "W-ROAD", status: "dispatched", dispatched_at_iso: ago(5 * 60), courier_status_label: "a 5 min do cliente" });
-    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old], NOW);
+    const { kitchen, road: onRoad } = workingOrders([fresh, old, road, old, waiting], NOW);
     expect(kitchen.map((w) => w.card.ref)).toEqual(["W-OLD", "W-NEW"]);
     expect(kitchen[0]!.summary).toBe("1 de 2 prontas");
     expect(kitchen[0]!.stations.map((s) => [s.name, s.label, s.tone, s.items])).toEqual([

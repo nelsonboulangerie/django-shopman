@@ -78,9 +78,34 @@ function resumo (): string {
  * (`to="/privacy"` → `to="/privacidade"`): mesmo documento, endereço novo. A régua
  * conta destino de link, então o resumo mudou (`23d85fed71300bf0` → `051f28aae9f18c86`);
  * a versão não, porque o cliente não lê palavra nova.
+ *
+ * 2026-11-05: a frase do aviso de volta na política ("e para se você desligar as
+ * mensagens", beta 05/11, LOJA-08) virou frase inteira. Palavra nova, versão nova.
+ *
+ * 2026-11-06: §7 dos termos com a regra do dono para cancelar. Antes do preparo o
+ * cliente cancela na tela, pago ou não, e o valor volta inteiro; depois, não cancela
+ * e fala com o responsável. A solicitação com protocolo deixou de existir.
+ *
+ * 2026-11-12: a lista "Com quem divide" ganhou a hospedagem (DigitalOcean, servidores
+ * nos Estados Unidos) e a frase da Anthropic passou a dizer nome e endereço da
+ * entrega. A lista sai de `shopman/shop/privacy_inventory.py`, não dos `.vue`: o
+ * resumo do texto fica o mesmo, mas o cliente lê terceiro novo, então a versão muda.
+ *
+ * 2026-11-18: os termos ganharam a cláusula do pedido não retirado, em "Retirada e
+ * entrega" (#2613, texto aprovado pelo dono): o que ainda puder voltar à venda é
+ * devolvido pelo mesmo meio de pagamento; o que se perdeu fica com a loja.
+ *
+ * 2026-11-20: a política ganhou o uso da cópia anonimizada das mensagens do WhatsApp
+ * para melhorar o atendimento, e o prazo dela (#2851, pedido do dono): sem nome,
+ * contato, documento, data nem hora exata; amostra conferida toda semana.
+ *
+ * 2026-11-24: a cláusula do pedido não retirado ganhou o percentual (DEV-2026-089,
+ * decisão do dono: 40% provisório): os itens de revenda voltam inteiros; dos itens
+ * feitos para a encomenda, a loja retém até 40% do valor para cobrir o custo de
+ * produção, e o restante volta pelo mesmo meio de pagamento.
  */
-const RESUMO_PUBLICADO = 'a429ea5c02f8ff3a'
-const VERSAO_PUBLICADA = '2026-09-29'
+const RESUMO_PUBLICADO = '232656105d2ba13d'
+const VERSAO_PUBLICADA = '2026-11-24'
 
 describe('páginas legais — o relógio', () => {
   it('a versão declarada no servidor é a mesma que esta trava conhece', () => {
@@ -122,8 +147,10 @@ describe('páginas legais — o relógio', () => {
 const CHAVES_DECLARADAS: Record<string, string> = {
   'shopman-checkout-draft': 'RASCUNHO DO CHECKOUT — guarda PII; descrito na política',
   'storefront-pwa-install-dismissed-until': 'só a data em que o convite foi dispensado',
+  'shopman-order-secured': 'marca de que um pedido foi enviado nesta visita (sessionStorage); não guarda dado pessoal',
   'shopman-intention:': 'chave de idempotência de uma ação; não guarda dado pessoal',
-  'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal'
+  'shop-marketing-prompt': 'marca de convite já visto; não guarda dado pessoal',
+  'shopman:storefront:pwa-update': 'marca da troca de versão do app instalado (gatilho e versão do build, até o boot seguinte); não guarda dado pessoal'
 }
 
 function arquivosDoApp (dir: string): string[] {

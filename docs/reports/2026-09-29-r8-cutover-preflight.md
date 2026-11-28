@@ -9,7 +9,7 @@
 - `decisão técnica`: **NO-GO — BLOCKED HUMAN GATE**
 
 Esta auditoria executou somente C0, C1 e a parte segura de C2 do
-[WP de cutover comercial](../plans/WP-COMMERCIAL-GO-LIVE-CUTOVER-2026-09-28.md).
+[WP de cutover comercial](../plans/completed/WP-COMMERCIAL-GO-LIVE-CUTOVER-2026-09-28.md).
 Ela não alterou spec, credencial, 2FA, DNS, tag, banco, deployment ou provider;
 não criou pedido, promoção, envio, corrida, cobrança, estorno ou documento
 fiscal.

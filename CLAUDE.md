@@ -58,7 +58,7 @@ barrar, a saída é entrar no worktree, **nunca contornar**.
   "orderman_directive" does not exist`. Aconteceu três vezes (22/09, 23/09, 24/09), todas
   logo depois de um agente copiar o banco pelo pool.
 
-E uma sobre testes: **a worktree não testa `packages/*` sozinha.** O `.venv` da raiz tem
+E uma sobre testes: **a worktree não testa `packages/*` sozinha** — pelos alvos do `make`, sim (DEV-2026-098: o Makefile põe a worktree no `PYTHONPATH` e usa a `.venv` da raiz; `python3 scripts/local_ci.py origin` prova a origem). Fora do `make` (pytest direto), o `.venv` da raiz tem
 editable installs apontando para a árvore principal, então rodar teste no worktree exige
 `PYTHONPATH` e `PYTHON` explícitos.
 
@@ -82,7 +82,8 @@ diferentes ao mesmo tempo. As regras valem para todos, humanos incluídos:
   branch, nunca no principal; branch na fila de merge recusa push (ajuste = PR de
   seguimento).
 - **Relate o que é fato.** Contagem de testes não é evidência; saída de comando é.
-  O que ficou de fora se diz com nome e motivo.
+  O que ficou de fora se diz com nome, motivo **e o número da issue** que o carrega
+  (ver "Nada fica de fora em silêncio", abaixo).
 - **Tarefa sugerida (o "chip") abre uma SESSÃO NOVA — e sessão nova não sabe o que
   já existe.** Medido em 19/09/2026: um chip de tarefa sugerida abriu a segunda
   sessão do mesmo trabalho de retratos do Marketing, e saíram **três PRs (#869,
@@ -134,7 +135,30 @@ Trabalho parcial no fim da sessão vira commit + push + **PR draft** com `WIP:` 
 título. Nunca fica só na worktree: worktree é invisível para `gh pr list`, para as
 outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
 
+**Nada fica de fora em silêncio** (dono, 12/11/2026: "Você decide não fazer, por
+algum motivo, e fica por isso mesmo... COMO saberei o que ficou para trás?"). Deixar
+algo para depois é legítimo; deixar só num parágrafo do relatório não é, porque o
+relatório some no chat e o trabalho dorme sem dono. Toda coisa que um PR decide NÃO
+fazer (follow-up, "PR de seguimento", tela que faltou, caso não coberto) vira, **no
+mesmo turno**, uma issue com o label `ficou-de-fora` (o que falta, por quê, de qual
+PR, quando está pronto), e o PR cita cada uma na seção `## Ficou de fora` do corpo,
+ou escreve `nada`. Quem fecha a issue é o PR que faz o trabalho (`Closes #N`).
+Decidir **não fazer nunca** também é decisão: escreva na issue e feche como
+`not planned`, para que fique registrado e não volte como pendência.
+
+**CI: leve no PR, pesado na fila** (dono, 17/11/2026): o PR roda lint, typecheck e os testes do que mexe; as suítes pesadas rodam no `merge_group`, e check obrigatório pulado reporta verde com o mesmo nome — regra e tabela em [docs/reference/ci-escopo.md](docs/reference/ci-escopo.md).
+
+**Local primeiro, fila com prova** (dono, 23/11/2026: "auto só com o local verde"; DEV-2026-098): `make check-fast` a cada iteração (segundos), `make preflight` antes de promover (o que o PR **e** a fila vão rodar para este diff, com os passos lidos dos próprios workflows), e `make ready pr=<N>` para enfileirar — ele exige árvore limpa, push feito, corpo do PR aprovado pelos checks de "Ficou de fora"/"Compromissos" e preflight verde **da árvore exata do HEAD**, e só então liga o auto com `--match-head-commit`. Exceção (urgência, agente sem ambiente local, PR só de docs) se declara: `make ready pr=<N> sem_preflight="motivo"`, registrada. Para sessões do Claude Code, um hook (`scripts/preflight_merge_guard.py`, em `.claude/settings.json`) barra `gh pr merge` sem essa prova; a exceção ali é `SHOPMAN_SEM_PREFLIGHT="motivo" gh pr merge <N> --auto`. Evidência local nunca dispensa check remoto. Plano, números e limites: [docs/plans/CI-DX-LOCAL-FIRST-PLAN.md](docs/plans/CI-DX-LOCAL-FIRST-PLAN.md).
+
+**Desempenho da suíte é decisão guardada, não comentário** (dono, 25/11: "NÃO DEIXAR que esse tipo de 'sacada' se perca"): teste que chama o `seed` completo (25–75 s cada) é contado em `scripts/test-cost-baseline.json` e crescer reprova (`make test-cost`); quem semeia no backstage mora em `BACKSTAGE_SEED_TESTS`/`BACKSTAGE_HEAVY_TESTS`; os shards `seed`/`rest` são partidos por peso medido (`scripts/test_shards.py`); e a vigia diária (`ci-time-watch.yml`) abre issue quando a fila passa de `scripts/ci-time-budget.json`. Afrouxar um teto é decisão escrita no PR, com o número (plano §10).
+
 **Mecanismo, não lembrete:**
+
+- Check `Ficou de fora declarado` (`.github/workflows/ficou-de-fora.yml`,
+  `scripts/check_ficou_de_fora.py`) — reprova o PR sem a seção, com item sem `#issue`,
+  ou com issue sem o label. Robô, draft e PR anterior a 12/11/2026 são isentos.
+- `make inflight` lista as issues `ficou-de-fora` abertas, da mais velha para a
+  mais nova: é o inventário do que está adiado.
 
 - `make inflight` — o inventário do que está em voo e dormindo: worktrees sujas,
   branches locais sem PR, PRs verdes fora da fila, vermelhos, conflitantes. Rode
@@ -147,6 +171,40 @@ outras sessões e para o Pablo. Draft custa 20 segundos; redescobrir custa dias.
   tentativa passa, para que "esperando o Pablo sobre X" continue sendo saída
   legítima, desde que dita e com o trabalho publicado. Não contorne: publique.
 - `AGENTS.md` é link para este arquivo: o Codex lê a mesma regra.
+
+## ⛔ A SOLICITAÇÃO: a fala do dono vira linha antes do primeiro edit
+
+Vale para Claude, Codex, DSH e humano. Sessão não tem memória; o repo tem.
+
+**Quando o Pablo pedir, corrigir, reclamar ou sugerir algo que vai virar trabalho,
+a primeira ação é registrar a fala literal (e, se ela virar issue, citar o
+número na linha):**
+
+```bash
+make intake q="<as primeiras palavras dele, literais>" dono="Engenharia"
+```
+
+O comando devolve `DEV-AAAA-NNN` e a linha `Compromisso: DEV-AAAA-NNN`. O PR cita essa linha;
+a CI reprova PR novo sem ela. O relatório final lista os IDs tocados e o estado de
+cada um. Solicitação que não virou trabalho também é linha (`ABERTO`, `revisar_em` curto).
+
+**Um arquivo por entrada, nunca uma tabela única.** O ledger mora em
+`docs/coordination/commitments/DEV-AAAA-NNN.json` (regras no `README.md` da pasta).
+Até 18/11/2026 era uma tabela em `COMMITMENTS.md`, e cada merge deixava os PRs
+seguintes CONFLICTING (oito saíram da fila num dia). A tabela está congelada; não
+crie índice commitado (`make commitments-index` gera na hora). O `intake` pula IDs
+que já estão em PR aberto, branch local ou worktree, e sem `gh` falha em vez de
+chutar (`offline=1` força, sabendo do risco).
+
+**Adiamento tem gate próprio.** A seção `## Ficou de fora` do template declara o
+que ficou, e cada item vira issue aberta com label `ficou-de-fora` (check
+"Ficou de fora declarado"). O ledger indexa a issue com dono, prazo e prova; não
+duplique a regra no corpo do PR.
+
+`make commitments` mostra o que venceu, inclusive as decisões legadas de
+`DECISIONS.md`. O job semanal abre uma issue com os vencidos e a fecha quando a
+lista zera. O ritual é de 10 minutos; o dono do ritual é a coordenação do turno:
+sem alguém assumindo, o item é `BLOQUEADO`, não `ABERTO`.
 
 ## Estrutura do Projeto
 
@@ -164,7 +222,9 @@ packages/               13 apps pip-instaláveis (sem dependência entre si)
 ├── buyman/             Compras: fornecedores, materiais, custos (procurement, Fase 1) [shopman-buyman]
 ├── fiscalman/          Fiscal: classificação NFC-e (schema em Product.metadata)      [shopman-fiscalman]
 ├── cashman/            Caixa: terminal, turno (custódia) e livro-caixa imutável       [shopman-cashman]
-└── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+├── watchman/           Saúde: contrato, registry, runner, sondas e CLI                [shopman-watchman]
+└── conversational-commerce/  Núcleo de comércio conversacional: Python PURO, zero dependência, fora da
+                        família dos cores; o K38 reprova import fora da stdlib (ADR-049)  [conversational-commerce]
 
 shopman/                Namespace package (PEP 420) — sem __init__.py
 ├── shop/               Orquestrador (app Django, label="shop") — health/readiness views [django-shopman]
@@ -205,7 +265,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
 │
 └── backstage/          Superfícies operador HEADLESS + Admin/Unfold (app Django, label="backstage")
     ├── api/            endpoints JSON dos apps operador Nuxt (pos, kds, production, orders, closing, operator)
-    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — BI-DATA-FOUNDATION-PLAN)
+    ├── bi/             fundação de dados do B.I. (ingest/ por fonte + ImportBatch; mapping.py sugere de-paras; canônica e adaptadores — docs/plans/completed/BI-DATA-FOUNDATION-PLAN.md)
     ├── projections/    kds, order_queue, pos, closing, production, dashboard, bi_* (camada de leitura do B.I.)
     ├── services/       operator, closing, production, cash
     ├── models/         KDSInstance, KDSTicket, DayClosing, OperatorAlert, POSTab
@@ -214,7 +274,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro único em surfaces/registry.json
+surfaces/               11 apps registrados (9 produto + internal + external), 1 layer e 1 roteador — fonte: registry.json
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Central — a home do operador (:3001)            → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -224,7 +284,7 @@ surfaces/               9 apps Nuxt 4 (SSR) + 1 layer + 1 roteador — registro 
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
 ├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento (:3008) → api./backstage
 ├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
-├── kitchensink-nuxt/ Catálogo do operador (:3009)        → api./backstage
+├── kitchensink-nuxt/ Catálogo interno do operator-kit (:3009) → api./backstage
 ├── status-nuxt/      status público independente (:3010) → liveness pública
 ├── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
 │                      retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
@@ -244,7 +304,7 @@ pyproject.toml          Build + test config (repo root)
 ```
 
 > **Cutover headless:** os apps Django `storefront`/`backstage` NÃO renderizam mais
-> HTML — servem API JSON + projections. As superfícies são os 9 apps Nuxt em
+> HTML — servem API JSON + projections. As superfícies de produto são os 9 apps Nuxt em
 > `surfaces/`, que falam com o Django via BFF (cookie de sessão cross-subdomínio
 > `.boulangerie`). A seção "Frontend: HTMX ↔ Alpine" abaixo vale só para as telas
 > Admin/Unfold que ainda são Django-rendered.
@@ -313,7 +373,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   - **`cpf`, `cnpj`, `cep` ficam em português.** São nome próprio de documento brasileiro, como `IBAN` ou `ZIP`. `is_valid_cpf` é o nome certo; "traduzir" produziria um nome que não existe.
   - **Prosa fica em português** — docstring, comentário, mensagem ao operador, cópia de tela. A regra vale para identificador, não para a língua da casa.
   - **Campo de API de terceiro fica como o terceiro chama, e morre na porta de entrada.** O `valor` da Efí é o caso canônico: sobrevive em `pix_item["valor"]` porque é o contrato deles, e para dentro do sistema vira `amount`. Renomear no meio esconde de que lado do contrato você está.
-  - ⚠️ Pendência conhecida: o `MovementType` do caixa (`SANGRIA`/`SUPRIMENTO`/`AJUSTE`) segue em português. Não é esquecimento — o valor está gravado no banco, sai no comprovante impresso e é o que o operador fala. Converter é coerente (a casa já fez isso com *comanda* na tela / `POSTab` no código), mas é WP próprio, com migração.
+  - O gesto de dinheiro do caixa é **Saída de caixa / Entrada de caixa** (`cashman.Entry.Kind` `cash_out`/`cash_in`), e é esse o rótulo do comprovante impresso; *sangria*/*suprimento* ficam só como `kind` da API do backstage (suite-vocabulary, 22/11/2026).
 - **Só existem duas palavras: "dispositivo" e "maquininha". "Aparelho" não é nenhuma
   delas.** O objeto que o operador segura — tablet, celular, PC, terminal, o que recebe
   aviso e guarda confiança — se chama **dispositivo**; o que o entregador leva para
@@ -349,6 +409,13 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   [docs/reference/suite-vocabulary.md](docs/reference/suite-vocabulary.md).
 - **Dialeto canônico de erro**: toda resposta de erro JSON das APIs fala `{detail, field, errors}` (via `EXCEPTION_HANDLER` DRF em `shopman/shop/api_errors.py`). Ver [docs/reference/errors.md](docs/reference/errors.md).
 - **Copy sem travessão**: nenhum texto visível ao usuário usa travessão, especialmente o travessão longo (`—`). Reescreva com ponto, vírgula, dois-pontos ou parênteses, conforme o sentido. A regra vale para defaults, fallbacks, seeds, migrações de dados, notificações e textos configuráveis.
+- **Configuração de loja não entra por env nem por `settings`** (decisão do dono, 23/10/2026;
+  [ADR-042](docs/decisions/adr-042-schema-por-loja-e-trava-de-configuracao.md)): o alvo é um
+  schema do Postgres por loja, com a `Shop` singleton por schema. Configuração ou credencial
+  NOVA de uma loja mora na `Shop`, no descritor de instância (`config/instances/`) ou no cofre
+  futuro. Trava: `scripts/check_tenant_config.py` (job "Quality + deploy contract") conta por
+  arquivo as leituras de `settings.SHOPMAN_*|EFI*|FOCUS*|STRIPE*|…` e de `os.environ` contra
+  `scripts/tenant-config-baseline.json`; crescer reprova, diminuir pede `--update`.
 - **Uma versão só por pacote compartilhado nas superfícies** (decisão do dono, 18/09/2026):
   as estáveis mais recentes, e a MESMA em todos os apps de `surfaces/`. Trava em
   `scripts/check_surface_versions.py` (`make test-surface-versions`, job no
@@ -391,8 +458,9 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   passa da dobra usa `<MoreBelow />` no fim do CONTEÚDO (antes de card/barra flutuante,
   que são chrome) em vez de inventar aviso de rolagem. Sentinela + IntersectionObserver,
   descontando o que flutua na base pelo mesmo `data-focus-obstruction` do próximo foco.
-  Contrato na seção "Tem mais abaixo" do `surfaces/operator-kit/README.md`. Pendência
-  conhecida: o `BottomSheet` do storefront ainda tem a versão antiga inline.
+  Contrato na seção "Tem mais abaixo" do `surfaces/operator-kit/README.md`. Dentro de
+  uma caixa que rola (o `BottomSheet` do storefront), é o mesmo componente no modo
+  caixa: `<MoreBelow contained :container="el" />` (#2414).
 - **Envelope de segurança das surfaces de operador**: CSP/cache/security do HTML, BFF,
   erros e SSE é capability compartilhada e **opt-in** do `operator-kit`, nunca arquivos
   copiados nem ativação implícita em todos os consumers. O Marketing é o piloto; não o
@@ -400,7 +468,7 @@ Cores nunca se importam. Para causar efeito em outro app, a **interação decide
   `style-src-elem` via `import.meta.dev`; `script-src` continua nonce-only e produção
   estrita. Antes de habilitar outro app, inventarie recursos externos, use allowlist
   mínima por diretiva e rode testes do kit + consumer. POS (Maps/ViaCEP) e Storefront
-  exigem tratamento específico. Ver [ADR-026](docs/decisions/adr-026-operator-surface-security-envelope.md)
+  exigem tratamento específico. Ver [ADR-038](docs/decisions/adr-038-operator-surface-security-envelope.md)
   e o follow-up `SEC-SURF-001`.
 - **Marketing tem um contrato factual único**: antes de alterar cockpit, rotas, projeções,
   permissões, canais ou deploy, leia
@@ -460,7 +528,7 @@ Esse escopo e para desenvolvimento local. Antes de PR, rode `make admin` sem `ur
 ## Como Rodar
 
 ```bash
-make test              # Todos os testes (~6.500: ~2.200 cores + ~4.250 framework + tools)
+make test              # Todos os testes; consulte a coleta da suíte para a contagem atual
 make test-offerman     # Apenas offerman
 make test-stockman     # Apenas stockman
 make test-framework    # Orquestrador + integration + e2e
@@ -521,8 +589,8 @@ Antes de alterar qualquer coisa no Core, **compreenda como ele já resolve o pro
 - [docs/reference/data-schemas.md](docs/reference/data-schemas.md) — **Obrigatório**: inventário de chaves em Session.data, Order.data, Directive.payload
 - [docs/guides/lifecycle.md](docs/guides/lifecycle.md) — Guia da arquitetura: Lifecycle, Services, Adapters, Rules
 - [docs/ROADMAP.md](docs/ROADMAP.md) — Visão geral de próximos passos e ideias futuras
-- [docs/plans/WP-GAP-07-pre-prod-migration-playbook.md](docs/plans/WP-GAP-07-pre-prod-migration-playbook.md) — Playbook ativo de migração/pré-prod
-- [docs/plans/PROJECTION-UI-PLAN.md](docs/plans/PROJECTION-UI-PLAN.md) — Plano ativo de projections/UI
+- [docs/guides/production-upgrades.md](docs/guides/production-upgrades.md) — Migração e upgrade em produção (sucede o playbook WP-GAP-07, arquivado em [docs/plans/completed/WP-GAP-07-pre-prod-migration-playbook.md](docs/plans/completed/WP-GAP-07-pre-prod-migration-playbook.md))
+- [docs/reference/projection-contracts.md](docs/reference/projection-contracts.md) — Contratos de projection (o PROJECTION-UI-PLAN foi arquivado em [docs/plans/completed/PROJECTION-UI-PLAN.md](docs/plans/completed/PROJECTION-UI-PLAN.md))
 - [docs/](docs/README.md) — Documentação completa (guias, ADRs, referência técnica)
 - [docs/reference/glossary.md](docs/reference/glossary.md) — Glossário de termos de domínio
 

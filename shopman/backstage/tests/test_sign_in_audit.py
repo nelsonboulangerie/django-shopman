@@ -138,7 +138,10 @@ class SignInAuditTests(TestCase):
     # ── Senha ─────────────────────────────────────────────────────────────
 
     def test_login_por_senha_no_app_de_operador(self):
-        resp = self.client.post(
+        # Fora de posto: num posto vinculado, a senha da Caixa é recusada e ela entra
+        # pelo PIN (#2334; ``test_operator_login_no_posto``). A trilha da senha é a
+        # mesma de qualquer dispositivo pessoal.
+        resp = self.client_class().post(
             LOGIN, {"username": "ana", "password": "senha-forte-123"},
             content_type="application/json",
         )
@@ -282,3 +285,20 @@ class SignInAuditTests(TestCase):
 
         self.assertEqual(removidas, 1)
         self.assertEqual(list(SignInEvent.objects.values_list("pk", flat=True)), [recente.pk])
+
+
+class UnlockRefusalCopyTests(SignInAuditTests):
+    """Beta 05/11/2026 (PDV-24): "Identificação inválida." não dizia que foi o PIN."""
+
+    def test_pin_errado_diz_quantas_tentativas_restam(self):
+        cred = PinCredential.objects.get(user=self.op)
+        resp = self.client.post(UNLOCK, {"operator_id": str(self.op.pk), "pin": "9999", "perm": POS_PERM})
+
+        self.assertEqual(resp.status_code, 403)
+        restantes = cred.max_attempts - 1
+        self.assertEqual(resp.json()["detail"], f"PIN incorreto. Restam {restantes} tentativas antes da trava.")
+
+    def test_cracha_desconhecido_diz_que_e_o_cracha(self):
+        resp = self.client.post(UNLOCK, {"badge": "naoexiste", "perm": POS_PERM})
+
+        self.assertEqual(resp.json()["detail"], "Crachá não reconhecido. Passe de novo ou digite o PIN.")

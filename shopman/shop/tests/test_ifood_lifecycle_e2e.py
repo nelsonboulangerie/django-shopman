@@ -28,6 +28,7 @@ from shopman.shop.handlers.ifood_status import IFoodStatusCallbackHandler, on_or
 from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import cancellation, ifood_auth, ifood_cancellation, ifood_events, kds, operator_orders
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 pytestmark = pytest.mark.django_db
 
@@ -40,7 +41,7 @@ class LocalFiscalBackend:
 
     def emit(self, **payload):
         self.emissions.append(payload)
-        return FiscalDocumentResult(success=True, status="authorized", access_key="local-rehearsal-key")
+        return FiscalDocumentResult(success=True, status="authorized", access_key=access_key_for(payload["reference"]))
 
 
 @pytest.fixture
@@ -155,12 +156,18 @@ def _ingest_and_prepare(rehearsal):
     expected = {(item.get("externalCode") or item["id"]): Decimal("10") - Decimal(str(item["quantity"]))
                 for item in rehearsal.raw["items"]}
     assert _quantities() == expected
-    assert not KDSTicket.objects.exists()
+    # Aceito já está na Cozinha, esperando o "Iniciar preparo" do posto (dono,
+    # 06/11/2026: a verdade é da cozinha, o Gestor é um atalho).
+    tickets = set(KDSTicket.objects.filter(session_key=order.session_key).values_list("pk", flat=True))
+    assert tickets
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"pending"}
+    assert sum(len(ticket.items) for ticket in KDSTicket.objects.all()) == len(rehearsal.raw["items"])
     rehearsal.act(lambda: operator_orders.advance_order(order, actor="local-operator"))
     order.refresh_from_db()
     assert order.status == "preparing"
-    assert KDSTicket.objects.filter(session_key=order.session_key).exists()
-    assert sum(len(ticket.items) for ticket in KDSTicket.objects.all()) == len(rehearsal.raw["items"])
+    # O atalho do Gestor inicia os MESMOS tickets; não nasce nenhum.
+    assert set(KDSTicket.objects.values_list("pk", flat=True)) == tickets
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"in_progress"}
     # O preparo ATRAVESSA: a mesma transição que abre o ticket na cozinha conta
     # ao iFood que a comida começou. Sem isto o cliente vê "confirmado" enquanto
     # a padaria já está trabalhando.
@@ -180,7 +187,7 @@ def test_food_fixture_full_lifecycle_keeps_stock_kds_and_fiscal_exactly_once(reh
     order.refresh_from_db()
     assert order.status == "completed"
     assert order.fulfillments.get().status == Fulfillment.Status.DELIVERED
-    assert order.data["nfce_access_key"] == "local-rehearsal-key"
+    assert order.data["nfce_access_key"] == access_key_for(order.ref)
     assert len(rehearsal.fiscal.emissions) == 1
     assert len(rehearsal.fiscal.emissions[0]["items"]) == len(rehearsal.raw["items"])
     assert _quantities() == expected
@@ -208,7 +215,7 @@ def test_food_cancellation_waits_for_can_then_restores_stock_and_cancels_kds(reh
     assert order.status == "preparing"
     assert order.data[ifood_cancellation.KEY]["state"] == "sent"
     assert _quantities() == expected
-    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"pending"}
+    assert set(KDSTicket.objects.values_list("status", flat=True)) == {"in_progress"}
     assert rehearsal.event("CAN")["ingested"] == 1
     order.refresh_from_db()
     assert order.status == "cancelled"
@@ -334,4 +341,4 @@ def test_ifood_without_cpf_issues_presential_nfce_only_with_intermediated_sale(r
     assert not (emission["customer"] or {}).get("tax_id")
     assert emission["delivery"] is None
     assert emission["intermediary"]["cnpj"] == "14380200000121"
-    assert order.data["nfce_access_key"] == "local-rehearsal-key"
+    assert order.data["nfce_access_key"] == access_key_for(order.ref)

@@ -20,11 +20,24 @@ na §8.
 
 **Premissas do dono que este mapa não reabre:**
 
-- Não existe entregador da casa: toda entrega dos canais próprios sai pela **TaOn**, inclusive
-  a cobrada na porta (valor e troco vão na observação da corrida). No iFood quem entrega é o
-  **iFood**, sempre (`deliveredBy=IFOOD`).
-- Encomenda: a casa dita o fluxo (cliente → recebimento → quando → produtos).
+- Quem leva a entrega dos canais próprios é escolhido por corrida: o serviço padrão do Admin
+  (hoje a **TaOn**) vem marcado, e os **entregadores da casa** livres são opção no mesmo gesto
+  (dono, 16/11/2026, DEV-2026-030; substitui a premissa de 13/10, "não existe entregador da
+  casa"). A cobrança na porta vai com quem levar. No iFood quem entrega é o **iFood**, sempre
+  (`deliveredBy=IFOOD`).
+- Encomenda: a casa dita o fluxo (cliente → quando → recebimento → produtos). "Pra quando" vem
+  em segundo, logo depois do cliente, porque diz respeito à disponibilidade (dono, 19/11/2026,
+  #2754; revê a ordem de 16/09, que punha o recebimento antes do quando).
 - "Via Recibo primeiro, Nota depois": a NFC-e acompanha a **saída** da mercadoria.
+- Encomenda paga e **não retirada**: o valor que a loja retém é multa por desistência, com
+  recibo e **sem NFC-e**, fora da receita bruta do Simples. A parte executada de uma encomenda
+  é o que foi **entregue**, não o que foi produzido. Na retirada parcial, a NFC-e é só do que
+  saiu, e o resto retido é multa (contador, 24/11/2026, #2695). No sistema, o "Não retirado"
+  termina em `cancelled` sem passar pela saída, e `fiscal.emit` recusa pedido desfeito. O recibo
+  do valor retido (dono, 24/11/2026, #3538) sai no balcão no fim do gesto e fica na página do
+  pedido; o aviso ao cliente aponta para ele. Compra na conta da casa não tem recibo (nada foi recebido). Desde 24/11/2026 (DEV-2026-089) a
+  retenção é de 40% provisório do valor dos itens feitos para a encomenda; a revenda e o que volta à
+  venda voltam inteiros (`Shop.defaults["no_show"]["retention"]`).
 - Entrega sem CPF é aceita em todo canal e a nota sai presencial (ADR-035, 13/10/2026).
 - Expedição sem NFC-e só avisa, nunca segura a sacola.
 - KDS: dois gestos (Iniciar, Pronto), desfazer de 5 s, cancelamento com alarde.
@@ -49,10 +62,10 @@ na §8.
 
 | Canal | Confirmação | Pagamento | Preparo começa | Avisos ao cliente |
 |---|---|---|---|---|
-| `pdv` | `immediate` (encomenda vira manual: `lifecycle.py:776`) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
-| `web` (loja online) | `manual`, alerta de pedido parado em 10 min | Pix e cartão, `post_commit`, prazo 10 min | **o operador** dá "Iniciar preparo" (`prep_start=operator`) | ManyChat → SMS → e-mail |
-| `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | sozinho | ManyChat → SMS → e-mail |
-| `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | sozinho | nenhum (o telefone é a central do iFood) |
+| `pdv` | `immediate` (a encomenda também: quem registrou é o operador) | `external`; formas do PDV: R dinheiro, P Pix, C crédito, D débito, L link, E em conta | sozinho (`prep_start` padrão) | ManyChat → e-mail → SMS |
+| `web` (loja online) | `auto_cancel` (ADR-036): prazo de aceite de 5 min de loja aberta no pedido do dia e 60 min na encomenda (emenda de 09/11); aviso de pedido parado a 1/3 do prazo | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera **o operador** dar "Iniciar preparo" na Cozinha (ou o atalho do Gestor, mesmo ato; `prep_start=operator`) | ManyChat → SMS → e-mail |
+| `whatsapp` | `manual`, alerta em 10 min | Pix e cartão, `at_commit`, prazo 10 min | o ticket nasce no aceite e espera o "Iniciar preparo" da Cozinha, como na loja online (`prep_start=operator`, #3165) | ManyChat → SMS → e-mail |
+| `ifood` | `manual`, alerta em 5 min, SLA do iFood 8 min | `external` | o ticket nasce no aceite e espera o "Iniciar preparo" da Cozinha, como na loja online (`prep_start=operator`, #3165) | nenhum (o telefone é a central do iFood) |
 
 Nenhum canal declara `fulfillment.courier="auto"` (padrão `"none"`, `shopman/shop/config.py:173`):
 a corrida da TaOn é sempre chamada por uma pessoa.
@@ -69,11 +82,11 @@ stateDiagram-v2
     new --> accepted: Aceitar (Gestor) · immediate (PDV) · iFood confirma
     new --> cancelled: Recusar (Gestor, com motivo) · Pix venceu · sem estoque · iFood CAN
     accepted --> completed: venda de balcão já entregue (system:counter_handoff, só PDV)
-    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (Gestor, loja online) · despertador 00:05 da encomenda
+    accepted --> preparing: KDS Iniciar · "Iniciar preparo" (atalho do Gestor, mesmo ato)
     accepted --> ready: (existe no mapa; nenhum botão usa)
     preparing --> ready: último ticket Pronto (KDS) · "Marcar pronto" (Gestor)
     ready --> preparing: Desfazer o Pronto · reabrir ticket
-    ready --> completed: RETIRADA: "Marcar como retirado" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
+    ready --> completed: RETIRADA: "Entregar a <nome>" (Gestor/Saída) · "Entregar" (Encomendas do PDV) · iFood CON
     ready --> dispatched: ENTREGA: "Marcar saída" (Gestor/Saída) · TaOn coletou (E) · iFood DSP
     dispatched --> delivered: TaOn finalizou (F) · "Recebi meu pedido" (cliente) · "Marcar como entregue" (Gestor) · prazo de entrega vencido · iFood CON
     delivered --> completed: automático (_complete_after_handoff)
@@ -91,8 +104,8 @@ O que cada fase faz (`shopman/shop/lifecycle.py:324-737`):
 
 | Fase | Efeitos |
 |---|---|
-| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit`, aviso `order_received` (fora do `immediate`) |
-| `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (se o preparo começa sozinho); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
+| `on_commit` | cliente garantido, reserva de estoque, decisão de disponibilidade gravada, cupom contado, Pix/cartão iniciado se `at_commit` (menos para o pedido na fila da fornada de hoje, que só é cobrado quando o cliente confirma a vaga), aviso `order_received` (fora do `immediate`) |
+| `on_accepted` | cobra se o pagamento digital ainda não entrou (Pix nasce **aqui** na loja online); encomenda futura agenda o despertador; KDS (o ticket nasce aqui; o pedido só vira "Em preparo" sozinho no balcão, `prep_start` padrão); baixa de estoque; aviso `order_accepted` (nunca no balcão já entregue) |
 | `on_paid` | pago depois de cancelado → estorno + alerta; NFC-e do PDV pela regra "na saída"; aviso `payment_confirmed` |
 | `on_preparing` | tickets do KDS; aviso `order_preparing` |
 | `on_ready` | NFC-e da entrega da casa (sacola pronta); aviso `order_ready_pickup` / `order_ready_delivery` |
@@ -146,8 +159,9 @@ juntar para o contador (`fiscal.open_return_note`; §8, P1-12, resolvido #1774).
 Preço: modificadores em ordem `LotDiscount` 15 (D1/Xepa de lote) → `Discount` 20 (promoção e
 cupom, o maior vence) → `Employee` 60 → `HappyHour` 65 → `DeliveryFee` 70 → `LoyaltyRedeem` 80
 → `ManualDiscount` 85 (`shopman/shop/modifiers.py`). O total que o cliente viu é travado no
-commit por `expected_total_q` (`packages/orderman/.../services/commit.py:355-362`), **exceto no
-balcão sem comanda** (§8, P0-1: resolvido em #1722, o fechamento agora recusa com `total_changed`).
+commit pelo `CommitSeal` (`expected_revision` + `expected_total_q`) sob o lock da sessão.
+Não há exceção por origem: no balcão online vale o total revisado; sem conexão vale o total
+já cobrado, mas ambos atravessam exatamente os mesmos fences do kernel.
 
 Taxa de entrega: zona `exclude` → zona `override` → faixa de distância → padrão; frete grátis
 por limiar ou promoção (`modifiers.resolve_delivery_fee_waiver`, a mesma função na loja e no
@@ -265,7 +279,7 @@ Não existe no modo balcão por desenho (`pos_sales_mode.py:78-84`): entrega é 
 | Desconto manual acima do teto | PIN de gerente; o teto inclui a taxa de entrega no subtotal | `pos.py:3247`, `:3471` | ATRITO (P2-22), resolvido #1746 |
 | Sem conexão | fila local, dinheiro/maquininha offline, envio na volta, preço da hora da venda | #1634, #1635 | OK |
 | Cupom | não há campo de cupom no PDV. Decisão do dono (14/10/2026): no balcão o desconto é do GRUPO do cliente (faixa de preço com desconto automático no Admin), não cupom; identificar o cliente basta | `shop/admin/price_tier.py`; `services/promotions.py` (`customer_group_promotion`); `pos.py` (`_review_priced_lines`) | RESOLVIDO por outro caminho (P2-21), resolvido #1766 |
-| Devolução depois da venda | só no Gestor | — | ATRITO (P2) |
+| Devolução depois da venda | no detalhe do pedido do Gestor: "Registrar devolução", com itens, quantidade, motivo e o PIN de um Gerente da lista; o valor e o destino do dinheiro aparecem antes de confirmar (iFood fica no portal deles; venda na conta da casa ainda não) | `backstage/api/operations.py` (`OrderReturnView`, `OrderReturnPreviewView`); `backstage/projections/order_return.py`; `shop/handlers/returns.py` | OK (WP-G12, decisão do dono de 17/11/2026) |
 
 ### 2.4 Matriz
 
@@ -290,9 +304,10 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.1 Caminho feliz, retirada
 
-1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue:39,148`): **cliente**
-   (cadastro obrigatório, `pos_sales_mode.py:87-113`) → **recebimento** (Retirada) →
-   **quando** (Hoje · horário a combinar) → **Montar encomenda**.
+1. **PDV, Encomendas.** Funil `PosOrderEntry` (`PosOrderEntry.vue`): **cliente** (cadastro
+   obrigatório, `validate_sales_mode` em `pos_sales_mode.py`) → **quando** (Hoje · horário a
+   combinar) → **recebimento** (Retirada) → **Montar encomenda**. A barra da venda repete a
+   ordem, com a tecla pela posição: Cliente F6, Quando F7, Recebimento F8.
 2. **Produtos e cobrança.** Igual ao balcão. A encomenda pode ficar **a receber** (cobrar na
    retirada) ou ser paga agora (R/P/C/D/E/L). Link só aqui (`pos.py:1267`), exige telefone ou
    e-mail.
@@ -307,9 +322,12 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 ### 3.2 Caminho feliz, entrega (TaOn)
 
-1. Funil com **Entrega**: endereço (CEP, número, bairro; geocodifica), taxa calculada pela
-   faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido mínimo checado
-   no fechamento (`pos.py:1441`).
+1. Funil com **Entrega** (depois do cliente e do quando): o endereço é a última etapa. O
+   endereço padrão do cliente já vem marcado na lista dos cadastrados, uma linha inteira por
+   endereço (Enter aceita e segue, as setas trocam, e dá para tirar o endereço da entrega sem
+   mexer no cadastro); endereço novo vai ao formulário (CEP, número, bairro; geocodifica). Taxa
+   calculada pela faixa de distância/zona e mostrada na revisão; CPF opcional (ADR-035); pedido
+   mínimo checado no fechamento (`pos.py:1441`).
 2. Pagamento: pago agora, em conta, link, ou **cobrar na entrega** (dinheiro com "troco para",
    ou maquininha que sai com o entregador).
 3. KDS prepara → `ready` → NFC-e da sacola (`lifecycle.py:622`), aviso
@@ -338,7 +356,7 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
 
 | Requisito | Como atende | Onde | Estado |
 |---|---|---|---|
-| Afirmar cliente, recebimento e quando antes dos produtos | funil | `PosOrderEntry.vue` | OK |
+| Afirmar cliente, quando e recebimento, nessa ordem, antes dos produtos | funil | `PosOrderEntry.vue` | OK |
 | "O quanto antes" explícito | "Hoje · a combinar" | `schedule.ts:86` | ATRITO, resolvido #1714 |
 | Endereço e taxa | motor de taxa + linha manual | `pos.py:3541-3646` | OK |
 | Cotação da TaOn à vista | custo interno, no Gestor | `courier.py:227` | ATRITO, resolvido #1715 |
@@ -365,8 +383,9 @@ antes": é o modo Encomendas com data **Hoje** e janela **A combinar**
    `target_date`; a sugestão de produção soma (`craftsman/.../contrib/demand/backend.py:127`) e o
    lote mostra os pedidos que esperam por ele (`projections/production.py:3019`).
 4. **Na véspera:** `preorder_reminder` ao cliente (`reschedule.py:452`).
-5. **No dia, 00:05:** o despertador `preorder.activate` (`lifecycle.py:983-1018`) dá a baixa e
-   cria os tickets do KDS ("Encomenda · cliente" no card).
+5. **No dia, na hora da Cozinha** (hora combinada − preparo − antecedência; sem hora combinada,
+   a abertura): o despertador `preorder.activate` (`lifecycle.preorder_activation_at`) dá a baixa e
+   cria os tickets do KDS ("Encomenda · cliente" no card). O pedido segue Aceito até o "Iniciar".
 6. **KDS** prepara e separa → `ready` → aviso de pronto.
 7. **PDV › Encomendas** (Dia/Semana, "A receber × Pagas", "Falta imprimir", "Imprimir N vias"):
    **Cliente veio buscar** → Entregar → `completed`, NFC-e.
@@ -417,13 +436,17 @@ antecipada pelos marcos invertidos (horário − tempo de chegada) é pós-go-li
 5. **Pedido criado** (`new`), aviso `order_received`; o total visto é travado
    (`checkout.py:174-189`). O cliente vai a `/pedido/<ref>` (SSE).
 6. **Gestor:** som insistente, card na Entrada com "cancela sozinho em"; o operador **Aceita**
-   (`confirm_order`). Prazo de aceite: 30 min de loja aberta (`auto_cancel`); aos 10, o aviso
-   "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o cliente pagou é devolvido".
+   (`confirm_order`). Prazo de aceite (`auto_cancel`, emenda de 09/11 à ADR-036): 5 min de loja
+   aberta no pedido do dia feito com a casa aberta, 60 min na encomenda para outro dia e no
+   pedido que chega com a casa fechada (`confirmation.preorder_timeout_minutes`). A 1/3 do prazo do pedido (1min40s no do dia, 20 min
+   na encomenda) sai o aviso "se ninguém aceitar até HH:MM, ele é cancelado sozinho e o que o
+   cliente pagou é devolvido", e a janela do aviso conta até a mesma hora.
    Recusou ou venceu: cancelado, Pix estornado ou cartão anulado, cliente avisado dos dois.
 7. **No aceite:** o cartão é capturado; o Pix já entrou.
-8. **Pago:** o Gestor mostra; o operador dá **Iniciar preparo** (`prep_start=operator`) → KDS →
+8. **Pago:** o ticket já está na Cozinha, esperando; o operador do posto dá **Iniciar preparo** (o
+   Gestor tem o mesmo gesto como atalho; `prep_start=operator`) → em preparo →
    Pronto → `order_ready_pickup`.
-9. **Cliente chega:** Gestor/Saída **Marcar como retirado** → `completed`, NFC-e.
+9. **Cliente chega:** Gestor/Saída **Entregar a <nome>** → `completed`, NFC-e.
 
 ### 5.2 Loja online, entrega (TaOn)
 
@@ -451,12 +474,15 @@ pronto e "Saiu para entrega" só depois da coleta (`shop/projections/order_track
 | Pedido editado em `new` antes do Pix | o Pix sai com o total selado antigo | `payment.py:111` | **LACUNA a provar (P0-6)**, resolvida #1736 |
 | Pix venceu | cancela; um aviso só (`order_cancelled` com a frase do prazo, `cancel_reasons.pix_expired`) | `handlers/payment_timeout.py`; `customer_orders.resolve_payment_timeout_if_due` | OK (P1-9), resolvido #1773 (eram dois avisos) |
 | Pago depois de cancelado | estorno + alerta; o cliente não é avisado do estorno | `lifecycle.py:554-557` | ATRITO (P1-9), resolvido #1720 |
-| Cliente quer cancelar | sozinho em `new`/`accepted` sem captura; pago vira solicitação ao gerente | `payment.py:1582-1595`; `cancellation_requests.py` | OK |
+| Cliente quer cancelar | antes do preparo (`new`/`accepted`) cancela sozinho, pago ou não, e o valor volta pelo próprio cancelamento (Gestor recebe aviso informativo `customer_self_cancelled`); depois do preparo não cancela, fala com o responsável (ouvidoria, origem `cancellation`) | `policies/customer_cancellation.py`; `customer_orders.cancel`; `customer_contact.request_contact` | OK |
 | Xepa | só no balcão (decisão de 14/10, Pergunta 3 = 1): fora do WhatsApp, do site e do iFood, e a loja não anuncia | `rules/pricing.py` (`channels_required`); migração `shop.0093` | OK (P1-14), resolvido #1760 |
 | `bootstrap_whatsapp_channel` | recria o canal com `auto_confirm`, contra a decisão da migração 0054 | `bootstrap_whatsapp_channel.py:32` | LACUNA (P1-15), resolvida #1718 |
 | Pagar na entrega pelo site | não existe, por decisão (Pergunta 2 = 1, 14/10) | ADR-036 | OK |
 | Horário de entrega do site | só confere "já passou", não a grade | `views.py:273-285` | ATRITO (P2-30), resolvido #1767 |
 | Link do entregador na página do pedido | não aparece (só no aviso) | `order_tracking.py:1477-1482` | LACUNA (P1-11), resolvida #1718 |
+| Sacola na fila de uma fornada futura, pedido para antes dela (Kuro Pan de quarta para retirar hoje, beta 09/11) | o Quando abre no dia da fornada; os dias antes aparecem desabilitados com a frase "Kuro Pan sai na quarta, 11/11. Antes disso, não dá para retirar."; o commit recusa (`order_date_before_batch`, campo `delivery_date`) e nunca adota a reserva da fornada num pedido de antes dela | `stock.hold`; `availability.session_holds_after`; `checkoutFlow.ts` (`checkoutDateChoices`, `initialCheckoutDate`); `presentation/cart.ts` (`cartBatchFloor`) | OK (P0 de 09/11) |
+| Sacola na fila de uma fornada futura, pedido para o DIA dela | o pedido adota a reserva que a sacola já tem no lote (a vaga na fila é a mesma, mesmo com a fornada cheia); não cria outra reserva nem cai em demanda sem lote. Na concierge, a data antes da fornada é recusada já ao combinar retirada ou entrega, com o item e o dia | `stock.hold` (`_session_holds_on_batch`); `availability.session_holds_on_batch`; `stock.order_date_before_batch_refusal` em `policies/preorder_date.preorder_date_errors` | OK (P0 de 09/11) |
+| Sacola na fila de uma fornada futura, e depois surge saldo numa data anterior (fornada extra, pão pronto) | a data anterior fica liberada no Quando (`earlier_available_date` na linha da sacola); o pedido para ela reserva de novo nessa data, sem registro de demanda, e a vaga da fornada posterior volta para a fila. Sem saldo para a quantidade inteira, vale a recusa de sempre, com o item e o dia da fornada (dono, 10/11/2026) | `policies/order_date_before_batch.py` (`day_has_room`, `earliest_day_with_room`); `stock.hold` (`_hold_anchored_by`); `projections/cart._earlier_available_dates` | `test_order_date_before_batch.py::TestFornadaAnteriorComSaldo`; `test_checkout_order_date_before_batch.py` |
 | Texto residual "CPF obrigatório na entrega" | comentário e prompt da concierge | `checkoutPayload.ts:30`; `concierge/tools.py:1374` | ATRITO (P2-30), resolvido #1745 |
 
 ### 5.5 Matriz
@@ -539,13 +565,14 @@ conclui de `ready`. O código de retirada só aparece se o iFood mandar `deliver
 | Aceitar | Gestor (atalho de tecla) | não | OK |
 | Recusar | Gestor | diálogo com motivo (iFood: lista de códigos) | OK |
 | Ajustar itens/disponibilidade | Gestor, tela de edição com prévia | tela própria | OK |
-| Iniciar preparo | Gestor (loja online) ou KDS | não | OK |
+| Iniciar preparo | KDS (a verdade) ou o atalho no Gestor, mesmo ato | não | OK |
 | Pronto | KDS (desfazer 5 s; reabrir pelo histórico) ou "Marcar pronto" no Gestor | não | OK; na entrega com ticket aberto fica no menu (à vista desde #1712) |
-| Saída / Marcar como retirado / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
+| Saída / Entregar a <nome> ou Despachar <código> / Marcar como entregue | Gestor ou Saída, desfazer 5 s | diálogo só com troco ou maquininha | OK |
 | Chamar entregador / Chamar de novo / Cancelar corrida / Cotar | Gestor | pergunta com a custódia | OK; cedo e no PDV desde #1712 e #1711; Cancelar a corrida e Entregador voltou também no PDV desde #1765 |
 | Entregador voltou / Acertar entrega | Gestor | diálogo | OK |
 | Cancelar | Gestor/PDV | motivo (opcional) + gerente se pago ou adiantado | ATRITO: motivo vai literal ao cliente (P1-10), resolvido #1730 |
 | Reprocessar NFC-e / Imprimir DANFE | Gestor | não | OK |
+| Tentar o estorno de novo | Gestor, na linha "Estorno não saiu" do pedido (cancelado, devolução registrada, encomenda editada que ficou mais barata, pagamento que chegou depois do balcão) | PIN de gerente | OK (WP-G13, #2727): pede de novo ao gateway só o que falta voltar, nunca acima do teto do "não retirado" nem o que a gaveta ou a maquininha devolvem; a recusa do gateway fica escrita na linha na língua do balcão |
 | Imprimir Via Pedido | PDV e Gestor | — | ATRITO (P2-19), resolvido #1752 |
 | Declarar volumes | Gestor, Saída, KDS | não | OK |
 | Ligar / WhatsApp ao cliente; ligar ao entregador | detalhe do pedido | não | OK |
@@ -591,7 +618,7 @@ andamento da corrida no Gestor e no PDV (#1729), PDV do entregador (#1726).
 |---|---|---|---|---|
 | P1-3 · **resolvido #1733** | Aceite do iFood que não chegou é invisível; o iFood cancela em 8 min com a cozinha trabalhando | `handlers/ifood_status.py:74`; `order_queue.py:1673` | Card diz "O iFood ainda não recebeu o aceite" com **Tentar de novo**, até o sinal confirmar; o prazo continua contando no card | S |
 | P1-4 · **resolvido #1732** | Cartão autorizado sem aceite fica preso; a autorização vence no Stripe | `payment_timeout.py:62-63` | Alerta ao operador antes de a autorização vencer, com Aceitar/Recusar; ao recusar, a autorização é liberada | S |
-| P1-5 · **resolvido #1769** | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Pergunta 1 = 1 (14/10): paga ao pedir, prazo de aceite de 30 min de loja aberta, estorno automático (ADR-036) | S |
+| P1-5 · **resolvido #1769** | Loja online: Pix nasce no aceite e vence em 10 min sem lembrete; pedido noturno morre | `lifecycle.py:477-491`; `payment_reminder` nunca agendado | Pergunta 1 = 1 (14/10): paga ao pedir, prazo de aceite de loja aberta (30 min na ADR-036; 5 no dia e 60 na encomenda desde a emenda de 09/11), estorno automático | S |
 | P1-6 · **resolvido #1723** | PDV, entrega fora da área: a revisão diz que não bloqueia, o fechamento recusa, a taxa manual não resolve | `pos.py:898-910`; `validation.py:270` | A regra respeita a taxa manual do PDV (o combinado da porta é do operador, como a própria revisão diz) | S |
 | P1-7 · **resolvido #1734** | Encomenda no dia vai à cozinha com Pix/link pendente; Pix em pagamento misto liquida pela palavra do operador | `pos.py:2199-2296`; `pos.py:3967-3971` | "Enviar à cozinha" pergunta antes de mandar pedido não pago; Pix no misto espera a confirmação do Pix (ou é recusado no misto, como no modo de teste) | S |
 | P1-8 · **resolvido #1727** | Encomenda de retirada: "Entregar" no PDV exige `ready`, que o PDV não marca | `operator_orders.py:1419-1427` | "Entregar" aceita pedido aceito/em preparo e conclui (fecha os tickets abertos com alarde no KDS) | S |
@@ -677,5 +704,5 @@ a resposta do contador.
 | P0-3 no vivo | espera a janela do dono | O código está no `main` (#1719); falta o resolver `intermediated_sale` na env `SHOPMAN_FISCAL_EMISSION_RESOLVER` do spec vivo, junto do delta do go-live |
 | P1-12, emissão da nota de estorno | espera o contador | Desde #1774 o sistema abre a pendência "nota de estorno" no Gestor com o que juntar; emitir a nota fica para depois de o contador dizer qual procedimento quer |
 | Prazo de cancelar a NFC-e | espera o contador | `docs/reference/fiscal-parametrizacao-nfce.md` §5 diz 24 h; o código e este mapa usam 30 min (`SHOPMAN_NFCE_CANCELLATION_WINDOW_MINUTES`, RICMS/PR art. 35). Confirmar qual vale, sem mudar nada antes da resposta |
-| Devolução depois da venda (§2.3) | ATRITO sem número | Só no Gestor; não entrou na §8 como item |
+| Devolução depois da venda (§2.3) | resolvido (WP-G12) | O Gestor registra a devolução no detalhe do pedido, com PIN de Gerente; antes o serviço existia e nenhuma tela o chamava |
 | iFood, mudança de endereço (§6.3) | ATRITO sem número | Só alerta; quem entrega é o iFood |

@@ -52,13 +52,26 @@ def test_bundle_availability_follows_scarcest_component(client):
     assert card["can_add_to_cart"] is True
 
 
-def test_bundle_unavailable_when_a_component_is_out_of_stock(client):
-    _seed(croissant_stock=None, mini_stock=20)  # croissant has no stock at all
+def test_bundle_with_untracked_component_uses_tracked_component_limit(client):
+    _seed(croissant_stock=None, mini_stock=20)
+    card = _card(client, COMBO)
+    assert card["available_qty"] == 20
+    assert card["can_add_to_cart"] is True
+
+    status, body = J.set_cart_qty(client, COMBO, 1)
+    assert status == 200, body
+
+
+def test_bundle_unavailable_when_tracked_component_is_sold_out(client):
+    from shopman.stockman import stock
+    from shopman.stockman.models import Quant
+
+    _seed(croissant_stock=1, mini_stock=20)
+    stock.adjust(Quant.objects.get(sku=CROISSANT), 0, reason="sold out")
     card = _card(client, COMBO)
     assert card["availability"] == "unavailable"
     assert card["can_add_to_cart"] is False
 
-    # And the cart refuses to add it.
     status, body = J.set_cart_qty(client, COMBO, 1)
     assert status == 409, body
 
@@ -72,9 +85,9 @@ def test_automatic_promotion_strikes_eligible_item_price(client):
     J.seed_promotion(name="Semana Doce", kind="percent", value=30, skus=[MUFFIN])  # no coupon → automatic
 
     card = _card(client, MUFFIN)
-    assert card["has_promotion"] is True
-    assert card["base_price_q"] == 700  # 30% off R$10,00
-    assert card["original_price_display"]
+    assert card["quote"]["adjustments"]
+    assert card["quote"]["final_unit_price_q"] == 700  # 30% off R$10,00
+    assert card["quote"]["list_unit_price_q"] == 1000
 
 
 # ── full journey: bundle + promoted item ─────────────────────────────────────
@@ -106,6 +119,12 @@ def test_manual_coupon_does_not_stack_on_promoted_line(client):
 
     J.set_cart_qty(client, MUFFIN, 1)
     status, body = J.apply_coupon(client, "MENOS10")
-    assert status == 200, body
-    # Biggest discount wins per line: the 30% promo, not 30%+10%.
-    assert body["cart"]["discount_total_q"] == 300
+    # Biggest discount wins per line: the 30% promo, not 30%+10%. The coupon that does
+    # not beat it is refused and NOT spent, and the store says why (coordenação, 22/11).
+    assert status == 400, body
+    assert body["error_code"] == "coupon_not_better"
+    assert "R$ 3,00 (Semana Doce)" in body["detail"]
+    assert "guarde o cupom para outra compra" in body["detail"]
+    cart = client.get("/api/v1/storefront/cart/").json()["cart"]
+    assert cart["discount_total_q"] == 300
+    assert not cart.get("coupon_code")

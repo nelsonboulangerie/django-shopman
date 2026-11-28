@@ -39,6 +39,5 @@ REST_FRAMEWORK = {
         "anon": "1000/minute",
         "user": "1000/minute",
         "orderman_modify": "1000/minute",
-        "orderman_commit": "1000/minute",
     },
 }

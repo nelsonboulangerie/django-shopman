@@ -2,7 +2,8 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de COPY SEM TRAVESSÃO nas superfícies de operador (CLAUDE.md, "Copy sem
 // travessão"): nenhum texto visível usa o travessão longo. A frase se reescreve com
@@ -35,7 +36,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit", "operator-router"];
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit", "operator-router"];
 
 const SOURCE_EXT = [".vue", ".ts", ".mjs", ".js", ".json"];
 
@@ -70,7 +71,7 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry) || SKIP_FILES.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || SKIP_FILES.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (SOURCE_EXT.some((extension) => full.endsWith(extension))) found.push(full);

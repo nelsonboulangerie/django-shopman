@@ -4,13 +4,14 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from shopman.cashman import Terminal
 from shopman.cashman import services as cash
 from shopman.orderman.models import IdempotencyKey, Order
 from shopman.payman.models import PaymentIntent
 
 from shopman.shop.adapters import payment_mock
-from shopman.shop.services import pos
+from shopman.shop.services import pos, pos_sale_recovery
 from shopman.shop.services.pos_intent import PosCommittedSaleError
 from shopman.shop.services.pos_sale_recovery import SCOPE
 from shopman.shop.tests.test_pos_cash_ledger import _Counter
@@ -28,6 +29,29 @@ def assert_created_error(error, order):
     assert error.order_ref == order.ref
     assert error.as_dict()["order_created"] is True
     assert error.status == 409
+
+
+def test_recovery_context_is_prepared_only_inside_the_order_transaction(counter):
+    with pytest.raises(RuntimeError, match="must commit with the order"):
+        pos_sale_recovery.prepare(
+            "POS-DIRECT",
+            shift_id=counter.shift.pk,
+            operator_username=counter.operator.username,
+        )
+
+    with transaction.atomic():
+        pos_sale_recovery.prepare(
+            "POS-DIRECT",
+            shift_id=counter.shift.pk,
+            operator_username=counter.operator.username,
+        )
+
+    context = IdempotencyKey.objects.get(scope=SCOPE, key="POS-DIRECT")
+    assert context.response_body == {
+        "state": "ready",
+        "shift_id": counter.shift.pk,
+        "operator_username": counter.operator.username,
+    }
 
 
 def test_retry_repairs_local_settlement_in_original_drawer(counter):
@@ -48,6 +72,7 @@ def test_retry_repairs_local_settlement_in_original_drawer(counter):
     assert not counter.sale_lines(other_shift)
     assert PaymentIntent.objects.filter(order_ref=order.ref).count() == 1
     assert counter.close(client_request_id="local-recovery").order_ref == order.ref
+    assert pos_sale_recovery.settle(order.ref) == {}
     assert len(counter.sale_lines()) == 1
     assert Order.objects.count() == 1
 

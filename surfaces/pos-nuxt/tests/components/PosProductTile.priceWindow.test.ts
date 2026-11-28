@@ -50,3 +50,19 @@ describe("PosProductTile — Hora da Xepa", () => {
     expect(wrapper.find("[data-pos-product-price] strong").text()).toBe("R$ 12,00");
   });
 });
+
+// Beta 05/11/2026 (PDV-14): ao lado do preço, a pílula cortava "R$ 143,00" em "R$ 14".
+describe("PosProductTile — esgotado", () => {
+  it("a pílula mora sobre a foto e o preço fica inteiro na linha dele", async () => {
+    const wrapper = await mountSuspended(PosProductTile, {
+      props: { product: product({ price_q: 14300, price_display: "R$ 143,00", sold_out: true }), qty: 0 },
+    });
+
+    const price = wrapper.find("[data-pos-product-price] strong");
+    expect(price.text()).toBe("R$ 143,00");
+    expect(price.classes()).toContain("shrink-0");
+    expect(wrapper.find("[data-pos-product-price]").text()).not.toContain("Esgotado");
+    // Uma pílula só, sobre a foto (a do main, `data-pos-product-blocked`).
+    expect(wrapper.findAll("[data-pos-product-blocked]").map((el) => el.text())).toEqual(["Esgotado"]);
+  });
+});

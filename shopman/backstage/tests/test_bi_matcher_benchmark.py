@@ -28,7 +28,9 @@ from shopman.backstage.bi.matcher_benchmark import (
     shortlist,
 )
 from shopman.backstage.models import AliasStatus, ProductAlias
+from shopman.shop import ai
 from shopman.shop.services.ai_pricing import Price
+from shopman.shop.tests.ai_support import configure_ai, configure_jev
 
 
 @pytest.fixture
@@ -100,7 +102,7 @@ class _FakeSession:
 
 @pytest.mark.django_db
 def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
-    settings.JEV_API_KEY = "test-key"
+    configure_jev("test-key", customer_text=False)
     session = _FakeSession({
         "model": "jev-1.13.0",
         "answers": {"product": {
@@ -114,7 +116,8 @@ def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
     verdict = matcher.match(Case("pain chocolat", catalog["PC"].pk), candidates)
 
     url, body, headers = session.sent[0]
-    assert url == settings.JEV_API_URL
+    assert url == ai.JEV_DEFAULT_URL
+    assert body["model"] == "jev-latest"
     assert headers["Authorization"] == "Bearer test-key"
     question = body["questions"]["product"]
     assert set(question) == {"type", "instructions", "criteria"} and question["type"] == "choice"
@@ -126,14 +129,15 @@ def test_jev_asks_a_choice_with_other_and_reads_the_answer(catalog, settings):
 
 @pytest.mark.django_db
 def test_jev_other_means_no_product(catalog, settings):
-    settings.JEV_API_KEY = "test-key"
+    configure_jev("test-key", customer_text=False)
     matcher = JevMatcher(session=_FakeSession({"answers": {"product": {"type": "choice", "choice": OTHER, "probabilities": {OTHER: 0.9, "p1": 0.1}, "confidence": 0.8}}}))
     verdict = matcher.match(Case("bolo de pote", None), shortlist("bolo de pote", load_catalog(), 3))
     assert verdict.product_pk is None
 
 
-def test_jev_without_key_stays_out(settings):
-    settings.JEV_API_KEY = ""
+@pytest.mark.django_db
+def test_jev_without_key_stays_out():
+    configure_jev("")
     with pytest.raises(MatcherNotConfigured):
         JevMatcher(session=_FakeSession({}))
 
@@ -153,7 +157,7 @@ def test_jev_parser_reads_the_documented_choice_shape_and_names_unknown_ones():
 
 @pytest.mark.django_db
 def test_jev_http_error_names_the_reason_and_the_question_type(catalog, settings):
-    settings.JEV_API_KEY = "test-key"
+    configure_jev("test-key", customer_text=False)
     session = _FakeSession({"detail": [{"loc": ["body", "questions", "product", "criteria"], "msg": "Field required"}]})
     session.status_code = 422
     with pytest.raises(MatcherResponseError, match=r"HTTP 422 \(body.questions.product.criteria: Field required\).*1 pergunta\(s\) do tipo choice"):
@@ -178,6 +182,7 @@ class _FakeClient:
 
 @pytest.mark.django_db
 def test_llm_reads_json_choice_and_usage(catalog):
+    configure_ai()
     matcher = LLMMatcher(client=_FakeClient('{"choice": "p1", "confidence": 0.85}'))
     verdict = matcher.match(Case("madeleine", catalog["MD"].pk), shortlist("madeleine", load_catalog(), 3))
     assert (verdict.product_pk, verdict.confidence) == (catalog["MD"].pk, 0.85)
@@ -186,7 +191,7 @@ def test_llm_reads_json_choice_and_usage(catalog):
 
 @pytest.mark.django_db
 def test_llm_one_contender_per_model_and_low_effort_only_where_accepted(catalog, settings):
-    settings.AI_ASSIST_MODEL = "claude-opus-5"
+    configure_ai(model="claude-opus-5")
     candidates = shortlist("madeleine", load_catalog(), 2)
     default = LLMMatcher(client=_FakeClient('{"choice": "p1", "confidence": 0.9}'))
     default.match(Case("madeleine", None), candidates)
@@ -201,6 +206,7 @@ def test_llm_one_contender_per_model_and_low_effort_only_where_accepted(catalog,
 
 @pytest.mark.django_db
 def test_llm_choice_outside_options_is_an_error(catalog):
+    configure_ai()
     matcher = LLMMatcher(client=_FakeClient('{"choice": "p9", "confidence": 0.9}'))
     with pytest.raises(MatcherResponseError):
         matcher.match(Case("madeleine", None), shortlist("madeleine", load_catalog(), 2))
@@ -291,8 +297,8 @@ def test_scoreboard_counts_accepted_errors_cost_and_failures(catalog):
 
 @pytest.mark.django_db
 def test_command_reports_and_refuses_empty_gold(catalog, settings, tmp_path, capsys):
-    settings.JEV_API_KEY = ""
-    settings.AI_ASSIST_API_KEY = ""
+    configure_jev("")
+    configure_ai("")
     with pytest.raises(CommandError, match="Gabarito vazio"):
         call_command("benchmark_alias_matchers")
 
@@ -307,9 +313,9 @@ def test_command_reports_and_refuses_empty_gold(catalog, settings, tmp_path, cap
     assert out_csv.read_text(encoding="utf-8").splitlines()[1].startswith("fuzzy,CROISSANT TRADICIONAL,CT,CT")
 
 
-def test_command_with_explicit_matcher_without_key_fails(settings, db):
-    settings.JEV_API_KEY = ""
-    with pytest.raises(CommandError, match="JEV_API_KEY"):
+def test_command_with_explicit_matcher_without_key_fails(db):
+    configure_jev("")
+    with pytest.raises(CommandError, match="Jev não configurado"):
         call_command("benchmark_alias_matchers", matcher=["jev"])
 
 
@@ -340,8 +346,8 @@ def test_measure_waits_for_enough_gold_then_keeps_an_aggregate_report(catalog, s
     from shopman.backstage.bi import matcher_benchmark
     from shopman.backstage.models import AliasBenchmarkReport
 
-    settings.AI_ASSIST_API_KEY = ""
-    settings.JEV_API_KEY = ""
+    configure_ai("")
+    configure_jev("")
     _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
     report, reason = matcher_benchmark.maybe_measure()
     assert report is None and "1 de 20" in reason
@@ -360,7 +366,7 @@ def test_measure_waits_for_enough_gold_then_keeps_an_aggregate_report(catalog, s
 
 @pytest.mark.django_db
 def test_worker_command_is_quiet_until_it_measures(catalog, settings, capsys):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     call_command("run_alias_benchmark")
     assert capsys.readouterr().out == ""
     _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
@@ -377,7 +383,7 @@ def test_report_is_readable_in_admin_and_read_only(catalog, settings, monkeypatc
     from shopman.backstage.bi import matcher_benchmark
     from shopman.shop.models import Shop
 
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     Shop.objects.create(name="Test Shop", brand_name="Test", short_name="TS", primary_color="#C5A55A", default_ddd="43")
     User.objects.create_superuser("admin", "admin@test.com", "pass")
     client = Client()
@@ -389,3 +395,97 @@ def test_report_is_readable_in_admin_and_read_only(catalog, settings, monkeypatc
     page = client.get(reverse("admin:backstage_aliasbenchmarkreport_change", args=[report.pk]))
     assert page.status_code == 200 and "aceitaria sozinho" in page.content.decode()
     assert client.get(reverse("admin:backstage_aliasbenchmarkreport_add")).status_code == 403
+
+
+# ── Travas de custo (11/11/2026: a medição automática gastou ~US$ 1.180 em loop) ──
+
+
+class _MustNotCallLLM(LLMMatcher):
+    def __init__(self, *, model=None):
+        super().__init__(model=model, client=_FakeClient('{"choice": "p1", "confidence": 0.95}'))
+
+    def match(self, case, candidates):  # pragma: no cover - falha se for chamado
+        raise AssertionError("concorrente pago chamado sem opt-in")
+
+
+@pytest.mark.django_db
+def test_paid_contenders_stay_off_by_default_even_with_credentials(catalog, settings, monkeypatch):
+    from shopman.backstage.bi import matcher_benchmark
+
+    configure_ai("chave-presente")
+    configure_jev("chave-presente")
+    monkeypatch.setattr(matcher_benchmark, "LLMMatcher", _MustNotCallLLM)
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+
+    report, reason = matcher_benchmark.maybe_measure()
+
+    assert reason == "medido"
+    assert "llm" not in report.contenders and "jev" not in report.contenders
+    assert "llm: concorrente pago desligado" in report.skipped
+    assert "jev: concorrente pago desligado" in report.skipped
+
+
+@pytest.mark.django_db
+def test_budget_stops_the_run_and_says_so(catalog):
+    expensive = LLMMatcher(model="claude-haiku-4-5", client=_FakeClient(
+        '{"choice": "p1", "confidence": 0.95}', usage=(1_000_000, 0)))  # US$ 1 por chamada
+    cases = [Case(f"item {i}", catalog["CT"].pk) for i in range(5)]
+
+    result = run(
+        cases, load_catalog(), [expensive],
+        prices={expensive.name: Price(1.0, 5.0)}, budget_usd=1.5,
+    )
+
+    assert result.cases == 2  # o 3º caso já veria US$ 2 gastos
+    assert len(expensive.client.calls) == 2
+    assert "teto de gasto" in result.stopped and "2 de 5" in result.stopped
+    assert result.cost_usd == pytest.approx(2.0)
+
+
+@pytest.mark.django_db
+def test_interrupted_measure_still_counts_for_the_week(catalog, settings, monkeypatch):
+    """O loop de 28/10: deploy no meio da medição não pode fazê-la recomeçar do zero."""
+    from shopman.backstage.bi import matcher_benchmark
+    from shopman.backstage.models import AliasBenchmarkReport
+
+    configure_ai("")
+    configure_jev("")
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+
+    def dies_mid_run(*args, **kwargs):
+        raise SystemExit("worker reiniciado pelo deploy")
+
+    monkeypatch.setattr(matcher_benchmark, "run", dies_mid_run)
+    with pytest.raises(SystemExit):
+        matcher_benchmark.maybe_measure()
+
+    reserved = AliasBenchmarkReport.objects.get()
+    assert reserved.report == matcher_benchmark.INTERRUPTED_REPORT
+
+    again, reason = matcher_benchmark.maybe_measure()
+    assert again is None and "próximo sai" in reason
+    assert AliasBenchmarkReport.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_measure_samples_at_most_the_case_ceiling(catalog, settings, monkeypatch):
+    from shopman.backstage.bi import matcher_benchmark
+
+    configure_ai("")
+    monkeypatch.setattr(matcher_benchmark, "MIN_CONFIRMED_TO_MEASURE", 1)
+    _confirmed("CROISSANT TRADICIONAL", catalog["CT"])
+    _confirmed("Bolo de pote")
+
+    report, _reason = matcher_benchmark.maybe_measure(max_cases=1)
+
+    assert report.cases == 1
+    assert "Amostra: 1 dos 2 de-paras confirmados" in report.report
+
+
+def test_worker_cycle_no_longer_runs_the_benchmark():
+    from shopman.shop.management.commands import maintenance_worker
+
+    names = [item if isinstance(item, str) else item[0] for item in maintenance_worker.MAINTENANCE_COMMANDS]
+    assert "run_alias_benchmark" not in names

@@ -59,13 +59,13 @@ describe("o painel do entregador no detalhe", () => {
     expect(courierPanelVisible(block())).toBe(false);
     expect(courierPanelVisible(block({ can_dispatch: true }))).toBe(true);
     expect(courierPanelVisible(block({ can_dispatch_again: true }))).toBe(true);
-    expect(courierPanelVisible(block({ status: "A" }))).toBe(true);
+    expect(courierPanelVisible(block({ status: "A", ride_state: "assigned" }))).toBe(true);
     expect(courierPanelVisible(block({ error: { message: "Recusada", at: "" } }))).toBe(true);
   });
 
   it("o gesto tem o nome do Gestor: Chamar entregador, e depois de corrida não concluída, Chamar outro entregador", () => {
     expect(courierCallLabel(block())).toBe("Chamar entregador");
-    expect(courierCallLabel(block({ status: "N" }))).toBe("Chamar outro entregador");
+    expect(courierCallLabel(block({ status: "N", ride_state: "not_served" }))).toBe("Chamar outro entregador");
     expect(courierCallLabel(block({ attempts_count: 1 }))).toBe("Chamar outro entregador");
   });
 
@@ -89,7 +89,7 @@ describe("o painel do entregador no detalhe", () => {
 describe("o aviso de saída pelo Gestor (seguimento)", () => {
   it("sai quando o PDV já oferece o Entregador, e fica sem ele (TaOn desligada)", () => {
     expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, block({ can_dispatch: true }))).toBe(false);
-    expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, block({ status: "A" }))).toBe(false);
+    expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, block({ status: "A", ride_state: "assigned" }))).toBe(false);
     expect(showsDeliveryExitNotice({ fulfillment_type: "delivery" }, null)).toBe(true);
     expect(showsDeliveryExitNotice({ fulfillment_type: "pickup" }, null)).toBe(true);
   });
@@ -145,7 +145,9 @@ describe("a fiação", () => {
   it("a custódia vem do kit nos dois apps (Gestor e PDV)", () => {
     const panel = app("components", "PosCourierPanel.vue");
     expect(panel).toContain('from "../../../operator-kit/app/presentation/custody"');
-    const gestor = readFileSync(resolve(here, "..", "..", "orders-nuxt", "app", "components", "OrderCourierPanel.vue"), "utf8");
+    // No Gestor, chamar o entregador é o sheet único (#2876): o troco e a maquininha da
+    // chamada vêm da apresentação das Entregas, que lê a custódia do kit.
+    const gestor = readFileSync(resolve(here, "..", "..", "orders-nuxt", "app", "presentation", "deliveries.ts"), "utf8");
     expect(gestor).toContain('from "../../../operator-kit/app/presentation/custody"');
     expect(app("presentation", "courier.ts")).not.toMatch(/export function (freeMachines|machinePhrase|moneyInput)/);
   });

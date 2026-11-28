@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { attentionCount, attentionTiles, endOfDayTiles, openShiftTile, sessionActionTiles } from "~/presentation/cash";
+import { DRAWER_DENOMINATIONS, attentionCount, attentionTiles, endOfDayTiles, openShiftTile, sessionActionTiles } from "~/presentation/cash";
 
 // A antesala do turno aberto se organiza em três perguntas: quantas coisas
 // pedem uma pessoa agora, quais ações viram tile, e o que só aparece para quem
@@ -85,6 +85,21 @@ describe("endOfDayTiles — o corredor da noite, só para quem pode", () => {
     const tiles = endOfDayTiles({ shiftOpen: true, canAuditCash: false, dayClosing: null });
     expect(tiles.map((t) => t.key)).toEqual(["close_shift"]);
     expect(tiles[0]!.tone).toBe("destructive");
+  });
+
+  it("sem a régua de fechar o dia, o card fica apagado e diz por quê (beta 07/11)", () => {
+    const [tile] = endOfDayTiles({ shiftOpen: true, canCloseShift: false, canAuditCash: false, dayClosing: null });
+    expect(tile!.key).toBe("close_shift");
+    expect(tile!.disabled).toBe(true);
+    expect(tile!.description).toBe("Fechar o caixa é da gerência. Chame quem fecha o dia.");
+    const [livre] = endOfDayTiles({ shiftOpen: true, canCloseShift: true, canAuditCash: false, dayClosing: null });
+    expect(livre!.disabled).toBe(false);
+  });
+
+  it("a gaveta se conta com todas as cédulas do Real, R$ 200 a R$ 0,05", () => {
+    expect(DRAWER_DENOMINATIONS.map((d) => d.label)).toEqual(
+      ["200", "100", "50", "20", "10", "5", "2", "1", "0,50", "0,25", "0,10", "0,05"],
+    );
   });
 
   it("o relatório é de quem audita", () => {

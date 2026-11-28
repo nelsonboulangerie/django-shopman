@@ -75,19 +75,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_CONFIRM_CTA": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
-    "CHECKOUT_LOYALTY_SAVINGS_PREFIX": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
     "CHECKOUT_GROUP_SAVINGS": (
         ("shopman/shop/modifiers.py", "Loja", "Preços e promoções"),
     ),
-    "CHECKOUT_REPRICING_MESSAGE": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
-    "CHECKOUT_STOCK_LIMITED": (
-        ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
-    ),
-    "CHECKOUT_STOCK_SOLD_OUT": (
+    "CHECKOUT_LOYALTY_SAVINGS_PREFIX": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
     "CHECKOUT_SWITCH_ACCOUNT_CONFIRM_CTA": (
@@ -137,6 +128,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/allergens.py", "WhatsApp", "Concierge: alergia e alérgenos"),
     ),
+    "CONCIERGE_ALTERNATIVES": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
     "CONCIERGE_CANCEL_CONFIRM": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
@@ -148,6 +143,106 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_CANCEL_KEPT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/cancellation.py", "WhatsApp", "Concierge: cancelamento a pedido do cliente"),
+    ),
+    "CONCIERGE_CART_ASK_QTY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_FULFILLMENT_NOTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CART_NEXT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_NEXT_BATCH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_NOW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_NO_BATCH_ON_DAY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_REMOVED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_UNAVAILABLE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CART_UPDATED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_CLOSE_ASK_ADDRESS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_ASK_DATE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_ASK_FULFILLMENT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_ASK_PAYMENT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_ASK_SLOT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_CONFIRM_CODE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_GAVE_UP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_NO_CASH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_CLOSE_NO_DELIVERY_AT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_PICKUP_AT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_NO_SLOTS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_CLOSE_SLOT_REFUSED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/order_closing.py", "WhatsApp", "Concierge: fechar o pedido na conversa"),
+    ),
+    "CONCIERGE_COMPLAINT_HEARD": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
+    ),
+    "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
     ),
     "CONCIERGE_DISCOUNT_ABOVE_CAP": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -169,9 +264,121 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/discount.py", "WhatsApp", "Concierge: desconto da casa"),
     ),
-    "CONCIERGE_GREETING": (
+    "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
-        ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_DETAILS": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ADDRESS_SET": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ASK_MORE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_CART_UPDATED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_CART_UPDATED_SHORT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_CONFIRM_READING": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_EFFECT_FAILED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_EFFECT_HELD": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_EFFECT_PENDING": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_OFFER_TEAM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ORDER_PLACED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_PAYMENT_SET": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_LIST": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_TERMS_CONFIRM": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_TOTAL_CHANGED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_WAIT_OVERDUE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
+    ),
+    "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_HANDOFF_ACK": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -180,6 +387,10 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_IDENTITY": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/house_rules.py", "WhatsApp", "Concierge: regras da casa"),
+    ),
+    "CONCIERGE_LATE_REPLY": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
     ),
     "CONCIERGE_MEDIA_UNSUPPORTED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -213,13 +424,30 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
     ),
+    "CONCIERGE_MEMORY_ASK_WHICH_EACH": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
     "CONCIERGE_MEMORY_DECLINED": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_MEMORY_ORDER_THANKS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_STILL_HERE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_MEMORY_STILL_HERE_HELP": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/dialogue.py", "WhatsApp", "Concierge: memória da conversa"),
+    ),
+    "CONCIERGE_NOT_IN_MENU": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/intents.py", "WhatsApp", "Concierge: várias perguntas numa mensagem"),
     ),
     "CONCIERGE_NO_PHONE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -275,6 +503,7 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_SMALL_TALK_THANKS": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/small_talk.py", "WhatsApp", "Concierge: cumprimento e agradecimento"),
+        ("shopman/storefront/concierge/turn_framework.py", "WhatsApp", "Concierge: o turno pelo motor do framework"),
     ),
     "CONCIERGE_TURN_LIMIT": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
@@ -283,6 +512,42 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CONCIERGE_UNAVAILABLE": (
         ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
         ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
+    ),
+    "CONCIERGE_VERIFY_ANSWER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_ASKED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_ASKED_LATER": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_HANDOFF": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_JOINED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NO_PROMISE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_NUDGE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
+    ),
+    "CONCIERGE_VERIFY_WAITING": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/verification.py", "WhatsApp", "Concierge: vou verificar com a equipe"),
     ),
     "CONFIRMATION_SHARE_CTA": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -353,6 +618,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "HOME_FAQ_HEADING": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
+    "HOME_FEATURED_HEADING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "HOME_FULL_MENU_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
@@ -416,10 +684,16 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "HOME_MENU_CTA": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
+    "HOME_MENU_RAIL_HEADING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
     "HOME_TOMORROW_LABEL": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "HOME_WHATSAPP_CTA": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "HOME_WHATSAPP_CTA_CONCIERGE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "HOME_WHATSAPP_CTA_LABEL": (
@@ -534,6 +808,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_WAITING": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_WAITING_PHONE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_WHY": (
@@ -765,26 +1042,26 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_AUTO_CONFIRM_LABEL": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_CANCELLED_REASON_TITLE": (
+    "TRACKING_CANCELLATION_CONTACT_CTA": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCELLATION_CONTACT_DONE_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_CANCEL_ACK_LABEL": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    "TRACKING_CANCELLATION_CONTACT_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCELLATION_CONTACT_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCELLED_REASON_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_BACK": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_CONFIRM": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_CANCEL_CONFIRM_CTA": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_CANCEL_CONFIRM_MESSAGE": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_CANCEL_CONFIRM_TITLE": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_CTA": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -795,20 +1072,23 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CANCEL_HEADING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_CANCEL_KEEP_CTA": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    "TRACKING_CANCEL_MONEY_CARD_HOLD": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCEL_MONEY_NOTHING_CHARGED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCEL_MONEY_REFUND_CARD": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CANCEL_MONEY_REFUND_PIX": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_SUCCESS_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_SUCCESS_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_CANCEL_WARNING_MESSAGE": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_CANCEL_WARNING_TITLE": (
-        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_CANCEL_YES": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -822,9 +1102,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CARD_AUTHORIZED_MESSAGE_NEW": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -834,7 +1111,34 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_CARD_CAPTURE_FAILED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_DELIVERED_YOIN": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_AT_STORE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_CALLED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_COMING": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_COMING_NO_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_LATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_DELIVERY_COURIER_REPLACED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_DELIVERY_FEE_LABEL": (
@@ -855,6 +1159,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_LIVE_BADGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_LOGIN_INVITE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_MENU_CTA": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -868,6 +1175,38 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_MOCK_PAYMENT_SUCCESS_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_CARD_HOLD_RELEASED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_LATE_PIX_REFUNDED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_LATE_PIX_REFUNDING": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_NOTHING_CHARGED": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_REFUNDED_CARD": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_REFUNDED_PIX": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_REFUNDING_CARD": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_MONEY_REFUNDING_PIX": (
+        ("shopman/backstage/projections/order_pending.py", "Operador", "Detalhe do pedido: o que o cliente lê sobre o dinheiro"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_NOT_FOUND_MESSAGE": (
@@ -940,6 +1279,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PICKUP_HEADING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PIX_SWITCH_REFUSED": (
+        ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_POLLING_BADGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -955,7 +1297,19 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_CARD_ACTION": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_DECLINED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_DECLINED_PIX": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_MESSAGE_DEADLINE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_CARD_MESSAGE_NEW": (
@@ -967,6 +1321,15 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_CARD_PREORDER_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_CARD_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -976,13 +1339,34 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_NEXT": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID_NEXT": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_COMPLETED_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_CONFIRMED_WAITING": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_DISPATCHED_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_NEAR": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_DISPATCHED_TITLE": (
@@ -1012,6 +1396,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_LINK_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_ORDER_IS_FOR": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -1039,6 +1426,30 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_PIX_PREPARING_WAITLIST_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_PIX_SWITCH_ACTION": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_IS_FOR": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_PREORDER_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -1054,16 +1465,22 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": (
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": (
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_ETA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_WINDOW": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_PREPARING_MESSAGE_PICKUP": (
@@ -1078,11 +1495,17 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_READY_PICKUP_MESSAGE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_READY_PICKUP_MESSAGE_FROM": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_READY_PICKUP_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_RECEIVED_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_REPAYMENT_PIX_ACTION": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_RETRY_ACTION": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -1114,6 +1537,12 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_RATE_LIMIT_TITLE": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
@@ -1127,7 +1556,34 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_RATING_COMMENT_PLACEHOLDER": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_RATING_CONTACT_CTA": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_CONTACT_DONE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_CONTACT_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_CONTACT_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_RATING_FAILED_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_GOOGLE_COPIED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_GOOGLE_CTA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_GOOGLE_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_GOOGLE_SHARE_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_RATING_GOOGLE_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_RATING_SUBMIT_CTA": (
@@ -1139,15 +1595,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_RATING_THANKS_CELEBRATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_REFUND_STATUS_PROCESSING": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_REFUND_STATUS_REFUNDED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_REFUND_TITLE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_REORDER_CTA": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -1155,25 +1602,33 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_STATUS_CARD_AUTHORIZED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "TRACKING_STATUS_CARD_CAPTURE_FAILED": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PAYMENT_EXPIRED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PAYMENT_PENDING": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_PREORDER_SCHEDULED": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_READY_DELIVERY": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_READY_PICKUP": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "TRACKING_STATUS_REFUNDED": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "TRACKING_STATUS_REFUND_IN_PROGRESS": (
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
     "TRACKING_STEP_AVAILABILITY_CONFIRMED": (
@@ -1209,6 +1664,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_STEP_RECEIVED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_STEP_REFUNDED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_STEP_RETURNED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -1237,6 +1695,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_WAITLIST_CONFIRM_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_WAITLIST_CONFIRM_TITLE": (

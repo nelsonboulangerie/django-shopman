@@ -14,13 +14,17 @@ Não expõe destinatário: só o canal.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
+from shopman.utils.formatting import format_local
 
 from shopman.shop.services import notification as notification_svc
+
+logger = logging.getLogger(__name__)
 
 #: Quantos avisos o detalhe mostra (os mais recentes). Pedido comum tem 3 a 6.
 MAX_RECEIPTS = 30
@@ -62,7 +66,6 @@ _ATTEMPT_OUTCOMES = {
 _SKIP_REASONS = {
     "customer_opt_out": "O cliente não autorizou avisos.",
     "expected_no_contact": "Não há contato do cliente.",
-    "notification_not_required": "Este aviso não se aplica.",
     "payment_not_pending": "O pagamento não está mais pendente.",
     "preorder_not_awaiting": "A encomenda não espera mais a data.",
     "rescheduled": "A data mudou antes do envio.",
@@ -70,7 +73,27 @@ _SKIP_REASONS = {
     "payment_link_order_cancelled": "O pedido foi cancelado.",
     "payment_link_expired": "O link venceu.",
     "payment_link_unavailable": "O link não está disponível.",
+    "payment_taken_over_at_counter": "O pagamento passou para o balcão.",
 }
+
+#: Motivo com sufixo variável: o processo que não fala com ninguém de fora
+#: (``external_suppressed:<motivo>``, o seed e o ambiente de teste). Sem este
+#: prefixo o operador lia "O aviso foi omitido." sem saber por quê.
+_SKIP_REASON_PREFIXES = (
+    ("external_suppressed:", "Avisos ao cliente desligados neste ambiente."),
+)
+
+#: O que dizer quando o motivo gravado não tem tradução: o fato, e o gesto.
+_SKIP_FALLBACK = "O aviso não saiu. Fale com o cliente por outro meio, se precisar."
+
+
+def _skip_reason(reason: str) -> str:
+    if reason in _SKIP_REASONS:
+        return _SKIP_REASONS[reason]
+    for prefix, text in _SKIP_REASON_PREFIXES:
+        if reason.startswith(prefix):
+            return text
+    return _SKIP_FALLBACK
 
 
 @dataclass(frozen=True)
@@ -103,6 +126,9 @@ class NotificationReceiptProjection:
     provider_id: str
     detail: str
     attempts: tuple[NotificationAttemptProjection, ...] = ()
+    # O botão que resolve o aviso que não saiu por canal nenhum (WP-G07): o WhatsApp
+    # de quem está no balcão, com o MESMO texto. Vazio nos outros estados.
+    fallback_whatsapp_url: str = ""
 
 
 def _time_display(raw, fallback=None) -> str:
@@ -113,13 +139,13 @@ def _time_display(raw, fallback=None) -> str:
         return ""
     if timezone.is_naive(moment):
         moment = timezone.make_aware(moment)
-    return timezone.localtime(moment).strftime("%d/%m às %H:%M")
+    return format_local(moment, "%d/%m às {clock}")
 
 
 def _template_label(template: str) -> str:
-    from shopman.shop.services.marketing_platform_configuration import WHATSAPP_EVENT_LABELS
+    from shopman.shop.notification_copy import template_label
 
-    return WHATSAPP_EVENT_LABELS.get(template) or template.replace("_", " ").capitalize()
+    return template_label(template)
 
 
 def _state(directive: Directive, evidence: dict) -> str:
@@ -155,9 +181,9 @@ def _detail(state: str, evidence: dict) -> str:
     if state == STATE_UNKNOWN:
         return "Não dá para saber se o aviso saiu. Confirme com o cliente antes de reenviar."
     if state == STATE_FAILED:
-        return "Nenhum canal aceitou o envio."
+        return "Nenhum canal aceitou o envio. Fale com o cliente por outro meio."
     if state == STATE_SKIPPED:
-        return _SKIP_REASONS.get(str(evidence.get("reason") or ""), "O aviso foi omitido.")
+        return _skip_reason(str(evidence.get("reason") or ""))
     return ""
 
 
@@ -206,14 +232,76 @@ def build_receipt(directive: Directive) -> NotificationReceiptProjection:
     )
 
 
+#: O motivo de omissão que diz "este aviso não cabe a este pedido": não é falha
+#: nem envio que deixou de sair, é aviso que não existe. A lista não o mostra
+#: (beta 06/11: "Não enviado · Este aviso não se aplica" se contradizia).
+_NOT_APPLICABLE_REASON = "notification_not_required"
+
+
+def _applies(directive: Directive) -> bool:
+    evidence = (directive.payload or {}).get("notification_delivery") or {}
+    if not isinstance(evidence, dict):
+        return True
+    return not (evidence.get("status") == "skipped" and evidence.get("reason") == _NOT_APPLICABLE_REASON)
+
+
 def build_notification_receipts(order) -> tuple[NotificationReceiptProjection, ...]:
-    """Os avisos deste pedido ao cliente, do mais antigo ao mais recente."""
+    """Os avisos deste pedido ao cliente, do mais antigo ao mais recente.
+
+    O aviso que não se aplica ao pedido (``notification_not_required``) fica de
+    fora: ele não falhou nem deixou de sair, ele não existe para este pedido.
+    """
+    # No iFood quem avisa o cliente é o app do iFood, e o contato que chega é
+    # mascarado: nenhum aviso nosso pode sair. Listar cada um como "Não enviado"
+    # fazia o pedido parecer com defeito (pedido 3417, 12/11).
+    if getattr(order, "channel_ref", "") == "ifood":
+        return ()
     directives = list(
         Directive.objects.filter(topic=notification_svc.TOPIC, payload__order_ref=order.ref)
         .order_by("-created_at", "-pk")[:MAX_RECEIPTS]
     )
     directives.reverse()
-    return tuple(build_receipt(directive) for directive in directives)
+    receipts = []
+    for directive in directives:
+        if not _applies(directive):
+            continue
+        receipt = build_receipt(directive)
+        if receipt.state == STATE_FAILED:
+            receipt = replace(receipt, fallback_whatsapp_url=_fallback_whatsapp_url(order, directive))
+        receipts.append(receipt)
+    return tuple(receipts)
+
+
+def _fallback_whatsapp_url(order, directive) -> str:
+    """O ``wa.me`` do cliente com o texto do aviso que não saiu; vazio sem WhatsApp.
+
+    Todo aviso que falhou em todos os canais traz o botão que resolve: o WhatsApp de
+    quem está no balcão, com o MESMO texto que o cliente leria. Só no que falhou: o
+    "Não enviado" pode ser o cliente que não aceita mensagem, e aí não se oferece.
+    Os links do texto são os mesmos do aviso: os comuns do pedido, que pedem a entrada
+    do cliente.
+    """
+    from urllib.parse import quote
+
+    from shopman.backstage.projections import order_queue
+    from shopman.shop.adapters import notification_manychat
+    from shopman.shop.adapters._notification_templates import render_message
+
+    data = order.data or {}
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    wa_url = order_queue._customer_contact(order, customer).get("customer_whatsapp_url", "")
+    if not wa_url:
+        return ""
+    payload = dict(directive.payload or {})
+    template = str(payload.get("template") or "")
+    try:
+        context = notification_svc._build_context(order, payload, template)
+        event = notification_svc._qualify_template(template, context)
+        message = render_message(event, context, notification_manychat.MESSAGE_TEMPLATES)
+    except Exception:  # noqa: BLE001 — a tela do pedido não cai por causa do plano B
+        logger.warning("notification_receipts.fallback_text_failed template=%s", template, exc_info=True)
+        return ""
+    return f"{wa_url}?text={quote(message.replace('*', '').strip())}"
 
 
 __all__ = [

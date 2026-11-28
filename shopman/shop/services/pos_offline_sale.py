@@ -21,19 +21,37 @@ nasce e a cobrança em dobro fica registrada no pedido pago, com aviso ao gerent
 **Proteção.** Só vale para a venda que passa nas travas da venda sem conexão
 (sem desconto, sem taxa, sem entrega, sem encomenda, recebida em dinheiro ou na
 maquininha) e cuja hora de cobrança é plausível: não está no futuro e não é mais
-velha que 24 h nem que o turno aberto. Fora disso, a venda segue a régua de
-sempre (precificada agora, ``total_changed`` e ``tab_revision_conflict``).
+velha que 24 h nem que o turno aberto. A hora da tabela de preços da tela
+(``offline_prices_at``) tem a mesma régua: não está no futuro, não é depois da
+cobrança, não é de antes do turno aberto (sem turno, de mais de 24 h). Fora
+disso, a venda segue a régua de sempre (precificada agora, ``total_changed`` e
+``tab_revision_conflict``): declarar uma tabela velha, de preço mais baixo, não
+compra o preço dela.
+
+**A conferir (dono, 03/11/2026).** O servidor não prova que o dispositivo estava
+sem conexão: o ``offline_captured_at`` vem do corpo. Por isso o cobrado só vale
+calado quando se EXPLICA pelo catálogo: o preço de cada linha (ou o total) é o
+do catálogo na hora da tabela da tela ou na hora da cobrança, lido do histórico
+de preços (``explain_charge``). A venda sem conexão não tem desconto, taxa nem
+entrega, e a linha pesada é determinística: não há outra fonte legítima de
+diferença. Sem tolerância percentual (o dono recusou: seria arbitrária). A
+diferença sem explicação NÃO recusa a venda (o dinheiro já entrou): o pedido
+fica marcado "a conferir" (``pos.offline.pricing.review_required``), o
+fechamento do caixa lista a venda e só fecha com o gerente
+(``acknowledge_review_sales``).
 """
 
 from __future__ import annotations
 
 import copy
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 from shopman.utils.monetary import format_money, monetary_mult
 
 logger = logging.getLogger(__name__)
@@ -46,6 +64,50 @@ CLOCK_SKEW = timedelta(minutes=5)
 MAX_AGE = timedelta(hours=24)
 
 ALERT_TYPE = "pos_offline_sale_adjusted"
+
+
+#: A recusa da venda guardada quando a chave da loja está desligada.
+DISABLED_MESSAGE = "A venda sem conexão está desligada nesta loja. Envie a venda com a rede de volta."
+
+
+# ── A chave da loja ───────────────────────────────────────────────────
+
+
+def enabled() -> bool:
+    """A loja deixa o PDV vender sem conexão? (``Shop.pos_offline_sale_enabled``)
+
+    Desligada por padrão (dono, 03/11/2026): sem NFC-e em contingência
+    (``tpEmis`` 9), a nota da venda sem conexão sairia só no envio, com a hora do
+    envio. O caminho inteiro continua aqui, pronto para ligar quando a
+    contingência existir.
+    """
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    return bool(shop is not None and shop.pos_offline_sale_enabled)
+
+
+def refuse_when_disabled(payload: dict, *, already_closed: Callable[[], bool] | None = None) -> None:
+    """Recusa (409) a venda guardada sem conexão quando a chave da loja está desligada.
+
+    Vale para o dispositivo velho que ainda guarda a venda na fila: ela não some
+    da lista dele, fica recusada com o motivo. ``already_closed`` é o reenvio de
+    uma venda que JÁ fechou (mesma ``client_request_id``), perguntado só quando
+    a recusa está para sair: a resposta segue sendo o mesmo pedido, porque
+    recusar agora esconderia uma venda que existe.
+    """
+    keys = [key for key in ("offline_captured_at", "offline_prices_at") if payload.get(key)]
+    if not keys or enabled() or (already_closed is not None and already_closed()):
+        return
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    raise PosIntentError(
+        code="offline_sale_disabled",
+        message=DISABLED_MESSAGE,
+        field=keys[0],
+        status=409,
+        recovery="Com a rede de volta, refaça a venda no PDV.",
+    )
 
 
 # ── Elegibilidade ─────────────────────────────────────────────────────
@@ -67,7 +129,31 @@ def pricing_instant(payload: dict, *, now: datetime | None = None) -> datetime |
     shift = _open_shift(payload)
     if shift is not None and shift.opened_at and captured < shift.opened_at - CLOCK_SKEW:
         return None
+    if "offline_prices_at" in payload and prices_instant(payload, captured_at=captured, now=now, shift=shift) is None:
+        return None
     return captured
+
+
+def prices_instant(payload: dict, *, captured_at: datetime, now: datetime | None = None, shift=None) -> datetime | None:
+    """A hora da tabela de preços da tela, se ela é plausível; senão ``None``.
+
+    Plausível: não está no futuro, não é depois da cobrança e não é de antes do
+    turno aberto (sem turno, de mais de 24 h). É a régua que fecha a brecha de
+    declarar uma tabela velha, com o preço mais baixo de antes.
+    """
+    prices_at = _parse_instant(payload.get("offline_prices_at"))
+    if prices_at is None:
+        return None
+    now = now or timezone.now()
+    if prices_at > now + CLOCK_SKEW or prices_at > captured_at:
+        return None
+    shift = shift if shift is not None else _open_shift(payload)
+    if shift is not None and shift.opened_at:
+        if prices_at < shift.opened_at - CLOCK_SKEW:
+            return None
+    elif prices_at < now - MAX_AGE:
+        return None
+    return prices_at
 
 
 def _parse_instant(value) -> datetime | None:
@@ -141,6 +227,141 @@ def pricing_record(*, charged_q: int, server_q: int, priced_at: datetime) -> dic
 
 def session_total_q(session) -> int:
     return sum(int(item.get("line_total_q") or 0) for item in (session.items or []))
+
+
+def catalog_instants(payload: dict, *, priced_at: datetime) -> list[datetime]:
+    """Os instantes do catálogo que podem explicar o cobrado: a tabela da tela e a cobrança.
+
+    ``pricing_instant`` já recusou a venda cuja tabela é implausível; aqui ela
+    chega válida ou ausente.
+    """
+    instants = []
+    prices_at = prices_instant(payload, captured_at=priced_at)
+    if prices_at is not None and prices_at != priced_at:
+        instants.append(prices_at)
+    instants.append(priced_at)
+    return instants
+
+
+def explain_charge(payload: dict, references: list[list[dict]], *, operator_username: str) -> dict:
+    """O cobrado se explica pelo catálogo? Vazio = sim; senão, o registro "a conferir".
+
+    ``references``: as linhas da sessão precificada pelo kernel em cada catálogo
+    candidato (o de agora e os de ``catalog_instants``), na hora da cobrança. Cada
+    uma oferece dois preços por linha: o de lista (``meta._list_q``, o que a tela
+    mostra) e o final (com o que o kernel aplicou na hora, Happy Hour inclusive).
+
+    Limpa: o total cobrado é o total de uma referência, ou cada linha cobrada é
+    uma das linhas de referência. A última referência é o catálogo da hora da
+    cobrança, e é o preço que o registro mostra ao gerente.
+    """
+    charged = [item for item in payload.get("items") or [] if isinstance(item, dict)]
+    charged_totals = [_charged_line_total_q(item) for item in charged]
+    charged_q = sum(charged_totals)
+    for lines in references:
+        if charged_q in (sum(_final_q(line) for line in lines), sum(_list_total_q(line) for line in lines)):
+            return {}
+    aligned = [lines for lines in references if _aligned(charged, lines)]
+    unexplained = []
+    catalog = references[-1] if references and _aligned(charged, references[-1]) else None
+    for index, item in enumerate(charged):
+        candidates = {q for lines in aligned for q in (_final_q(lines[index]), _list_total_q(lines[index]))}
+        if aligned and charged_totals[index] in candidates:
+            continue
+        line = catalog[index] if catalog is not None else None
+        unexplained.append({
+            "sku": str(item.get("sku") or ""),
+            "name": str(item.get("name") or item.get("sku") or ""),
+            "qty": _qty_json(item.get("qty")),
+            "charged_unit_price_q": int(item.get("unit_price_q") or 0),
+            "charged_line_total_q": charged_totals[index],
+            "catalog_unit_price_q": int(line.get("unit_price_q") or 0) if line else None,
+            "catalog_line_total_q": _final_q(line) if line else None,
+        })
+    if not unexplained:
+        return {}
+    return {"review_required": True, "review_lines": unexplained, "operator": operator_username}
+
+
+def _aligned(charged: list[dict], lines: list[dict]) -> bool:
+    return len(charged) == len(lines) and all(
+        str(item.get("sku") or "") == str(line.get("sku") or "") for item, line in zip(charged, lines, strict=True)
+    )
+
+
+def _charged_line_total_q(item: dict) -> int:
+    return int(monetary_mult(_qty(item.get("qty")), int(item.get("unit_price_q") or 0)))
+
+
+def _final_q(line: dict) -> int:
+    return int(line.get("line_total_q") or 0)
+
+
+def _list_total_q(line: dict) -> int:
+    list_q = (line.get("meta") or {}).get("_list_q")
+    if list_q is None:
+        return _final_q(line)
+    return int(monetary_mult(_qty(line.get("qty")), int(list_q)))
+
+
+# ── A conferir: o fechamento do caixa ─────────────────────────────────
+
+
+def review_sales(shift, *, include_acknowledged: bool = False) -> list[dict]:
+    """As vendas sem conexão deste turno cobradas sem explicação pelo catálogo, ainda sem gerente.
+
+    Uma linha por item a conferir: SKU, preço do catálogo naquela hora, preço
+    cobrado e operador. O turno é o do livro (a linha ``sale`` do pedido).
+    ``include_acknowledged``: também as já conferidas (o relatório do dia), com
+    quem conferiu em ``acknowledged_by``.
+    """
+    from shopman.cashman.models import Entry
+    from shopman.orderman.models import Order
+
+    if shift is None:
+        return []
+    # Uma consulta só (a leitura do terminal tem teto de consultas).
+    refs = Entry.objects.filter(shift=shift, kind=Entry.Kind.SALE).values("order_ref")
+    rows = []
+    orders = Order.objects.filter(ref__in=refs, data__pos__offline__pricing__review_required=True).order_by("created_at")
+    for order in orders:
+        offline = (order.data or {}).get("pos", {}).get("offline") or {}
+        pricing = offline.get("pricing") or {}
+        if pricing.get("acknowledged_by") and not include_acknowledged:
+            continue
+        for line in pricing.get("review_lines") or []:
+            rows.append({
+                "order_ref": order.ref,
+                "captured_at": offline.get("captured_at") or "",
+                "operator": pricing.get("operator") or "",
+                "acknowledged_by": pricing.get("acknowledged_by") or "",
+                **line,
+            })
+    return rows
+
+
+def acknowledge_review_sales(shift, *, approved_by: str) -> list[str]:
+    """O gerente conferiu: as vendas "a conferir" do turno levam a assinatura dele.
+
+    Roda dentro da transação do fechamento. Devolve os pedidos assinados.
+    """
+    from shopman.orderman.models import Order
+
+    refs = sorted({row["order_ref"] for row in review_sales(shift)})
+    at = timezone.now().isoformat()
+    for order in Order.objects.select_for_update().filter(ref__in=refs):
+        data = dict(order.data or {})
+        pos_data = dict(data.get("pos") or {})
+        offline = dict(pos_data.get("offline") or {})
+        pricing = dict(offline.get("pricing") or {})
+        pricing["acknowledged_by"] = approved_by
+        pricing["acknowledged_at"] = at
+        offline["pricing"] = pricing
+        pos_data["offline"] = offline
+        data["pos"] = pos_data
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
+    return refs
 
 
 # ── Comanda mudada em outro dispositivo ───────────────────────────────
@@ -399,7 +620,7 @@ def record_duplicate_on_paid_order(*, plan: TabPlan, payload: dict, captured_at:
 
 def _clock(iso: str) -> str:
     instant = _parse_instant(iso)
-    return timezone.localtime(instant).strftime("%H:%M") if instant else ""
+    return format_clock(instant) if instant else ""
 
 
 def _money(amount_q: int) -> str:
@@ -427,6 +648,8 @@ def sale_notes(order) -> list[str]:
             f"{sale} (pedido {order.ref}) foi cobrada por {_money(pricing.get('charged_total_q') or 0)}; "
             f"pelos preços daquela hora seria {_money(pricing.get('server_total_q') or 0)}. "
             f"Valeu o cobrado: {_money(diff)} {direction} do preço."
+            + (" A conferir: o catálogo não explica esse preço, e o caixa só fecha com o gerente."
+               if pricing.get("review_required") else "")
         )
     tab = offline.get("tab") or {}
     tab_name = _tab_label(tab)

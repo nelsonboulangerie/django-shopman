@@ -33,6 +33,16 @@ export interface OrderDetailItem {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  /** Instrução do item (observação do cliente, complementos): a mesma do ticket da cozinha. */
+  notes?: string;
+}
+
+/** Uma linha de desconto: "Cupom BEMVINDO" e "−R$ 5,00" (itens a preço de tabela). */
+export interface OrderDetailDiscountLine {
+  /** `coupon` (cupom) ou `discount` (promoção, grupo, desconto manual). */
+  kind: string;
+  label: string;
+  amount_display: string;
 }
 
 /** Um evento do histórico. `operator_comment` é comentário de gente. */
@@ -104,6 +114,8 @@ export interface OperatorOrderDetail {
   fiscal_status_label: string;
   fiscal_links: OrderDetailFiscalLink[];
   items: OrderDetailItem[];
+  /** O desconto fora do preço dos itens, uma linha por origem (cupom com o código). */
+  discount_lines?: OrderDetailDiscountLine[];
   customer_note: string;
   kitchen_note: string;
   timeline: OrderDetailTimelineEvent[];

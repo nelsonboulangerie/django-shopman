@@ -60,7 +60,9 @@ def turno_aberto(db, operador, client):
     from shopman.backstage.services import pos as pos_service
 
     return pos_service.open_cash_shift(
-        operator=operador, opening_amount_raw="100,00", terminal_ref="balcao"
+        # Fundo que cobre as retiradas do teste: a gaveta não entrega o que não
+        # tem (beta 05/11, PDV-01).
+        operator=operador, opening_amount_raw="1000,00", terminal_ref="balcao"
     )
 
 

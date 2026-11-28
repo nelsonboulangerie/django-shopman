@@ -65,7 +65,7 @@ permissions:
 
 jobs:
   bump:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # O trabalho é um checkout, um sed e um `gh pr create`. Dez minutos é folga larga;
     # o que este teto evita é um `git` ou `gh` pendurado queimando hora de runner por
     # seis horas toda quarta, sem ninguém olhando.

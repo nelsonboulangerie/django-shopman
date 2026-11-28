@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import datetime
 import os
+from urllib.parse import urlsplit
 
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 
 from shopman.shop.fonts import BODY_FONTS, HEADING_FONTS
@@ -28,78 +31,6 @@ def validate_logo(value):
 
 
 SHOP_CACHE_TTL = 60  # seconds
-
-
-# ── Motivos de cancelamento/recusa ──
-#
-# ``Shop.cancellation_presets`` é uma lista em que cada item é:
-#   - uma string (o motivo, sem grupo), ou
-#   - ``{"label": "<motivo>", "group": "<grupo>"}`` (o motivo com o cabeçalho
-#     sob o qual o Gestor o mostra).
-# A ordem da lista é a ordem na tela; os grupos aparecem na ordem do primeiro
-# motivo de cada um. O motivo vai ao cliente como ``Motivo: <motivo>.``
-# (``services/notification.py``): por isso nunca termina em pontuação.
-
-CANCELLATION_PRESET_TRAILING_PUNCTUATION = ".,;:!?…"
-
-
-def cancellation_preset_entries(raw) -> list[tuple[str, str]]:
-    """Os motivos gravados como pares ``(grupo, motivo)``, na ordem gravada.
-
-    Tolerante: descarta vazio e item de forma desconhecida, nunca levanta. É o
-    leitor de quem só exibe (projeção do Gestor); quem grava passa por
-    :func:`validate_cancellation_presets`.
-    """
-    if not isinstance(raw, (list, tuple)):
-        return []
-    entries: list[tuple[str, str]] = []
-    for item in raw:
-        if isinstance(item, dict):
-            label = str(item.get("label") or "").strip()
-            group = str(item.get("group") or "").strip()
-        elif isinstance(item, str):
-            label, group = item.strip(), ""
-        else:
-            continue
-        if label:
-            entries.append((group, label))
-    return entries
-
-
-def validate_cancellation_presets(value) -> None:
-    """Recusa o que a notificação ao cliente não sabe dizer.
-
-    Forma: lista de strings ou de ``{"label", "group"}``. Motivo terminado em
-    pontuação sairia ``Motivo: Item acabou..`` no WhatsApp: é recusado.
-    """
-    if value in (None, ""):
-        return
-    if not isinstance(value, (list, tuple)):
-        raise ValidationError("Os motivos precisam ser uma lista.")
-    for item in value:
-        if isinstance(item, dict):
-            unknown = set(item) - {"label", "group"}
-            if unknown:
-                raise ValidationError(
-                    f"Motivo com campo desconhecido ({', '.join(sorted(unknown))}). "
-                    "Use só “label” (o motivo) e “group” (o grupo)."
-                )
-            label = item.get("label")
-            group = item.get("group", "")
-            if not isinstance(label, str) or not label.strip():
-                raise ValidationError("Todo motivo com grupo precisa do texto do motivo (“label”).")
-            if not isinstance(group, str):
-                raise ValidationError(f"O grupo do motivo “{label.strip()}” precisa ser um texto.")
-        elif isinstance(item, str):
-            label = item
-        else:
-            raise ValidationError("Cada motivo é um texto, ou um texto com grupo.")
-        label = label.strip()
-        if label and label[-1] in CANCELLATION_PRESET_TRAILING_PUNCTUATION:
-            raise ValidationError(
-                f"Tire a pontuação do fim de “{label}”. O cliente lê “Motivo: {label[:-1]}.”, "
-                "e o ponto final já vem da notificação."
-            )
 
 
 # ── Social link detection ──
@@ -160,6 +91,22 @@ def _resolve_social_link(url: str) -> dict:
     }
 
 
+_WHATSAPP_HOSTS = frozenset({"wa.me", "whatsapp.com", "api.whatsapp.com", "web.whatsapp.com", "www.whatsapp.com"})
+
+
+def is_whatsapp_link(link: object) -> bool:
+    """O link das redes sociais aponta MESMO para o WhatsApp?
+
+    Pergunta pelo host, não por substring: ``https://exemplo.com/?wa.me`` não é
+    WhatsApp, e o botão de suporte não pode levar o cliente para lá.
+    """
+    try:
+        host = (urlsplit(str(link or "").strip()).hostname or "").rstrip(".").lower()
+    except ValueError:
+        return False
+    return host in _WHATSAPP_HOSTS
+
+
 class Shop(models.Model):
     """O estabelecimento. Singleton."""
 
@@ -188,6 +135,26 @@ class Shop(models.Model):
     phone = models.CharField("telefone", max_length=20, blank=True)
     email = models.EmailField("e-mail", blank=True)
     default_ddd = models.CharField("DDD padrão", max_length=4, default="11")
+    #: O host onde o cliente abre a loja. Mora aqui, e não no settings, porque é dado
+    #: da loja (ADR-042). Quem lê: a última linha do SMS de código (``@host #código``,
+    #: o formato WebOTP), que o celular só aceita preencher sozinho quando o host da
+    #: mensagem é EXATAMENTE o da página aberta.
+    storefront_host = models.CharField(
+        "endereço da loja na internet",
+        max_length=253,
+        blank=True,
+        validators=[
+            RegexValidator(
+                r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$",
+                "Só o domínio, em minúsculas, sem https:// e sem barra. Ex.: www.minhaloja.com.br",
+            )
+        ],
+        help_text=(
+            "Só o domínio onde o cliente abre a loja, sem https:// e sem barra. Ex.: "
+            "www.minhaloja.com.br. Vai no fim do SMS de código, para o celular do cliente "
+            "preencher o código sozinho."
+        ),
+    )
 
     # ── Operação ──
     currency = models.CharField("moeda", max_length=3, default="BRL")
@@ -202,6 +169,21 @@ class Shop(models.Model):
             '"tuesday": {"open": "06:00", "close": "20:00"}, ...}. '
             'Dias: monday, tuesday, wednesday, thursday, friday, saturday, sunday.'
         ),
+    )
+
+    #: O expediente da equipe, que não é o horário de venda: a produção começa de
+    #: madrugada. Acesso de operador fora desta janela vira aviso destacado
+    #: (decisão do dono, 05/11/2026: 5h às 19h). O dia em que a casa não abre
+    #: continua destacado inteiro, pelo calendário de funcionamento.
+    staff_hours_start = models.TimeField(
+        "início do expediente da equipe",
+        default=datetime.time(5, 0),
+        help_text="A partir desta hora, o acesso da equipe é de rotina.",
+    )
+    staff_hours_end = models.TimeField(
+        "fim do expediente da equipe",
+        default=datetime.time(19, 0),
+        help_text="Depois desta hora, o acesso da equipe aparece destacado no aviso.",
     )
 
     # ── Branding ──
@@ -291,6 +273,15 @@ class Shop(models.Model):
     border_radius = models.CharField(
         "arredondamento", max_length=20, default="default", choices=RADIUS_CHOICES,
         help_text="Define o arredondamento dos cantos de botões, cards e inputs",
+    )
+    # A paleta da marca do storefront, em canais sRGB 'R G B' por papel semântico:
+    # ``{"light": {"primary": "124 58 64", ...}, "dark": {...}}``. É dado da loja
+    # (o seed a grava; ``brand_tokens`` só a monta), nunca paleta escrita no produto.
+    brand_palette = models.JSONField(
+        "paleta da marca",
+        default=dict,
+        blank=True,
+        help_text="Cores do storefront por papel (canais 'R G B'), nos modos claro e escuro.",
     )
 
     # ── Redes sociais ──
@@ -407,46 +398,6 @@ class Shop(models.Model):
         help_text="Só o código da meta tag p:domain_verify.",
     )
 
-    # ── Motivos de cancelamento/recusa (presets do operador) ──
-    cancellation_presets = models.JSONField(
-        "motivos de cancelamento/recusa",
-        default=list,
-        blank=True,
-        validators=[validate_cancellation_presets],
-        help_text=(
-            "Justificativas padrão que o operador injeta com um toque ao recusar "
-            "ou cancelar um pedido no gestor. O texto escolhido é enviado ao "
-            'cliente como "Motivo: <texto>.", então escreva na voz da loja e sem '
-            "pontuação no fim. Cada item é um texto, ou um texto com grupo (o "
-            "cabeçalho sob o qual o Gestor o mostra). A ordem é a da tela.\n"
-            "Exemplo:\n"
-            "[\n"
-            '  {"label": "Item indisponível no momento", "group": "Produto"},\n'
-            '  {"label": "Pagamento não aprovado", "group": "Pagamento"},\n'
-            '  "Fora do horário de atendimento"\n'
-            "]"
-        ),
-    )
-
-    # ── Tags de nota da cozinha (presets do operador) ──
-    kitchen_note_tags = models.JSONField(
-        "tags de nota da cozinha",
-        default=list,
-        blank=True,
-        help_text=(
-            "Etiquetas prontas que o operador anexa com um toque à nota da cozinha "
-            "de um pedido no gestor. A nota (tags + texto livre) é exibida no ticket "
-            "do KDS para a produção. Escreva instruções curtas de preparo.\n"
-            "Exemplo:\n"
-            "[\n"
-            '  "Bem assado",\n'
-            '  "Sem cebola",\n'
-            '  "Embalar para presente",\n'
-            '  "Cortar ao meio"\n'
-            "]"
-        ),
-    )
-
     # ── Textos do acompanhamento (tracking page) ──
     tracking_copy = models.JSONField(
         "textos do acompanhamento",
@@ -486,6 +437,87 @@ class Shop(models.Model):
         ),
     )
 
+    # ── Framework conversacional: decisão em sombra (N5, ADR-042) ──
+    conversational_shadow_enabled = models.BooleanField(
+        "decisão em sombra da Concierge",
+        default=False,
+        help_text=(
+            "Liga a varredura que, a cada entrada da Concierge, registra o que o framework de "
+            "comércio conversacional faria. Não envia nada, não escreve no comércio e não chama "
+            "modelo: só grava a decisão e, depois, os pedidos do cliente em 24 horas e em 7 dias. "
+            "Desligada, nada é varrido."
+        ),
+    )
+
+    # ── Framework conversacional: o turno da Concierge pelo motor, por classe de ação (N9) ──
+    # Cada classe liga sozinha, e todas nascem desligadas. O motor só fala onde a casa tem o
+    # molde com a frase de hoje; o resto do turno segue pelo caminho de hoje. Desligar
+    # "Pedido" é o freio da escrita: informar e passar à equipe continuam.
+    conversational_live_inform = models.BooleanField(
+        "motor: informar e conversar",
+        default=False,
+        help_text="Saudação, agradecimento, informação e pedido de esclarecimento pelo motor do framework.",
+    )
+    conversational_live_handoff = models.BooleanField(
+        "motor: passar à equipe",
+        default=False,
+        help_text="O motor passa a conversa à equipe e diz até quando alguém assume.",
+    )
+    conversational_live_order = models.BooleanField(
+        "motor: pedido na conversa",
+        default=False,
+        help_text="Sacola, resumo e fechamento do pedido pelo motor. Desligar é o freio da escrita.",
+    )
+
+    # ── Incidentes: o Watchman aciona o remédio do domínio (DEV-2026-066) ──
+    INCIDENT_REMEDIES_MODES = [
+        ("on", "Ligado: aciona e confere"),
+        ("shadow", "Sombra: só registra o que faria"),
+        ("off", "Desligado"),
+    ]
+    incident_remedies_mode = models.CharField(
+        "remédios automáticos de incidente",
+        max_length=10,
+        choices=INCIDENT_REMEDIES_MODES,
+        default="on",
+        help_text=(
+            "Quando um alerta de produção tem remédio na lista fechada (reprocessar a NFC-e "
+            "já solicitada, reenviar o aceite ao iFood), o sistema aciona o mesmo gesto do "
+            "Gestor, com teto de tentativas, e confere se resolveu. Em sombra, só registra o "
+            "que faria. Cada decisão fica em Incidentes, Placar dos remédios."
+        ),
+    )
+
+    # ── PDV: venda sem conexão (decisão do dono, 03/11/2026) ──
+    pos_offline_sale_enabled = models.BooleanField(
+        "venda sem conexão",
+        default=False,
+        help_text=(
+            "Deixa o PDV cobrar sem rede (dinheiro e maquininha) e guardar a venda "
+            "no dispositivo, para enviar quando a conexão voltar. Desligada, o PDV "
+            "sem conexão não vende e o servidor recusa a venda guardada. Ligar "
+            "depende da NFC-e em contingência (tpEmis 9), que ainda não existe: "
+            "sem ela, a nota da venda sem conexão sai só no envio, com a hora do envio."
+        ),
+    )
+
+    # ── iFood: o widget oficial (chat com o cliente) no Gestor de pedidos ──
+    # Decisão do dono, 12/11/2026 (DEV-2026-019, issue #2321): a API do iFood não
+    # tem chat; o caminho do iFood é o widget embutido. Vazio, o Gestor não carrega
+    # nada do iFood no navegador.
+    ifood_widget_id = models.CharField(
+        "ID do widget do iFood",
+        max_length=64,
+        blank=True,
+        help_text=(
+            "O ID do widget cadastrado no Portal do Desenvolvedor do iFood (menu Widgets, "
+            "com o Chat ligado). Preenchido, o Gestor de pedidos mostra o botão do iFood "
+            "com o chat dos clientes, as notificações e o rastreio. Vazio, não mostra. "
+            "Cada dispositivo autoriza o widget uma vez, com um login de dono ou "
+            "administrador no Portal do Parceiro."
+        ),
+    )
+
     # ── Defaults de negócio (cascata: canal ← AQUI ← hardcoded) ──
     defaults = models.JSONField(
         "configurações padrão",
@@ -507,6 +539,41 @@ class Shop(models.Model):
             '  "payment": {"pix": "shopman.shop.adapters.payment_efi", "card": "shopman.shop.adapters.payment_stripe"},\n'
             '  "notification": {"default": "shopman.shop.adapters.notification_manychat"},\n'
             '  "fiscal": "shopman.shop.adapters.fiscal_nfce"\n'
+            "}"
+        ),
+    )
+
+    # ── IA: qual conexão e qual modelo cada função usa (``shopman.shop.ai``) ──
+    ai_routes = models.JSONField(
+        "rotas de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            'Por propósito, a conexão de IA e o modelo. Propósito sem rota usa a rota "default"; '
+            "sem ela, a única conexão ativa do formato. Propósitos: concierge, triage, intents, "
+            "labeling, copy, marketing, recipe, scenarios, benchmark, decision, incident, incident_review.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "default": {"connection": "anthropic"},\n'
+            '  "copy": {"connection": "deepseek", "model": "deepseek-flash"}\n'
+            "}"
+        ),
+    )
+
+    ai_limits = models.JSONField(
+        "freio de IA",
+        default=dict,
+        blank=True,
+        help_text=(
+            "Liga ou desliga toda IA paga da loja e diz quanto ela pode gastar por dia, em US$. "
+            '"enabled": false desliga tudo na hora. "usd_per_day" é o teto da loja (padrão 3). '
+            '"purposes" dá um teto próprio a uma função. Nenhum teto passa de 20 sem mudança no '
+            "código. A 80% do teto chega um aviso; no teto, a IA para até o dia seguinte.\n\n"
+            "Exemplo:\n"
+            "{\n"
+            '  "enabled": true,\n'
+            '  "usd_per_day": 3,\n'
+            '  "purposes": {"benchmark": 1}\n'
             "}"
         ),
     )
@@ -535,10 +602,19 @@ class Shop(models.Model):
             ("manage_catalog", "Pode criar/editar Product, Listing e Collection"),
             ("manage_customers", "Pode criar/editar Customer, grupos e loyalty"),
             ("view_reports", "Pode acessar dashboard e relatórios analíticos"),
+            ("create_support_ticket", "Pode abrir chamado no Suporte"),
+            ("triage_support_tickets", "Pode triar chamados do Suporte"),
+            ("view_all_support_tickets", "Pode ver todos os chamados do Suporte"),
+            ("approve_support_requests", "Pode aprovar pedidos de produto do Suporte"),
+            ("link_support_dev", "Pode ligar chamado aprovado a um compromisso DEV-"),
+            ("view_support_audit", "Pode ver a auditoria do Suporte"),
         ]
 
     def __str__(self):
-        return self.name
+        # O Admin escreve ``str(obj)`` na mensagem de sucesso: com o nome fantasia
+        # em branco, salvar o horário dizia "alterado com sucesso" sobre “” (beta
+        # 05/11). A loja tem outros nomes; a mensagem não fica sem nome.
+        return self.name or self.brand_name or self.short_name or self.legal_name or "Loja"
 
     def clean(self):
         super().clean()
@@ -631,7 +707,7 @@ class Shop(models.Model):
         otherwise falls back to deriving from `phone`.
         """
         for link in (self.social_links or []):
-            if "wa.me" in link or "whatsapp.com" in link:
+            if is_whatsapp_link(link):
                 return link
         digits = "".join(c for c in self.phone if c.isdigit())
         if not digits:
@@ -693,6 +769,7 @@ class Shop(models.Model):
         from shopman.shop.brand_tokens import build_storefront_design_tokens
 
         return build_storefront_design_tokens(
+            palette=self.brand_palette,
             heading_font=self.heading_font or "Inter",
             body_font=self.body_font or "Inter",
             color_mode=self.color_mode or "light",

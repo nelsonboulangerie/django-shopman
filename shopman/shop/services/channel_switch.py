@@ -48,6 +48,7 @@ from datetime import datetime, time, timedelta
 from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -186,7 +187,7 @@ def is_switchable(channel) -> bool:
 
 
 def pos_channel_ref() -> str:
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 def ensure_accepting_orders(channel_ref: str, *, now: datetime | None = None) -> None:
@@ -248,7 +249,7 @@ _WEEKDAY_ABBR_PT = ("seg.", "ter.", "qua.", "qui.", "sex.", "sáb.", "dom.")
 
 
 def _hour(value: time) -> str:
-    return f"{value.hour}h{value.minute:02d}" if value.minute else f"{value.hour}h"
+    return format_clock(value)
 
 
 def moment(value: datetime | None, *, now: datetime | None = None) -> str:
@@ -324,9 +325,14 @@ def scheduled_line(channel, *, now: datetime | None = None) -> str:
 
 def _today_end(now: datetime, state) -> tuple[datetime, str]:
     """O fim de "por hoje": o fechamento de hoje, se ainda vem; senão a meia-noite."""
+    from shopman.shop.services import business_calendar
+
     local = timezone.localtime(now)
     if state is not None and state.closes_at and state.closure_source != "after_close":
-        closes = time.fromisoformat(state.closes_at)
+        # O fim do DIA, não do turno: com intervalo (almoço), o ``closes_at`` do
+        # estado aberto é o fim do turno em curso.
+        window = business_calendar.selling_hours_for(local.date())
+        closes = window[1] if window else time.fromisoformat(state.closes_at)
         end = datetime.combine(local.date(), closes, tzinfo=local.tzinfo)
         if end > now:
             return end, f"até as {_hour(closes)}"
@@ -571,7 +577,9 @@ def _apply_effects(channel, *, is_active: bool, changed: bool, actor) -> None:
         from shopman.shop.services import ifood_merchant
 
         ifood_merchant.enqueue_sync("channel_switch")
-    if changed and is_active:
+    from shopman.shop.services import display_catalog
+
+    if changed and (is_active or display_catalog.is_platform_channel(channel.ref)):
         _resync_projection(channel.ref)
 
 
@@ -647,6 +655,10 @@ def _resync_projection(ref: str) -> None:
     Enquanto desligado, a projeção para esse canal é descartada
     (``catalog_projection._channel_or_feed_active``): o que mudou no meio não
     chegou lá, e religar sem reenviar reabriria a loja com preço velho.
+
+    Canal de plataforma (Google, Meta) é diferente: desligado, o item segue na
+    plataforma como fora de estoque (``display_catalog``). Por isso ele reenvia nas
+    duas viradas, e o catálogo dele é a composição de coleções, não uma listagem.
     """
     from shopman.offerman.conf import get_projection_backend_channels
 
@@ -655,12 +667,16 @@ def _resync_projection(ref: str) -> None:
     from shopman.offerman.models import ListingItem
 
     from shopman.shop.handlers.catalog_projection import enqueue_project
+    from shopman.shop.services import display_catalog
 
-    skus = (
-        ListingItem.objects.filter(listing__ref=ref)
-        .values_list("product__sku", flat=True)
-        .distinct()
-    )
+    if display_catalog.is_platform_channel(ref):
+        skus = display_catalog.composition_skus(ref)
+    else:
+        skus = (
+            ListingItem.objects.filter(listing__ref=ref)
+            .values_list("product__sku", flat=True)
+            .distinct()
+        )
     for sku in skus:
         enqueue_project(sku, ref, trigger="channel_on")
 

@@ -31,9 +31,57 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  # Escopo (17/11/2026, docs/reference/ci-escopo.md): Browser QA e Storefront
+  # E2E são pesados e rodam só na fila; o Admin CSP roda no PR que mexe Python.
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      python: ${{ steps.scope.outputs.python }}
+      browser_runner: ${{ steps.browser-runner.outputs.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+            scripts/ci_browser_runner.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+      # Piloto DEV-2026-098 (plano §9.3): mesmo seletor do Surfaces Gate, com teto de gasto.
+      # Os jobs daqui só vão para o runner do piloto se o NOME deles estiver em
+      # CI_BROWSER_SURFACES ("omotenashi-browser-qa", "storefront-e2e"): eles usam
+      # contêiner de Postgres, que ainda não foi medido na Ubicloud.
+      - name: Runner dos jobs de navegador
+        id: browser-runner
+        continue-on-error: true
+        env:
+          EVENT: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          CI_LINUX_RUNNER: ${{ vars.CI_LINUX_RUNNER }}
+          CI_BROWSER_RUNNER: ${{ vars.CI_BROWSER_RUNNER }}
+          CI_BROWSER_SINCE: ${{ vars.CI_BROWSER_SINCE }}
+          CI_BROWSER_BUDGET_USD: ${{ vars.CI_BROWSER_BUDGET_USD }}
+          CI_BROWSER_COST_PER_GROUP_USD: ${{ vars.CI_BROWSER_COST_PER_GROUP_USD }}
+        run: python3 scripts/ci_browser_runner.py >> "$GITHUB_OUTPUT"
+
   omotenashi-browser-qa:
     name: Browser QA (Nuxt store + Django operator)
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
+    # verde ("pulado") com o mesmo nome, que é check obrigatório.
+    # `needs: scope` só para o runner do piloto; `!cancelled()` para o scope que falha
+    # NUNCA pular este check obrigatório (pulado contaria verde): cai no grátis.
+    needs: scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ${{ (contains(fromJSON(vars.CI_BROWSER_SURFACES || '[]'), 'omotenashi-browser-qa') && needs.scope.outputs.browser_runner) || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -155,6 +203,7 @@ jobs:
             /tmp/shopman-omotenashi-qa-browser.json
             /tmp/shopman-omotenashi-browser-ci-django.log
             /tmp/shopman-omotenashi-browser-ci-nuxt.log
+            /tmp/shopman-omotenashi-browser-ci-builds.log
           if-no-files-found: warn
           retention-days: 14
 
@@ -170,7 +219,10 @@ jobs:
   # header não traz 'unsafe-inline' no script-src.
   admin-csp:
     name: Admin CSP (production settings)
-    runs-on: ubuntu-latest
+    needs: scope
+    # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     services:
@@ -242,7 +294,12 @@ jobs:
 
   storefront-e2e:
     name: Storefront E2E (Playwright)
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md). No PR reporta
+    # verde ("pulado") com o mesmo nome, que é check obrigatório.
+    # Runner do piloto como no Browser QA acima (needs + !cancelled + fallback grátis).
+    needs: scope
+    if: ${{ !cancelled() && github.event_name != 'pull_request' }}
+    runs-on: ${{ (contains(fromJSON(vars.CI_BROWSER_SURFACES || '[]'), 'storefront-e2e') && needs.scope.outputs.browser_runner) || vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     # ⚠️ Este alvo existia e não rodava em lugar nenhum. Foi assim que a suíte
@@ -251,6 +308,11 @@ jobs:
     # e telas de operador que sumiram no cutover headless. Seis testes davam 404,
     # e um deles PASSAVA no 404 (afirmava a ausência de um texto que a página de
     # erro também não tinha). Um E2E que ninguém roda apodrece calado.
+    #
+    # É aqui que roda o Dia 1 da loja (T13 do laudo de 23/10, `test_12`): entrega
+    # paga com cartão até o acompanhamento, com o `payment_stripe` de produção
+    # falando com um Stripe FALSO local (sem rede, sem credencial). O harness
+    # sobe o falso junto com Django e loja; o log dele vai no artefato abaixo.
     services:
       postgres:
         image: ghcr.io/nelsonboulangerie/ci-mirror/postgres:16-alpine
@@ -304,6 +366,12 @@ jobs:
           CI: "true"
         run: make storefront-e2e
 
+      - name: SSR read contract (isolated backend)
+        run: |
+          node --test tests/ssr/ssrRead.test.mjs tests/ssr/continuumRead.test.mjs tests/ssr/coldImports.test.mjs
+          python -m unittest discover -s ../../docs/reports/performance-2026-10-30 -p 'test_capture_tail_http.py'
+        working-directory: surfaces/storefront-nuxt
+
       - name: Upload E2E logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -312,5 +380,6 @@ jobs:
           path: |
             /tmp/shopman-storefront-e2e-django.log
             /tmp/shopman-storefront-e2e-nuxt.log
+            /tmp/shopman-storefront-e2e-fake-stripe.log
           if-no-files-found: warn
           retention-days: 14

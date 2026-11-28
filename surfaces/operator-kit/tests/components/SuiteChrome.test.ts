@@ -520,7 +520,7 @@ describe("OperatorPageHeader", () => {
     const title = wrapper.get("h1").classes();
     expect(title).not.toContain("truncate");
     expect(title).not.toEqual(expect.arrayContaining([expect.stringMatching(/^line-clamp/)]));
-    expect(title).toEqual(expect.arrayContaining(["whitespace-normal", "min-w-0"]));
+    expect(title).toEqual(expect.arrayContaining(["whitespace-normal", "min-w-min"]));
     const root = wrapper.get("[data-operator-page-header]").classes();
     expect(root).toEqual(expect.arrayContaining(["h-auto", "min-h-(--ui-header-height)"]));
     expect(root).not.toContain("h-(--ui-header-height)");
@@ -653,6 +653,66 @@ describe("OperatorPageHeader", () => {
     await show.trigger("click");
     expect(useRailState().state.value).toBe("compact");
   });
+
+  // O ⋮ fica no canto, o último da barra, com o sino antes dele (dono, 03/11/2026). O ⋮
+  // próprio da tela (`#more`, o menu da fila do Gestor) mora depois do sino; no `#actions`
+  // ele ficava antes.
+  it("#more fica depois do sino; #actions, antes", async () => {
+    railShown.value = false;
+    const wrapper = await mountHeader({
+      actions: '<button data-own-action>Som</button>',
+      more: '<button data-own-more>⋮</button>',
+    });
+    const html = wrapper.html();
+    const at = ["data-own-action", "data-inbox-stub", "data-own-more"].map((m) => html.indexOf(m));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    railShown.value = true;
+  });
+
+  // Com o trocador, sem barra lateral (o tablet em pé), o selo é o da linha do chão: o
+  // app, o lugar e o ⌄. O título solto sai da vista abaixo do lg para não dizer o lugar duas
+  // vezes, e fica no <h1> para o leitor de tela; no celular estreito o selo encolhe (o lugar
+  // trunca) em vez de passar por cima das ações.
+  it("com o trocador, o selo diz o app e o lugar e o título solto sai da vista abaixo do lg", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountHeader();
+    const seal = wrapper.get("[data-page-header-switcher-seal]");
+    expect(seal.classes()).toContain("lg:hidden");
+    expect(seal.attributes("aria-haspopup")).toBe("dialog");
+    expect(seal.classes()).toContain("max-sm:flex-initial!");
+    expect(wrapper.get("h1").html()).toContain("max-lg:sr-only");
+    expect(wrapper.get("h1").text()).toContain("Pedidos");
+    useState("suite-switcher-enabled").value = false;
+  });
+
+  // A leitura no selo (`sealTone`, dono 04/11/2026): o ponto vai para o selo e o
+  // `#status` sai abaixo do lg, em vez de descer sozinho para uma segunda linha.
+  it("com sealTone, a leitura vai para o selo e o #status sai abaixo do lg", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountSuspended(OperatorPageHeader, {
+      props: { title: "Base", sealTone: "calm", sealTime: "12:05" },
+      slots: { status: "<span data-own-read>Lido às 12:05</span>" },
+      global: { stubs },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    const seal = wrapper.get("[data-page-header-switcher-seal]");
+    expect(seal.attributes("data-conn")).toBe("calm");
+    expect(seal.attributes("aria-label")).toContain("última leitura 12:05");
+    const status = wrapper.get("[data-page-header-status]");
+    expect(status.find("[data-own-read]").exists()).toBe(true);
+    expect(status.classes()).toContain("max-lg:hidden");
+    useState("suite-switcher-enabled").value = false;
+  });
+
+  it("sem sealTone, o #status segue na segunda linha do celular", async () => {
+    useState("suite-switcher-enabled").value = true;
+    const wrapper = await mountHeader({ status: "<span data-own-read>Lido</span>" });
+    const status = wrapper.get("[data-page-header-status]");
+    expect(status.classes()).not.toContain("max-lg:hidden");
+    expect(wrapper.get("[data-page-header-switcher-seal]").attributes("data-conn")).toBeUndefined();
+    useState("suite-switcher-enabled").value = false;
+  });
 });
 
 describe("OperatorLiveStatus", () => {
@@ -684,26 +744,36 @@ describe("OperatorLiveStatus", () => {
     expect(live(wrapper).attributes("data-live-tone")).toBe("live");
   });
 
-  it("calmo: neutro, sem ponto, a cadência por extenso", async () => {
+  it("calmo com a hora: o ponto neutro e a hora; a cadência vai para o nome acessível (D, dono 13/11/2026)", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", time: "10:30", label: "Atualiza sozinho a cada 60 s" },
+      props: { tone: "calm", time: "10:30", label: "Atualiza Sozinho a Cada 60 s", shortLabel: "A cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
-    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.text().trim()).toBe("10:30");
     expect(wrapper.text()).not.toMatch(NO_ENGLISH_SWITCH);
     expect(live(wrapper).attributes("class")).toContain("bg-elevated");
+    expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(true);
+    expect(live(wrapper).attributes("aria-label")).toContain("Atualiza Sozinho a Cada 60 s");
+    expect(live(wrapper).attributes("aria-label")).toContain("10:30");
+  });
+
+  it("calmo sem a hora: neutro, sem ponto, a cadência por extenso", async () => {
+    const wrapper = await mountSuspended(OperatorLiveStatus, {
+      props: { tone: "calm", label: "Atualiza Sozinho a Cada 60 s" },
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    expect(wrapper.text().trim()).toBe("Atualiza Sozinho a Cada 60 s");
     expect(live(wrapper).attributes("class")).not.toContain("ring-accented");
     expect(dot(wrapper as unknown as VueWrapper).exists()).toBe(false);
-    expect(live(wrapper).attributes("aria-label")).toContain("10:30");
   });
 
   it("o rótulo que cabe: o invólucro é o contêiner, pede a largura do completo e leva o curto escrito pelo app", async () => {
     const wrapper = await mountSuspended(OperatorLiveStatus, {
-      props: { tone: "calm", label: "Atualiza sozinho a cada 60 s", shortLabel: "A cada 60 s" },
+      props: { tone: "calm", label: "Atualiza Sozinho a Cada 60 s", shortLabel: "A cada 60 s" },
     });
     mounted.push(wrapper as unknown as VueWrapper);
     // O textContent continua sendo só o completo; o curto é conteúdo gerado.
-    expect(wrapper.text().trim()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.text().trim()).toBe("Atualiza Sozinho a Cada 60 s");
     expect(live(wrapper).classes()).not.toContain("op-fit-scope");
     const fit = wrapper.get("[data-live-fit]");
     expect(fit.classes()).toContain("op-fit-scope");
@@ -715,13 +785,13 @@ describe("OperatorLiveStatus", () => {
     expect(shortEm).toBeGreaterThan(0);
     expect(style).toContain("width: calc(var(--op-fit-full) + 0.25px)");
     expect(style).toContain("min-width: 2rem");
-    expect(wrapper.find("[data-op-fit-variant='full']").text()).toBe("Atualiza sozinho a cada 60 s");
+    expect(wrapper.find("[data-op-fit-variant='full']").text()).toBe("Atualiza Sozinho a Cada 60 s");
     const short = wrapper.get("[data-op-fit-variant='short']");
     expect(short.attributes("data-op-fit-short")).toBe("A cada 60 s");
     expect(short.attributes("aria-hidden")).toBe("true");
     // Degrau 3: o ícone de atualizar, com o completo no nome acessível e na dica.
     expect(wrapper.find("[data-live-sign]").exists()).toBe(true);
-    expect(live(wrapper).attributes("title")).toContain("Atualiza sozinho a cada 60 s");
+    expect(live(wrapper).attributes("title")).toContain("Atualiza Sozinho a Cada 60 s");
     // Nenhuma classe corta o texto (o `truncate` do label do Badge saía "Atualiza sozinho a cada").
     expect(wrapper.html()).not.toMatch(/\btruncate\b/);
   });

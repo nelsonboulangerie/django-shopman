@@ -108,7 +108,7 @@ class TestRename:
         count = RefBulk.rename("SKU", "GHOST", "GHOST-NEW")
         assert count == 0
 
-    def test_emits_ref_renamed_signal(self):
+    def test_emits_ref_renamed_signal(self, django_capture_on_commit_callbacks):
         _make_ref(value="OLD")
         received = []
 
@@ -117,7 +117,9 @@ class TestRename:
 
         ref_renamed.connect(handler, weak=False)
         try:
-            RefBulk.rename("SKU", "OLD", "NEW", actor="test")
+            with django_capture_on_commit_callbacks(execute=True):
+                RefBulk.rename("SKU", "OLD", "NEW", actor="test")
+                assert received == [], "ADR-025: anúncio só depois do COMMIT"
         finally:
             ref_renamed.disconnect(handler)
 
@@ -126,7 +128,7 @@ class TestRename:
         assert received[0]["old_value"] == "OLD"
         assert received[0]["actor"] == "test"
 
-    def test_emits_signal_per_ref(self):
+    def test_emits_signal_per_ref(self, django_capture_on_commit_callbacks):
         _make_ref(value="OLD", target_id="1")
         _make_ref(value="OLD", target_id="2")
         received = []
@@ -136,7 +138,8 @@ class TestRename:
 
         ref_renamed.connect(handler, weak=False)
         try:
-            RefBulk.rename("SKU", "OLD", "NEW")
+            with django_capture_on_commit_callbacks(execute=True):
+                RefBulk.rename("SKU", "OLD", "NEW")
         finally:
             ref_renamed.disconnect(handler)
         assert len(received) == 2
@@ -295,7 +298,7 @@ class TestDeactivateScope:
             RefBulk.deactivate_scope("SKU", {})
         assert Ref.objects.filter(ref_type="SKU", is_active=True).count() == 1
 
-    def test_emits_ref_deactivated_per_ref(self, day_scope):
+    def test_emits_ref_deactivated_per_ref(self, day_scope, django_capture_on_commit_callbacks):
         _make_ref(ref_type="TABLE", value="1", scope=day_scope, target_id="1")
         _make_ref(ref_type="TABLE", value="2", scope=day_scope, target_id="2")
         received = []
@@ -305,7 +308,8 @@ class TestDeactivateScope:
 
         ref_deactivated.connect(handler, weak=False)
         try:
-            RefBulk.deactivate_scope("TABLE", day_scope, actor="test")
+            with django_capture_on_commit_callbacks(execute=True):
+                RefBulk.deactivate_scope("TABLE", day_scope, actor="test")
         finally:
             ref_deactivated.disconnect(handler)
         assert len(received) == 2

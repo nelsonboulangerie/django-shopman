@@ -1,7 +1,8 @@
-"""URLs dos canais de EXIBIÇÃO — quadro na TV (interno) e feed de plataforma (público).
+"""URLs dos canais de EXIBIÇÃO — quadro na TV (interno) e feed da Meta (público).
 
 Um Feed exibe um conjunto de coleções para fora, sem transacionar: menuboard
-(quadro numa TV, tempo real via SSE) e feed (RSS 2.0 que Google/Meta buscam agendado).
+(quadro numa TV, tempo real via SSE) e feed (RSS 2.0 que a Meta busca agendado). O
+Google não tem feed: o canal dele é escrito pela Merchant API.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ def _gated_eventstream(request, ref: str, **kwargs):
 
 
 urlpatterns = [
-    # Feed de produtos (Google Merchant / Meta) — pull; o parceiro agenda o fetch.
+    # Feed de produtos da Meta — pull; a Meta agenda o fetch.
     path("feed/<slug:ref>.xml", ProductFeedView.as_view(), name="product-feed"),
     path("menuboard/<slug:ref>/", MenuboardPageView.as_view(), name="menuboard"),
     path("menuboard/<slug:ref>/data/", MenuboardDataView.as_view(), name="menuboard-data"),

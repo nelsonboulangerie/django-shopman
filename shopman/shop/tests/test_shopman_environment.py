@@ -36,10 +36,11 @@ def _load_settings(monkeypatch, **env):
     for name in (
         *_ANTIGOS_HINTS,
         "SHOPMAN_ENVIRONMENT",
-        "SHOPMAN_EXPOSE_DEBUG_OTP",
         "DJANGO_DEBUG",
         "DJANGO_SECRET_KEY",
         "SENTRY_DSN",
+        "DOORMAN_MESSAGE_SENDER_CLASS",
+        "SHOPMAN_OTP_DELIVERY_CHAIN",
     ):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
@@ -65,7 +66,6 @@ def test_staging_substring_nos_hosts_nao_rebaixa_producao(monkeypatch):
     )
 
     assert settings.SHOPMAN_ENVIRONMENT == "production"
-    assert settings.SHOPMAN_EXPOSE_DEBUG_OTP is False
 
 
 def test_ausencia_da_env_fora_de_debug_falha_fechado_para_producao(monkeypatch):
@@ -84,6 +84,26 @@ def test_ausencia_da_env_em_debug_vira_development(monkeypatch):
     assert settings.SHOPMAN_ENVIRONMENT == "development"
 
 
+def test_debug_respeita_sender_explicito_com_cadeia_vazia(monkeypatch):
+    settings = _load_settings(
+        monkeypatch,
+        DJANGO_DEBUG="true",
+        DOORMAN_MESSAGE_SENDER_CLASS=(
+            "shopman.shop.tests.e2e.otp_sender.E2EFileSender"
+        ),
+        SHOPMAN_OTP_DELIVERY_CHAIN="",
+    )
+
+    assert settings.DOORMAN["DELIVERY_CHAIN"] == []
+    assert settings.DOORMAN["MESSAGE_SENDER_CLASS"].endswith(".E2EFileSender")
+
+
+def test_debug_sem_sender_explicito_continua_fechado_no_log_sender(monkeypatch):
+    settings = _load_settings(monkeypatch, DJANGO_DEBUG="true")
+
+    assert settings.DOORMAN["MESSAGE_SENDER_CLASS"] == "shopman.doorman.senders.LogSender"
+
+
 def test_staging_so_existe_quando_a_env_diz_staging(monkeypatch):
     settings = _load_settings(
         monkeypatch,
@@ -93,31 +113,3 @@ def test_staging_so_existe_quando_a_env_diz_staging(monkeypatch):
     )
 
     assert settings.SHOPMAN_ENVIRONMENT == "staging"
-
-
-def test_expor_otp_nasce_desligado_sem_herdar_de_nada(monkeypatch):
-    """Nem staging explícito, nem DEBUG, ligam a flag sozinhos.
-
-    Expor OTP é decisão do spec de deploy (`SHOPMAN_EXPOSE_DEBUG_OTP=true`);
-    o dev local não depende deste default porque `_debug_otp_allowed` devolve
-    True em DEBUG antes de ler a flag.
-    """
-    em_staging = _load_settings(
-        monkeypatch,
-        DJANGO_SECRET_KEY="segredo-de-teste",
-        DJANGO_ALLOWED_HOSTS="api.boulangerie.com.br",
-        SHOPMAN_ENVIRONMENT="staging",
-    )
-    assert em_staging.SHOPMAN_EXPOSE_DEBUG_OTP is False
-
-    em_debug = _load_settings(monkeypatch, DJANGO_DEBUG="true")
-    assert em_debug.SHOPMAN_EXPOSE_DEBUG_OTP is False
-
-    explicito = _load_settings(
-        monkeypatch,
-        DJANGO_SECRET_KEY="segredo-de-teste",
-        DJANGO_ALLOWED_HOSTS="api.boulangerie.com.br",
-        SHOPMAN_ENVIRONMENT="staging",
-        SHOPMAN_EXPOSE_DEBUG_OTP="true",
-    )
-    assert explicito.SHOPMAN_EXPOSE_DEBUG_OTP is True

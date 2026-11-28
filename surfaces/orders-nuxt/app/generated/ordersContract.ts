@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py
+// Source of truth: shopman/backstage/projections/order_queue.py + shopman/shop/projections/types.py + shopman/backstage/projections/catalog.py + shopman/backstage/projections/feeds.py + shopman/backstage/projections/channel_health.py + shopman/backstage/projections/customers.py + shopman/backstage/projections/preorders.py + shopman/backstage/projections/customer_groups.py + shopman/backstage/projections/notification_receipts.py + shopman/backstage/projections/order_history.py + shopman/backstage/projections/order_attention.py + shopman/backstage/projections/deliveries.py + shopman/backstage/projections/house_rides.py + shopman/backstage/projections/order_pending.py + shopman/backstage/projections/order_promise.py + shopman/backstage/projections/order_promise_resolution.py
 // Regenerate with: python manage.py export_orders_schema
 
 /** CatalogPricePreviewCell(id: 'int', sku: 'str', surface_ref: 'str', tier: 'str', before_q: 'int', after_q: 'int') */
@@ -58,9 +58,27 @@ export interface Action {
   payload_schema: Record<string, unknown>;
   idempotency: string;
   confirmation: Record<string, unknown>;
+  value: string;
 }
 
-/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, actions: tuple[shopman.shop.projections.types.Action, ...]) */
+/** IFoodNegotiationChoice(value: str, label: str) */
+export interface IFoodNegotiationChoice {
+  value: string;
+  label: string;
+}
+
+/** Uma contraproposta que o operador pode enviar. */
+export interface IFoodNegotiationAlternative {
+  id: string;
+  type: string;
+  label: string;
+  max_amount_q: number;
+  max_amount_display: string;
+  minutes_options: number[];
+  reason_options: IFoodNegotiationChoice[];
+}
+
+/** IFoodNegotiationProjection(id: str, type: str, action: str, message: str, expires_at: str, timeout_action: str, state: str, can_respond: bool, response_notice: str, items: tuple[str, ...], evidence_urls: tuple[str, ...], accept_reasons: tuple[str, ...], reject_reasons: tuple[str, ...], alternatives_available: bool, alternatives: tuple[shopman.backstage.projections.ifood_handshake.IFoodNegotiationAlternative, ...], actions: tuple[shopman.shop.projections.types.Action, ...]) */
 export interface IFoodNegotiationProjection {
   id: string;
   type: string;
@@ -76,6 +94,7 @@ export interface IFoodNegotiationProjection {
   accept_reasons: string[];
   reject_reasons: string[];
   alternatives_available: boolean;
+  alternatives: IFoodNegotiationAlternative[];
   actions: Action[];
 }
 
@@ -108,6 +127,23 @@ export interface CatalogCurrentBinding {
   snapshot_id: number;
 }
 
+/** CatalogRemoteCategory(ref: str, name: str, status: str, index: int, mapped_collections: int) */
+export interface CatalogRemoteCategory {
+  ref: string;
+  name: string;
+  status: string;
+  index: number;
+  mapped_collections: number;
+}
+
+/** CatalogCollectionCategory(ref: str, name: str, category_ref: str, category_name: str) */
+export interface CatalogCollectionCategory {
+  ref: string;
+  name: string;
+  category_ref: string;
+  category_name: string;
+}
+
 /** CatalogReviewItem(item_id: str, product_ref: str, category_ref: str, category_name: str, item_context_ref: str, name: str, description: str, image_path: str, status: str, price: str, external_code: str, diagnostic: str, notice: str, candidates: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], binding: shopman.backstage.projections.catalog_bindings.CatalogCurrentBinding | None, base_revision: str, can_bind: bool, needs_review: bool, blocked_reason: str, binding_action: shopman.shop.projections.types.Action) */
 export interface CatalogReviewItem {
   item_id: string;
@@ -132,7 +168,7 @@ export interface CatalogReviewItem {
   binding_action: Action;
 }
 
-/** CatalogBindingReviewProjection(channel_ref: str, channel_name: str, provider: str, snapshots: tuple[shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary, ...], selected_snapshot: shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary | None, products: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], items: tuple[shopman.backstage.projections.catalog_bindings.CatalogReviewItem, ...], expected_actor_id: int | None, notice: str, import_action: shopman.shop.projections.types.Action) */
+/** CatalogBindingReviewProjection(channel_ref: str, channel_name: str, provider: str, snapshots: tuple[shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary, ...], selected_snapshot: shopman.backstage.projections.catalog_bindings.CatalogSnapshotSummary | None, products: tuple[shopman.backstage.projections.catalog_bindings.CatalogProductOption, ...], items: tuple[shopman.backstage.projections.catalog_bindings.CatalogReviewItem, ...], expected_actor_id: int | None, notice: str, import_action: shopman.shop.projections.types.Action, catalog_ref: str, categories: tuple[shopman.backstage.projections.catalog_bindings.CatalogRemoteCategory, ...], collections: tuple[shopman.backstage.projections.catalog_bindings.CatalogCollectionCategory, ...], categories_error: str, category_action: shopman.shop.projections.types.Action) */
 export interface CatalogBindingReviewProjection {
   channel_ref: string;
   channel_name: string;
@@ -144,6 +180,11 @@ export interface CatalogBindingReviewProjection {
   expected_actor_id: number | null;
   notice: string;
   import_action: Action;
+  catalog_ref: string;
+  categories: CatalogRemoteCategory[];
+  collections: CatalogCollectionCategory[];
+  categories_error: string;
+  category_action: Action;
 }
 
 /** FeedCollectionRef(ref: 'str', name: 'str', exists: 'bool') */
@@ -285,6 +326,15 @@ export interface OrderItemProjection {
   qty: string;
   unit_price_display: string;
   total_display: string;
+  full_total_display: string;
+  notes: string;
+}
+
+/** Uma linha de desconto do detalhe: "Cupom BEMVINDO", "−R$ 5,00". */
+export interface OrderDiscountLineProjection {
+  kind: string;
+  label: string;
+  amount_display: string;
 }
 
 /** A single event in the order timeline. */
@@ -318,6 +368,7 @@ export interface NotificationReceiptProjection {
   provider_id: string;
   detail: string;
   attempts: NotificationAttemptProjection[];
+  fallback_whatsapp_url: string;
 }
 
 /** A compact production dependency shown on order cards and detail. */
@@ -326,22 +377,18 @@ export interface AwaitingWorkOrderProjection {
   status: string;
   status_label: string;
   output_sku: string;
+  recipe_name: string;
   planned_qty: string;
   finished_qty: string;
   progress_pct: number;
 }
 
-/** Um motivo de cancelar da lista única (``shop/services/cancel_reasons.py``). */
+/** Um motivo de recusar ou cancelar da lista única (``shop/services/cancel_reasons.py``). */
 export interface CancelReasonProjection {
   key: string;
   label: string;
   customer_text: string;
-}
-
-/** Motivos de recusa sob um cabeçalho (``label`` vazio = sem cabeçalho). */
-export interface CancellationPresetGroupProjection {
-  label: string;
-  presets: string[];
+  offered_on_ifood: boolean;
 }
 
 /** Uma maquininha que o entregador pode levar no despacho (ref do canal + rótulo). */
@@ -362,6 +409,26 @@ export interface EquipmentOutProjection {
   out_at: string;
   actions: Action[];
   identified: boolean;
+  shared_with: string[];
+}
+
+/** Uma entrega pronta que pode entrar numa corrida da TaOn com outras. */
+export interface RideCandidateProjection {
+  ref: string;
+  change_out_suggested_q: number;
+  needs_machine: boolean;
+  label: string;
+  place: string;
+  stage: string;
+  change_label: string;
+}
+
+/** Ouvidoria aberta: o cliente pediu para falar com o responsável. */
+export interface ContactRequestProjection {
+  rating: number;
+  comment: string;
+  requested_at_display: string;
+  origin: string;
 }
 
 /** Quem é este cliente, para o operador decidir como tratá-lo. */
@@ -421,20 +488,114 @@ export interface CourierReminderProjection {
   since_iso: string;
   since_basis: string;
   short_ref: string;
+  stage: string;
 }
 
-/** A single order card in the operator queue. */
+/** Um produto que a casa pode oferecer no lugar do item em risco. */
+export interface OrderPromiseAlternativeProjection {
+  sku: string;
+  name: string;
+  available_display: string;
+}
+
+/** Um produto do pedido cuja promessa pede atenção, ou espera o lote. */
+export interface OrderPromiseItemProjection {
+  sku: string;
+  name: string;
+  reservation: string;
+  cause: string;
+  at_risk: boolean;
+  qty: string;
+  missing_qty: string;
+  label: string;
+  detail: string;
+  batch_date: string;
+  batch_status: string;
+  batch_ready_at_iso: string;
+  work_order_refs: string[];
+  next_step: string;
+  alternatives: OrderPromiseAlternativeProjection[];
+}
+
+/** A promessa de um pedido que pede atenção ou espera: o selo e os itens. */
+export interface OrderPromiseProjection {
+  state: string;
+  label: string;
+  items: OrderPromiseItemProjection[];
+  blocks_start: boolean;
+  since_iso: string;
+  actions: Action[];
+  next_step: string;
+  recommended_action: string;
+}
+
+/** Dá para chamar o cliente no WhatsApp? ``reason`` diz por que não. */
+export interface OrderPromiseContactProjection {
+  enabled: boolean;
+  reason: string;
+}
+
+/** O aviso aprovado que abre a conversa com o cliente (WP-G07). */
+export interface OrderPromiseNoticeProjection {
+  enabled: boolean;
+  kind: string;
+  label: string;
+  note: string;
+  reason: string;
+  line_ids: string[];
+}
+
+/** Uma linha da lista FINAL de itens, no formato de ``POST orders/<ref>/edit/``. */
+export interface OrderPromiseEditLineProjection {
+  line_id: string;
+  sku: string;
+  qty: string;
+}
+
+/** Como a escolha se conclui, depois que o cliente responde. */
+export interface OrderPromiseConcludeProjection {
+  kind: string;
+  label: string;
+  href: string;
+  items: OrderPromiseEditLineProjection[];
+  payload_schema: Record<string, unknown>;
+}
+
+/** Uma escolha de "O que fazer" no diálogo "Resolver". */
+export interface OrderPromiseChoiceProjection {
+  key: string;
+  kind: string;
+  label: string;
+  detail: string;
+  enabled: boolean;
+  reason: string;
+  message: string;
+  whatsapp_url: string;
+  conclude: OrderPromiseConcludeProjection;
+  requires_manager_approval: boolean;
+}
+
+/** O diálogo "Resolver" de um pedido com a promessa em risco. */
+export interface OrderPromiseResolutionProjection {
+  order_ref: string;
+  code: string;
+  customer_name: string;
+  facts: string[];
+  contact: OrderPromiseContactProjection;
+  notice: OrderPromiseNoticeProjection;
+  choices: OrderPromiseChoiceProjection[];
+}
+
+/** O cartão de um pedido no quadro do Gestor (Painel, Fila, Tabela, Encomendas). */
 export interface OrderCardProjection {
   ref: string;
   status: string;
   actions: Action[];
-  revisions: Record<string, string>;
   status_label: string;
-  status_color: string;
   channel_ref: string;
+  channel_name: string;
   channel_icon: string;
   customer_name: string;
-  created_at_display: string;
   created_at_iso: string;
   server_now_iso: string;
   elapsed_seconds: number;
@@ -442,15 +603,12 @@ export interface OrderCardProjection {
   items_summary: string;
   items_count: number;
   total_display: string;
-  fulfillment_icon: string;
   fulfillment_label: string;
   fulfillment_type: string;
   delivery_address: string;
-  delivery_instructions: string;
   can_confirm: boolean;
   can_advance: boolean;
   next_status: string;
-  next_action_label: string;
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
@@ -460,10 +618,7 @@ export interface OrderCardProjection {
   advance_block_label: string;
   advance_block_reason: string;
   can_settle_delivery_cash: boolean;
-  fiscal_status_label: string;
   fiscal_status: string;
-  fiscal_state: string;
-  has_kitchen_note: boolean;
   has_customer_note: boolean;
   is_gift: boolean;
   gift_has_recipient: boolean;
@@ -473,19 +628,21 @@ export interface OrderCardProjection {
   confirmation_action: string;
   card_authorization_expires_iso: string;
   channel_display_id: string;
-  courier_status: string;
   courier_status_label: string;
   is_preorder: boolean;
   commitment_date: string;
   commitment_date_display: string;
-  change_for_q: number;
+  schedule_label: string;
+  schedule_state: string;
+  kitchen_release_at_iso: string;
+  kitchen_release_label: string;
+  kitchen_released_at_iso: string;
+  clock_since_iso: string;
   change_out_suggested_q: number;
   change_out_q: number;
   change_back_pending: boolean;
-  change_back_q: number;
   change_label: string;
   equipment_options: EquipmentOptionProjection[];
-  equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
   dispatch_needs_machine: boolean;
@@ -493,10 +650,10 @@ export interface OrderCardProjection {
   courier_return_orders: string[];
   courier_return_lines: string[];
   waitlist_state: string;
-  waitlist_deadline_iso: string;
   waitlist_label: string;
   ifood_cancellation_notice: string;
-  ifood_pickup_code: string;
+  ifood_pickup_code_label: string;
+  ifood_logistics_label: string;
   ifood_schedule_label: string;
   ifood_remote_ahead_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
@@ -513,7 +670,6 @@ export interface OrderCardProjection {
   volumes: number;
   volumes_checked: number;
   volumes_to_check: number;
-  volume_check_label: string;
   ready_at_iso: string;
   dispatched_at_iso: string;
   attention: string;
@@ -522,6 +678,11 @@ export interface OrderCardProjection {
   goal_label: string;
   ready_eta_iso: string;
   courier_reminder: CourierReminderProjection | null;
+  payment_lapsed: boolean;
+  awaits_online_payment: boolean;
+  customer_whatsapp_url: string;
+  advance_block_waits: boolean;
+  promise: OrderPromiseProjection | null;
 }
 
 /** Uma encomenda na lista, na grade ou no resultado da busca. */
@@ -563,6 +724,8 @@ export interface PreorderHandOverProjection {
   block_reason: string;
   digital_charge_notice: string;
   kitchen_notice: string;
+  counter_pix: Record<string, unknown> | null;
+  pix_block_reason: string;
 }
 
 /** Cancelar pelo PDV: a mesma régua, política e permissão do Gestor. */
@@ -602,6 +765,36 @@ export interface CounterOrderProjection {
   edit: PreorderEditProjection;
 }
 
+/** O gesto que resolve uma pendência. */
+export interface OrderPendingActionProjection {
+  ref: string;
+  label: string;
+  enabled: boolean;
+  reason: string;
+  href: string;
+  priority: string;
+}
+
+/** Uma linha de "O que falta neste pedido": o fato, o motivo e o que fazer. */
+export interface OrderPendingProjection {
+  key: string;
+  tone: string;
+  label: string;
+  reason: string;
+  actions: OrderPendingActionProjection[];
+  next_step: string;
+  failure: string;
+}
+
+/** O destino do dinheiro de um pedido cancelado, como o Gestor o lê. */
+export interface CancelledMoneyProjection {
+  state: string;
+  label: string;
+  amount_display: string;
+  customer_line: string;
+  settled: boolean;
+}
+
 /** O detalhe de um pedido — o MESMO contrato para o Gestor e o PDV (``context``). */
 export interface OperatorOrderProjection {
   ref: string;
@@ -609,7 +802,6 @@ export interface OperatorOrderProjection {
   actions: Action[];
   revisions: Record<string, string>;
   status_label: string;
-  status_color: string;
   customer_name: string;
   customer_phone: string;
   customer_phone_uri: string;
@@ -627,6 +819,7 @@ export interface OperatorOrderProjection {
   delivery_instructions: string;
   total_display: string;
   items: OrderItemProjection[];
+  discount_lines: OrderDiscountLineProjection[];
   timeline: TimelineEventProjection[];
   kitchen_note: string;
   customer_note: string;
@@ -639,7 +832,6 @@ export interface OperatorOrderProjection {
   can_cancel: boolean;
   cancel_requires_approval: boolean;
   cancel_block_label: string;
-  next_action_label: string;
   advance_block_label: string;
   advance_block_reason: string;
   can_settle_delivery_cash: boolean;
@@ -653,19 +845,15 @@ export interface OperatorOrderProjection {
   gift_recipient_phone: string;
   gift_message: string;
   gift_hide_values: boolean;
-  cancellation_presets: CancellationPresetGroupProjection[];
   cancel_reasons: CancelReasonProjection[];
   kitchen_note_tags: string[];
   customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
-  change_for_q: number;
   change_out_suggested_q: number;
   change_out_q: number;
   change_back_pending: boolean;
-  change_back_q: number;
   change_label: string;
   equipment_options: EquipmentOptionProjection[];
-  equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
   dispatch_needs_machine: boolean;
@@ -677,9 +865,12 @@ export interface OperatorOrderProjection {
   undo: UndoProjection | null;
   notification_receipts: NotificationReceiptProjection[];
   managers: Record<string, string>[];
+  contact_request: ContactRequestProjection | null;
   ifood_cancellation_notice: string;
   ifood_payment_summary: string[];
   ifood_operation_summary: string[];
+  ifood_logistics_label: string;
+  kitchen_release_label: string;
   ifood_negotiations: IFoodNegotiationProjection[];
   ifood_accept_failed: boolean;
   ifood_accept_notice: string;
@@ -694,14 +885,20 @@ export interface OperatorOrderProjection {
   confirmation_action: string;
   card_authorization_expires_iso: string;
   store_location: Record<string, number> | null;
+  cancel_money_effect: string;
+  cancel_waits_for_gateway: boolean;
   transferred_from_label: string;
-}
-
-/** Top-level read model for the operator order queue. */
-export interface OrderQueueProjection {
-  orders: OrderCardProjection[];
-  counts: Record<string, number>;
-  active_filter: string;
+  payment_lapsed: boolean;
+  advance_block_waits: boolean;
+  pending: OrderPendingProjection[];
+  cancelled_money: CancelledMoneyProjection | null;
+  danfe_printable: boolean;
+  danfe_printed: boolean;
+  danfe_state: string;
+  danfe_problem: string;
+  retention_receipt_printable: boolean;
+  retention_receipt_printed: boolean;
+  promise: OrderPromiseProjection | null;
 }
 
 /** Uma linha de "O sistema fez": o que mudou sozinho e por quê. */
@@ -764,7 +961,11 @@ export interface TwoZoneQueueProjection {
   preorders_count: number;
   equipment_out: EquipmentOutProjection[];
   equipment_available: EquipmentOptionProjection[];
+  ride_candidates: RideCandidateProjection[];
+  ride_action: Action | null;
+  ride_suggestions: number;
   ifood_negotiation_orders: OrderCardProjection[];
+  cancel_reasons: CancelReasonProjection[];
   awareness: QueueAwarenessProjection | null;
 }
 
@@ -781,10 +982,11 @@ export interface CustomerFormOptionProjection {
   label: string;
 }
 
-/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]') */
+/** CustomerFormOptionsProjection(customer_types: 'tuple[CustomerFormOptionProjection, ...]', price_tiers: 'tuple[CustomerFormOptionProjection, ...]', default_price_tier_refs: 'tuple[str, ...]' = ()) */
 export interface CustomerFormOptionsProjection {
   customer_types: CustomerFormOptionProjection[];
   price_tiers: CustomerFormOptionProjection[];
+  default_price_tier_refs: string[];
 }
 
 /** Um grupo comercial do cliente. O cliente tem MUITOS, e todos precificam. */
@@ -794,7 +996,7 @@ export interface CustomerPriceTierProjection {
   is_primary: boolean;
 }
 
-/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str') */
+/** CustomerRowProjection(ref: 'str', name: 'str', phone_display: 'str', email: 'str', document_display: 'str', source_label: 'str', is_ifood: 'bool', orders_label: 'str', last_order_display: 'str', duplicate_hint: 'str', groups: 'tuple[CustomerPriceTierProjection, ...]') */
 export interface CustomerRowProjection {
   ref: string;
   name: string;
@@ -806,12 +1008,14 @@ export interface CustomerRowProjection {
   orders_label: string;
   last_order_display: string;
   duplicate_hint: string;
+  groups: CustomerPriceTierProjection[];
 }
 
-/** CustomerListProjection(query: 'str', filter: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
+/** CustomerListProjection(query: 'str', filter: 'str', group: 'str', filters: 'tuple[CustomerFilterOption, ...]', items: 'tuple[CustomerRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str', sort: 'str', form: 'CustomerFormOptionsProjection') */
 export interface CustomerListProjection {
   query: string;
   filter: string;
+  group: string;
   filters: CustomerFilterOption[];
   items: CustomerRowProjection[];
   page: number;
@@ -1012,12 +1216,13 @@ export interface MergePreviewProjection {
   actions: Action[];
 }
 
-/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', loyalty_merged: 'bool', can_undo: 'bool', undo_label: 'str') */
+/** MergeAuditRowProjection(id: 'str', source_ref: 'str', target_ref: 'str', target_name: 'str', source_name: 'str', actor: 'str', merged_at_display: 'str', status: 'str', status_label: 'str', moved_label: 'str', loyalty_merged: 'bool', can_undo: 'bool', undo_label: 'str') */
 export interface MergeAuditRowProjection {
   id: string;
   source_ref: string;
   target_ref: string;
   target_name: string;
+  source_name: string;
   actor: string;
   merged_at_display: string;
   status: string;
@@ -1048,7 +1253,7 @@ export interface HistoryFacet {
   options: HistoryFacetOption[];
 }
 
-/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str') */
+/** OrderHistoryRowProjection(ref: 'str', status: 'str', status_label: 'str', status_tone: 'str', channel_ref: 'str', channel_label: 'str', customer_label: 'str', fulfillment: 'str', fulfillment_label: 'str', payment_method: 'str', payment_label: 'str', total_q: 'int', total_display: 'str', closed_at: 'str', closed_display: 'str', closed_label: 'str', money_outcome: 'str', money_outcome_pending: 'bool') */
 export interface OrderHistoryRowProjection {
   ref: string;
   status: string;
@@ -1065,12 +1270,17 @@ export interface OrderHistoryRowProjection {
   total_display: string;
   closed_at: string;
   closed_display: string;
+  closed_label: string;
+  money_outcome: string;
+  money_outcome_pending: boolean;
 }
 
-/** OrderHistoryProjection(date_from: 'str', date_to: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
+/** OrderHistoryProjection(date_from: 'str', date_to: 'str', today: 'str', period_label: 'str', query: 'str', sku: 'str', sku_name: 'str', facets: 'tuple[HistoryFacet, ...]', items: 'tuple[OrderHistoryRowProjection, ...]', page: 'int', page_size: 'int', total: 'int', has_next: 'bool', total_label: 'str') */
 export interface OrderHistoryProjection {
   date_from: string;
   date_to: string;
+  today: string;
+  period_label: string;
   query: string;
   sku: string;
   sku_name: string;
@@ -1081,4 +1291,178 @@ export interface OrderHistoryProjection {
   total: number;
   has_next: boolean;
   total_label: string;
+}
+
+/** DeliveryPointProjection(latitude: 'float', longitude: 'float') */
+export interface DeliveryPointProjection {
+  latitude: number;
+  longitude: number;
+}
+
+/** Um pedido de entrega: na lista Aguardando ou como parada de uma corrida. */
+export interface DeliveryStopProjection {
+  ref: string;
+  code: string;
+  customer: string;
+  place: string;
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  stage: string;
+  volumes: number;
+  done: boolean;
+  change_out_suggested_q: number;
+  needs_machine: boolean;
+  change_label: string;
+  group_refusal: string;
+  error: string;
+  dispatch_action: Action | null;
+  dispatch_again_action: Action | null;
+  charge_outdated: Record<string, unknown> | null;
+  failure_key: string;
+  tracking_url: string;
+  fiscal_status: string;
+  danfe_state: string;
+  danfe_problem: string;
+}
+
+/** DeliveryDriverProjection(name: 'str', phone: 'str', vehicle: 'str', photo_url: 'str' = '') */
+export interface DeliveryDriverProjection {
+  name: string;
+  phone: string;
+  vehicle: string;
+  photo_url: string;
+}
+
+/** Onde o entregador estava na última posição recebida. */
+export interface DeliveryCourierPositionProjection {
+  latitude: number;
+  longitude: number;
+  at: string;
+  source_label: string;
+}
+
+/** O "Entregue" de UMA parada da rota, pelo balcão. */
+export interface HouseStopActionProjection {
+  ref: string;
+  code: string;
+  action: Action;
+}
+
+/** O que a corrida da casa mostra e os gestos dela no Gestor. */
+export interface DeliveryHouseRideProjection {
+  courier_ref: string;
+  courier_name: string;
+  moment: string;
+  hint: string;
+  delivered: number;
+  total: number;
+  link_claimed: boolean;
+  depart_action: Action | null;
+  deliver_actions: HouseStopActionProjection[];
+  resend_action: Action | null;
+  release_action: Action | null;
+}
+
+/** Uma corrida chamada, viva: do "procurando" à volta do entregador. */
+export interface DeliveryRideProjection {
+  key: string;
+  number: number;
+  letter: string;
+  state: string;
+  status_label: string;
+  stops: DeliveryStopProjection[];
+  driver: DeliveryDriverProjection | null;
+  service_name: string;
+  position: DeliveryCourierPositionProjection | null;
+  called_at: string;
+  called_by: string;
+  pickup_eta_at: string;
+  near_pickup_at: string;
+  arrived_pickup_at: string;
+  waited_pickup_at: string;
+  picked_up_at: string;
+  delivery_eta_at: string;
+  tracking_url: string;
+  cost_display: string;
+  cost_label: string;
+  fee_display: string;
+  balance_display: string;
+  bags: number;
+  undeclared: string[];
+  lead_ref: string;
+  back_action: Action | null;
+  back_lines: string[];
+  cancel_action: Action | null;
+  reopened_at: string;
+  reopened_driver: string;
+  reopened_reason: string;
+  custody_line: string;
+  open_too_long: boolean;
+  close_here_action: Action | null;
+  cancel_state: string;
+  cancel_message: string;
+  sync_since: string;
+  house: DeliveryHouseRideProjection | null;
+}
+
+/** Uma corrida que a casa sugere juntar (``ride_plan``), no topo de Aguardando. */
+export interface RideSuggestionProjection {
+  key: string;
+  refs: string[];
+  codes: string[];
+  places: string;
+  quoted: boolean;
+  suggested: boolean;
+  late_code: string;
+  late_minutes: number;
+  together_q: number | null;
+  minutes: number | null;
+  km: number | null;
+  with_return: boolean;
+  separate_q: number | null;
+  saving_q: number | null;
+}
+
+/** DeliveryServiceOptionProjection(ref: 'str', name: 'str', kind: 'str', is_default: 'bool') */
+export interface DeliveryServiceOptionProjection {
+  ref: string;
+  name: string;
+  kind: string;
+  is_default: boolean;
+}
+
+/** O plano das corridas (``ride_plan``): o MESMO do sheet de chamar e do Painel. */
+export interface RidePlanProjection {
+  suggestions: RideSuggestionProjection[];
+  service: string;
+  service_reason: string;
+  service_options: DeliveryServiceOptionProjection[];
+}
+
+/** A corrida que ninguém aceitou ou que foi cancelada, no topo de Aguardando. */
+export interface FailedRideProjection {
+  key: string;
+  message: string;
+  refs: string[];
+  codes: string[];
+  places: string;
+  number: number | null;
+}
+
+/** DeliveriesProjection(origin: 'DeliveryPointProjection | None', waiting: 'tuple[DeliveryStopProjection, ...]', rides: 'tuple[DeliveryRideProjection, ...]', max_stops: 'int', machines: 'tuple[dict, ...]' = <factory>, courier_on: 'bool' = True, house_on: 'bool' = False, maps_key: 'str' = '', group_action: 'Action | None' = None, free_numbers: 'tuple[int, ...]' = (), next_number: 'int | None' = None, ride_plan: 'RidePlanProjection | None' = None, failed_rides: 'tuple[FailedRideProjection, ...]' = ()) */
+export interface DeliveriesProjection {
+  origin: DeliveryPointProjection | null;
+  waiting: DeliveryStopProjection[];
+  rides: DeliveryRideProjection[];
+  max_stops: number;
+  machines: Record<string, unknown>[];
+  courier_on: boolean;
+  house_on: boolean;
+  maps_key: string;
+  group_action: Action | null;
+  free_numbers: number[];
+  next_number: number | null;
+  ride_plan: RidePlanProjection | null;
+  failed_rides: FailedRideProjection[];
 }

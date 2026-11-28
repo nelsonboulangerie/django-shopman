@@ -17,11 +17,10 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ref: "WEB-20260625-0007",
     status: "accepted",
     status_label: "Confirmado",
-    status_color: "",
     channel_ref: "web",
+    channel_name: "Loja online",
     channel_icon: "language",
     customer_name: "Ana",
-    created_at_display: "08:00",
     created_at_iso: "",
     server_now_iso: "",
     elapsed_seconds: 30,
@@ -29,28 +28,22 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     items_summary: "2× Pão · 1× Café",
     items_count: 3,
     total_display: "R$ 15,00",
-    fulfillment_icon: "storefront",
     fulfillment_label: "Retirada",
     fulfillment_type: "pickup",
     delivery_address: "",
-    delivery_instructions: "",
     can_confirm: false,
     can_advance: true,
     next_status: "preparing",
-    next_action_label: "Iniciar preparo",
     payment_method: "cash",
     payment_method_label: "Dinheiro",
     ifood_cancellation_notice: "",
-    ifood_pickup_code: "",
     ifood_schedule_label: "",
     ifood_remote_ahead_label: "",
     ifood_negotiations: [],
     payment_status: "pending",
     payment_pending: true,
     can_settle_delivery_cash: false,
-    fiscal_status_label: "",
     fiscal_status: "",
-    has_kitchen_note: false,
     has_customer_note: false,
     is_gift: false,
     gift_has_recipient: false,
@@ -58,10 +51,9 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     awaiting_work_orders: [],
     confirmation_deadline_iso: "",
     confirmation_action: "confirm",
-    revisions: {},
     actions: fixtureActions({
       can_advance: true,
-      next_action_label: "Iniciar preparo",
+      advance_label: "Iniciar preparo",
       ...over,
     }),
     ...over,
@@ -102,6 +94,63 @@ describe("OrderCard — para onde vai", () => {
 
     expect(w.text()).toContain("Ana");
     expect(w.find("[data-card-address]").exists()).toBe(false);
+  });
+});
+
+describe("OrderCard — a encomenda se anuncia (WP-G01)", () => {
+  const amanha = {
+    status: "new",
+    status_label: "Novo",
+    can_confirm: true,
+    is_preorder: true,
+    commitment_date_display: "amanhã",
+    schedule_label: "Amanhã · A partir das 15h",
+    schedule_state: "future" as const,
+  };
+
+  it("o cartão enxuto do Painel diz Encomenda, o dia e a janela", () => {
+    const w = mountCard({ card: card(amanha), compact: true });
+    const promise = w.get("[data-card-promise]");
+    expect(promise.attributes("data-card-promise")).toBe("future");
+    expect(promise.text()).toBe("Encomenda · Amanhã · A partir das 15h");
+  });
+
+  it("o cartão cheio diz a mesma frase", () => {
+    const w = mountCard({ card: card(amanha) });
+    expect(w.get("[data-card-promise]").text()).toBe("Encomenda · Amanhã · A partir das 15h");
+  });
+
+  it("pedido de hoje com hora combinada mostra a hora no cartão enxuto", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Hoje · 14h às 14h30", schedule_state: "today" }),
+      compact: true,
+    });
+    expect(w.get("[data-card-promise]").text()).toBe("Hoje · 14h às 14h30");
+  });
+
+  it("encomenda vencida se diz no passado", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Era para ontem · A partir das 15h", schedule_state: "overdue" }),
+      compact: true,
+    });
+    expect(w.get("[data-card-promise]").attributes("data-card-promise")).toBe("overdue");
+    expect(w.get("[data-card-promise]").text()).toBe("Era para ontem · A partir das 15h");
+  });
+
+  it("pedido de agora não ganha selo de combinado", () => {
+    const w = mountCard({ card: card({ schedule_label: "", schedule_state: "" }), compact: true });
+    expect(w.find("[data-card-promise]").exists()).toBe(false);
+  });
+
+  it("o cartão enxuto não corta Retirada/Entrega: o corte cai no nome (P2-04)", () => {
+    const w = mountCard({
+      card: card({ customer_name: "Maria Aparecida dos Santos Albuquerque", fulfillment_label: "Entrega" }),
+      compact: true,
+    });
+    const fulfillment = w.get("[data-card-fulfillment]");
+    expect(fulfillment.text()).toBe("· Entrega");
+    expect(fulfillment.classes()).toContain("shrink-0");
+    expect(fulfillment.classes()).not.toContain("truncate");
   });
 });
 
@@ -258,8 +307,8 @@ describe("OrderCard iFood", () => {
     const w = mountCard({
       card: card({
         channel_ref: "ifood",
+        channel_name: "iFood",
         can_advance: false,
-        next_action_label: "",
         advance_block_label: "Aguardando iFood",
         advance_block_reason: notice,
         ifood_cancellation_notice: notice,
@@ -271,10 +320,10 @@ describe("OrderCard iFood", () => {
     // para baixo da dobra sem ajudar a decidir nada.
     expect(w.find("[data-ifood-payment]").exists()).toBe(false);
     expect(w.text()).toContain("Confirmado");
-    const blocked = w
-      .findAll("button")
-      .find((button) => button.text().includes("Aguardando iFood"));
-    expect(blocked?.attributes("disabled")).toBeDefined();
+    // A pílula do bloqueio diz o fato (WP-G06), e o botão travado que só repetiria o
+    // mesmo nome não é desenhado: um fato, um lugar.
+    expect(w.find("[data-card-primary]").exists()).toBe(false);
+    expect(w.get('[data-card-notice="block"]').text()).toBe("Aguardando iFood");
     expect(
       w
         .findAll("button")
@@ -291,6 +340,7 @@ describe("pedido de teste da homologação", () => {
     const w = mountCard({
       card: card({
         channel_ref: "ifood",
+        channel_name: "iFood",
         test_order_label: label,
         test_order_notice: notice,
       }),
@@ -305,7 +355,7 @@ describe("pedido de teste da homologação", () => {
   });
 
   it("não marca nada num pedido de verdade", () => {
-    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    const w = mountCard({ card: card({ channel_ref: "ifood", channel_name: "iFood" }) });
     expect(w.find('[data-card-notice="test-order"]').exists()).toBe(false);
   });
 });
@@ -331,6 +381,7 @@ describe("iFood à frente do estado local", () => {
     const w = mountCard({
       card: card({
         channel_ref: "ifood",
+        channel_name: "iFood",
         ifood_remote_ahead_label: "Concluído no iFood · Finalize aqui",
       }),
     });
@@ -340,7 +391,7 @@ describe("iFood à frente do estado local", () => {
     );
   });
   it("não mostra nada no caso normal", () => {
-    const w = mountCard({ card: card({ channel_ref: "ifood" }) });
+    const w = mountCard({ card: card({ channel_ref: "ifood", channel_name: "iFood" }) });
     expect(w.find('[data-card-notice="ifood-ahead"]').exists()).toBe(false);
   });
 });
@@ -426,14 +477,20 @@ describe("OrderCard: a NFC-e que não autorizou", () => {
   it("aparece no card e leva ao pedido, onde está Reprocessar NFC-e", async () => {
     const w = mountCard({
       card: card({
+        ref: "WEB-261105-Z68",
         fiscal_status: "failed",
-        fiscal_status_label: "NFC-e não autorizada",
       }),
     });
     await openNotice(w, "fiscal");
     const link = w.get("[data-fiscal-failed]");
     expect(link.text()).toContain("NFC-e não autorizada");
-    expect(link.text()).toContain("reprocessar");
+    expect(link.text()).toContain("O pedido tem o Reprocessar NFC-e.");
+    // O botão só abre o pedido, e diz que abre (laudo P2-13): "Abrir e reprocessar"
+    // prometia o fim do caminho antes do fim.
+    const open = w.get("[data-fiscal-failed-open]");
+    expect(open.text()).toBe("Abrir o pedido");
+    expect(open.attributes("to")).toBe("/WEB-261105-Z68");
+    expect(link.text()).not.toContain("Abrir e reprocessar");
   });
   it("nota em dia não ocupa o card", () => {
     expect(
@@ -452,10 +509,65 @@ describe("OrderCard: por que o botão está travado", () => {
           "Encomenda para uma data futura. O preparo abre no dia combinado.",
       }),
     });
+    // Sem nome de bloqueio do servidor, a pílula pergunta.
+    expect(w.get('[data-card-notice="block"]').text()).toBe("Por que espera");
     await openNotice(w, "block");
-    expect(w.get("[data-advance-block]").text()).toBe(
+    expect(w.get("[data-advance-block]").text()).toContain(
       "Encomenda para uma data futura. O preparo abre no dia combinado.",
     );
+  });
+  // Laudo do Gestor, P2-16: a pílula "Por que espera" guardava o fato atrás do toque.
+  it("a pílula diz o fato do bloqueio, e o porquê continua a um toque", async () => {
+    const w = mountCard({
+      card: card({
+        advance_block_label: "Cobrança recusada",
+        advance_block_reason: "O cartão do cliente recusou a cobrança no aceite.",
+      }),
+    });
+    const pill = w.get('[data-card-notice="block"]');
+    expect(pill.text()).toBe("Cobrança recusada");
+    expect(w.text()).not.toContain("Por que espera");
+    await pill.trigger("click");
+    expect(w.get("[data-advance-block]").text()).toContain(
+      "O cartão do cliente recusou a cobrança no aceite.",
+    );
+  });
+  // Beta 05/11 (GES-09): o balão dizia só "gerado às 05:51 · expirou às 05:57",
+  // sem o nome do bloqueio. Agora o nome vem primeiro, e o porquê embaixo.
+  it("o nome do bloqueio vem antes dos horários", async () => {
+    const w = mountCard({
+      card: card({
+        advance_block_label: "Pix expirado",
+        advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+      }),
+    });
+    await openNotice(w, "block");
+    const text = w.get("[data-advance-block]").text();
+    expect(text.indexOf("Pix expirado")).toBe(0);
+    expect(text).toContain("gerado às 05:51 · expirou às 05:57");
+  });
+  // Beta 05/11 (GES-05, GES-16): Pix vencido não destrava sozinho; o cartão leva
+  // ao cancelar com o motivo já marcado, em vez de deixar o botão morto.
+  it("Pix vencido traz o Cancelar pedido pronto", async () => {
+    const lapsed = mountCard({
+      card: card({
+        ref: "WEB-261105-Z68",
+        advance_block_label: "Pix expirado",
+        advance_block_reason: "gerado às 05:51 · expirou às 05:57",
+        payment_lapsed: true,
+      }),
+    });
+    await openNotice(lapsed, "block");
+    const cancel = lapsed.get("[data-cancel-unpaid]");
+    expect(cancel.text()).toContain("Cancelar pedido");
+    expect(cancel.attributes("href") ?? cancel.attributes("to")).toBe(
+      "/WEB-261105-Z68#cancel-unpaid",
+    );
+    const waiting = mountCard({
+      card: card({ advance_block_label: "Aguardando Pix…", advance_block_reason: "expira às 22:25" }),
+    });
+    await openNotice(waiting, "block");
+    expect(waiting.find("[data-cancel-unpaid]").exists()).toBe(false);
   });
   it("sem bloqueio, nada", () => {
     expect(
@@ -489,10 +601,12 @@ describe("OrderCard: quem embalou declara os volumes", () => {
     await w.get("[data-card-menu]").trigger("click");
     await w.get("[data-card-volumes]").trigger("click");
     expect(w.find("[data-card-volumes-editor]").exists()).toBe(true);
+    // Sem declaração, parte de 1: o cartão conta 3 UNIDADES, e 3 croissants
+    // numa sacola não são 3 volumes (volume nunca se deduz dos itens).
     expect(w.get("[data-card-volumes-draft] input").attributes("value")).toBe(
-      "3",
+      "1",
     );
-    await w.get("[aria-label='Um volume a menos']").trigger("click");
+    await w.get("[aria-label='Um volume a mais']").trigger("click");
     await w.get("[data-card-volumes-save]").trigger("click");
     expect(w.emitted("volumes")?.[0]).toEqual([2]);
   });
@@ -511,6 +625,7 @@ describe("o aceite que não chegou ao iFood (P1-3)", () => {
   const failed = (over: Partial<OrderCardProjection> = {}) =>
     card({
       channel_ref: "ifood",
+      channel_name: "iFood",
       status: "preparing",
       status_label: "Em preparo",
       ifood_accept_failed: true,
@@ -547,5 +662,16 @@ describe("o aceite que não chegou ao iFood (P1-3)", () => {
   it("não aparece quando o iFood recebeu o aceite", () => {
     const w = mountCard({ card: failed({ ifood_accept_failed: false }) });
     expect(w.find('[data-card-notice="ifood-accept"]').exists()).toBe(false);
+  });
+});
+
+describe("OrderCard — o selo do combinado não corta (WP-G01)", () => {
+  it("o texto quebra a linha em vez de cortar o dia e a hora", () => {
+    const w = mountCard({
+      card: card({ schedule_label: "Qua, 18/11 · A partir das 15h", schedule_state: "future" }),
+      compact: true,
+    });
+    const text = w.get("[data-card-promise] span.whitespace-normal");
+    expect(text.text()).toBe("Encomenda · Qua, 18/11 · A partir das 15h");
   });
 });

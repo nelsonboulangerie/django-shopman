@@ -1,0 +1,12 @@
+{
+  "id": "DEV-2026-094",
+  "tipo": "solicitacao",
+  "origem": "chat",
+  "compromisso": "Navegando tanto pelo Storefront como pelos Apps do Backstage, tive a forte impressão de que ao clicar em vários 'botões' não tem resposta, então o usuário fica clicando várias vezes em tudo! Já não tínhamos implementado o mecanismo de mostrar que está 'carregando' ou algo assim?",
+  "dono": "Engenharia",
+  "criado": "2026-11-25",
+  "revisar_em": "2026-12-02",
+  "gatilho": "-",
+  "estado": "ABERTO",
+  "prova": "-"
+}

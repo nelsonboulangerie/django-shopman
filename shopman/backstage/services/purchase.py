@@ -24,6 +24,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date
 from django.utils.module_loading import import_string
 from django.utils.text import slugify
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
@@ -106,6 +107,10 @@ class ResolvedReceiptLine:
     invoice_total_q: int = 0
     invoice_commercial_unit: str = ""
     invoice_conversion_factor: Decimal | None = None
+    #: O que o operador decidiu quando o preço desta entrada difere do custo
+    #: preferencial do insumo neste fornecedor: ``"update"`` troca o custo,
+    #: ``"keep"`` mantém. Vazio quando não houve diferença a decidir.
+    preferred_cost: str = ""
 
     @property
     def sku(self) -> str:
@@ -215,6 +220,7 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
         _require_supplier_is_issuer(supplier=supplier, invoice_key=invoice_key)
 
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
+    _require_preferred_cost_decisions(lines, supplier=supplier)
     attestation = _receipt_attestation(lines, payload, mode=mode)
     note = str(payload.get("note") or "").strip()
     source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
@@ -297,7 +303,7 @@ def _format_receipt_moment(raw: str) -> str:
         momento = timezone.localtime(datetime.fromisoformat(raw))
     except ValueError:
         return ""
-    return momento.strftime("%d/%m às %H:%M")
+    return format_local(momento, "%d/%m às {clock}")
 
 
 def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user, attestation=None) -> None:
@@ -347,7 +353,19 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
                 **_converted_via(line),
                 **_attested_by(line, attestation),
             )
-            if line.total_cost_q > 0:
+            # O custo preferencial deste fornecedor só muda por escolha: "Manter"
+            # deixa como estava (o preço pago fica no movimento de estoque) e
+            # "Atualizar" grava o valor que a pergunta mostrou, na embalagem do
+            # próprio custo preferencial. Receber em outra embalagem não troca a
+            # unidade em que o pedido de compra é feito.
+            preferred = _supplier_preferred_cost(line, supplier=supplier)
+            if preferred is not None:
+                cost, incoming_q = preferred
+                if line.preferred_cost == "update" and incoming_q != cost.cost_q:
+                    cost.cost_q = incoming_q
+                if line.preferred_cost != "keep":
+                    cost.save()
+            elif line.total_cost_q > 0:
                 _upsert_supplier_cost(
                     material=line.material,
                     supplier=supplier,
@@ -360,7 +378,7 @@ def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, user
         # O que chegou encerra o pedido que esperava por ele: sem isto o card ficava
         # "aguardando entrega" para sempre e o insumo nunca mais podia ser pedido.
         for material in {line.material.pk: line.material for line in lines}.values():
-            _close_purchase_request(material)
+            _close_purchase_request(material, internal="received")
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
             _suggest_catalog_from_invoice(lines=lines, invoice_key=invoice_key)
@@ -651,6 +669,18 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     if not isinstance(raw_lines, list):
         raise PurchaseError("Lote de custos inválido.", code="cost_batch_invalid", field="costs")
 
+    materials_by_sku = Material.objects.in_bulk(
+        [str(line.get("materialSku") or line.get("material_sku") or "").strip() for line in raw_lines],
+        field_name="sku",
+    )
+    suppliers_by_ref = Supplier.objects.in_bulk(
+        [str(line.get("supplierRef") or line.get("supplier_ref") or "").strip() or default_supplier_ref for line in raw_lines],
+        field_name="ref",
+    )
+    conversion_ids = [str(line.get("conversionId") or line.get("conversion_id") or "") for line in raw_lines]
+    conversions_by_id = apps.get_model("buyman", "MaterialConversion").objects.in_bulk(
+        [int(value) for value in conversion_ids if value.isdigit()]
+    )
     resolved: list[tuple[Any, Any, Any, int]] = []
     line_errors: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
@@ -665,7 +695,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
             line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
 
-        material = Material.objects.filter(sku=material_sku).first()
+        material = materials_by_sku.get(material_sku)
         if not material:
             fail("Insumo não encontrado.", field="materialSku")
             continue
@@ -681,7 +711,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier_ref = (
             str(entry.get("supplierRef") or entry.get("supplier_ref") or "").strip() or default_supplier_ref
         )
-        supplier = Supplier.objects.filter(ref=supplier_ref).first()
+        supplier = suppliers_by_ref.get(supplier_ref)
         if not supplier:
             fail("Fornecedor não encontrado.", field="supplierRef")
             continue
@@ -709,6 +739,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
                 material=material,
                 supplier=supplier,
                 field="conversionId",
+                conversions=conversions_by_id,
             )
         except PurchaseError as exc:
             fail(str(exc), field=exc.field or "conversionId")
@@ -777,6 +808,10 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     if not isinstance(raw_lines, list):
         raise PurchaseError("Lote de mínimos inválido.", code="min_stock_batch_invalid", field="minimums")
 
+    materials_by_sku = Material.objects.in_bulk(
+        [str(line.get("materialSku") or line.get("material_sku") or "").strip() for line in raw_lines],
+        field_name="sku",
+    )
     resolved: list[tuple[Any, Decimal | None]] = []
     line_errors: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -792,7 +827,7 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
             line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
 
-        material = Material.objects.filter(sku=material_sku).first()
+        material = materials_by_sku.get(material_sku)
         if not material:
             fail("Insumo não encontrado.", field="materialSku")
             continue
@@ -829,7 +864,8 @@ def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
                 purchase.pop("minStock", None)
             metadata["purchase"] = purchase
             material.metadata = metadata
-            material.save(update_fields=["metadata", "updated_at"])
+            material.updated_at = timezone.now()
+        Material.objects.bulk_update([material for material, _ in resolved], ["metadata", "updated_at"])
 
     logger.info(
         "purchase.min_stock_set",
@@ -1040,10 +1076,29 @@ def set_sale(material_sku: str, payload: dict[str, Any], *, user=None) -> tuple[
         raise PurchaseError(text, code="sale_refused", field=field) from exc
     if is_sold_by_weight(product.unit):
         return build_purchase(), f"{material.name} está à venda por peso, só no balcão."
+    if not product.is_published:
+        # Oculto no catálogo sai de TODOS os canais, PDV incluído (decisão do
+        # dono, 05/11): religar a venda de um produto oculto não o põe no balcão.
+        return build_purchase(), (
+            f"{material.name} está oculto no Catálogo: publique lá para vender no PDV."
+        )
+    from shopman.offerman.models import ListingItem
+
+    from shopman.shop.services.sku_records import remote_listing_refs
+
+    paused_remote = ListingItem.objects.filter(
+        product=product, listing__ref__in=remote_listing_refs(),
+    ).exclude(is_published=True, is_sellable=True).exists()
+    if paused_remote:
+        # O item novo vende só no balcão: os canais remotos nascem pausados, e o
+        # Catálogo mostra "Só no balcão" (beta 05/11, CMP-08).
+        return build_purchase(), (
+            f"{material.name} está à venda no PDV. Loja online, iFood e WhatsApp ficam pausados até você ligar no Catálogo."
+        )
     return build_purchase(), f"{material.name} está à venda no PDV."
 
 
-def send_purchase_request(material_sku: str, *, user=None) -> dict[str, Any]:
+def send_purchase_request(material_sku: str, *, reviewed: bool, user=None) -> dict[str, Any]:
     """Despacha o pedido ao fornecedor e marca o insumo como aguardando entrega.
 
     O pedido fica em aberto (`purchase.request_status = "sent"`) até o
@@ -1062,10 +1117,17 @@ def send_purchase_request(material_sku: str, *, user=None) -> dict[str, Any]:
         )
 
     with transaction.atomic():
-        dispatch = _queue_supplier_purchase_request(material, user=user)
+        # Trava a linha: a Produção pode estar gravando uma solicitação no mesmo insumo
+        # (`internal_requests`), e salvar o metadata lido antes apagaria a dela.
+        material = Material.objects.select_for_update().get(pk=material.pk)
+        dispatch = _queue_supplier_purchase_request(material, reviewed=reviewed, user=user)
 
         metadata = dict(material.metadata or {})
         purchase = dict(metadata.get("purchase") or {})
+        # O pedido ao fornecedor atende o que a Produção solicitou: sai do "Comprar".
+        purchase["internal_requests"] = _transition_internal_requests(
+            purchase.get("internal_requests"), from_status=("open",), to_status="ordered"
+        )
         purchase["request_status"] = "sent"
         purchase["request_status_at"] = timezone.now().isoformat()
         purchase["request_ref"] = dispatch["purchase_ref"]
@@ -1091,19 +1153,34 @@ def cancel_purchase_request(material_sku: str) -> dict[str, Any]:
     if not material:
         raise PurchaseError("Insumo não encontrado.", code="material_not_found", field="materialSku", status_code=404)
     with transaction.atomic():
-        _close_purchase_request(material)
+        _close_purchase_request(material, internal="reopen")
     return build_purchase()
 
 
-def _close_purchase_request(material) -> None:
+def _close_purchase_request(material, *, internal: str) -> None:
     """Apaga o estado do pedido (`purchase.request_*`): o insumo volta a "Revisar".
 
     O pedido despachado continua contado na directive de notificação; aqui só
     morava o "em aberto", e encerrado ele não deixa resto no metadata.
+
+    ``internal`` diz o que acontece com as solicitações da Produção
+    (`purchase.internal_requests`): ``"reopen"`` (pedido cancelado: a falta segue,
+    e a solicitação volta ao "Comprar") ou ``"received"`` (o insumo chegou).
+    Roda dentro de uma transação e relê a linha travada, para não apagar uma
+    solicitação gravada entre a leitura e o save.
     """
+    Material = apps.get_model("buyman", "Material")
+    material = Material.objects.select_for_update().get(pk=material.pk)
     metadata = dict(material.metadata or {})
     purchase = dict(metadata.get("purchase") or {})
     kept = {key: value for key, value in purchase.items() if not key.startswith("request_")}
+    if internal == "reopen":
+        moves = (("ordered",), "open")
+    else:
+        moves = (("open", "ordered"), "received")
+    requests = _transition_internal_requests(purchase.get("internal_requests"), from_status=moves[0], to_status=moves[1])
+    if requests or "internal_requests" in kept:
+        kept["internal_requests"] = requests
     if kept == purchase:
         return
     metadata["purchase"] = kept
@@ -1111,7 +1188,117 @@ def _close_purchase_request(material) -> None:
     material.save(update_fields=["metadata", "updated_at"])
 
 
-def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
+#: Quantas solicitações encerradas ficam no cadastro, para quem audita. As abertas
+#: ficam todas; as antigas saem pela cauda.
+INTERNAL_REQUESTS_KEPT_CLOSED = 10
+
+
+def _transition_internal_requests(raw: Any, *, from_status: tuple[str, ...], to_status: str) -> list[dict[str, Any]]:
+    """Move as solicitações da Produção de um estado a outro e poda as encerradas."""
+    now = timezone.now().isoformat()
+    requests: list[dict[str, Any]] = []
+    for entry in raw if isinstance(raw, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        entry = dict(entry)
+        if entry.get("status") in from_status:
+            entry["status"] = to_status
+            entry["status_at"] = now
+        requests.append(entry)
+    closed = [entry for entry in requests if entry.get("status") == "received"]
+    drop = {id(entry) for entry in closed[: max(0, len(closed) - INTERNAL_REQUESTS_KEPT_CLOSED)]}
+    return [entry for entry in requests if id(entry) not in drop]
+
+
+@dataclass(frozen=True)
+class ProductionPurchaseRequestItem:
+    """Um insumo que faltou no lote: quanto falta, na unidade do estoque."""
+
+    sku: str
+    quantity: Decimal
+    unit: str
+
+
+def request_purchase_from_production(
+    *,
+    work_order_ref: str,
+    product_name: str,
+    items: list[ProductionPurchaseRequestItem],
+    user,
+) -> list[str]:
+    """A Produção solicita ao Compras o insumo que falta para o lote (decisão do dono, 26/11).
+
+    Quem não opera o Compras não pede ao fornecedor: deixa a solicitação no cadastro
+    de compra do insumo (`Material.metadata.purchase.internal_requests`), que o
+    "Comprar" mostra a quem opera. Nada sai para fora da casa. Uma solicitação
+    aberta por (insumo, lote): pedir de novo atualiza a quantidade e o autor, não
+    duplica. A linha do insumo fica travada durante a escrita, para dois tablets
+    pedindo ao mesmo tempo não se apagarem. Devolve os SKUs solicitados.
+    """
+    Material = apps.get_model("buyman", "Material")
+    username = getattr(user, "get_username", lambda: "")() if user else ""
+    requested_by_name = _first_name(user)
+    now = timezone.now().isoformat()
+    requested: list[str] = []
+    with transaction.atomic():
+        for item in items:
+            if item.quantity <= 0:
+                continue
+            material = Material.objects.select_for_update().filter(sku=item.sku).first()
+            if material is None:
+                continue
+            metadata = dict(material.metadata or {})
+            purchase = dict(metadata.get("purchase") or {})
+            requests = [dict(entry) for entry in purchase.get("internal_requests") or [] if isinstance(entry, dict)]
+            entry = next(
+                (
+                    entry
+                    for entry in requests
+                    if entry.get("status") == "open" and entry.get("work_order_ref") == work_order_ref
+                ),
+                None,
+            )
+            if entry is None:
+                entry = {"work_order_ref": work_order_ref, "status": "open", "status_at": now}
+                requests.append(entry)
+            entry.update(
+                {
+                    "quantity": format(item.quantity.normalize(), "f"),
+                    "unit": item.unit,
+                    "product": product_name,
+                    "requested_by": username,
+                    "requested_by_name": requested_by_name,
+                    "requested_at": now,
+                }
+            )
+            purchase["internal_requests"] = requests
+            metadata["purchase"] = purchase
+            material.metadata = metadata
+            material.save(update_fields=["metadata", "updated_at"])
+            requested.append(material.sku)
+    if requested:
+        logger.info(
+            "production_purchase_requested work_order=%s skus=%s by=%s",
+            work_order_ref,
+            ",".join(requested),
+            username,
+        )
+    return requested
+
+
+def _first_name(user) -> str:
+    """O primeiro nome de quem pediu: a linha do Compras fala como a casa fala."""
+    if user is None:
+        return ""
+    name = (getattr(user, "first_name", "") or "").strip()
+    if not name:
+        name = (getattr(user, "get_full_name", lambda: "")() or "").strip()
+    if not name:
+        name = getattr(user, "get_username", lambda: "")() or ""
+    return name.split()[0] if name else ""
+
+
+def _queue_supplier_purchase_request(material, *, reviewed: bool, user=None) -> dict[str, str]:
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
     cost = (
@@ -1131,6 +1318,14 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
             "Fornecedor inativo não pode receber pedido de compra.",
             code="supplier_inactive",
             field="supplierRef",
+        )
+    supplier_purchase = dict((supplier.metadata or {}).get("purchase") or {})
+    if supplier_purchase.get("send_directly") is not True and not reviewed:
+        raise PurchaseError(
+            "Revise o pedido antes de enviar ao fornecedor.",
+            code="purchase_request_review_required",
+            field="reviewed",
+            status_code=409,
         )
 
     SupplierContact = apps.get_model("buyman", "SupplierContact")
@@ -1195,7 +1390,9 @@ def _supplier_contact_reach(supplier, role: str) -> tuple[str, str, str]:
     meio da outra.
     """
     SupplierContact = apps.get_model("buyman", "SupplierContact")
-    rows = list(SupplierContact.objects.filter(supplier=supplier))
+    # `contacts.all()` aproveita o prefetch da projeção (que pergunta a rota de
+    # cada fornecedor ativo); fora dela, é a mesma consulta de sempre.
+    rows = list(supplier.contacts.all())
     by_email = SupplierContact.pick(rows, role, requires="email")
     by_phone = SupplierContact.pick(rows, role, requires="phone")
     winner = by_email or by_phone
@@ -1303,7 +1500,7 @@ def _purchase_request_snapshot(material, cost) -> dict[str, str]:
     if purchase_qty <= 0:
         purchase_qty = Decimal("1")
     base_qty = purchase_qty * factor
-    estimated_total_q = int((Decimal(cost.cost_q) * purchase_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    estimated_total_q = cost.cost_for_base_qty_q(base_qty)
     unit_label = cost.purchase_unit_label or material.unit
     purchase_qty_display = f"{_format_decimal(purchase_qty)} {unit_label}".strip()
     base_qty_display = f"{_format_decimal(base_qty)} {material.unit}".strip()
@@ -1505,7 +1702,20 @@ def parse_money_input(value: str, *, field: str = "costInput") -> int:
             code="money_input_negative",
             field=field,
         )
+    if amount != amount.quantize(Decimal("0.01")):
+        # Dinheiro se guarda em centavos: 0,055 virava R$ 0,06 em silêncio, 9% acima
+        # do digitado (beta 05/11, CMP-07). Recusar e dizer o que cabe.
+        raise PurchaseError(
+            f"O valor guarda centavos: escreva até duas casas, como "
+            f"{_brl(amount.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))}.",
+            code="money_input_subcent",
+            field=field,
+        )
     return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+def _brl(amount: Decimal) -> str:
+    return f"{amount:.2f}".replace(".", ",")
 
 
 def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> ResolvedReceiptLine:
@@ -1553,7 +1763,16 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
     total_cost_q = parse_money_input(str(raw.get("costInput") or raw.get("cost_input") or ""))
     unit_cost_q = 0
     if total_cost_q > 0:
-        unit_cost_q = int((Decimal(total_cost_q) / purchase_qty).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        from shopman.buyman.models.cost import priced_unit_factor
+
+        # O custo da unidade de PREÇO: a embalagem da conversão, ou o kg/L de
+        # quem é contado em g/ml. R$ 110 por 1200 g = R$ 91,67 o kg; por grama,
+        # o centavo inteiro arredondava para R$ 0,09 (beta 05/11, CMP-07).
+        unit_cost_q = int(
+            (Decimal(total_cost_q) * priced_unit_factor(material, conversion) / base_qty).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+        )
     note = str(raw.get("lineNote") or raw.get("line_note") or raw.get("note") or "").strip()
 
     return ResolvedReceiptLine(
@@ -1584,7 +1803,76 @@ def _resolve_receipt_line(raw: dict[str, Any], *, index: int, supplier) -> Resol
         invoice_total_q=_invoice_total_q(raw),
         invoice_commercial_unit=_raw_text(raw, "invoiceUnit", "invoice_unit"),
         invoice_conversion_factor=_invoice_conversion_factor(raw),
+        preferred_cost=_preferred_cost_decision(raw, index=index),
     )
+
+
+#: As duas respostas possíveis quando o preço recebido difere do custo preferencial.
+PREFERRED_COST_DECISIONS = frozenset({"update", "keep"})
+
+
+def _preferred_cost_decision(raw: dict[str, Any], *, index: int) -> str:
+    decision = _raw_text(raw, "preferredCost", "preferred_cost")
+    if decision and decision not in PREFERRED_COST_DECISIONS:
+        raise PurchaseError(
+            "Escolha se o custo preferencial muda ou fica como está.",
+            code="preferred_cost_decision_invalid",
+            field=f"lines.{index}.preferredCost",
+        )
+    return decision
+
+
+def _supplier_preferred_cost(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial do insumo neste fornecedor e o preço desta entrada
+    dito na unidade de preço dele, ou ``None``.
+
+    A comparação é na unidade de preço do custo preferencial (a embalagem, ou o
+    kg/L sem embalagem): a mesma conta que a tela mostra.
+    """
+    if line.total_cost_q <= 0:
+        return None
+    SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
+    cost = (
+        SupplierMaterialCost.objects.select_related("conversion")
+        .filter(material=line.material, supplier=supplier, is_preferred=True)
+        .first()
+    )
+    if cost is None:
+        return None
+    # Na unidade de preço do custo preferencial: a embalagem dele, ou o kg/L
+    # de quem é contado em g/ml (CMP-07).
+    incoming_q = int(
+        (Decimal(line.total_cost_q) / line.base_qty * cost.priced_unit_factor).quantize(
+            Decimal("1"), rounding=ROUND_HALF_UP
+        )
+    )
+    return cost, incoming_q
+
+
+def _preferred_cost_at_stake(line: ResolvedReceiptLine, *, supplier):
+    """O custo preferencial que esta entrada trocaria, ou ``None``.
+
+    Receber grava o preço pago no custo do fornecedor. Quando esse custo é o
+    preferencial do insumo e o preço mudou, gravar em silêncio troca o custo
+    que alimenta o custeio, a sugestão de preço e o pedido de compra (beta
+    05/11, CMP-06).
+    """
+    preferred = _supplier_preferred_cost(line, supplier=supplier)
+    if preferred is None:
+        return None
+    cost, incoming_q = preferred
+    return cost if incoming_q != cost.cost_q else None
+
+
+def _require_preferred_cost_decisions(lines: list[ResolvedReceiptLine], *, supplier) -> None:
+    for index, line in enumerate(lines):
+        if line.preferred_cost or _preferred_cost_at_stake(line, supplier=supplier) is None:
+            continue
+        raise PurchaseError(
+            f"O preço de {line.name} difere do custo preferencial. Escolha se o custo preferencial muda.",
+            code="preferred_cost_decision_required",
+            field=f"lines.{index}.preferredCost",
+        )
 
 
 def _invoice_purchase_qty(raw: dict[str, Any]) -> Decimal | None:
@@ -1819,7 +2107,7 @@ def _resolve_receipt_material(raw: dict[str, Any], *, index: int):
     return material
 
 
-def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
+def _resolve_conversion(raw_id: Any, *, material, supplier, field: str, conversions: dict | None = None):
     if raw_id in (None, "", "null"):
         return None
     MaterialConversion = apps.get_model("buyman", "MaterialConversion")
@@ -1827,7 +2115,10 @@ def _resolve_conversion(raw_id: Any, *, material, supplier, field: str):
         conversion_id = int(raw_id)
     except (TypeError, ValueError):
         raise PurchaseError("Conversão inválida.", code="conversion_invalid", field=field) from None
-    conversion = MaterialConversion.objects.filter(pk=conversion_id).select_related("material", "supplier").first()
+    conversion = (
+        conversions.get(conversion_id) if conversions is not None
+        else MaterialConversion.objects.filter(pk=conversion_id).select_related("material", "supplier").first()
+    )
     if not conversion:
         raise PurchaseError("Conversão não encontrada.", code="conversion_not_found", field=field)
     if conversion.material_id != material.pk:

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Enviados: o que já saiu (ou tentou sair), do mais novo ao mais antigo, com o resultado
+// Enviados: envios, tentativas e encerramentos sem envio, do mais novo ao mais antigo, com o resultado
 // por plataforma. Os quatro recortes (Situação, Plataforma, Criado em, Origem da decisão)
 // moram no painel de filtros único da suíte (`OperatorFilterPanel`, com os favoritos da
 // pessoa): na mesa, chips ao lado do botão; no celular, os chips do cabeçalho. Os valores
@@ -82,7 +82,7 @@ const TONE_COLOR = {
 } as const;
 
 function state(announcement: AnnouncementProjectionV2) {
-  return deliveryStatePresentation(announcement.delivery.state, announcement.state);
+  return deliveryStatePresentation(announcement.delivery.state, announcement.state, announcement.delivery.counts);
 }
 
 // O painel de filtros lê e grava o mesmo recorte da URL; aplicar um favorito troca os
@@ -135,6 +135,10 @@ const alerts = computed(() =>
     : [],
 );
 
+const compactFilterLabel = computed(() =>
+  activeFilters.value.map((filter) => filter.label).join(", "),
+);
+
 const loadedLabel = computed(() =>
   announcements.value.length === 1
     ? "1 resultado carregado"
@@ -155,7 +159,33 @@ useHead({ title: "Enviados" });
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-history>
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-history data-compact-page>
+    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo, o filtro
+         único fica na linha (ícone antes da busca, o número no canto, como o sino), e os
+         recortes ativos aparecem logo abaixo dela, com Limpar. -->
+    <OperatorCompactBar
+      title="Enviados"
+      :tone="live.tone"
+      :time="live.time"
+      :conn-label="live.label"
+      :filter-active="hasActiveFilters"
+      :filter-label="compactFilterLabel"
+      :summary="announcements.length ? `${loadedLabel}.` : ''"
+      :options="headerActions"
+      @clear="void clearFilters()"
+    >
+      <template #filter-panel>
+        <OperatorFilterPanel
+          v-model="panelFilters"
+          :dimensions="dimensions"
+          trigger="icon"
+          :chips="false"
+          surface="marketing"
+          screen="history"
+          data-history-filters-compact
+        />
+      </template>
+    </OperatorCompactBar>
     <OperatorPageHeader
       title="Enviados"
       :actions="headerActions"
@@ -165,7 +195,7 @@ useHead({ title: "Enviados" });
       :alerts="alerts"
     >
       <template #status>
-        <!-- No celular o kit desce o estado para a segunda linha da barra. -->
+        <!-- Na mesa: o ponto, a hora e, fora do ao vivo, o estado por extenso. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus :tone="live.tone" :time="live.time" :label="live.label" :short-label="live.shortLabel" :detail="live.detail" />
         </span>
@@ -191,6 +221,9 @@ useHead({ title: "Enviados" });
 
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto w-full max-w-5xl">
+        <p class="mb-4 text-sm text-muted-foreground" data-history-scope>
+          Histórico de envios, tentativas e encerramentos sem envio.
+        </p>
         <template v-if="error && announcements.length === 0">
           <OperatorScreenState
             v-if="loadFailure.canRetry"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { CopyEntryProjection, HomeProjection, Action } from '~/types/shopman'
+import { heroEyebrow } from '~/presentation/home'
 
 interface HeroSlide {
   ref: string
@@ -10,8 +11,7 @@ interface HeroSlide {
   imageAlt: string
   primaryLabel: string
   primaryIcon: string
-  primaryTo?: string
-  primaryAction?: Action | null
+  primaryTo: string
   secondaryLabel?: string
   secondaryTo?: string
 }
@@ -19,15 +19,9 @@ interface HeroSlide {
 const props = defineProps<{
   home: HomeProjection
   primaryAction: Action | null
-  reorderAction: Action | null
-  reorderLoading?: boolean
   statusOpen: boolean
   statusLabel?: string
   closedCtaLabel?: string
-}>()
-
-const emit = defineEmits<{
-  reorder: [action: Action | null]
 }>()
 
 // Fotos DA CASA (o dono escolheu uma a uma em 23/09/2026, vendo cada
@@ -38,11 +32,15 @@ const emit = defineEmits<{
 // quase a tela inteira, em pé, no celular. Uma foto só perde metade do assunto
 // num dos dois. O `<picture>` deixa o navegador baixar SÓ a que couber, então
 // a segunda não custa peso.
+//
+// A versão do celular tem teto de ~120 KB (laudo 23/10, U9): a primeira foto é a
+// maior pintura da home no 4G, e 313 KB atrasavam o LCP. A de pé (facade6) já é
+// só do celular; as quadradas ganharam irmã `-phone`, menor, e a
+// original segue para a faixa larga e para o resto da home.
 const HERO_IMAGES = {
   greeting: { phone: '/img/home/facade6.webp', wide: '/img/home/facade2.webp' },
-  order: { phone: '/img/home/selfservice.webp', wide: '/img/home/selfservice.webp' },
-  reorder: { phone: '/img/home/facade4.webp', wide: '/img/home/interior.webp' },
-  handmade: { phone: '/img/home/baguette.webp', wide: '/img/home/baguette.webp' }
+  order: { phone: '/img/home/selfservice-phone.webp', wide: '/img/home/selfservice.webp' },
+  handmade: { phone: '/img/home/baguette-phone.webp', wide: '/img/home/baguette.webp' }
 } as const
 
 const menuTo = computed(() => props.primaryAction?.href || '/menu')
@@ -123,10 +121,6 @@ function handleTouchEnd (event: TouchEvent) {
   else goToPreviousSlide()
 }
 
-function handlePrimaryAction (slide: HeroSlide) {
-  if (slide.primaryAction) emit('reorder', slide.primaryAction)
-}
-
 const slides = computed<HeroSlide[]>(() => {
   const copy = props.home.hero_copy
   const shop = props.home.shop
@@ -138,9 +132,13 @@ const slides = computed<HeroSlide[]>(() => {
   // pedido sem dizer que a loja estava fechada — o cliente só descobria no checkout,
   // com a sacola pronta. O selo de estado existe, mas vive lá embaixo, no card
   // "visite a loja". Aqui ele sobe para o topo, que é o que a pessoa lê.
-  const closedEyebrow = props.statusOpen
-    ? undefined
-    : `${props.statusLabel ? `${props.statusLabel}. ` : ''}Você monta agora e finaliza quando abrirmos.`
+  // E diz a verdade sobre o que dá para pedir, pelo `home.ordering` (ver heroEyebrow):
+  // com nada encomendável, a linha aparece também com a casa aberta.
+  const closedEyebrow = heroEyebrow({
+    statusOpen: props.statusOpen,
+    statusLabel: props.statusLabel,
+    ordering: props.home.ordering
+  })
   const handmadeTitle = `${titleOf(copy.handmade_title_prefix, 'Feito à mão,')} ${titleOf(copy.handmade_title_suffix, 'todo dia')}`
   const greetingTitle = sentence(omo.greeting_with_name || handmadeTitle)
   const list: HeroSlide[] = []
@@ -186,34 +184,11 @@ const slides = computed<HeroSlide[]>(() => {
     primaryTo: menuTo.value
   })
 
-  if (props.home.last_order_ref && props.reorderAction) {
-    list.push({
-      ref: 'reorder',
-      titleLines: [
-        titleOf(copy.reorder_title_prefix, 'Quer repetir seu'),
-        `${titleOf(copy.reorder_title_suffix, 'último pedido')}${customerName ? `, ${customerName}` : ''}?`
-      ],
-      // "favorito" é conceito próprio da loja (o coração, a seção "Seus favoritos"):
-      // usá-lo para o último pedido faz o cliente procurar onde ele marcou.
-      description: messageOf(copy.reorder_subtitle, 'Os itens do seu último pedido voltam para a sacola.'),
-      image: HERO_IMAGES.reorder,
-      imageAlt: shop.brand_name,
-      primaryLabel: 'Repetir pedido',
-      primaryIcon: 'lucide:rotate-ccw',
-      primaryAction: props.reorderAction
-    })
-  } else {
-    list.push({
-      ref: 'greeting-return',
-      titleLines: [greetingTitle],
-      image: HERO_IMAGES.reorder,
-      imageAlt: shop.brand_name,
-      primaryLabel: menuLabel,
-      primaryIcon: 'lucide:utensils',
-      primaryTo: menuTo.value
-    })
-  }
-
+  // A recompra NÃO é slide: ela tem o cartão próprio logo abaixo do hero, com os
+  // itens do último pedido. Com os dois, quem voltava lia "Quer repetir seu
+  // último pedido?" duas vezes na mesma tela (laudo da Etapa II, 23/11). E não há
+  // slide que repita a saudação no lugar dela: o dono decidiu tirar o slide de
+  // volta, com as fotos dele (#3496, 24/11).
   list.push({
     ref: 'handmade',
     titleLines: [
@@ -299,36 +274,31 @@ onBeforeUnmount(() => {
       <div class="relative z-10 flex h-full flex-col justify-end px-6 pb-10 pt-8 text-center text-white sm:px-8 sm:pb-14 sm:pt-12 lg:px-10">
         <Transition name="hero-text" mode="out-in">
           <div :key="activeSlide.ref" class="mx-auto flex w-full max-w-3xl flex-col items-center justify-center">
+            <!-- A linha é sempre frase (estado e o que dá para pedir), aberta ou fechada:
+                 caixa alta numa frase inteira se lê mal, então não há variação por estado.
+                 É texto decisivo sobre foto (OC-04): branco cheio e sombra, como a
+                 descrição do slide; com 80% de branco a auditoria medida ficava abaixo de AA. -->
             <p
               v-if="activeSlide.eyebrow"
-              class="text-sm font-semibold text-white/80"
-              :class="statusOpen ? 'uppercase tracking-wide' : ''"
+              class="text-sm font-semibold text-white [text-shadow:0_1px_8px_rgba(0,0,0,0.7)]"
+              data-hero-eyebrow
             >{{ activeSlide.eyebrow }}</p>
-            <h1 class="shop-display mt-2 [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]" :aria-label="heroTitleLabel">
+            <!-- Título do SLIDE, não da página: o h1 da home diz o que ela é
+                 (index.vue). A saudação continua aqui, visível, como destaque. -->
+            <h2 class="shop-display mt-2 [text-shadow:0_2px_18px_rgba(0,0,0,0.45)]" :aria-label="heroTitleLabel">
               <span v-for="line in activeSlide.titleLines" :key="line" class="block" aria-hidden="true">
                 {{ line }}
               </span>
-            </h1>
+            </h2>
             <p v-if="activeSlide.description" class="mt-4 max-w-xl shop-body text-white/85 [text-shadow:0_1px_10px_rgba(0,0,0,0.4)] sm:text-base">
               {{ activeSlide.description }}
             </p>
             <div class="mt-8 flex flex-wrap justify-center gap-3">
               <UiButton
-                v-if="activeSlide.primaryTo"
                 :to="activeSlide.primaryTo"
                 size="lg"
                 :icon="activeSlide.primaryIcon"
                 class="shop-hero-cta bg-white text-neutral-900 shadow-lg hover:bg-white/90"
-              >
-                {{ activeSlide.primaryLabel }}
-              </UiButton>
-              <UiButton
-                v-else
-                size="lg"
-                :icon="activeSlide.primaryIcon"
-                :loading="props.reorderLoading"
-                class="shop-hero-cta bg-white text-neutral-900 shadow-lg hover:bg-white/90"
-                @click="handlePrimaryAction(activeSlide)"
               >
                 {{ activeSlide.primaryLabel }}
               </UiButton>
@@ -364,15 +334,16 @@ onBeforeUnmount(() => {
           @click="goToNextSlide"
         />
         <div class="absolute inset-x-0 bottom-0 z-20 flex items-center justify-center sm:bottom-1" role="tablist" aria-label="Slides">
-          <!-- Alvo de toque ≥44px (h-11 + px-1.5): a pílula visível é pequena (h-2),
-               mas a área clicável é generosa — antes o dot de 8px era quase impossível
-               de acertar, dando a sensação de "botão que não funciona". -->
+          <!-- Alvo de toque: 44px de altura (h-11) e no mínimo 24px de largura
+               (min-w-6 + px-2), o mínimo do critério 2.5.8 da WCAG 2.2. A pílula
+               visível é pequena (h-2, 8px no slide parado); a área de toque não. Com
+               px-1.5 o ponto parado tinha 20px de largura e o vizinho encostava. -->
           <UiButton
             v-for="(slide, index) in slides"
             :key="slide.ref"
             variant="ghost"
             size="icon-xs"
-            class="h-11 min-h-0 w-auto rounded-full px-1.5 hover:bg-transparent"
+            class="h-11 min-h-0 w-auto min-w-6 rounded-full px-2 hover:bg-transparent"
             :aria-label="`Slide ${index + 1}`"
             :aria-selected="index === activeIndex"
             role="tab"

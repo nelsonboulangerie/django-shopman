@@ -43,7 +43,7 @@ beforeEach(() => {
     // As seções e o resumo das decisões na caixa de Avisos (o shell é stub aqui).
     useMarketingSections: () => ({
       sections: ref([]),
-      activeSection: ref("decisions"),
+      switcherSections: ref([]),
     }),
     useMarketingDecisions: () => ({ decisionCount: ref(0) }),
     provideOperatorInboxAlerts: vi.fn(),

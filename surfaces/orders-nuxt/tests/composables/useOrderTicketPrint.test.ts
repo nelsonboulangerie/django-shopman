@@ -75,7 +75,7 @@ describe("createOrderTicketPrinter: a impressão", () => {
     const printer = createOrderTicketPrinter(computed(() => AGENT));
 
     expect(await printer.print("WEB-6")).toBe(true);
-    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/WEB-6/ticket-escpos/");
+    expect(env.fetchMock).toHaveBeenCalledWith("/api/v1/backstage/orders/WEB-6/ticket-escpos/", { method: "POST" });
     expect(String(agentFetch.mock.calls[0][0])).toBe("http://127.0.0.1:9123/print");
     expect(JSON.parse(agentFetch.mock.calls[0][1].body)).toMatchObject({
       payload_b64: "QQ==",

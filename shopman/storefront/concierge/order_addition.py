@@ -186,12 +186,12 @@ def items_text(additions: list[dict]) -> str:
 def _lines(order, additions: list[dict]) -> list[dict]:
     """A lista FINAL para o ``order_edit``: o que já estava, pelo ``line_id``, mais o que entra."""
     from shopman.shop.services import order_composition
-    from shopman.shop.services.order_edit import _is_fixed_line
+    from shopman.shop.services.order_edit import is_fixed_line
 
     kept = [
         {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty)}
         for item in order_composition.effective_items(order)
-        if not _is_fixed_line(item)
+        if not is_fixed_line(item)
     ]
     return kept + [{"sku": entry["sku"], "qty": entry["qty"]} for entry in additions]
 
@@ -324,12 +324,14 @@ def apply(conversation, pending: dict) -> Outcome:
     from shopman.shop.models import ConversationMessage
     from shopman.shop.services import order_edit
 
+    from .effect_authority import lock_turn_authority
     from .service import assert_turn_authority
 
     order_ref = str(pending.get("order_ref") or "")
     entries = _normalize(pending.get("add"))
     if not getattr(conversation, "_commercial_authority", False):
         return _refused(None, [], "Não consigo mexer em pedido já feito por aqui agora.", order_ref=order_ref)
+    # Sem posse, nem a leitura do pedido segue; a conferência que vale é a do bloco abaixo.
     assert_turn_authority(conversation, for_mutation=True)
     order = own_order(conversation, order_ref)
     if order is None or not entries:
@@ -345,6 +347,9 @@ def apply(conversation, pending: dict) -> Outcome:
 
     try:
         with transaction.atomic():
+            # Reconferida com a conversa travada, na transação que edita: se a equipe
+            # assumiu depois da conferência acima, o pedido segue como está (#2625).
+            lock_turn_authority(conversation)
             # Uma mensagem só: a resposta da Concierge leva o que o aviso
             # ``order_updated`` diria (total novo, saldo e destino da diferença).
             result = order_edit.edit(
@@ -359,7 +364,7 @@ def apply(conversation, pending: dict) -> Outcome:
                 envelope={"version": 3, "order_ref": order.ref, "turn_fence": conversation.turn_fence},
             )
     except order_edit.EditRefused as exc:
-        if exc.code == "insufficient_stock":
+        if exc.code == "insufficient_supply":
             return _refused(order, entries, _STOCK_REASON.format(items=items_text(entries)))
         order.refresh_from_db()
         return _refused(order, entries, _reason_for(order, exc.code))

@@ -1,6 +1,6 @@
 """Editar a encomenda no próprio pedido: itens, observação, recebimento e data.
 
-Decisões do dono (26–28/09/2026, ``docs/plans/ENCOMENDAS-PDV-PLAN.md``, WP-E6):
+Decisões do dono (26–28/09/2026, ``docs/plans/completed/ENCOMENDAS-PDV-PLAN.md``, WP-E6):
 
 - a edição acontece NO PRÓPRIO PEDIDO — mesmo ref, mesmo pagamento, mesmo
   acompanhamento. Só a NFC-e autorizada fecha a porta: aí o caminho é cancelar e
@@ -65,8 +65,16 @@ SOURCE = "pos:edit"
 #: MESMO caminho do balcão, só com a origem gravada, para o histórico do pedido
 #: dizer quem fez ("Itens acrescentados pela Concierge a pedido do cliente").
 CONCIERGE_SOURCE = "concierge:add"
+#: A Concierge alterando o pedido a pedido do cliente (OC-11): trocar a data ou o
+#: horário, tirar um item, trocar o endereço da entrega. O MESMO caminho do balcão,
+#: com a origem gravada ("Pedido alterado pela Concierge a pedido do cliente").
+CONCIERGE_AMEND_SOURCE = "concierge:amend"
 #: Origem → (prefixo do ``event_id`` do ajuste, prefixo da referência de estoque).
-_ID_PREFIXES = {SOURCE: ("pos-edit", "pos_edit"), CONCIERGE_SOURCE: ("concierge-edit", "concierge_edit")}
+_ID_PREFIXES = {
+    SOURCE: ("pos-edit", "pos_edit"),
+    CONCIERGE_SOURCE: ("concierge-edit", "concierge_edit"),
+    CONCIERGE_AMEND_SOURCE: ("concierge-amend", "concierge_amend"),
+}
 EVENT_TYPE = "order_edited"
 CUSTOMER_NOTICE_TEMPLATE = "order_updated"
 NOTES_MAX_LENGTH = 500
@@ -108,6 +116,10 @@ SETTLE_REFUND_GATEWAY = "refund_gateway"
 SETTLE_REFUND_CASH = "refund_cash"
 #: Estorno na maquininha do balcão — pendência guiada, registrada pelo operador.
 SETTLE_REFUND_CARD_MACHINE = "refund_card_machine"
+#: O Pix aberto (nada pago) é trocado por um Pix novo pelo valor novo (decisão do
+#: dono, 24/11/2026, OC-11): só quando quem edita pede (``reissue_open_pix``).
+#: ``amount_q`` = o valor do Pix novo.
+SETTLE_NEW_PIX = "new_pix"
 
 REFUND_KINDS = frozenset({SETTLE_REFUND_GATEWAY, SETTLE_REFUND_CASH, SETTLE_REFUND_CARD_MACHINE})
 
@@ -175,6 +187,8 @@ class EditPlan:
     new_line_ids: tuple[str, ...] = ()
     #: Chaves de ``Order.data`` que a edição reescreve (``None`` = remover).
     data_updates: dict = field(default_factory=dict)
+    #: O Pix aberto do pedido é cancelado e um novo nasce pelo valor novo (``SETTLE_NEW_PIX``).
+    reissues_pix: bool = False
 
 
 @dataclass(frozen=True)
@@ -274,10 +288,27 @@ def state_refusal(order) -> tuple[str, str]:
     return "", ""
 
 
+def product_lines(order) -> list[dict]:
+    """As linhas de produto do pedido como estão, ``[{line_id, sku, qty, name}]``.
+
+    É a lista FINAL que :func:`plan` recebe quando nada muda: quem quer tirar um
+    item parte dela e omite a linha (ou baixa a quantidade). A taxa de entrega e
+    as outras linhas fixas não entram: elas mudam pelo recebimento.
+    """
+    return [
+        {"line_id": item.line_id, "sku": item.sku, "qty": str(item.qty), "name": item.name or item.sku}
+        for item in order_composition.effective_items(order)
+        if not is_fixed_line(item)
+    ]
+
+
 # ── Prévia ───────────────────────────────────────────────────────────────────
 
 
-def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, source: str = SOURCE) -> EditPlan:
+def plan(
+    order, *, lines=None, notes=None, fulfillment=None, schedule=None, source: str = SOURCE,
+    reissue_open_pix: bool = False,
+) -> EditPlan:
     """Calcula a edição sem gravar nada: itens, total, diferença e o destino dela.
 
     - ``lines``: a lista FINAL de itens de produto, ``[{line_id?, sku, qty,
@@ -292,7 +323,12 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
       delivery_address_structured, delivery_fee_override_q, fiscal_tax_id,
       delivery_payment_method}``; ``None`` mantém.
     - ``schedule``: ``{date, slot}``; ``None`` mantém.
-    - ``source``: quem edita (:data:`SOURCE`, o balcão, ou :data:`CONCIERGE_SOURCE`);
+    - ``source``: quem edita (:data:`SOURCE`, o balcão, :data:`CONCIERGE_SOURCE` ou
+      :data:`CONCIERGE_AMEND_SOURCE`);
+    - ``reissue_open_pix``: com o Pix do pedido aberto e nada pago, o valor pode
+      mudar: o Pix aberto é trocado por um novo pelo valor novo (:data:`SETTLE_NEW_PIX`,
+      decisão do dono de 24/11/2026). Sem ele, a cobrança aberta trava a mudança de
+      valor, como sempre;
       vai para a linha nova (``meta.added_by``) e para o evento do histórico.
     """
     if source not in _ID_PREFIXES:
@@ -304,8 +340,8 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
     data = order.data or {}
     current = order_composition.effective_items(order)
     fee_lines = [item for item in current if _is_fee_line(item)]
-    other_fixed = [item for item in current if _is_fixed_line(item) and not _is_fee_line(item)]
-    editable = [item for item in current if not _is_fixed_line(item)]
+    other_fixed = [item for item in current if is_fixed_line(item) and not _is_fee_line(item)]
+    editable = [item for item in current if not is_fixed_line(item)]
     next_revision = int((order_composition.adjustment(order) or {}).get("revision") or 0) + 1
 
     # ── produtos
@@ -353,7 +389,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
 
     # ── dinheiro
     settlement, balance_before_q, balance_after_q, intents = _settlement(
-        order, previous_total_q=previous_total_q, total_q=total_q,
+        order, previous_total_q=previous_total_q, total_q=total_q, reissue_open_pix=reissue_open_pix,
     )
     data_updates = dict(receiving["data_updates"])
     if notes_changed:
@@ -371,7 +407,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
         data_updates["payment"] = payment_after
 
     if receiving["type"] == "delivery" and (receiving["changed"] or items_changed):
-        _require_delivery_identity(order, data_updates, total_q=total_q)
+        require_delivery_identity(order, data_updates, total_q=total_q)
 
     result = EditPlan(
         changed=items_changed or notes_changed or receiving["changed"] or schedule_changed,
@@ -397,6 +433,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
         balance_before_q=balance_before_q,
         balance_after_q=balance_after_q,
         requires_manager_approval=settlement.kind in REFUND_KINDS,
+        reissues_pix=settlement.kind == SETTLE_NEW_PIX,
         new_line_ids=tuple(new_line_ids),
         data_updates=data_updates if (items_changed or notes_changed or receiving["changed"]) else {},
     )
@@ -408,7 +445,7 @@ def plan(order, *, lines=None, notes=None, fulfillment=None, schedule=None, sour
 
 def edit(
     order, *, lines=None, notes=None, fulfillment=None, schedule=None, actor: str, approved_by=None,
-    source: str = SOURCE, notify_customer: bool = True,
+    source: str = SOURCE, notify_customer: bool = True, reissue_open_pix: bool = False,
 ) -> EditResult:
     """Aplica a edição sob o lock do pedido, numa transação.
 
@@ -420,6 +457,11 @@ def edit(
     ``notify_customer=False`` quando quem edita já está falando com o cliente e
     leva o que o aviso ``order_updated`` diria na própria resposta (a Concierge):
     o cliente recebe UMA mensagem por edição, nunca duas.
+
+    ``reissue_open_pix=True`` (a Concierge, decisão do dono de 24/11/2026): com o Pix
+    aberto e nada pago, o valor muda e o Pix aberto é trocado por um novo pelo valor
+    novo. Pedido e pagamentos travados antes da prévia; o Pix aberto é cancelado no
+    gateway por último, e pago no meio ou recusado lá, a edição inteira volta.
     """
     from shopman.orderman.exceptions import ValidationError
 
@@ -427,7 +469,16 @@ def edit(
 
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
-        result = plan(locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule, source=source)
+        if reissue_open_pix:
+            # Os pagamentos do pedido travados ANTES da prévia: um Pix confirmado agora
+            # espera esta transação, e a prévia que decide trocar o Pix é a que vale.
+            from shopman.shop.services import payment as payment_service
+
+            payment_service.lock_order_payment(locked)
+        result = plan(
+            locked, lines=lines, notes=notes, fulfillment=fulfillment, schedule=schedule, source=source,
+            reissue_open_pix=reissue_open_pix,
+        )
         if not result.changed:
             return EditResult(plan=result, revision=None)
         if result.requires_manager_approval and approved_by is None:
@@ -463,7 +514,7 @@ def edit(
                     require_stock=True,
                 )
             except ValidationError as exc:
-                raise EditRefused(_stock_refusal(locked, exc, result.items), code=exc.code, field="items") from None
+                raise EditRefused(stock_refusal(locked, exc, result.items), code=exc.code, field="items") from None
             revision = outcome["revision"]
             stock_summary = outcome.get("stock")
 
@@ -490,6 +541,16 @@ def edit(
             transaction.on_commit(lambda: _refund_gateway(ref, amount_q=amount_q, idempotency_key=key))
         if result.items_changed:
             _relink_production(locked, previous_skus=previous_skus)
+        if result.reissues_pix:
+            # O Pix aberto morre no gateway por último, quando tudo o mais já passou:
+            # pago no meio ou recusado lá, a edição inteira volta e nada muda (nunca um
+            # estorno silencioso). Depois, o Pix novo pelo total novo (``initiate`` cobra
+            # o total efetivo); se ele não nascer, o pedido fica em Pix com o erro, e o
+            # "Tentar novamente" do acompanhamento refaz.
+            from shopman.shop.services import payment as payment_service
+
+            _retire_open_pix(locked)
+            payment_service.initiate(locked)
         if notify_customer:
             _notify_customer(locked, result)
 
@@ -781,7 +842,7 @@ def _address_key(structured) -> tuple:
     return tuple(str(structured.get(key) or "").strip().casefold() for key in _ADDRESS_IDENTITY)
 
 
-def _require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
+def require_delivery_identity(order, data_updates: dict, *, total_q: int) -> None:
     """Entrega com nota exige endereço completo e CPF/CNPJ válido quando informado — a régua da venda (13/10)."""
     from shopman.shop.services import delivery_fiscal_identity as identity
 
@@ -826,7 +887,7 @@ def _schedule(order, schedule) -> tuple[bool, str, str]:
 # ── A diferença de valor ─────────────────────────────────────────────────────
 
 
-def _settlement(order, *, previous_total_q: int, total_q: int):
+def _settlement(order, *, previous_total_q: int, total_q: int, reissue_open_pix: bool = False):
     """O destino da diferença — e a recusa quando o meio não sabe devolver parte."""
     from shopman.shop.services import payment as payment_service
 
@@ -851,6 +912,10 @@ def _settlement(order, *, previous_total_q: int, total_q: int):
             code="on_account_total_locked",
         )
     if total_changes and _open_digital_charge(order):
+        if reissue_open_pix and captured == 0 and on_account == 0 and _open_charge_is_pending_pix(order):
+            # Decisão do dono (24/11/2026): nada pago e o Pix aberto, o Pix aberto dá
+            # lugar a um novo pelo valor novo. O cancelamento e o Pix novo são do ``edit``.
+            return Settlement(SETTLE_NEW_PIX, total_q, "pix"), balance_before_q, total_q, _intents(order)
         raise EditRefused(
             "Há uma cobrança (Pix ou link) com o valor antigo esperando o cliente. "
             "Receba ou cancele essa cobrança antes de mudar o valor.",
@@ -907,6 +972,16 @@ def refund_route(intent) -> str:
     if method in CARD_MACHINE_METHODS:
         return ROUTE_CARD_MACHINE
     if not intent.gateway:
+        from shopman.shop.services.payment import booked_outside_charge
+
+        # O dinheiro que chegou depois de a cobrança morrer (o Pix pago no QR
+        # velho, o cartão pago depois de o balcão receber) também mora num intent
+        # sem gateway, mas volta pelo gateway da cobrança que ele substitui
+        # (``payment._adapter_for_persisted_intent``): lido como maquininha, o
+        # estorno pelo gateway era recusado e o PDV pedia um estorno na maquininha
+        # de um dinheiro que nunca passou por ela.
+        if booked_outside_charge(intent):
+            return ROUTE_GATEWAY
         # Pix/cartão ATESTADOS no balcão (venda mista): não há gateway, a prova
         # é o papel da maquininha — e o estorno também.
         return ROUTE_CARD_MACHINE
@@ -937,6 +1012,66 @@ def _open_digital_charge(order) -> bool:
 
 
 def _payment_after(
+    order, *, total_q: int, settlement: Settlement, balance_after_q: int, fulfillment_after: str,
+    delivery_payment_method: str, intents,
+) -> dict | None:
+    if settlement.kind == SETTLE_NEW_PIX:
+        # O Pix aberto sai (o ``edit`` cancela no gateway) e o bloco perde os dados
+        # dele: o ``payment.initiate`` abre o novo pelo total novo. A forma continua Pix.
+        payment = {key: value for key, value in ((order.data or {}).get("payment") or {}).items()
+                   if key not in _OPEN_CHARGE_KEYS}
+        if "amount_q" in payment:
+            payment["amount_q"] = int(total_q)
+        return payment
+    return _payment_after_settlement(
+        order, total_q=total_q, settlement=settlement, balance_after_q=balance_after_q,
+        fulfillment_after=fulfillment_after, delivery_payment_method=delivery_payment_method, intents=intents,
+    )
+
+
+#: Os dados da cobrança da vez em ``Order.data["payment"]``: saem com o Pix aberto que
+#: é trocado, para o ``payment.initiate`` abrir o novo (``SETTLE_NEW_PIX``).
+_OPEN_CHARGE_KEYS = ("intent_ref", "idempotency_key", "qr_code", "copy_paste", "expires_at", "checkout_url", "error")
+
+
+def _open_charge_is_pending_pix(order) -> bool:
+    """A cobrança aberta do pedido é só Pix esperando pagamento (nenhum cartão, nada autorizado)?"""
+    from shopman.payman import PaymentService
+
+    open_intents = list(
+        PaymentService.get_by_order(order.ref)
+        .filter(status__in=("pending", "authorized"))
+        .exclude(method="account")
+        .exclude(gateway="")
+    )
+    return bool(open_intents) and all(
+        str(intent.method or "").lower() == "pix" and intent.status == "pending" for intent in open_intents
+    )
+
+
+def _retire_open_pix(order) -> None:
+    """Cancela o Pix aberto no gateway, com o pedido e os pagamentos travados, ou recusa.
+
+    Pago no meio (o pagamento chegou ao Payman), o pagamento vale e a edição volta
+    com o motivo. Recusado no gateway (o cliente pagou lá e o aviso ainda não
+    chegou, ou o gateway não respondeu), nada muda: o Pix antigo segue valendo.
+    """
+    from shopman.shop.services import payment as payment_service
+
+    if (payment_service.captured_balance_q(order) or 0) > 0:
+        raise EditRefused(
+            "O Pix deste pedido foi pago agora há pouco: o pagamento vale e a edição não foi feita.",
+            code="pix_paid_meanwhile",
+        )
+    payment_service.cancel_stale_intents(order, keep_intent_ref="", reason="superseded_by_order_edit")
+    if _open_digital_charge(order):
+        raise EditRefused(
+            "O Pix aberto deste pedido não pôde ser cancelado agora: nada foi alterado.",
+            code="open_pix_not_cancelled",
+        )
+
+
+def _payment_after_settlement(
     order, *, total_q: int, settlement: Settlement, balance_after_q: int, fulfillment_after: str,
     delivery_payment_method: str, intents,
 ) -> dict | None:
@@ -1144,6 +1279,8 @@ def money_for_customer(result: EditPlan) -> str:
     total = _brl(result.total_q)
     where = "na entrega" if result.fulfillment_after == "delivery" else "na retirada"
     settlement = result.settlement
+    if settlement.kind == SETTLE_NEW_PIX:
+        return f"O novo total é {total}. O código Pix muda para o novo valor."
     if settlement.kind in REFUND_KINDS:
         amount = _brl(settlement.amount_q)
         if settlement.kind == SETTLE_REFUND_CASH:
@@ -1301,7 +1438,7 @@ def _is_fee_line(item) -> bool:
     return str(item.sku or "") == DELIVERY_FEE_SKU or meta.get("type") == "delivery_fee"
 
 
-def _is_fixed_line(item) -> bool:
+def is_fixed_line(item) -> bool:
     """Linha que não é produto (taxa de entrega e afins): a lista de itens não a toca."""
     return str(item.sku or "").startswith("__") or _is_fee_line(item)
 
@@ -1347,11 +1484,13 @@ def _brl(value_q: int) -> str:
     return f"R$ {format_money(int(value_q))}"
 
 
-def _stock_refusal(order, exc, items: list[dict]) -> str:
+def stock_refusal(order, exc, items: list[dict]) -> str:
+    from shopman.stockman.protocols.sku import PromiseReasonCode
+
     from shopman.shop.services.order_helpers import get_commitment_date
 
     context = getattr(exc, "context", None) or {}
-    if exc.code == "insufficient_stock":
+    if exc.code == PromiseReasonCode.INSUFFICIENT_SUPPLY.value:
         sku = context.get("sku") or context.get("component_sku") or ""
         name = next((item.get("name") for item in items if item.get("sku") == sku), None) or sku
         day = get_commitment_date(order)
@@ -1396,6 +1535,7 @@ def _event_payload(result: EditPlan, *, revision, approved_by, source: str = SOU
 
 
 __all__ = [
+    "CONCIERGE_AMEND_SOURCE",
     "CONCIERGE_SOURCE",
     "CUSTOMER_NOTICE_TEMPLATE",
     "EVENT_TYPE",
@@ -1405,6 +1545,7 @@ __all__ = [
     "GOODS_STILL_IN_THE_HOUSE",
     "REFUND_KINDS",
     "SETTLE_COLLECT",
+    "SETTLE_NEW_PIX",
     "SETTLE_NONE",
     "SETTLE_REFUND_CARD_MACHINE",
     "SETTLE_REFUND_CASH",
@@ -1416,7 +1557,11 @@ __all__ = [
     "money_for_customer",
     "edit",
     "fiscal_authorized",
+    "is_fixed_line",
     "plan",
+    "product_lines",
     "refund_route",
+    "require_delivery_identity",
     "state_refusal",
+    "stock_refusal",
 ]

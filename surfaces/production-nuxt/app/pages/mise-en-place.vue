@@ -5,8 +5,10 @@
 //     e de onde saem as ETIQUETAS CEGAS (código do dia, ingrediente, peso,
 //     data; nunca o nome da receita — o mapa código↔preparo é visão de gestor
 //     no Admin). Impressão via print CSS: só as etiquetas saem no papel.
-//   · "Por insumo": aggregated ingredient list (checklist local ao turno) — bom
-//     para conferir provisionamento ("quanto de farinha no total?").
+//   · "Por insumo": aggregated ingredient list — bom para conferir
+//     provisionamento ("quanto de farinha no total?").
+// As duas lentes marcam "Separado", e a marca mora no servidor: vale para todos os
+// tablets do dia (D-042, item 5; `usePrepMarks`).
 // Tablet/touch-first.
 import type { MiseEnPlaceLineProjection } from "~/types/production";
 import type { ProductionPrintingSourceProjection } from "~/types/productionPrinting";
@@ -18,8 +20,16 @@ import {
 } from "../../../operator-kit/app/presentation/dates";
 import {
   operationalTargetDisplay,
+  keepNumberWithUnit,
   projectedQuantityDisplay,
+  stockFacts,
+  weighingLabels,
 } from "~/presentation/weighing";
+import {
+  lineItemRef,
+  markAuthorLine,
+  prepIngredientItemRef,
+} from "~/composables/useMiseEnPlace";
 
 // Preparação olha hoje por padrão (a pesagem é do dia); amanhã na véspera.
 // O "Período" do kit em Dia (Tipo 2): ‹ › andam um dia (amanhã é um toque).
@@ -32,21 +42,41 @@ const period = computed<PeriodSelection>({
   },
 });
 
-const { stationRef } = useOperatorLock("backstage.operate_production");
+useOperatorLock("backstage.operate_production");
 
-const {
-  projection,
-  lines,
-  expand,
-  pending,
-  error,
-  refresh,
-  isChecked,
-  toggleChecked,
-  checkedCount,
-  checklistRevisionChanged,
-} = useMiseEnPlace(selectedDate, stationRef);
+const { projection, lines, expand, pending, error, refresh, realtime, fallbackPollMs } =
+  useMiseEnPlace(selectedDate);
 const weighing = useWeighing(selectedDate);
+// A quantidade mudou enquanto a pessoa olhava (409): relê as duas lentes.
+const marks = usePrepMarks(selectedDate, () => refreshAll());
+
+const lineMarked = (line: MiseEnPlaceLineProjection) =>
+  marks.isMarked(lineItemRef(line.sku), line.quantity_display);
+const lineMark = (line: MiseEnPlaceLineProjection) =>
+  marks.markOf(lineItemRef(line.sku), line.quantity_display);
+function toggleLine(line: MiseEnPlaceLineProjection) {
+  marks.toggle(lineItemRef(line.sku), line.quantity_display, line.name);
+}
+const checkedCount = computed(
+  () => lines.value.filter((line) => lineMarked(line)).length,
+);
+
+type Ticket = (typeof weighing.tickets.value)[number];
+type Row = ReturnType<typeof weighing.rowsFor>[number];
+const rowItemRef = (ticket: Ticket, row: Row) =>
+  prepIngredientItemRef(ticket.recipe_ref, row.sku);
+const rowMarked = (ticket: Ticket, row: Row) =>
+  marks.isMarked(rowItemRef(ticket, row), row.quantity);
+function toggleRow(ticket: Ticket, row: Row) {
+  marks.toggle(rowItemRef(ticket, row), row.quantity, row.name);
+}
+function ticketCheckedCount(ticket: Ticket) {
+  return weighing.rowsFor(ticket).filter((row) => rowMarked(ticket, row)).length;
+}
+
+// "Pedir no Compras": só para quem opera o Compras (o servidor manda vazio aos demais).
+const purchaseUrl = computed(() => projection.value?.purchase_url ?? "");
+const { attrsFor } = useOperatorAppLink();
 
 const mode = ref<"insumos" | "preparos">("preparos");
 // As duas visões da mesma preparação, como abas que só trocam a lente (`:content="false"`).
@@ -101,11 +131,17 @@ const visibleTickets = computed(() => {
 // A linha aberta mostra as receitas que usam o insumo (o `#expanded` da tabela).
 const expandedLines = ref<Record<string, boolean>>({});
 const NUM = { class: { th: "text-right", td: "text-right tabular-nums" } };
+// A caixa do "Separado" se toca de luva e farinha: 20 px à vista, 44 px de alvo
+// (o pseudo-elemento do kit, aqui no tamanho da bancada).
+const PREP_CHECKBOX_UI = { base: "after:size-11" };
 const lineColumns = computed(() => [
-  { id: "done", header: "Separado", enableHiding: false },
   { id: "name", header: "Insumo", enableHiding: false },
   { id: "quantity", header: "Quantidade", meta: NUM },
-  ...(projection.value?.has_stock_readings ? [{ id: "available", header: "Saldo", meta: NUM }] : []),
+  // No celular a coluna de saldo sai (coluna de apoio) e o saldo vira a segunda linha
+  // da quantidade: com número e unidade presos (#3656) ela não cabe ao lado.
+  ...(projection.value?.has_stock_readings
+    ? [{ id: "available", header: "Saldo", meta: { ...NUM, supporting: true } }]
+    : []),
 ]);
 
 // Dois artefatos de impressão, papéis distintos:
@@ -129,20 +165,12 @@ const printableTickets = computed(() => {
   );
 });
 
+// A prévia da etiqueta sai das mesmas linhas do cartão (P1-26).
 const labels = computed(() =>
-  printableTickets.value.flatMap((ticket) =>
-    ticket.ingredients.map((ing, index) => ({
-      code: ticket.blind_code,
-      ingredient: ing.name,
-      sku: ing.sku,
-      weight: operationalTargetDisplay(
-        ing.target_display,
-        ing.quantity_display,
-      ),
-      annotation: ing.annotation,
-      date: weighing.dateDisplay.value,
-      key: `${ticketIdentity(ticket)}-${ing.sku}-${index}`,
-    })),
+  weighingLabels(
+    printableTickets.value,
+    ticketIdentity,
+    weighing.dateDisplay.value,
   ),
 );
 
@@ -181,6 +209,9 @@ function refreshAll() {
         :count="mode === 'insumos' ? lines.length : visibleTickets.length"
         :count-label="mode === 'insumos' ? 'insumos' : 'preparos'"
         :pending="isPending"
+        :stale="staleIngredients || staleWeighing"
+        :realtime="realtime"
+        :poll-ms="fallbackPollMs"
         @refresh="refreshAll()"
       >
         <template #primary>
@@ -215,19 +246,11 @@ function refreshAll() {
           {{ checkedCount }}/{{ lines.length }} separados
         </span>
 
-        <span
-          v-if="mode === 'insumos' && lines.length"
-          class="flex items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <Icon name="lucide:info" class="size-4 shrink-0" />
-          Checklist local {{ stationRef ? "desta estação" : "deste dispositivo" }} · não é registro de auditoria
-        </span>
-
         <div class="ml-auto flex flex-wrap items-center gap-3">
           <NuxtCheckbox
             v-if="mode === 'insumos'"
             v-model="expand"
-            label="Explodir até matéria-prima"
+            label="Mostrar ingredientes dos pré-preparos"
           />
           <template v-if="mode === 'preparos' && visibleTickets.length">
             <NuxtButton
@@ -239,8 +262,8 @@ function refreshAll() {
               color="neutral"
               variant="outline"
               icon="i-lucide-tag"
-              label="Identificação interna"
-              title="Identificação interna: nome, data prevista e validade configurada"
+              label="Etiquetas dos preparos"
+              title="Etiquetas com nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
             />
           </template>
@@ -249,15 +272,6 @@ function refreshAll() {
 
       <!-- ── Modo Insumos: agregado do dia (provisionamento + checklist) ── -->
       <template v-if="mode === 'insumos'">
-        <div
-          v-if="checklistRevisionChanged"
-          role="status"
-          aria-live="polite"
-          class="mb-3 flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm font-medium text-warning"
-        >
-          <Icon name="lucide:refresh-cw" class="size-4 shrink-0" />
-          <span>O planejamento mudou. Confira esta revisão; as marcações da lista anterior foram limpas.</span>
-        </div>
         <p
           v-if="pending && !lines.length"
           class="text-sm text-muted-foreground"
@@ -324,39 +338,73 @@ function refreshAll() {
             :columns="lineColumns"
             :row-key="(line) => line.sku"
             :row-label="(line) => line.name"
-            :row-class="(line) => (isChecked(line.sku) ? 'bg-muted/40 text-muted-foreground' : '')"
+            :row-class="(line) => (lineMarked(line) ? 'bg-muted/40 text-muted-foreground' : '')"
             pinned="name"
+            expand-at="end"
             :empty-title="query ? `Nenhum insumo para “${query.trim()}”.` : 'Nenhum insumo para separar.'"
             caption="Insumos da preparação"
             data-mise-lines
           >
-            <template #done-header><span class="sr-only">Separado</span></template>
-            <template #done-cell="{ row }">
-              <NuxtCheckbox
-                :model-value="isChecked(row.original.sku)"
-                :aria-label="`Marcar ${row.original.name} como separado`"
-                @update:model-value="toggleChecked(row.original.sku)"
-              />
-            </template>
+            <!-- A caixa de "Separado" é o primeiro gesto da linha (dono, 26/11): mora na
+                 coluna fixada, antes do nome, em qualquer largura. -->
             <template #name-cell="{ row }">
-              <span
-                class="block font-semibold"
-                :class="isChecked(row.original.sku) ? 'line-through decoration-1' : ''"
-                >{{ row.original.name }}</span
-              >
-              <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
-                     seria a mesma linha duas vezes. -->
-                <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
-                <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
-              </span>
+              <div class="flex items-start gap-3">
+                <NuxtCheckbox
+                  size="xl"
+                  :ui="PREP_CHECKBOX_UI"
+                  class="mt-0.5 shrink-0"
+                  :model-value="lineMarked(row.original)"
+                  :aria-label="`Marcar ${row.original.name} como separado`"
+                  data-prep-mark
+                  @update:model-value="toggleLine(row.original)"
+                />
+                <div class="min-w-0">
+                  <span
+                    class="block font-semibold"
+                    :class="lineMarked(row.original) ? 'line-through decoration-1' : ''"
+                    >{{ row.original.name }}</span
+                  >
+                  <span
+                    v-if="lineMark(row.original)"
+                    class="block text-xs text-muted-foreground"
+                    data-prep-mark-author
+                    >{{ markAuthorLine(lineMark(row.original)) }}</span
+                  >
+                  <span class="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                    <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir embaixo
+                         seria a mesma linha duas vezes. -->
+                    <span v-if="row.original.name !== row.original.sku">{{ row.original.sku }}</span>
+                    <NuxtBadge v-if="row.original.is_subrecipe" color="neutral" label="Pré-preparo" />
+                  </span>
+                  <!-- A falta mora sob o nome: é o que se lê em qualquer largura (a coluna
+                       de saldo sai da tela no celular). Quanto falta e o que fazer. -->
+                  <span
+                    v-if="stockFacts(row.original).shortage"
+                    class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1"
+                  >
+                    <span class="text-sm font-semibold text-error" data-prep-shortage>{{
+                      stockFacts(row.original).shortage
+                    }}</span>
+                    <NuxtButton
+                      v-if="purchaseUrl"
+                      :href="purchaseUrl"
+                      v-bind="attrsFor(purchaseUrl)"
+                      color="error"
+                      variant="outline"
+                      trailing-icon="i-lucide-external-link"
+                      label="Pedir no Compras"
+                      data-prep-purchase
+                    />
+                  </span>
+                </div>
+              </div>
             </template>
             <template #quantity-cell="{ row }">
               <span class="font-semibold">{{ projectedQuantityDisplay(row.original.quantity_display) }}</span>
               <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do servidor quando
                    o fator é aproximado; aqui só se mostra. -->
               <span v-if="row.original.annotation" class="block text-xs text-muted-foreground">{{
-                row.original.annotation
+                keepNumberWithUnit(row.original.annotation)
               }}</span>
               <!-- Os gramas a mais são margem, e a linha diz por quê: número que cresceu
                    sozinho não entra nesta lista. O texto do motivo vem pronto do servidor. -->
@@ -364,18 +412,23 @@ function refreshAll() {
                 v-if="row.original.margin_display"
                 class="block text-xs text-muted-foreground"
                 :title="row.original.margin_reason"
-                >{{ row.original.margin_display }}</span
+                >{{ keepNumberWithUnit(row.original.margin_display) }}</span
+              >
+              <span
+                v-if="projection?.has_stock_readings && stockFacts(row.original).available"
+                class="block text-xs sm:hidden"
+                :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'"
+                data-prep-available-inline
+                >Saldo {{ stockFacts(row.original).available }}</span
               >
             </template>
             <template #available-cell="{ row }">
-              <span :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'">
-                {{
-                  row.original.available_display
-                    ? projectedQuantityDisplay(row.original.available_display)
-                    : "—"
-                }}
-              </span>
-              <span v-if="row.original.is_short" class="block text-xs font-medium text-error">Falta</span>
+              <!-- Pré-preparo nunca mostra saldo nem falta (decisão de 03/07): ele se faz na hora. -->
+              <template v-if="!row.original.is_subrecipe">
+                <span :class="row.original.is_short ? 'font-semibold text-error' : 'text-muted-foreground'">
+                  {{ stockFacts(row.original).available || "—" }}
+                </span>
+              </template>
             </template>
             <template #expanded="{ row }">
               <ul v-if="row.original.breakdown.length" class="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -511,32 +564,44 @@ function refreshAll() {
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
                 />
               </header>
+              <p class="text-sm tabular-nums text-muted-foreground" data-ticket-progress>
+                {{ ticketCheckedCount(ticket) }}/{{ weighing.rowsFor(ticket).length }} separados
+              </p>
               <ul class="flex flex-col divide-y text-sm">
                 <li
-                  v-for="ing in ticket.ingredients"
-                  :key="ing.sku"
-                  class="flex items-center justify-between gap-3 py-1.5"
+                  v-for="row in weighing.rowsFor(ticket)"
+                  :key="row.key"
+                  class="flex items-center gap-3 py-1"
+                  :class="rowMarked(ticket, row) ? 'text-muted-foreground' : ''"
                 >
-                  <span class="min-w-0">
-                    <span class="block truncate font-medium">{{
-                      ing.name
-                    }}</span>
+                  <NuxtCheckbox
+                    size="xl"
+                    :ui="PREP_CHECKBOX_UI"
+                    class="shrink-0"
+                    :model-value="rowMarked(ticket, row)"
+                    :aria-label="`Marcar ${row.name} de ${ticket.name} como separado`"
+                    data-prep-mark
+                    @update:model-value="toggleRow(ticket, row)"
+                  />
+                  <span class="min-w-0 flex-1">
+                    <span
+                      class="block truncate font-medium"
+                      :class="rowMarked(ticket, row) ? 'line-through decoration-1' : ''"
+                      >{{ row.name }}</span
+                    >
                     <span
                       class="block truncate font-mono text-xs text-muted-foreground"
-                      >{{ ing.sku }}</span
+                      >{{ row.sku }}</span
                     >
                   </span>
                   <span class="shrink-0 text-right">
                     <span class="block font-semibold tabular-nums">{{
-                      operationalTargetDisplay(
-                        ing.target_display,
-                        ing.quantity_display,
-                      )
+                      row.target
                     }}</span>
                     <span
-                      v-if="ing.annotation"
+                      v-if="row.annotation"
                       class="block text-xs text-muted-foreground"
-                      >{{ ing.annotation }}</span
+                      >{{ row.annotation }}</span
                     >
                   </span>
                 </li>

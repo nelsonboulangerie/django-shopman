@@ -17,9 +17,12 @@ from shopman.orderman.models import Order
 
 from shopman.shop.models import Conversation, ConversationBinding, OutboundAttempt
 from shopman.shop.models import ConversationMessage as Message
-from shopman.storefront.concierge import agent, service
+from shopman.shop.tests.ai_support import configure_ai
+from shopman.storefront.concierge import service
 from shopman.storefront.concierge.contracts import WindowEvidence
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests.support.concierge_transport_v3 import connection, reset_adapter
+from shopman.storefront.tests.support.concierge_turn import stub_turn
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -41,7 +44,7 @@ def test_hundred_conversations_ten_thousand_history_and_burst_conserve_inputs(se
             )
         },
     }
-    settings.AI_ASSIST_API_KEY = "synthetic-key"
+    configure_ai("synthetic-key")
     adapter = reset_adapter()
     monkeypatch.setattr(service, "_alert", lambda *args, **kwargs: None)
     conversations = Conversation.objects.bulk_create(
@@ -135,10 +138,9 @@ def test_hundred_conversations_ten_thousand_history_and_burst_conserve_inputs(se
         .annotate(first=Min("created_at"))
         .values_list("conversation_id", "first")
     )
-    monkeypatch.setattr(
-        agent,
-        "run_agent",
-        lambda **kwargs: agent.AgentOutcome(reply_text="Escolhas preservadas. Qual opção deseja consultar?"),
+    stub_turn(
+        monkeypatch,
+        lambda **kwargs: TurnOutcome(reply_text="Escolhas preservadas. Qual opção deseja consultar?"),
     )
 
     def run(item):

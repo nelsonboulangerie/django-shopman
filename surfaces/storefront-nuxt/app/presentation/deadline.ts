@@ -31,6 +31,20 @@ export function deadlineCountdown (deadlineIso: string | null | undefined, nowMs
   return { totalSeconds, mmss: `${pad(minutes)}:${pad(seconds)}`, isExpired: totalSeconds === 0 }
 }
 
+// O tempo que falta dito por extenso: "Faltam 14 min 45 s". Para a contagem que
+// vive numa FRASE, ao lado de um horário: "Confirme em 14:45" logo abaixo de
+// "até 13h27" se lê como hora do dia, e a tela fica com duas horas que brigam
+// (coordenação, 19/11/2026). O `mmss` continua valendo onde o número mora
+// sozinho num relógio (a barra do Pix).
+export function remainingPhrase (totalSeconds: number): string {
+  const total = Math.max(0, Math.floor(totalSeconds))
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  if (minutes === 0) return `${seconds === 1 ? 'Falta' : 'Faltam'} ${seconds} s`
+  if (minutes === 1 && seconds === 0) return 'Falta 1 min'
+  return `Faltam ${minutes} min ${String(seconds).padStart(2, '0')} s`
+}
+
 // Percentual restante (0..100) numa janela conhecida. Para a barra do PIX a
 // janela é o tempo restante no primeiro render (anchor): a barra drena de cheia
 // a vazia honestamente, sem depender do início real do intent (que a projeção

@@ -248,7 +248,7 @@ class TestInterpretDeviceCheckLogin:
 class TestInterpretWelcome:
     def _customer_info(self):
         info = MagicMock()
-        info.uuid = "test-uuid-1234"
+        info.subject_id = "test-uuid-1234"
         return info
 
     def test_unauthenticated_returns_auth_error(self):

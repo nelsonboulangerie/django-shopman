@@ -5,7 +5,7 @@
 > (Pablo / Nelson Boulangerie). Na data, nada estava implementado.
 >
 > ⚠️ **Estado em 24/09/2026: a maior parte foi entregue** pelo inventário de receitas
-> (#488, [`RECIPE-INVENTORY-PLAN`](RECIPE-INVENTORY-PLAN.md),
+> (#488, [`RECIPE-INVENTORY-PLAN`](completed/RECIPE-INVENTORY-PLAN.md),
 > [ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Leia a seção
 > **0** antes do resto: ela diz o que ficou superado e o que continua aberto. O corpo
 > abaixo é o registro da entrevista e fica como está.
@@ -33,6 +33,11 @@
 2. **A lista de pesagem ainda não é a mistura final.** A pesagem do dia lê ficha ×
    coeficiente; `final_mix`/`final_mix_at_cap` só aparecem na lente do inventário. É
    exatamente a primeira das "duas coisas diferentes" do §5.
+   ✅ **Ligado em 19/10/2026** (FRENTE 9): a ordem que rende massa ganha o próprio ticket
+   de pesagem (mistura final + partes prontas; antes a balança via só o levain), e a ficha
+   com teto de massa velha manda `old_dough` com a mistura final no teto
+   (`final_mix_at_cap`), escolhida por preparo na Preparação ("Com massa velha"). O saldo
+   `mínimo(sobra, teto)` segue sendo o item 1.
 3. **O coeficiente francês visível ao padeiro** (§2): o número só é usado por dentro dos
    cálculos, nenhuma tela o mostra. Com base de 1 kg de farinha, ele é o lote em kg de
    farinha.

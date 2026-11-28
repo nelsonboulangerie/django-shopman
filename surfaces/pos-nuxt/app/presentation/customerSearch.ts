@@ -38,6 +38,23 @@ export function formatCpf(value: string): string {
 
 /** Eco do input: quando a digitação numérica fecha um CPF VÁLIDO, o campo ganha a
  *  máscara (idempotente; digitação parcial e telefone seguem crus). */
+/**
+ * O telefone como se fala no balcão: ``+5543991111111`` vira ``(43) 99111-1111``.
+ *
+ * A busca de cliente mostrava o E.164 cru, e o detalhe da encomenda mostrava o
+ * formatado (beta test de 05/11/2026). Número de fora do Brasil, ou que não tem
+ * o tamanho de um telefone daqui, sai como veio.
+ */
+export function formatPhoneDisplay(value: string): string {
+  const raw = (value || "").trim();
+  let digits = digitsOnly(raw);
+  if (digits.startsWith("55") && (digits.length === 12 || digits.length === 13)) digits = digits.slice(2);
+  else if (raw.startsWith("+")) return raw;
+  if (digits.length === 11) return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
+  if (digits.length === 10) return `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`;
+  return raw;
+}
+
 export function maskQueryIfCpf(query: string): string {
   if (!isNumericQuery(query)) return query;
   if (!isValidCpf(query)) return query;
@@ -134,4 +151,29 @@ export function moveHighlight(current: number, delta: 1 | -1, resultsCount: numb
   if (resultsCount <= 0) return -1;
   const base = current < 0 ? (delta === 1 ? -1 : 0) : current;
   return (base + delta + resultsCount) % resultsCount;
+}
+
+/**
+ * A busca FALHOU: a frase diz que não deu para buscar, nunca "nenhum cadastro".
+ * A lista vazia de antes era um falso "não existe" e convidava a cadastrar de
+ * novo quem já tem cadastro (P1-8). 429 é o limite de buscas por operador
+ * (#2336): passa sozinho, e a frase diz quando tentar.
+ */
+export function customerSearchErrorMessage(status: number): string {
+  return status === 429
+    ? "Não consegui buscar: foram muitas buscas seguidas. Espere um minuto e tente de novo."
+    : "Não consegui buscar agora. Tente de novo.";
+}
+
+/**
+ * O convite da busca de cliente, pelo espaço que o campo tem (#2885). No celular
+ * (375 px) o campo tem 311 px e a frase longa saía cortada ("Buscar por nome,
+ * telefone, CPF ou e…"): abaixo de 360 px de campo vale a curta, que cabe. A lupa
+ * diz que é busca, e a descrição do diálogo logo acima diz "Busque por…". Largura
+ * 0 é "ainda não medido", e fica a longa.
+ */
+export const CUSTOMER_SEARCH_PLACEHOLDER_SHORT_BELOW_PX = 360;
+export function customerSearchPlaceholder(width: number): string {
+  if (width > 0 && width < CUSTOMER_SEARCH_PLACEHOLDER_SHORT_BELOW_PX) return "Nome, telefone, CPF ou e-mail";
+  return "Buscar por nome, telefone, CPF ou e-mail";
 }

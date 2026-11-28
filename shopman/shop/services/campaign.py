@@ -34,6 +34,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH, create_deduped
 from shopman.shop.models import (
@@ -241,7 +242,9 @@ def _create_announcement(
             rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
         )
     )
-    resolved = resolved_audience or audience_service.resolve(rule.audience_rules, sku=sku)
+    resolved = resolved_audience or audience_service.resolve(
+        rule.audience_rules, sku=sku, campaign_id=rule.pk
+    )
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível validar toda a audiência. Nenhum anúncio foi criado."
@@ -253,16 +256,23 @@ def _create_announcement(
     # atropela.
     publish_at = campaign_schedule.next_publish_at(rule.schedule)
 
+    platform_content = _platform_content(
+        rule.template,
+        content,
+        platforms=rule.platforms,
+    )
+    # Campanha automática (ou texto escrito na hora) pula a revisão, mas não pula o
+    # MKT-20: com link relativo o anúncio nasce para revisão, onde a prévia mostra o
+    # motivo e a aprovação recusa enquanto ele durar.
+    requires_review = rule.requires_approval or bool(
+        _publish_blockers(content, platform_content)
+    )
     announcement = Announcement.objects.create(
         rule=rule,
         template=rule.template,
-        status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
+        status=AnnouncementStatus.PENDING_REVIEW if requires_review else AnnouncementStatus.APPROVED,
         content=content,
-        platform_content=_platform_content(
-            rule.template,
-            content,
-            platforms=rule.platforms,
-        ),
+        platform_content=platform_content,
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
@@ -271,7 +281,7 @@ def _create_announcement(
         expires_at=_expiry(rule),
     )
 
-    if rule.requires_approval:
+    if requires_review:
         notify_reviewers(rule, announcement)
     elif publish_at is None:
         dispatch(announcement)
@@ -700,6 +710,8 @@ _TRANSACTIONAL_TEST_VALUES = {
     "purchase_qty_display": "2 kg",
     "purchase_ref": "COMPRA-TESTE-A47",
     "refund_amount_display": "R$ 12,00",
+    "release_target": "o Chrome no Windows",
+    "release_url": "https://shopman.invalid/teste/liberar",
     "reorder_url": "https://shopman.invalid/teste/refazer",
     "reserve_note": "Reserva sintética para validar o modelo.",
     "revoke_url": "https://shopman.invalid/teste/revogar",
@@ -1240,14 +1252,16 @@ def preview_platforms(
             field_errors={"platform_content": ("Use um objeto por plataforma.",)},
         )
 
-    sample = (sku or "").strip() or _sample_sku()
+    # O WhatsApp sem fluxo sai antes de qualquer leitura: ele não entra nas variantes,
+    # nos fatos nem nos artefatos desta prévia (beta 05/11, ge:MKT-08).
+    flow_binding, normalized_platforms, platform_problems = _preview_whatsapp_binding(
+        normalized_platforms
+    )
+    sample = (sku or "").strip() or _sample_sku(promotion_ref)
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
     from shopman.shop.services import marketing_facts
     from shopman.shop.services.marketing_artifacts import (
         resolve_all_dispatch_artifacts,
-    )
-    from shopman.shop.services.marketing_platform_configuration import (
-        verified_whatsapp_flow_binding,
     )
 
     selected_variants = {
@@ -1283,24 +1297,20 @@ def preview_platforms(
             timezone_name=marketing_time.configured_timezone_name(),
             now=timezone.now(),
         )
-    flow_binding = (
-        verified_whatsapp_flow_binding()
-        if "whatsapp" in normalized_platforms
-        else None
-    )
     platform_bindings = (
         {"whatsapp": flow_binding.artifact_payload()}
         if flow_binding is not None
         else {}
     )
+    preview_content = {
+        "body": render(body or "", variables, field="body"),
+        "hashtags": variables["hashtags_list"],
+        "link": variables["link"],
+        "image_url": variables["product_image_url"],
+    }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
-        content={
-            "body": render(body or "", variables, field="body"),
-            "hashtags": variables["hashtags_list"],
-            "link": variables["link"],
-            "image_url": variables["product_image_url"],
-        },
+        content=preview_content,
         platform_content=rendered_variants,
         content_version=content_version,
         facts_as_of=facts.as_of.isoformat(),
@@ -1326,6 +1336,8 @@ def preview_platforms(
         },
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
+        "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(preview_content, rendered_variants),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1362,9 +1374,6 @@ def preview_announcement(
     from shopman.shop.services.marketing_artifacts import (
         normalize_platform_content,
         resolve_all_dispatch_artifacts,
-    )
-    from shopman.shop.services.marketing_platform_configuration import (
-        verified_whatsapp_flow_binding,
     )
 
     normalized_platforms = tuple(dict.fromkeys(
@@ -1406,11 +1415,13 @@ def preview_announcement(
             timezone_name=marketing_time.configured_timezone_name(),
             now=timezone.now(),
         )
-    flow_binding = (
-        verified_whatsapp_flow_binding()
-        if "whatsapp" in normalized_platforms
-        else None
+    flow_binding, normalized_platforms, platform_problems = _preview_whatsapp_binding(
+        normalized_platforms
     )
+    if platform_problems:
+        platform_content = {
+            key: value for key, value in platform_content.items() if key not in platform_problems
+        }
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
         content=content,
@@ -1433,6 +1444,8 @@ def preview_announcement(
         "fields": {},
         "ai_writes": False,
         "facts": facts.as_payload() if facts is not None else None,
+        "platform_problems": platform_problems,
+        "publish_blockers": _publish_blockers(content, platform_content),
         "previews": {
             artifact.platform: {
                 "artifact": artifact.as_payload(),
@@ -1448,17 +1461,65 @@ def preview_announcement(
     }
 
 
-def _sample_sku() -> str:
-    """Um produto real para a prévia, ou vazio numa loja sem catálogo."""
+def _publish_blockers(content: dict, platform_content: object) -> list[dict]:
+    """O que a aprovação vai recusar, mostrado na prévia sem derrubá-la (MKT-20)."""
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        content, platform_content, store_address_configured=bool(storefront_base_url())
+    )
+    return [problem.as_payload()] if problem is not None else []
+
+
+def _preview_whatsapp_binding(
+    platforms: tuple[str, ...],
+) -> tuple[object | None, tuple[str, ...], dict[str, dict[str, str]]]:
+    """O fluxo do WhatsApp para a prévia, isolado das outras plataformas.
+
+    A prévia é por plataforma: o WhatsApp sem fluxo aprovado (ou com o catálogo fora do
+    ar) não derruba a prévia do Instagram. Ele sai desta prévia com o motivo, e a
+    aprovação continua recusando do mesmo jeito (beta 05/11, ge:MKT-08). Sozinho, o
+    erro dele é o da prévia. Vale para a prévia do formulário e para a da revisão.
+    """
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
+
+    if "whatsapp" not in platforms:
+        return None, platforms, {}
+    try:
+        return verified_whatsapp_flow_binding(), platforms, {}
+    except MarketingContractError as exc:
+        if platforms == ("whatsapp",):
+            raise
+        remaining = tuple(platform for platform in platforms if platform != "whatsapp")
+        return None, remaining, {"whatsapp": {"code": exc.code, "detail": exc.detail}}
+
+
+def _sample_sku(promotion_ref: str = "") -> str:
+    """Um produto real para a prévia, ou vazio numa loja sem catálogo.
+
+    Com oferta, o exemplo sai de dentro dela: um produto fora do alcance da oferta fazia
+    a prévia da campanha recusar "a oferta não alcança o produto do anúncio" por causa
+    de uma escolha nossa, não do gestor (beta 05/11, ge:MKT-12).
+    """
     try:
         from shopman.offerman.models import Product
 
-        product = (
-            Product.objects.filter(is_published=True, is_sellable=True)
-            .order_by("name")
-            .only("sku")
-            .first()
-        )
+        products = Product.objects.filter(is_published=True, is_sellable=True)
+        if promotion_ref:
+            from shopman.shop.models import Promotion
+            from shopman.shop.services.offers import offer_skus
+
+            promotion = Promotion.objects.filter(ref=promotion_ref).first()
+            # O alcance é o da oferta (SKUs diretos ou pelas coleções): o mesmo
+            # `offer_skus` que decide se ela pode ir numa campanha.
+            reach = offer_skus(promotion) if promotion is not None else ()
+            scoped = products.filter(sku__in=list(reach))
+            if reach and scoped.exists():
+                products = scoped
+        product = products.order_by("name").only("sku").first()
         return product.sku if product else ""
     except Exception:
         logger.warning("campaign.preview_sample_failed", exc_info=True)
@@ -1602,7 +1663,7 @@ def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
         #: ⚠️ Não confundir com `content["image_url"]`, que é a imagem DO ANÚNCIO (card
         #: do gestor e post externo). Consumidores diferentes, nomes diferentes.
         "product_image_url": product_image_url(sku),
-        "time": timezone.localtime().strftime("%Hh%M"),
+        "time": format_clock(timezone.localtime()),
         "store_name": _brand_name(),
         # O RÓTULO do grau, nunca a ref: `{{quality}}` cai em copy de cliente, e
         # "excellent" no meio de uma frase em português é jargão vazando
@@ -1920,6 +1981,11 @@ def dispatch(announcement: Announcement) -> int:
             announcement.status = current.status
             logger.info("campaign.dispatch_superseded announcement=%s", current.pk)
             return 0
+        # MKT-20: o caminho sem selo (automático, agendado) também não sai com link
+        # relativo. Recusa antes de marcar PUBLISHING; o agendado espera a causa sumir.
+        blockers = _publish_blockers(current.content or {}, current.platform_content)
+        if blockers:
+            raise CampaignError(blockers[0]["detail"])
 
         current.status = AnnouncementStatus.PUBLISHING
         current.save(update_fields=["status"])
@@ -1972,7 +2038,7 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    resolved = audience_service.resolve(rules, sku=sku)
+    resolved = audience_service.resolve(rules, sku=sku, announcement=announcement)
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."

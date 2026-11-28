@@ -116,6 +116,28 @@ class TestRotuloMudaCodigoFica:
 
 
 class TestQualityAdmin:
+    def test_sem_veto_nao_promete_venda_nem_desconto(self, client):
+        from shopman.shop.models import Shop
+
+        Shop.objects.create(name="Loja")
+        user = User.objects.create_superuser("quality-safety-admin")
+        client.force_login(user)
+        defect_admin = admin.site._registry[QualityDefect]
+        defect = QualityDefect.objects.get(ref="underbaked")
+        assert defect_admin.veto_display(defect) == "avaliar pelo grau"
+        assert defect_admin.veto_display(QualityDefect(forces_discard=True)) == "descarta"
+
+        response = client.get(f"/admin/shop/qualitydefect/{defect.pk}/change/")
+        assert response.status_code == 200
+        assert "Miolo cru ou outra condição imprópria para consumo exige descarte" in response.content.decode()
+
+    def test_seed_nao_classifica_miolo_cru_como_defeito_cosmetico(self):
+        from config.management.commands.seed import QUALITY_DEFECTS
+
+        underbaked = next(item for item in QUALITY_DEFECTS if item[0] == "underbaked")
+        assert underbaked[2] == "Pálido, mas próprio para consumo"
+        assert underbaked[3] is False
+
     def test_catalogs_use_unfold_and_keep_historical_refs(self):
         request = RequestFactory().get("/admin/shop/quality/")
         request.user = User.objects.create_superuser("quality-admin")

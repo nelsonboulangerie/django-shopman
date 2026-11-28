@@ -529,23 +529,26 @@ class POSFireTabTests(TestCase):
 
         alice = get_user_model().objects.get(username="alice")
         shift = cash.open_shift(operator=alice, float_q=0)
+        payload = {
+            "intent_version": pos_service.POS_SALE_INTENT_VERSION,
+            "cash_shift_id": shift.pk,
+            "tab_ref": "2001",
+            "tab_session_key": session.session_key,
+            "items": [
+                {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 1, "unit_price_q": 1000},
+                {"line_id": "L-B", "sku": "FIRE-B", "name": "Fire B", "qty": 1, "unit_price_q": 1000},
+            ],
+            "fulfillment_type": "pickup",
+            "payment_method": "cash",
+            "payment_collection": "terminal",
+            "tendered_q": 2000,
+            "client_request_id": "pos-fire-then-close-001",
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         pos_service.close_sale(
             channel_ref="pdv",
-            payload={
-                "intent_version": pos_service.POS_SALE_INTENT_VERSION,
-                "cash_shift_id": shift.pk,
-                "tab_ref": "2001",
-                "tab_session_key": session.session_key,
-                "items": [
-                    {"line_id": "L-A", "sku": "FIRE-A", "name": "Fire A", "qty": 1, "unit_price_q": 1000},
-                    {"line_id": "L-B", "sku": "FIRE-B", "name": "Fire B", "qty": 1, "unit_price_q": 1000},
-                ],
-                "fulfillment_type": "pickup",
-                "payment_method": "cash",
-                "payment_collection": "terminal",
-                "tendered_q": 2000,
-                "client_request_id": "pos-fire-then-close-001",
-            },
+            payload=payload,
             actor="pos:alice", operator_username="alice",
         )
 

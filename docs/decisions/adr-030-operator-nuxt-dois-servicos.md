@@ -1,6 +1,8 @@
 # ADR-030 — Os oito apps Nuxt de operador em dois services
 
-**Status:** Aceito · 2026-09-17 (decisão do Pablo)
+**Status:** Aceito
+**Data:** 2026-09-17
+**Decisão:** Pablo
 **Escopo:** `surfaces/*-nuxt` de operador, `surfaces/operator-router`, deploy no App Platform
 **Origem:** [WP-DO-ECONOMIA E2](../plans/WP-DO-ECONOMIA-2026-09.md#e2--os-8-nuxt-de-operador-em-um-único-service)
 e [WP-PERFORMANCE P9](../plans/WP-PERFORMANCE-2026-09.md#p9--consolidação-dos-nuxt-o-que-medir-antes)
@@ -51,7 +53,7 @@ De US$ 40 para 15: **US$ 25/mês**. Picos somados: chão ≈ 480 MB de 1 GB, ges
    sinal), depois fecha a porta, termina os SSE com fim de stream limpo (o EventSource
    reconecta no contêiner novo), espera pedidos comuns até 15 s, SIGTERM nos filhos,
    SIGKILL em 5 s.
-7. **Envelope de segurança (ADR-026):** CSP/nonce seguem por app, gerados por cada Nitro.
+7. **Envelope de segurança (ADR-038):** CSP/nonce seguem por app, gerados por cada Nitro.
    Nenhum opt-in muda.
 
 ## Por que "todos os filhos" na saúde

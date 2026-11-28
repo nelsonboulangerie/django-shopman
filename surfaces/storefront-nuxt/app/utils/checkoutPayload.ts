@@ -44,12 +44,20 @@ export interface CheckoutSubmitPayload extends Omit<CheckoutFormState, 'fiscal_t
   use_loyalty: boolean
   // Total (centavos) exibido ao cliente no momento do confirmar — o servidor
   // rejeita o commit se a repricing final divergir (cobrança surpresa, nunca).
-  expected_revision?: number
-  expected_total_q: number | null
+  expected_revision: number
+  expected_total_q: number
 }
 
 export function createCheckoutAttemptKey (): string {
   return newRemoteMutationKey('checkout')
+}
+
+export function checkoutBaseline (
+  cart: { grand_total_q: number, revision?: number } | null | undefined
+): { expectedTotalQ: number, expectedRevision: number } | null {
+  const revision = cart?.revision
+  if (!cart || typeof revision !== 'number' || !Number.isInteger(revision)) return null
+  return { expectedTotalQ: cart.grand_total_q, expectedRevision: revision }
 }
 
 /** O documento que vai na nota: o da entrega, ou o da retirada que a pessoa pediu. */
@@ -62,11 +70,11 @@ export function buildCheckoutPayload (
   state: CheckoutFormState,
   idempotencyKey: string,
   useLoyalty: boolean,
-  expectedTotalQ: number | null = null,
-  expectedRevision?: number
+  expectedTotalQ: number,
+  expectedRevision: number
 ): CheckoutSubmitPayload {
   return {
-    ...(expectedRevision !== undefined ? { expected_revision: expectedRevision } : {}),
+    expected_revision: expectedRevision,
     idempotency_key: idempotencyKey,
     name: state.name.trim(),
     phone: state.phone.trim(),

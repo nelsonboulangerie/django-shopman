@@ -1,5 +1,4 @@
 """Testes dos Services do Orderman kernel."""
-
 import types
 from decimal import Decimal
 
@@ -8,11 +7,14 @@ from django.test import TestCase
 from shopman.orderman.exceptions import CommitError, SessionError, ValidationError
 from shopman.orderman.models import Directive, Order, Session
 from shopman.orderman.services import (
+    CommitAuthority,
+    CommitSeal,
     CommitService,
     CustomerOrderHistoryService,
     ModifyService,
     SessionWriteService,
 )
+from shopman.orderman.tests.commit_support import seal_for
 
 
 @pytest.mark.django_db
@@ -89,6 +91,19 @@ class TestModifyService(TestCase):
                 ops=[{"op": "add_line", "sku": "A", "qty": 1}],
             )
 
+    def test_modify_refuses_a_stale_reviewed_revision_before_writing(self):
+        with pytest.raises(ValidationError) as caught:
+            ModifyService.modify_session(
+                session_key="S-1",
+                channel_ref="pos",
+                ops=[{"op": "set_data", "path": "customer.name", "value": "Stale"}],
+                expected_revision=99,
+            )
+
+        assert caught.value.code == "revision_changed"
+        self.session.refresh_from_db()
+        assert self.session.rev == 0 and self.session.data == {}
+
     def test_modify_locked_session_raises(self):
         self.session.edit_policy = "locked"
         self.session.save()
@@ -141,6 +156,8 @@ class TestCommitService(TestCase):
             session_key="S-1",
             channel_ref="pos",
             idempotency_key="IDEM-1",
+            seal=seal_for("S-1", "pos"),
+            channel_config={},
         )
         assert result.status == "committed"
         assert result.total_q == 2000
@@ -149,13 +166,50 @@ class TestCommitService(TestCase):
         assert order.total_q == 2000
         assert order.items.count() == 1
 
+    def test_expected_total_uses_the_same_fallback_as_order_sealing(self):
+        session = Session.objects.create(
+            session_key="S-TOTAL-OWNER",
+            channel_ref=self.channel.ref,
+            items=[{"sku": "CROISSANT", "qty": 2, "unit_price_q": 1000}],
+        )
+
+        CommitService.validate_expected_total(session, 2000)
+        with pytest.raises(ValidationError) as caught:
+            CommitService.validate_expected_total(session, 0)
+
+        assert caught.value.context == {"old_total_q": 0, "new_total_q": 2000}
+
+    def test_commit_refuses_a_revision_changed_after_repricing(self):
+        session = Session.objects.create(
+            session_key="S-REV-FENCE",
+            channel_ref=self.channel.ref,
+            rev=2,
+            items=[{"sku": "A", "qty": 1, "unit_price_q": 500}],
+        )
+
+        with pytest.raises(ValidationError) as caught:
+            CommitService.commit(
+                session_key=session.session_key,
+                channel_ref=self.channel.ref,
+                idempotency_key="IDEM-REV-FENCE",
+                seal=CommitSeal(
+                    expected_revision=1,
+                    expected_total_q=500,
+                    authority=CommitAuthority.REVIEWED,
+                ),
+                channel_config={},
+            )
+
+        assert caught.value.code == "revision_changed"
+        assert not Order.objects.filter(session_key=session.session_key).exists()
+
     def test_commit_marks_session_committed(self):
         Session.objects.create(
             session_key="S-2",
             channel_ref=self.channel.ref,
             items=[{"sku": "A", "qty": 1, "unit_price_q": 500}],
         )
-        CommitService.commit(session_key="S-2", channel_ref="pos", idempotency_key="IDEM-2")
+        CommitService.commit(session_key="S-2", channel_ref="pos", idempotency_key="IDEM-2", seal=seal_for("S-2", "pos"), channel_config={})
         session = Session.objects.get(session_key="S-2", channel_ref=self.channel.ref)
         assert session.state == "committed"
 
@@ -185,6 +239,7 @@ class TestCommitService(TestCase):
             session_key="S-COMMIT-1",
             channel_ref="pos",
             idempotency_key="IDEM-COMMIT-1",
+            seal=seal_for("S-COMMIT-1", "pos"),
             channel_config={"rules": {"checks": ["stock"]}},
         )
 
@@ -195,6 +250,40 @@ class TestCommitService(TestCase):
         assert "stock" in commitment["checks"]
         assert "other" not in commitment["checks"]
         assert commitment["checks"]["stock"]["result"]["approved"] is True
+        assert order.snapshot["commit"] == {
+            "authority": CommitAuthority.REVIEWED.value,
+            "expected_revision": 0,
+            "expected_total_q": 500,
+        }
+
+    def test_every_authority_obeys_revision_and_total_fences(self):
+        for authority in CommitAuthority:
+            for stale_field in ("revision", "total"):
+                with self.subTest(authority=authority, stale_field=stale_field):
+                    session_key = f"S-SEAL-{authority.value}-{stale_field}"
+                    Session.objects.create(
+                        session_key=session_key,
+                        channel_ref=self.channel.ref,
+                        rev=4,
+                        items=[{"sku": "A", "qty": 1, "unit_price_q": 500}],
+                    )
+                    seal = CommitSeal(
+                        expected_revision=3 if stale_field == "revision" else 4,
+                        expected_total_q=499 if stale_field == "total" else 500,
+                        authority=authority,
+                    )
+
+                    with pytest.raises(ValidationError) as caught:
+                        CommitService.commit(
+                            session_key=session_key,
+                            channel_ref=self.channel.ref,
+                            idempotency_key=f"IDEM-{authority.value}-{stale_field}",
+                            seal=seal,
+                            channel_config={},
+                        )
+
+                    assert caught.value.code == f"{stale_field}_changed"
+                    assert not Order.objects.filter(session_key=session_key).exists()
 
     def test_commit_idempotency(self):
         Session.objects.create(
@@ -202,14 +291,27 @@ class TestCommitService(TestCase):
             channel_ref=self.channel.ref,
             items=[{"sku": "A", "qty": 1, "unit_price_q": 500}],
         )
-        r1 = CommitService.commit(session_key="S-3", channel_ref="pos", idempotency_key="IDEM-3")
-        r2 = CommitService.commit(session_key="S-3", channel_ref="pos", idempotency_key="IDEM-3")
+        original_seal = seal_for("S-3", "pos")
+        r1 = CommitService.commit(
+            session_key="S-3", channel_ref="pos", idempotency_key="IDEM-3",
+            seal=original_seal, channel_config={},
+        )
+        replay_seal = CommitSeal(
+            expected_revision=original_seal.expected_revision,
+            expected_total_q=original_seal.expected_total_q,
+            authority=CommitAuthority.SYNTHETIC_DIAGNOSTIC,
+        )
+        r2 = CommitService.commit(
+            session_key="S-3", channel_ref="pos", idempotency_key="IDEM-3",
+            seal=replay_seal, channel_config={},
+        )
         assert r1.order_ref == r2.order_ref
+        assert Order.objects.get(ref=r1.order_ref).snapshot["commit"]["authority"] == CommitAuthority.REVIEWED.value
 
     def test_commit_empty_session_raises(self):
         Session.objects.create(session_key="S-4", channel_ref=self.channel.ref)
         with pytest.raises(CommitError, match="empty_session"):
-            CommitService.commit(session_key="S-4", channel_ref="pos", idempotency_key="IDEM-4")
+            CommitService.commit(session_key="S-4", channel_ref="pos", idempotency_key="IDEM-4", seal=seal_for("S-4", "pos"), channel_config={})
 
     def test_commit_blocking_issues_raises(self):
         Session.objects.create(
@@ -221,7 +323,7 @@ class TestCommitService(TestCase):
         session.data = {"issues": [{"id": "ISS-1", "source": "stock", "blocking": True, "message": "Sem estoque"}]}
         session.save()
         with pytest.raises(CommitError, match="blocking_issues"):
-            CommitService.commit(session_key="S-5", channel_ref="pos", idempotency_key="IDEM-5")
+            CommitService.commit(session_key="S-5", channel_ref="pos", idempotency_key="IDEM-5", seal=seal_for("S-5", "pos"), channel_config={})
 
     def test_commit_no_directives_from_core(self):
         """CommitService does not create directives — that's hooks.py's job."""
@@ -235,6 +337,8 @@ class TestCommitService(TestCase):
             session_key="S-BARE-1",
             channel_ref="bare",
             idempotency_key="IDEM-BARE-1",
+            seal=seal_for("S-BARE-1", "bare"),
+            channel_config={},
         )
         assert result.status == "committed"
         directives = Directive.objects.filter(payload__order_ref=result.order_ref)
@@ -255,6 +359,8 @@ class TestCommitService(TestCase):
             session_key="S-MKT-1",
             channel_ref="mktplace",
             idempotency_key="IDEM-MKT-1",
+            seal=seal_for("S-MKT-1", "mktplace"),
+            channel_config={},
         )
         directives = list(Directive.objects.filter(
             payload__order_ref=result.order_ref,
@@ -309,6 +415,8 @@ class TestCustomerOrderHistoryService(TestCase):
             session_key=session.session_key,
             channel_ref=session.channel_ref,
             idempotency_key="IDEM-HIST-COMMIT",
+            seal=seal_for(session.session_key, session.channel_ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -331,6 +439,8 @@ class TestCustomerOrderHistoryService(TestCase):
             session_key=session.session_key,
             channel_ref=session.channel_ref,
             idempotency_key="IDEM-HIST-CUSTOMER",
+            seal=seal_for(session.session_key, session.channel_ref),
+            channel_config={},
         )
 
         order = Order.objects.get(ref=result.order_ref)
@@ -366,3 +476,49 @@ class TestCustomerOrderHistoryService(TestCase):
         assert orders[0].order_ref == "ORD-HIST-001"
         assert stats.total_orders == 1
         assert stats.total_spent_q == 2500
+
+    def test_stats_sum_sealed_total_without_snapshot_pricing(self):
+        """ge:BI-02: pedido do PDV/conta não tem snapshot.pricing; o gasto vem de total_q."""
+        for index in (1, 2):
+            Order.objects.create(
+                ref=f"ORD-HIST-NOPRICING-{index}",
+                channel_ref="pos",
+                session_key=f"sess-hist-nopricing-{index}",
+                status=Order.Status.COMPLETED,
+                snapshot={"items": [{"sku": "SKU-1"}]},
+                data={"customer_ref": "CUST-HIST-NOPRICING"},
+                total_q=5000,
+            )
+
+        stats = CustomerOrderHistoryService.get_customer_stats("CUST-HIST-NOPRICING")
+        orders = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NOPRICING")
+
+        assert stats.total_orders == 2
+        assert stats.total_spent_q == 10000
+        assert stats.average_order_q == 5000
+        assert [order.total_q for order in orders] == [5000, 5000]
+
+    def test_cancelled_and_returned_orders_are_not_purchases(self):
+        """Beta 06/11, PIXEXP-07: pedido cancelado (Pix vencido) não é compra."""
+        for ref, status, total_q in (
+            ("ORD-NP-PAID", Order.Status.COMPLETED, 1530),
+            ("ORD-NP-CANCELLED", Order.Status.CANCELLED, 510),
+            ("ORD-NP-RETURNED", Order.Status.RETURNED, 2200),
+        ):
+            Order.objects.create(
+                ref=ref,
+                channel_ref="web",
+                session_key=f"sess-{ref}",
+                status=status,
+                data={"customer_ref": "CUST-HIST-NP"},
+                total_q=total_q,
+            )
+
+        stats = CustomerOrderHistoryService.get_customer_stats("CUST-HIST-NP")
+        purchases = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NP")
+        everything = CustomerOrderHistoryService.list_customer_orders("CUST-HIST-NP", include_not_purchases=True)
+
+        assert stats.total_orders == 1
+        assert stats.total_spent_q == 1530
+        assert [o.order_ref for o in purchases] == ["ORD-NP-PAID"]
+        assert {o.order_ref for o in everything} == {"ORD-NP-PAID", "ORD-NP-CANCELLED", "ORD-NP-RETURNED"}

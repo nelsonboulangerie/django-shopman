@@ -51,15 +51,26 @@ function unidades(qty: number): string {
  */
 export function kitchenHandoffNote(
   items: POSCartItem[],
-  options: { deferred?: boolean; waitsPayment?: boolean } = {},
+  options: {
+    deferred?: boolean;
+    waitsPayment?: boolean;
+    /**
+     * A linha AINDA NÃO enviada vai à cozinha ao finalizar? (o roteamento real, ver
+     * `kitchenBoundSkus`). Ausente = todas vão. O pão de vitrine na venda de balcão não
+     * vai: a frase prometia cozinha e o pedido concluía na hora (beta 05/11, PDV-09).
+     */
+    goesToKitchen?: (item: POSCartItem) => boolean;
+  } = {},
 ): string {
   if (!items.length) return "";
   const naCozinha = firedKitchenQty(items);
-  const aEnviar = unfiredCount(items);
+  const bound = options.goesToKitchen;
+  const aEnviar = unfiredCount(bound ? items.filter((item) => item.fired || bound(item)) : items);
+  if (!naCozinha && !aEnviar) return "";
   if (!naCozinha) {
-    // Encomenda para outro dia não vai para a cozinha ao finalizar: o pedido
-    // espera a data combinada (`lifecycle._physical_work_deferred`) e só então
-    // aparece no KDS. "Ao finalizar, vai para a cozinha" era promessa falsa.
+    // Encomenda para outro dia não vai para a cozinha ao validar: o pedido
+    // espera a data combinada (`lifecycle.awaits_kitchen_release`) e só então
+    // aparece no KDS. "Ao validar, vai para a cozinha" era promessa falsa.
     if (options.deferred) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha no dia da encomenda.`;
     }
@@ -68,12 +79,45 @@ export function kitchenHandoffNote(
     if (options.waitsPayment) {
       return `${aEnviar === 1 ? "O item vai" : `Os ${aEnviar} itens vão`} para a cozinha quando o pagamento entrar.`;
     }
-    return `Ao finalizar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
+    return `Ao validar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
   }
   if (aEnviar) {
-    return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao finalizar.`;
+    return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao validar.`;
   }
   return naCozinha === 1 ? "O item já está na cozinha." : `Os ${naCozinha} itens já estão na cozinha.`;
+}
+
+/**
+ * Para onde vai cada SKU que tem estação, pelo roteamento real (`kitchen_station`).
+ * É o que a COMANDA mostra ("vai à cozinha") e o que o Envio Auto/Manual alcança: o
+ * "Enviar" da comanda manda tudo que tem estação, preparo ou separação.
+ */
+export function kitchenRoutedSkus(
+  products: ReadonlyArray<{ sku: string; kitchen_station?: string }>,
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const product of products) {
+    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
+  }
+  return map;
+}
+
+/**
+ * Os SKUs que vão à cozinha AO FINALIZAR, pelo roteamento real (`kitchen_station` e
+ * `kitchen_prep` do catálogo, `services/kds.kitchen_routes_for_skus`).
+ *
+ * Na venda de balcão (o cliente leva agora) só o feito na hora vai: o fechamento
+ * despacha com `prep_only` e o pão de vitrine, que está na mão do cliente, não vira
+ * ticket de separação. Na encomenda vai tudo que tem estação.
+ */
+export function kitchenBoundSkus(
+  products: ReadonlyArray<{ sku: string; kitchen_station?: string; kitchen_prep?: boolean }>,
+  options: { counter: boolean },
+): Record<string, string> {
+  const routed = kitchenRoutedSkus(products);
+  if (!options.counter) return routed;
+  const prep = new Set(products.filter((product) => product.kitchen_prep).map((product) => product.sku));
+  return Object.fromEntries(Object.entries(routed).filter(([sku]) => prep.has(sku)));
 }
 
 export interface FireRefusalView {

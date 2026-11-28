@@ -201,6 +201,21 @@ def test_preview_surfaces_are_isolated_from_operator_deployment():
             assert surface["dir"] not in spec.read_text()
 
 
+def test_internal_surfaces_have_no_operational_deploy_identity():
+    groups = OPERATOR_GROUPS_FILE.read_text()
+    dockerfile = (ROOT / "surfaces" / "Dockerfile.operator-group").read_text()
+    for app_id, surface in REGISTRY.items():
+        if surface["kind"] != "internal":
+            continue
+        assert app_id not in groups
+        assert f" AS {app_id}" not in dockerfile
+        assert surface["dir"] not in dockerfile
+        for spec in DEPLOY_SPECS:
+            source = spec.read_text()
+            assert app_id not in source
+            assert surface["dir"] not in source
+
+
 def test_operator_group_env_prefixes_name_apps_of_that_group():
     """`<APP>__CHAVE` só com APP do próprio grupo — o launcher recusa o resto no boot.
 
@@ -344,3 +359,16 @@ def test_every_nuxt_surface_serves_a_liveness_route_without_django():
         assert not (ROOT / "surfaces" / surface / "server" / "routes" / "health").exists(), (
             f"{surface} sombreia a rota de health da layer com uma cópia local"
         )
+
+
+def test_bi_cross_surface_links_use_the_deployment_hosts():
+    """O B.I. não pode herdar os atalhos localhost do kit no deployment."""
+    import yaml
+
+    for path in DEPLOY_SPECS:
+        spec = yaml.safe_load(path.read_text())
+        office = next(service for service in spec["services"] if service["name"] == "operator-office")
+        envs = _env_map(office)
+        domain = "boulangerie.com.br" if path.name.startswith("app.alpha") else "STORE_DOMAIN"
+        assert envs["BI__NUXT_PUBLIC_PRODUCTION_URL"] == f"https://prod.{domain}/"
+        assert envs["BI__NUXT_PUBLIC_ORDERS_URL"] == f"https://gestor.{domain}/"

@@ -144,6 +144,8 @@ def test_every_mutation_endpoint_enforces_the_floor_gate(client, recipe):
     urls = [
         reverse("api-backstage-wo-plan"),
         reverse("api-backstage-wo-start", args=[wo.pk]),
+        reverse("api-backstage-wo-old-dough", args=[wo.pk]),
+        reverse("api-backstage-wo-formula-deviation", args=[wo.pk]),
         reverse("api-backstage-wo-finish", args=[wo.pk]),
         reverse("api-backstage-wo-quick-finish"),
         reverse("api-backstage-wo-void", args=[wo.pk]),
@@ -508,6 +510,128 @@ def test_station_policy_can_fail_closed_without_changing_the_role_matrix(recipe)
 
     assert off_station.can_start is False
     assert on_station.can_start is True
+
+
+# ── A estação do Letreiro só lê (WP-F16, P1-27) ──────────────────────────────
+
+
+def _station_account(username: str = "totem-letreiro", *, terminal_ref: str = "letreiro", mode: str = "autonomous"):
+    """A conta do totem, no grupo mais forte da Produção, declarada no terminal dela.
+
+    A conta recebe TUDO o que o operador recebe, de propósito: o teto da estação
+    tem de valer por cima das permissões, qualquer que seja o grupo.
+    """
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
+    user = User.objects.create_user(username, password="pw", is_staff=True)
+    user = grant_production_operator(user)
+    user.user_permissions.add(
+        _permission("shop", "manage_production"),
+        _permission("backstage", "quick_finish_production"),
+        _permission("backstage", "override_production_shortage"),
+        _permission("backstage", "void_production"),
+        _permission("backstage", "correct_production_qc"),
+        _permission("backstage", "reveal_production_blind_map"),
+        _permission("backstage", "view_production_reports"),
+    )
+    Terminal.objects.create(
+        ref=terminal_ref,
+        label="Letreiro",
+        metadata={"station": {"mode": mode, "operator": username}},
+    )
+    return User.objects.get(pk=user.pk)
+
+
+@pytest.mark.django_db
+def test_a_conta_da_estacao_tem_toda_capacidade_de_escrita_falsa(recipe):
+    from shopman.backstage.projections.production import (
+        PRODUCTION_WRITE_CAPABILITIES,
+        STATION_WRITE_CEILING,
+    )
+
+    station = _station_account()
+
+    access = resolve_production_access(station, trusted_station_ref="letreiro")
+
+    assert STATION_WRITE_CEILING == frozenset()
+    assert {name: getattr(access, name) for name in PRODUCTION_WRITE_CAPABILITIES} == dict.fromkeys(
+        PRODUCTION_WRITE_CAPABILITIES, False
+    )
+    # E a leitura continua: o Letreiro mostra o dia.
+    assert access.can_access_board is True
+    assert access.can_view_started is True
+    assert access.can_view_finished is True
+
+
+@pytest.mark.django_db
+def test_toda_capacidade_que_nao_e_leitura_esta_na_lista_de_escrita():
+    """Capacidade nova nasce fechada para a estação: ou é leitura (``can_view_*``), ou entra na lista."""
+    from dataclasses import fields
+
+    from shopman.backstage.projections.production import (
+        PRODUCTION_WRITE_CAPABILITIES,
+        ProductionSurfaceAccess,
+    )
+
+    names = {field.name for field in fields(ProductionSurfaceAccess)}
+    reads = {name for name in names if name.startswith("can_view_")}
+
+    assert names - reads == set(PRODUCTION_WRITE_CAPABILITIES)
+
+
+@pytest.mark.django_db
+def test_modo_escrito_errado_nao_devolve_a_escrita_a_conta_da_estacao(recipe):
+    station = _station_account(mode="autonoma")
+
+    assert resolve_production_access(station).can_start is False
+
+
+@pytest.mark.django_db
+def test_o_mesmo_grupo_fora_da_estacao_continua_escrevendo(recipe, production_operator):
+    _station_account()
+
+    assert resolve_production_access(production_operator).can_start is True
+
+
+@pytest.mark.django_db
+def test_o_tablet_do_letreiro_le_o_quadro_e_a_mutacao_dele_devolve_403(client, recipe):
+    from shopman.backstage.tests.support import trust_station
+
+    _station_account()
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    trust_station(client, "letreiro")
+
+    board = client.get(reverse("api-backstage-production"))
+    access = board.json()["board"]["access"]
+    start = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-start", args=[work_order.pk]),
+        {"quantity": "10", "expected_rev": work_order.rev, "idempotency_key": "letreiro-start"},
+        content_type="application/json",
+    )
+    plan = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        {
+            "recipe_id": recipe.pk,
+            "quantity": "20",
+            "target_date": date.today().isoformat(),
+            "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "letreiro-plan",
+        },
+        content_type="application/json",
+    )
+
+    assert board.status_code == 200
+    assert not any(value for key, value in access.items() if not key.startswith("can_view_") and key != "can_access_board" and isinstance(value, bool))
+    assert start.status_code == 403
+    assert plan.status_code == 403
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
 
 
 @pytest.mark.django_db
@@ -1044,7 +1168,7 @@ def test_board_returns_payload(client, recipe, production_operator):
     assert action == {
         "ref": f"start:{work_order.pk}",
         "kind": "start",
-        "label": "Confirmar abertura",
+        "label": "Confirmar previsto",
         "priority": 20,
         "enabled": True,
         "reason": "",
@@ -1066,6 +1190,85 @@ def test_board_returns_payload(client, recipe, production_operator):
         "source_alert_ref": None,
         "source_alert_effect": None,
     }
+
+
+@pytest.mark.django_db
+def test_kds_registers_old_dough_with_projected_proof_and_replays(
+    client,
+    recipe,
+    production_operator,
+):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    production_service.apply_start(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:setup",
+        expected_rev=work_order.rev,
+        idempotency_key="old-dough-api-start",
+    )
+    client.force_login(production_operator)
+    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
+    action = next(item for item in kds["actions"] if item["ref"] == f"register_old_dough:{work_order.pk}")
+    body = _projected_body(
+        kds,
+        action,
+        quantity="750",
+        unit="g",
+        expiry_date=(date.today() + timedelta(days=1)).isoformat(),
+        position_ref="forno",
+        note="Aparas limpas da divisão",
+        expected_rev=action["expected_rev"],
+        idempotency_key="old-dough-api-register",
+    )
+    url = reverse("api-backstage-wo-old-dough", args=[work_order.pk])
+
+    first = client.post(url, body, content_type="application/json")
+    replay = client.post(url, body, content_type="application/json")
+
+    assert first.status_code == 200
+    assert first.json()["name"] == "Massa velha de Pão de Produção"
+    assert first.json()["quantity_g"] == "750"
+    assert replay.status_code == 200
+    assert replay.json()["replayed"] is True
+
+
+@pytest.mark.django_db
+def test_old_dough_refuses_absurd_quantity_on_the_field(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: 500999999999 g chegou ao servidor. Acima de 50 kg é dígito a
+    mais, e a recusa vem no campo quantity, para a tela marcar o campo."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    production_service.apply_start(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:setup",
+        expected_rev=work_order.rev,
+        idempotency_key="old-dough-absurd-start",
+    )
+    client.force_login(production_operator)
+    kds = client.get(reverse("api-backstage-production-kds")).json()["kds"]
+    action = next(item for item in kds["actions"] if item["ref"] == f"register_old_dough:{work_order.pk}")
+    body = _projected_body(
+        kds,
+        action,
+        quantity="51",
+        unit="kg",
+        expiry_date=(date.today() + timedelta(days=1)).isoformat(),
+        expected_rev=action["expected_rev"],
+        idempotency_key="old-dough-absurd",
+    )
+
+    response = client.post(
+        reverse("api-backstage-wo-old-dough", args=[work_order.pk]), body, content_type="application/json"
+    )
+
+    assert response.status_code == 400
+    issues = response.json()["error"]["issues"]
+    assert issues[0]["field"] == "quantity"
+    assert "50 kg" in issues[0]["message"]
 
 
 @pytest.mark.django_db
@@ -1881,6 +2084,38 @@ def test_finish_rejects_unclassified_yield_deficit(
 
 
 @pytest.mark.django_db
+def test_finish_accepts_confirmed_shortfall_with_reason(
+    client,
+    recipe,
+    production_operator,
+):
+    """Beta 05/11: "produzi menos" fecha com o motivo do operador, sem perda."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(work_order, quantity=10, position_ref="forno", expected_rev=work_order.rev)
+    work_order.refresh_from_db()
+    client.force_login(production_operator)
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-finish", args=[work_order.pk]),
+        data={
+            "quantity": "9",
+            "partition": [{"quantity": "9", "quality_grade_ref": "standard"}],
+            "yield_deviation_confirmed": True,
+            "yield_deviation_reason": "Rendeu menos peças",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "confirmed-shortfall",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200, response.json()
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert work_order.finished == Decimal("9")
+
+
+@pytest.mark.django_db
 def test_forged_finish_overshoot_requires_audited_confirmation(
     client,
     recipe,
@@ -2121,7 +2356,7 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     def block_finish(**kwargs):
         raise ProductionStockShortError(
             work_order_ref=wo.ref,
-            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"))],
+            missing=[MissingMaterial(sku="FARINHA", needed=Decimal("5"), available=Decimal("2"), unit="kg")],
         )
 
     monkeypatch.setattr(
@@ -2144,6 +2379,9 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     assert error["code"] == "material_shortage"
     assert error["missing"][0]["sku"] == "FARINHA"
     assert error["missing"][0]["shortage"] == "3"
+    # Beta 05/11: a tela escrevia o SKU cru e o número sem unidade.
+    assert error["missing"][0]["unit"] == "kg"
+    assert error["missing"][0]["name"] == "FARINHA"
 
 
 @pytest.mark.django_db
@@ -2217,3 +2455,302 @@ def test_non_overridable_order_shortage_never_offers_force(
 
     assert response.status_code == 409
     assert [possibility["kind"] for possibility in response.json()["error"]["possibilities"]] == ["retry"]
+
+
+# ── O lote curto fecha com a verdade (P0-2, WP-F06) ──────────────────────────
+#
+# Decisão 1 do dono (23/11/2026): rendeu menos que o encomendado, o lote fecha com o
+# que rendeu. A recusa oferece "Fechar com N" a quem fecha o lote
+# (sem pedir autorização de gerente), assinada com o impacto exato que a pessoa leu.
+
+
+@pytest.mark.django_db
+def test_finish_below_orders_offers_the_signed_short_lot_close(
+    client,
+    recipe,
+    production_operator,
+    monkeypatch,
+):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(work_order, quantity=10, position_ref="forno", expected_rev=work_order.rev)
+    shortage = ProductionOrderShortError(
+        work_order_ref=work_order.ref,
+        required=Decimal("12"),
+        requested=Decimal("8"),
+        order_refs=("ORD-1", "ORD-2"),
+        allow_override=False,
+        confirmable=True,
+        orders=(("ORD-1", Decimal("5")), ("ORD-2", Decimal("7"))),
+    )
+    approvals = []
+
+    def finish(**kwargs):
+        if kwargs["approved_short_lot"] is None:
+            raise shortage
+        approvals.append(kwargs["approved_short_lot"])
+        return work_order.ref, Decimal("8")
+
+    monkeypatch.setattr("shopman.backstage.api.operations.production_service.apply_finish", finish)
+    client.force_login(production_operator)
+    qc = client.get(reverse("api-backstage-production-qc")).json()["qc"]
+    action = next(item for item in qc["actions"] if item["ref"] == f"finish:{work_order.pk}")
+    body = _projected_body(
+        qc,
+        action,
+        quantity="8",
+        expected_rev=action["expected_rev"],
+        idempotency_key="short-lot-close",
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Massa fraca",
+    )
+    url = reverse("api-backstage-wo-finish", args=[work_order.pk])
+
+    refused = client.post(url, body, content_type="application/json")
+    assert refused.status_code == 409
+    error = refused.json()["error"]
+    assert error["orders"] == [{"ref": "ORD-1", "qty": "5"}, {"ref": "ORD-2", "qty": "7"}]
+    confirm = next(item for item in error["possibilities"] if item["kind"] == "confirm")
+    assert confirm["label"] == "Fechar com 8"
+    assert [item["kind"] for item in error["possibilities"]] == ["retry", "confirm"]
+
+    other_number = client.post(
+        url,
+        {**body, "quantity": "7", "short_lot_proof": confirm["proof"]},
+        content_type="application/json",
+    )
+    assert other_number.status_code == 400
+    assert other_number.json()["error"]["issues"][0]["field"] == "short_lot_proof"
+
+    closed = client.post(url, {**body, "short_lot_proof": confirm["proof"]}, content_type="application/json")
+    assert closed.status_code == 200
+    assert approvals == [production_service.production_shortage_snapshot(shortage)]
+
+
+@pytest.mark.django_db
+def test_plan_order_shortage_never_offers_the_short_lot_close(client, recipe, production_operator, monkeypatch):
+    """Planejar abaixo do encomendado não é lote curto: lá a saída segue sendo outra."""
+
+    def shortage(**kwargs):
+        raise ProductionOrderShortError(
+            work_order_ref="WO-PLAN",
+            required=Decimal("12"),
+            requested=Decimal("8"),
+            order_refs=("ORD-1",),
+            confirmable=True,
+        )
+
+    monkeypatch.setattr("shopman.backstage.api.operations.production_service.apply_planned", shortage)
+    client.force_login(production_operator)
+    board = client.get(reverse("api-backstage-production")).json()["board"]
+    action = next(
+        item for item in board["actions"] if item["ref"] == f"plan:{recipe.pk}:{board['selected_date']}:forno"
+    )
+    response = client.post(
+        reverse("api-backstage-wo-plan"),
+        _projected_body(
+            board,
+            action,
+            recipe_id=recipe.pk,
+            quantity="8",
+            target_date=board["selected_date"],
+            position_ref="forno",
+            source="manual",
+            expected_rev=None,
+            idempotency_key="plan-not-short-lot",
+        ),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409
+    assert "confirm" not in [item["kind"] for item in response.json()["error"]["possibilities"]]
+
+
+# ── Zerar não cancela (P0-1, WP-F01) ─────────────────────────────────────────
+#
+# Medido pela tela em 23/11/2026: a Cozinha, sem a permissão de cancelar lote,
+# corrigia o Croissant de amanhã para 0 e o lote saía do plano, cancelado com o
+# motivo "Planejamento zerado na matriz" (texto do código), soltando a reserva
+# de uma encomenda paga. Zerar um lote que existe é cancelar o lote: pede
+# ``can_void``, passa pela guarda do pão entregue (#3232) e grava o motivo de
+# quem zerou.
+
+
+@pytest.fixture
+def kitchen_operator(db):
+    """A Cozinha: edita o Planejamento, não cancela lote."""
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
+    user = User.objects.create_user("cozinha-prod", password="pw", is_staff=True)
+    user = grant_production_operator(user)
+    assert resolve_production_access(user).can_edit_planned
+    assert not resolve_production_access(user).can_void
+    return user
+
+
+def _zero_the_lot(client, recipe, work_order, *, reason="", key="zero-lot"):
+    work_order.refresh_from_db()
+    return production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "work_order_id": work_order.pk,
+            "quantity": "0",
+            "target_date": work_order.target_date.isoformat(),
+            "position_ref": "forno",
+            "reason": reason,
+            "expected_rev": work_order.rev,
+            "idempotency_key": key,
+        },
+        content_type="application/json",
+    )
+
+
+@pytest.mark.django_db
+def test_kitchen_zeroing_a_lot_is_refused_and_the_lot_stays(client, recipe, kitchen_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(kitchen_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="Sobrou ontem")
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"] == "Cancelar lote é com o gerente."
+    assert body["error"]["capability"] == "can_void"
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+    assert work_order.quantity == Decimal("10")
+    assert not WorkOrderEvent.objects.filter(work_order=work_order, kind=WorkOrderEvent.Kind.VOIDED).exists()
+
+
+@pytest.mark.django_db
+def test_kitchen_still_adjusts_the_plan_above_zero(client, recipe, kitchen_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(kitchen_operator)
+    work_order.refresh_from_db()
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "work_order_id": work_order.pk,
+            "quantity": "6",
+            "target_date": work_order.target_date.isoformat(),
+            "position_ref": "forno",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "kitchen-adjust",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    work_order.refresh_from_db()
+    assert work_order.quantity == Decimal("6")
+
+
+@pytest.mark.django_db
+def test_manager_zeroing_a_lot_voids_it_with_the_reason_given(client, recipe, production_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    work_order.refresh_from_db()
+    board = client.get(reverse("api-backstage-production")).json()["board"]
+    action = next(item for item in board["actions"] if item["ref"] == f"plan:{work_order.pk}")
+    body = _projected_body(
+        board,
+        action,
+        recipe_id=recipe.pk,
+        work_order_id=work_order.pk,
+        quantity="0",
+        target_date=board["selected_date"],
+        position_ref="forno",
+        reason="  Massa não fermentou  ",
+        expected_rev=action["expected_rev"],
+        idempotency_key="manager-zero",
+    )
+    url = reverse("api-backstage-wo-plan")
+
+    response = client.post(url, body, content_type="application/json")
+    replay = client.post(url, body, content_type="application/json")
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["result"] == "cleared"
+    assert replay.status_code == 200, replay.json()
+    assert replay.json()["result"] == "cleared"
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.VOID
+    [voided] = WorkOrderEvent.objects.filter(work_order=work_order, kind=WorkOrderEvent.Kind.VOIDED)
+    assert voided.payload["reason"] == "Massa não fermentou"
+    assert voided.actor == _production_actor(SimpleNamespace(user=production_operator))
+
+    # A mesma chave, outra tentativa: conflito, como a releitura do plano responde.
+    from shopman.backstage.services.exceptions import ProductionConflict
+
+    with pytest.raises(ProductionConflict):
+        production_service.apply_planned(
+            recipe_id=recipe.pk,
+            quantity="7",
+            target_date_value=board["selected_date"],
+            position_ref="forno",
+            actor=voided.actor,
+            expected_rev=None,
+            idempotency_key="manager-zero",
+        )
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
+
+
+@pytest.mark.django_db
+def test_zeroing_a_lot_without_a_reason_is_refused(client, recipe, production_operator):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="   ")
+
+    assert response.status_code != 200
+    assert response.json()["detail"] == "Diga o motivo de tirar o lote do plano."
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+
+
+@pytest.mark.django_db
+def test_zeroing_a_lot_that_already_delivered_bread_hits_the_void_guard(
+    client,
+    recipe,
+    production_operator,
+    monkeypatch,
+):
+    """A guarda do #3232 roda no zero como roda no "Cancelar lote…"."""
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    monkeypatch.setattr(production_service, "_delivered_beyond_other_lots", lambda wo: Decimal("4"))
+    client.force_login(production_operator)
+
+    response = _zero_the_lot(client, recipe, work_order, reason="Erro de planejamento")
+
+    assert response.status_code != 200
+    assert "4 un. dele já foram entregues" in response.json()["detail"]
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.PLANNED
+
+
+@pytest.mark.django_db
+def test_zeroing_an_empty_cell_still_clears_without_voiding(client, recipe, production_operator):
+    client.force_login(production_operator)
+
+    response = production_mutation_post(
+        client,
+        reverse("api-backstage-wo-plan"),
+        data={
+            "recipe_id": recipe.pk,
+            "quantity": "0",
+            "target_date": date.today().isoformat(),
+            "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "zero-empty-cell",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["result"] == "cleared"
+    assert not WorkOrder.objects.filter(recipe=recipe).exists()

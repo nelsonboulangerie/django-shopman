@@ -236,12 +236,122 @@ def test_paused_feed_and_empty_or_missing_collections(db):
     feed.is_active = False
     feed.save(update_fields=["is_active"])
     health = _health("google")
-    assert _item(health, "active").label == "Pausado: o Google recebe erro ao buscar o feed"
+    assert _item(health, "active").label == "Pausado: o Google recebe todos os produtos como fora de estoque"
     assert _item(health, "collections_gone").label == "1 coleção escolhida não existe mais"
     assert _item(health, "collections").label == "As coleções escolhidas estão sem produtos"
     assert _item(health, "paired") is None  # feed não tem TV
-    assert health.preview[0].path == "/feed/google.xml"
-    assert health.summary == "3 pendências"
+    assert health.preview == ()  # escrito pela Merchant API: não há XML para ver
+    assert _item(health, "google_account").label == (
+        "O envio ao Google está parado: falta a conta do Merchant Center"
+    )
+    assert health.summary == "4 pendências"
+
+
+# ── Google: a loja física (retirada e disponibilidade na loja) ──────────────
+
+_GOOGLE_SECRET = {"service_account_b64": "eyJjbGllbnRfZW1haWwiOiAiYUBiIiwgInByaXZhdGVfa2V5IjogImsiLCAidG9rZW5fdXJpIjogImh0dHBzOi8vdCJ9"}
+
+
+@pytest.fixture
+def google_feed(settings, db):
+    from django.core.cache import cache
+
+    from shopman.shop.services import google_store_review as review
+
+    settings.SHOPMAN_GOOGLE_MERCHANT = _GOOGLE_SECRET
+    Shop.objects.create(
+        name="Loja",
+        defaults={"google_merchant": {"account_id": "5881119366", "data_source_id": "9", "store_code": "1810"}},
+    )
+    collection = Collection.objects.create(ref="vitrine", name="Vitrine", is_active=True)
+    product = Product.objects.create(sku="TRADI", name="Tradition", base_price_q=1600, image_url="https://cdn/t.jpg")
+    CollectionItem.objects.create(collection=collection, product=product)
+    display_channel("google", "Google", collections=["vitrine"], fmt="google_merchant")
+    cache.delete(review.CACHE_KEY)
+    yield
+    cache.delete(review.CACHE_KEY)
+
+
+def _reading(*, ok=True, pickup="", in_stock="", error="", at=None):
+    from shopman.shop.services import google_store_review as review
+
+    reading = review.StoreReview(
+        checked_at=at or timezone.now(), ok=ok, pickup=pickup, in_stock=in_stock, error=error,
+    )
+    review._store(reading)
+    return reading
+
+
+def test_google_approved_features_and_store_code_are_ok(google_feed):
+    _reading(pickup="ACTIVE", in_stock="ACTIVE")
+    health = _health("google")
+    assert _item(health, "google_store_code").state == "ok"
+    assert _item(health, "google_pickup").state == "ok"
+    assert _item(health, "google_pickup").label.startswith("A retirada no mesmo dia: aprovada pelo Google")
+    assert _item(health, "google_in_stock").label.startswith("A disponibilidade na loja: aprovada pelo Google")
+    assert health.ready
+
+
+def test_google_refused_feature_points_to_the_merchant_center(google_feed):
+    _reading(pickup="FAILED", in_stock="RUNNING")
+    health = _health("google")
+    pickup = _item(health, "google_pickup")
+    assert (pickup.state, pickup.label) == ("todo", "A retirada no mesmo dia: negada pelo Google")
+    assert pickup.hint.startswith("O motivo está no Merchant Center.")
+    assert (pickup.action_target, pickup.action_path) == (
+        "external", "https://merchants.google.com/mc/overview?a=5881119366",
+    )
+    in_stock = _item(health, "google_in_stock")
+    assert (in_stock.state, in_stock.label) == ("todo", "A disponibilidade na loja: em análise no Google")
+    assert in_stock.action_label == ""  # nada a fazer enquanto o Google analisa
+
+
+def test_google_action_required_and_not_requested(google_feed):
+    _reading(pickup="ACTION_REQUIRED", in_stock="NOT_REQUESTED")
+    health = _health("google")
+    assert _item(health, "google_pickup").label == "A retirada no mesmo dia: o Google pede uma ação"
+    assert _item(health, "google_in_stock").label == "A disponibilidade na loja: não foi pedida ao Google"
+
+
+def test_google_failed_reading_says_it_failed_never_approved(google_feed):
+    _reading(ok=False, error="PERMISSION_DENIED")
+    health = _health("google")
+    for key in ("google_pickup", "google_in_stock"):
+        item = _item(health, key)
+        assert item.state == "todo"
+        assert "não deu para ler o estado no Google às " in item.label
+        assert "aprovada" not in item.label
+
+
+def test_google_not_read_yet_and_stale_reading(google_feed):
+    health = _health("google")
+    assert _item(health, "google_pickup").label == "A retirada no mesmo dia: o estado no Google ainda não foi lido"
+    now = timezone.now()
+    _reading(pickup="ACTIVE", in_stock="ACTIVE", at=now - timedelta(hours=30))
+    item = _item(_health("google", now=now), "google_pickup")
+    assert item.state == "todo"
+    assert item.label.startswith("A retirada no mesmo dia: a última leitura no Google foi em ")
+
+
+def test_google_without_store_code_asks_for_it_in_the_admin(google_feed):
+    shop = Shop.load()
+    shop.defaults = {"google_merchant": {"account_id": "5881119366", "data_source_id": "9"}}
+    shop.save(update_fields=["defaults"])
+    _reading(pickup="ACTIVE", in_stock="ACTIVE")
+    item = _item(_health("google"), "google_store_code")
+    assert item.state == "todo"
+    assert item.label.startswith("Falta o código da loja do Perfil da Empresa")
+    assert (item.action_target, item.action_path) == ("admin", "/admin/shop/shopintegrations/")
+
+
+def test_google_items_speak_operator_language(google_feed):
+    """D6: nenhum estado da API, nome de campo ou variável chega ao operador."""
+    api_words = re.compile(r"ACTIVE|FAILED|RUNNING|ACTION_REQUIRED|NOT_REQUESTED|store_code|pickupSla|omnichannel")
+    for pickup in ("ACTIVE", "FAILED", "RUNNING", "ACTION_REQUIRED", "NOT_REQUESTED"):
+        _reading(pickup=pickup, in_stock=pickup)
+        for _ref, _key, label, hint in _every_item_text(build_channel_health()):
+            assert not api_words.search(label) and not api_words.search(hint), (label, hint)
+            assert not _ENGINEER_WORDS.search(label) and not _ENGINEER_WORDS.search(hint), (label, hint)
 
 
 # ── Loja online e o endpoint ─────────────────────────────────────────────────

@@ -21,7 +21,7 @@ requires_postgres = pytest.mark.skipif(
     reason="Requires independent PostgreSQL connections and row locks",
 )
 
-pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres]
+pytestmark = [pytest.mark.django_db(transaction=True), requires_postgres, pytest.mark.channels("web")]
 
 
 def test_duas_requisicoes_com_a_mesma_chave_executam_um_unico_efeito_remoto(monkeypatch):

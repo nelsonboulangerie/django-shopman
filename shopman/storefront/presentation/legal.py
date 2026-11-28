@@ -41,8 +41,8 @@ class LegalProjection:
 #: A versão vigente dos documentos legais. **Mexeu no texto de `privacidade.vue` ou de
 #: `termos.vue`? Mexa aqui.** `surfaces/storefront-nuxt/tests/legalVersion.test.ts`
 #: reprova se um mudar sem o outro — foi a promessa quebrada que originou a trava.
-LEGAL_VERSION = "2026-09-29"
-LEGAL_UPDATED_AT = "29 de setembro de 2026"
+LEGAL_VERSION = "2026-11-24"
+LEGAL_UPDATED_AT = "24 de novembro de 2026"
 
 
 #: Cópias permanentes das versões publicadas: versão → SHA-256 de cada arquivo em
@@ -67,6 +67,34 @@ LEGAL_ARCHIVE: dict[str, dict[str, str]] = {
     "2026-09-25": {
         "privacy": "87bb9f32385ef65ee8973a07facdd059b156d3b7aa00c759707b2d91fe859b51",
         "terms": "f247af6dde1039d4126ed639e07c34eb51d1980587b2e3b9d215becc9512ec15",
+    },
+    "2026-10-23": {
+        "privacy": "bc88410c44ca6d5968809d4b3bcc5246d89b5ceacbfc09456cd0198bb73c97a1",
+        "terms": "c06a036f0916cdb94af67b6b43c2f1f0bb34d67e6749ebe2ff2303dbf8fd82fe",
+    },
+    "2026-11-05": {
+        "privacy": "46e2699b1e1da361bc2922a2d2ce7ce1e0882d86c4907cc2d76ba0becb876dba",
+        "terms": "ca329d4b4465ea7ee228efa9030d8f6bd3892d08656593bf88aca31e4bc16c5c",
+    },
+    "2026-11-06": {
+        "privacy": "732a7dc3aeb0bbb482e2969ebf21ec71bb30c8a5b054dfe7acb3c2059b34509d",
+        "terms": "a23914f2d0119ebcd5f5a8dccbae6b95572647614e184720ff60b7bcc84d0f5f",
+    },
+    "2026-11-12": {
+        "privacy": "ceb7d1e62cf2c8055611ad6c18f35ae1ba14394753df1030869d5c1ca27e7732",
+        "terms": "7c13ca2185415c993c9a6a1d567ff81ea6c3cfcddbb2606f750f5a877ef56c54",
+    },
+    "2026-11-18": {
+        "privacy": "6c8c239500a0260d3f4f0f19b473d43d9aeec965b9ba9a77fad70abf4aea554f",
+        "terms": "d90bf86f45a4f3a4fc71f6a58b24fad922729269549830e76b2c5fe5cafa8557",
+    },
+    "2026-11-20": {
+        "privacy": "731e938ddf4356600a22001b29e6bbb13a12f4da3e595a7b237f5f4a13ee78ee",
+        "terms": "59f482deb98e29526954c47cd6ec9e3bd04a6b09bb8fad8493d9b9fafc3cf304",
+    },
+    "2026-11-24": {
+        "privacy": "5894987fc5e1b0fa9ffbdf4b4503fd1d8768e871beb38f4961b1c86960facc37",
+        "terms": "6573bb9ba06dce1ac31cb754a1b5fe17b7e47f56d980b74c72ae6cee046cc1fb",
     },
 }
 

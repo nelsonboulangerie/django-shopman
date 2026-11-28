@@ -3,13 +3,13 @@
 > Liga as notificações de pedido por WhatsApp. **A engenharia está 100% pré-ligada**:
 > eventos já disparam, adapters registrados, fallback texto→SMS→email funcionando.
 
-> ⛔ **O passo 3 deste runbook mudou, e o texto abaixo foi corrigido em 25/09/2026.** O
-> campo "flow do WhatsApp" virou **somente leitura no Admin**
-> (`NotificationTemplateAdmin.readonly_fields`), e o único gravador do
-> `whatsapp_flow_ns` hoje é `marketing_platform_configuration.configure_whatsapp_flow`,
-> preso a `EVENT = "announcement_published"`. Ou seja: a tela de Marketing mapeia **um**
-> evento, o da campanha; os outros **não têm caminho sem deploy**. Ver "Onde se
-> configura".
+> ⛔ **O passo 3 deste runbook mudou duas vezes; o texto abaixo foi corrigido em 21/11/2026.**
+> O campo "flow do WhatsApp" é **somente leitura no Admin**
+> (`NotificationTemplateAdmin.readonly_fields`), e o único gravador do `whatsapp_flow_ns` é
+> `marketing_platform_configuration.configure_whatsapp_flow`. Em 25/09 ele só aceitava o
+> anúncio de Marketing; hoje aceita qualquer evento de `WHATSAPP_EVENT_LABELS`, pela tela
+> Marketing → Configurações → Plataformas → WhatsApp → "Avisos automáticos", sem deploy.
+> Ver "Onde se configura".
 
 > **Este runbook não liga Marketing.** Pedido/OTP/estoque são notificações
 > transacionais; campanhas usam outro ledger, outro catálogo de fluxo, consentimento de
@@ -39,19 +39,14 @@ Precedência (`notification_manychat.send`): o `whatsapp_flow_ns` do registro ve
 
 | Caminho | Cobre | Custo |
 |---|---|---|
-| Marketing → Plataformas (`WhatsAppTemplateView`) | **só** `announcement_published` | nenhum; vale na hora, com CAS, confirmação, TOTP e auditoria |
-| `MANYCHAT_FLOW_MAP` em `config/settings.py` | qualquer evento | um PR e um deploy (~6 min) |
+| Marketing → Plataformas (`WhatsAppTemplateView`), seção "Avisos automáticos" | todo evento de `WHATSAPP_EVENT_LABELS` (o anúncio e os transacionais) | nenhum; vale na hora, com o flow revalidado no catálogo vivo, CAS, confirmação, TOTP e auditoria |
+| `MANYCHAT_FLOW_MAP` em `config/settings.py` | só os mapeamentos antigos; evento novo não entra aqui (ADR-042) | um PR e um deploy (~6 min) |
 
-⚠️ **O Admin não grava mais este campo.** `NotificationTemplateAdmin` o traz em
-`readonly_fields` e o form o marca `disabled`, apontando para Marketing → Plataformas. Mas
-aquela tela é presa a um evento só (`marketing_platform_configuration.EVENT`), então para
-os ~20 eventos transacionais o caminho real é o mapa do `settings.py`.
-
-Consequência prática: os transacionais se mapeiam **de uma vez**, num PR só, depois que os
-templates forem aprovados — não um a um pela tela. Se a casa quiser de volta o mapeamento
-por evento sem deploy, é WP próprio: generalizar o `configure_whatsapp_flow` para receber o
-evento, preservando CAS/TOTP/auditoria (reabrir o campo no Admin desfaria essa verificação,
-que foi posta de propósito).
+⚠️ **O Admin não grava este campo.** `NotificationTemplateAdmin` o traz em
+`readonly_fields` e o form o marca `disabled`, apontando para Marketing → Plataformas.
+O caminho de cada evento é a tela de Marketing. O `MANYCHAT_FLOW_MAP` do `settings.py`
+fica só para os mapeamentos antigos: configuração nova de loja não entra por `settings`
+(ADR-042, trava `scripts/check_tenant_config.py`).
 
 ## Passos (Pablo)
 
@@ -63,9 +58,8 @@ que foi posta de propósito).
    **Tudo Utility ou Marketing — não há Authentication**, porque o ManyChat não tem essa
    categoria; o OTP vai por SMS (ver abaixo). Aguardar aprovação (~24-48h).
 2. **Criar um Flow no ManyChat** para cada template aprovado e copiar o **namespace**.
-3. **Mapear evento → namespace**, pelo caminho da tabela em "Onde se configura":
-   `announcement_published` pela tela de Marketing; os transacionais no
-   `MANYCHAT_FLOW_MAP`, num PR só.
+3. **Mapear evento → namespace** pela tela de Marketing (Configurações → Plataformas →
+   WhatsApp → "Avisos automáticos"): escolher a mensagem e o modelo aprovado da lista.
 4. **Conferir**: `manage.py manychat_flows --check` confronta cada namespace configurado
    com os que existem de fato na conta. Flow apagado é envio que falha destinatário por
    destinatário, sem aviso.
@@ -97,4 +91,4 @@ não há fallback escondido para SMS, email ou Meta Cloud direto.
 
 Adapter `notification_whatsapp` (spike, inerte até `WHATSAPP_PHONE_NUMBER_ID` +
 `WHATSAPP_ACCESS_TOKEN`). Decisão ManyChat-vs-direto:
-[`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN`](../plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md).
+[`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN`](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md).

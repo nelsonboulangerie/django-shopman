@@ -17,7 +17,7 @@ e as traduz para o snapshot cumulativo de chargeback do Payman — ver
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -162,23 +162,32 @@ def create_intent(
     # virar a cobrança do pedido.
     stripe = _get_stripe()
 
-    # O LINK tem prazo, e o prazo é UM: o mesmo instante vai para o Payman
-    # (agenda o `payment.timeout` e aparece no PDV como "vale até …") e para o
-    # Stripe, logo abaixo. Sem mandar, o Stripe expirava a sessão em 24 h por
-    # conta própria e a casa não sabia — o pedido ficava aberto, o estoque
-    # preso, e o cliente ligava dizendo que "o link parou de funcionar".
-    # O cartão da loja online segue sem prazo: lá o cliente está na tela, e o
-    # abandono tem a própria rede (`reconcile_with_gateway_if_due`).
-    # A janela e o corte do atendimento chegam prontos pelo `_adapter_config`;
-    # aqui só se fecha o `min(agora + janela, corte)` na régua do Stripe.
-    expires_at = (
-        link_expires_at(
+    # Toda sessão hospedada tem prazo, e o prazo é UM: o mesmo instante vai
+    # para o Payman (agenda o `payment.timeout` e aparece na tela como "vale
+    # até …") e para o Stripe, logo abaixo. Sem mandar, o Stripe expirava a
+    # sessão em 24 h por conta própria e a casa não sabia — o pedido ficava
+    # aberto, o estoque preso, e o cliente ligava dizendo que "o link parou de
+    # funcionar".
+    #
+    # - LINK: a janela do link e o corte do atendimento chegam prontos pelo
+    #   `_adapter_config`; aqui só se fecha o `min(agora + janela, corte)`.
+    # - CARTÃO da loja online: a janela de pagamento do canal
+    #   (`card_timeout_minutes`, a mesma do Pix), presa ao piso de 30 min do
+    #   Stripe. Sem prazo, o cartão recusado ou abandonado deixava o pedido
+    #   "Novo" para sempre e o estoque preso pelo hold: a "rede" da
+    #   reconciliação só age quando o gateway diz pago ou autorizado, e um
+    #   gateway dizendo "pendente" não cancelava nada (beta 06/11, F2).
+    if method == "link":
+        expires_at = link_expires_at(
             timeout_minutes=config.get("link_timeout_minutes"),
             expires_by=config.get("link_expires_by"),
         )
-        if method == "link"
-        else None
-    )
+    else:
+        from shopman.shop.config import ChannelConfig
+
+        expires_at = link_expires_at(
+            timeout_minutes=config.get("card_timeout_minutes") or ChannelConfig.Payment.timeout_minutes,
+        )
 
     provenance = provenance_metadata(test=test_mode())
     db_intent = PaymentService.create_intent(
@@ -203,10 +212,9 @@ def create_intent(
         return _intent_from_db(db_intent, currency=currency)
 
     create_options = {"idempotency_key": idempotency_key} if idempotency_key else {}
-    if expires_at is not None:
-        # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
-        # segundos). Vocabulário de terceiro, na porta de saída.
-        create_options["expires_at"] = link_expires_at_epoch(expires_at)
+    # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
+    # segundos). Vocabulário de terceiro, na porta de saída.
+    create_options["expires_at"] = link_expires_at_epoch(expires_at)
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
@@ -430,6 +438,7 @@ def refund(
     segundo — e o id estável volta como gateway_id p/ o Payman.
     """
     from shopman.payman import PaymentError, PaymentService
+    from shopman.payman.models import PaymentIntent as PaymanIntent
 
     try:
         intent = PaymentService.get(intent_ref)
@@ -451,12 +460,26 @@ def refund(
 
         refund_amount = stripe_refund.amount
         try:
-            PaymentService.refund(
-                intent_ref,
-                amount_q=refund_amount,
-                reason=reason,
-                gateway_id=stripe_refund.id,
-            )
+            with transaction.atomic():
+                # Trava o intent: o `charge.refunded` concorrente espera, e a
+                # pergunta "o webhook já lançou este estorno?" vale até o fim.
+                list(PaymanIntent.objects.select_for_update().filter(ref=intent_ref).values_list("pk", flat=True))
+                if _refund_recorded_by_webhook(intent_ref, stripe_refund, refund_amount):
+                    # Corrida normal: o `charge.refunded` chegou antes da resposta
+                    # do `Refund.create` e a reconciliação já lançou ESTE estorno.
+                    # Lançar de novo contaria o mesmo dinheiro duas vezes (estorno
+                    # parcial) ou abriria alerta falso de divergência (total).
+                    logger.info(
+                        "payment_stripe.refund: refund %s already recorded by charge.refunded intent=%s",
+                        stripe_refund.id, intent_ref,
+                    )
+                else:
+                    PaymentService.refund(
+                        intent_ref,
+                        amount_q=refund_amount,
+                        reason=reason,
+                        gateway_id=stripe_refund.id,
+                    )
         except PaymentError as exc:
             # O dinheiro JÁ saiu no gateway. Sem o registro local, o Payman
             # continua mostrando saldo reembolsável e um trigger futuro faria
@@ -492,6 +515,39 @@ def refund(
             error_code="stripe_error",
             message=str(e),
         )
+
+
+def _refund_recorded_by_webhook(intent_ref: str, stripe_refund, refund_amount) -> bool:
+    """O estorno que o gateway acabou de devolver já está no Payman pelo webhook?
+
+    O ``charge.refunded`` pode chegar antes da resposta do ``Refund.create``. A
+    reconciliação lança o delta com o id da cobrança (``ch_``), e o ``refund`` local
+    com o id do estorno (``re_``) encontra o saldo zerado. É o MESMO dinheiro: o
+    estorno é reconhecido pelo ``re_`` ou por uma linha de reconciliação da mesma
+    cobrança com o mesmo valor. Qualquer outra forma segue como divergência.
+    """
+    from shopman.payman.models import PaymentTransaction
+
+    refunds = PaymentTransaction.objects.filter(intent__ref=intent_ref, type=PaymentTransaction.Type.REFUND)
+    refund_id = str(getattr(stripe_refund, "id", "") or "")
+    if refund_id and refunds.filter(gateway_id=refund_id).exists():
+        return True
+    charge_id = getattr(stripe_refund, "charge", None)
+    charge_id = str(getattr(charge_id, "id", charge_id) or "") if charge_id is not None else ""
+    if not charge_id.startswith("ch_") or not isinstance(refund_amount, int):
+        return False
+    candidates = refunds.filter(gateway_id=charge_id, amount_q=refund_amount, reason="gateway_reconciliation")
+    # Um estorno anterior da mesma cobrança, de mesmo valor (feito no painel, por
+    # exemplo), não é este: a linha do webhook deste nasce depois do `created` dele.
+    created = getattr(stripe_refund, "created", None)
+    if isinstance(created, int) and not isinstance(created, bool):
+        since = datetime.fromtimestamp(created, tz=UTC) - _REFUND_CLOCK_SKEW
+        candidates = candidates.filter(created_at__gte=since)
+    return candidates.exists()
+
+
+#: Folga de relógio entre o `created` do estorno no Stripe e o nosso `created_at`.
+_REFUND_CLOCK_SKEW = timedelta(seconds=30)
 
 
 #: Estado local em que a transição pedida **já aconteceu**: a segunda tentativa
@@ -692,7 +748,12 @@ def check_gateway_status(intent_ref: str) -> str:
 
     Mesmo contrato de ``payment_efi.check_gateway_status``, com um degrau a mais
     que só o cartão tem: ``authorized``. Devolve ``captured``, ``authorized``,
-    ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+    ``declined``, ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+
+    ``declined`` é a sessão aberta cujo último cartão foi RECUSADO
+    (``requires_payment_method`` com ``last_payment_error``): para o timeout
+    vale o mesmo que ``pending`` (não há pagamento), e para o acompanhamento é
+    o que permite dizer ao cliente que o cartão não passou.
 
     ⚠️ **Este verbo existia na Efí e no mock, e não existia aqui.** Sem ele,
     NADA no sistema jamais perguntava ao Stripe: ``get_status`` lê o Payman, o
@@ -757,6 +818,8 @@ def check_gateway_status(intent_ref: str) -> str:
         return "authorized"
     if status == "canceled":
         return "cancelled"
+    if status == "requires_payment_method" and getattr(stripe_intent, "last_payment_error", None):
+        return "declined"
     if status in {
         "requires_payment_method",
         "requires_confirmation",
@@ -767,6 +830,23 @@ def check_gateway_status(intent_ref: str) -> str:
     # Status novo do provedor: incerteza, e incerteza espera.
     logger.warning("stripe.check_gateway_status_unknown intent=%s status=%s", intent_ref, status)
     return "error"
+
+
+def _record_decline_on_order(intent_ref: str, *, code: str) -> None:
+    """Leva a recusa do cartão ao pedido, para o acompanhamento dizer que não passou."""
+    try:
+        from shopman.orderman.models import Order
+        from shopman.payman import PaymentService
+
+        from shopman.shop.services.payment import record_card_decline
+
+        intent = PaymentService.get(intent_ref)
+        order = Order.objects.filter(ref=intent.order_ref).first()
+        if order is not None:
+            record_card_decline(order, code=code, intent_ref=intent_ref)
+    # silêncio-deliberado: a recusa é aviso de tela; o webhook segue respondendo.
+    except Exception:
+        logger.warning("stripe.decline_record_failed intent=%s", intent_ref, exc_info=True)
 
 
 def gateway_payment_intent_id(intent_ref: str) -> str:
@@ -1151,6 +1231,59 @@ def _late_after_counter_takeover(intent_ref: str, payment_intent_id) -> bool:
     return counter_takeover.handle_late_stripe_payment(intent_ref, _stripe_object_id(payment_intent_id))
 
 
+def _is_expired_pending(exc) -> bool:
+    """O ``authorize`` recusou só porque o prazo do intent passou."""
+    return getattr(exc, "code", "") == "intent_expired"
+
+
+def _received_q(stripe_intent) -> int | None:
+    """Quanto o Stripe recebeu (``amount_received``), ou ``None`` se não disse."""
+    for attr in ("amount_received", "amount"):
+        value = getattr(stripe_intent, attr, None)
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return value
+    return None
+
+
+def _reconcile_late_webhook(intent_ref: str, *, gateway_status: str, event_type: str, **snapshot) -> bool:
+    """Liquida pelo snapshot do gateway o webhook que chegou depois do prazo do intent.
+
+    O ``authorize`` recusa intent vencido (``intent_expired``), mas o Stripe fecha a
+    sessão no mesmo instante que o nosso prazo: quem pagou, pagou dentro dele, e a
+    casa só ficou sabendo tarde. Tratar isso como divergência abria alerta crítico
+    falso e deixava o pedido pago como "aguardando". É o mesmo verbo do ``capture``
+    da reconciliação: ``reconcile_gateway_status``, sem inventar um "agora" para a
+    autorização. Divergência de verdade (intent cancelado, valor diferente) segue
+    gritando por :func:`_record_ledger_drift`.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    # O `payment_intent.succeeded` pode chegar sem o `checkout.session.completed`
+    # que promove o id da Checkout Session (`cs_`) ao do PaymentIntent (`pi_`).
+    # O snapshot confere o id, e o `cs_` guardado não é divergência.
+    payment_intent_id = str(snapshot.get("gateway_id") or "")
+    local = _local_intent(intent_ref)
+    if local is not None and payment_intent_id.startswith("pi_") and str(local.gateway_id or "").startswith("cs_"):
+        local.gateway_id = payment_intent_id
+        local.save(update_fields=["gateway_id"])
+
+    try:
+        PaymentService.reconcile_gateway_status(
+            intent_ref,
+            gateway_status=gateway_status,
+            **{key: value for key, value in snapshot.items() if value not in (None, "")},
+        )
+    except PaymentError as exc:
+        return _record_ledger_drift("reconcile", intent_ref, exc, event_type=event_type)
+    logger.info(
+        "stripe.late_webhook_reconciled intent=%s gateway_status=%s event=%s",
+        intent_ref,
+        gateway_status,
+        event_type,
+    )
+    return False
+
+
 def handle_webhook_event(event) -> dict:
     """Process a verified Stripe webhook event."""
     from shopman.payman import PaymentError, PaymentService
@@ -1184,9 +1317,17 @@ def handle_webhook_event(event) -> dict:
                     shopman_ref, gateway_id=payment_intent_id or shopman_ref,
                 )
             except PaymentError as exc:
-                _record_ledger_drift(
-                    "authorize", shopman_ref, exc, event_type=event.type,
-                )
+                if _is_expired_pending(exc):
+                    _reconcile_late_webhook(
+                        shopman_ref,
+                        gateway_status="authorized",
+                        gateway_id=payment_intent_id or "",
+                        event_type=event.type,
+                    )
+                else:
+                    _record_ledger_drift(
+                        "authorize", shopman_ref, exc, event_type=event.type,
+                    )
 
     elif event.type == "payment_intent.succeeded":
         stripe_intent = event.data.object
@@ -1202,6 +1343,19 @@ def handle_webhook_event(event) -> dict:
             try:
                 PaymentService.authorize(shopman_ref, gateway_id=stripe_intent.id)
             except PaymentError as exc:
+                if _is_expired_pending(exc):
+                    # Pago dentro do prazo, avisado depois dele: o snapshot do
+                    # gateway leva o intent a `captured` (o mesmo caminho do
+                    # `capture` da reconciliação). Não há captura a seguir.
+                    _reconcile_late_webhook(
+                        shopman_ref,
+                        gateway_status="captured",
+                        captured_q=_received_q(stripe_intent),
+                        gateway_id=str(stripe_intent.id or ""),
+                        capture_gateway_id=_charge_id(stripe_intent) or str(stripe_intent.id or ""),
+                        event_type=event.type,
+                    )
+                    return {"event_type": event.type, "intent_ref": intent_ref}
                 drifted = _record_ledger_drift(
                     "authorize", shopman_ref, exc, event_type=event.type,
                 )
@@ -1238,6 +1392,7 @@ def handle_webhook_event(event) -> dict:
                 # cobrança FALHOU e o Payman a tem como capturada. O pedido sai
                 # como pago sem dinheiro nenhum, e é preciso alguém conferir.
                 _record_ledger_drift("fail", shopman_ref, exc, event_type=event.type)
+            _record_decline_on_order(shopman_ref, code=getattr(last_error, "code", "") or "")
 
     elif event.type in DISPUTE_EVENT_TYPES:
         intent_ref = handle_dispute_event(event) or None

@@ -25,16 +25,25 @@ class TestReviewAsksForTheRightDay:
 
 
 class TestTheWarningSaysWhichProblemItIs:
-    def test_four_causes_stop_sharing_one_sentence(self):
+    def test_three_causes_stop_sharing_one_sentence(self):
         """"só N em estoque" mandava o operador caçar unidade na prateleira
-        quando o problema era o produto estar pausado, fora do cardápio, ou
-        simplesmente ainda no forno."""
+        quando o problema era o produto estar pausado ou fora do cardápio."""
         from shopman.shop.services.pos import _availability_shortfall
 
         assert "pausado" in _availability_shortfall({"is_paused": True})
         assert "fora do cardápio" in _availability_shortfall({"reason_code": "not_in_listing"})
-        assert "lote planejado" in _availability_shortfall({"is_planned": True})
         assert "em estoque" in _availability_shortfall({"available_qty": 2})
+
+    def test_the_lot_stage_uses_the_production_quantities(self):
+        """Planejado: o lote nem começou. Previsto: o lote já foi aberto.
+        Se o aberto não cobre o que falta, parte depende do que nem começou."""
+        from decimal import Decimal
+
+        from shopman.shop.services.pos import _lot_stage
+
+        assert _lot_stage(Decimal("0"), Decimal("2")) == "Planejado"
+        assert _lot_stage(Decimal("1"), Decimal("2")) == "Planejado"
+        assert _lot_stage(Decimal("2"), Decimal("2")) == "Previsto"
 
     def test_half_a_kilo_is_not_reported_as_zero(self):
         """``int(available_qty)`` truncava: meio quilo de queijo virava

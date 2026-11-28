@@ -10,36 +10,51 @@ Pagamento, marketplace ou notificacao externa nao muda o pedido; alertas
 Cliente pode pagar sem receber confirmacao, operador perde confianca na fila e
 eventos duplicados podem se acumular.
 
-## Diagnostico
+## Onde cada comando age
+
+Os webhooks chegam em `api.boulangerie.com.br/api/webhooks/…`, servidos pelo
+componente `web-operator` do app vivo `shopman-nelson`; o iFood tambem passa pelo
+`ifood-poll-worker`. Os alvos `make deploy-*`, `make diagnose-*` e
+`make smoke-gateways` sao **locais** (docker e `.env` desta maquina);
+`make diagnose-webhooks target=1` imprime o equivalente no vivo sem executar.
+
+## Diagnostico (leitura, qualquer agente)
 
 ```bash
-make diagnose-webhooks
-make diagnose-runtime
-make smoke-gateways
-make deploy-logs
+curl -s https://api.boulangerie.com.br/health/ready/
+doctl --context shopman-do-app-admin apps logs 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web-operator --type run --tail 500 | grep -i webhook
+doctl --context shopman-do-app-admin apps logs 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f ifood-poll-worker --type run --tail 200
+DJANGO_DEBUG=true DATABASE_URL='<conexao direta 25060>' make diagnose-webhooks
 ```
 
-Verifique `failed webhook keys`, `stale webhook keys` e alertas ativos. Nao use
-payload de cliente como evidencia principal; use `scope`, `id`, `order_ref`,
-provider e horario.
-`make smoke-gateways` ajuda a separar falha do contrato local de credencial ou
-sandbox externo ainda bloqueado.
+A ultima linha roda nesta maquina, so leitura, contra o banco vivo pela
+**conexao direta** (porta `25060`), nunca pelo pool `25061`. Verifique `failed
+webhook keys`, `stale webhook keys` e alertas ativos. Nao use payload de cliente
+como evidencia principal; use `scope`, `id`, `order_ref`, provider e horario.
+`make smoke-gateways` (local) ajuda a separar falha do contrato do codigo de
+credencial ou sandbox externo ainda bloqueado.
 
 ## Acao imediata segura
 
 1. Nao marcar pedido como pago manualmente sem checar o gateway.
-2. Se o gateway mostra pagamento confirmado, rode reconcilicao em dry-run:
+2. Se o gateway mostra pagamento confirmado, rode a reconciliacao em dry-run
+   **dentro do app vivo** (leitura):
 
 ```bash
+doctl --context shopman-do-app-admin apps console 40b86e35-bafe-4a1a-a1b0-e124d3d9fd0f web-operator
 python manage.py reconcile_payments --since=4h --dry-run
 ```
 
-3. Se o dry-run aponta a acao correta, rode sem `--dry-run`.
+3. Rodar sem `--dry-run` muda pedidos no vivo: so com a palavra do incident
+   commander (Pablo) dada no momento, e depois de o dry-run apontar a acao
+   correta.
 
 ## Recuperacao
 
-- Corrigir token/secret ausente se `make diagnose-health` apontar falha.
-- Garantir Redis/eventstream ativos se os eventos chegam mas a tela nao atualiza.
+- Token/secret ausente ou errado (`make production-readiness target=1
+  context=shopman-do-app-admin` aponta): trocar segredo e do dono, no painel.
+- Garantir o cache/eventstream ativos ([redis-fora](redis-fora.md)) se os eventos
+  chegam mas a tela nao atualiza.
 - Reenfileirar manualmente apenas depois de confirmar que a chave idempotente nao
   esta `in_progress` recente.
 
@@ -51,4 +66,4 @@ provider, divergencia financeira ou evento pago sem pedido correspondente.
 ## Evidencia minima
 
 Horario, provider, `scope`, id da chave idempotente, `order_ref`, status no
-gateway, saida de `make diagnose-webhooks` e decisao tomada.
+gateway, saida do diagnostico, trecho do `doctl apps logs` e decisao tomada.

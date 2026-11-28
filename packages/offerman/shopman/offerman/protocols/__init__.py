@@ -1,18 +1,18 @@
 """Offerman protocols."""
 
 from shopman.offerman.protocols.catalog import (
-    BundleComponent,
     CatalogBackend,
     ContextualPrice,
     PriceAdjustment,
-    PriceInfo,
     PricingBackend,
     ProductInfo,
     SkuValidation,
 )
-from shopman.offerman.protocols.cost import CostBackend
+from shopman.offerman.protocols.cost import CostBackend, CostGapExplainer
+from shopman.offerman.protocols.label import LabelAttributesProvider
 from shopman.offerman.protocols.projection import (
     CatalogProjectionBackend,
+    IncrementalCatalogProjectionBackend,
     ProjectedItem,
     ProjectionResult,
 )
@@ -23,11 +23,12 @@ __all__ = [
     "ContextualPrice",
     "PricingBackend",
     "CostBackend",
+    "CostGapExplainer",
+    "IncrementalCatalogProjectionBackend",
+    "LabelAttributesProvider",
     "PriceAdjustment",
     "ProductInfo",
-    "PriceInfo",
     "ProjectedItem",
     "ProjectionResult",
     "SkuValidation",
-    "BundleComponent",
 ]

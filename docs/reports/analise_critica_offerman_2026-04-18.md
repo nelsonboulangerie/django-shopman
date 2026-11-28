@@ -183,7 +183,7 @@ Arquivos principais:
 
 - [`packages/offerman/shopman/offerman/adapters/catalog_backend.py:10`](../../packages/offerman/shopman/offerman/adapters/catalog_backend.py#L10)
 - [`packages/offerman/shopman/offerman/adapters/sku_validator.py:28`](../../packages/offerman/shopman/offerman/adapters/sku_validator.py#L28)
-- [`packages/offerman/shopman/offerman/adapters/product_info.py:26`](../../packages/offerman/shopman/offerman/adapters/product_info.py#L26)
+- `packages/offerman/shopman/offerman/adapters/product_info.py:26` (removido em 11/11/2026, PR #2276)
 - [`packages/offerman/shopman/offerman/adapters/noop.py:18`](../../packages/offerman/shopman/offerman/adapters/noop.py#L18)
 
 Spec percebida:
@@ -282,7 +282,7 @@ Nuances importantes:
 
 ### 7. Semantica de `category` varia entre adapters
 
-- Arquivos: [`packages/offerman/shopman/offerman/adapters/catalog_backend.py:24-39`](../../packages/offerman/shopman/offerman/adapters/catalog_backend.py#L24), [`packages/offerman/shopman/offerman/adapters/product_info.py:38-50`](../../packages/offerman/shopman/offerman/adapters/product_info.py#L38) e [`packages/offerman/shopman/offerman/adapters/sku_validator.py:92-107`](../../packages/offerman/shopman/offerman/adapters/sku_validator.py#L92)
+- Arquivos: [`packages/offerman/shopman/offerman/adapters/catalog_backend.py:24-39`](../../packages/offerman/shopman/offerman/adapters/catalog_backend.py#L24), `packages/offerman/shopman/offerman/adapters/product_info.py:38-50` (removido em 11/11/2026, PR #2276) e [`packages/offerman/shopman/offerman/adapters/sku_validator.py:92-107`](../../packages/offerman/shopman/offerman/adapters/sku_validator.py#L92)
 - Problema: ora o campo representa `collection.ref`, ora `collection.name`.
 - Impacto: consumidores externos nao conseguem depender de um identificador estavel.
 - Correcao: padronizar em `ref` e, se necessario, adicionar um campo humano separado.

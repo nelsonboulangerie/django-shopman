@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccountProfile, Action } from '~/types/shopman'
 import { profileActionIsExternal, profileIssueFrom } from '~/presentation/account'
-import { displayE164Phone } from '~/utils/authPhone'
+import { authPhonePayload, displayE164Phone } from '~/utils/authPhone'
 
 definePageMeta({ middleware: 'account' })
 
@@ -20,10 +20,20 @@ const profileIssueActions = ref<Action[]>([])
 const profileSaved = ref(false)
 const profilePendingSave = ref(false)
 const profileForm = reactive({ first_name: '', last_name: '', email: '', birthday: '' })
-const fieldErrors = reactive<{ first_name?: string, email?: string }>({})
+const fieldErrors = reactive<{ first_name?: string, last_name?: string, email?: string }>({})
+
+// `<` e `>` não existem em nome de gente; o servidor recusa com a mesma frase.
+const NAME_MARKUP = /[<>]/
+const NAME_MARKUP_MESSAGE = 'O nome não pode ter os sinais < ou >.'
 
 function validateFirstName () {
-  fieldErrors.first_name = profileForm.first_name.trim() ? undefined : 'Informe seu primeiro nome.'
+  const value = profileForm.first_name.trim()
+  fieldErrors.first_name = !value
+    ? 'Informe seu primeiro nome.'
+    : NAME_MARKUP.test(value) ? NAME_MARKUP_MESSAGE : undefined
+}
+function validateLastName () {
+  fieldErrors.last_name = NAME_MARKUP.test(profileForm.last_name) ? NAME_MARKUP_MESSAGE : undefined
 }
 function validateEmail () {
   const email = profileForm.email.trim()
@@ -31,8 +41,9 @@ function validateEmail () {
 }
 function validateProfile (): boolean {
   validateFirstName()
+  validateLastName()
   validateEmail()
-  return !fieldErrors.first_name && !fieldErrors.email
+  return !fieldErrors.first_name && !fieldErrors.last_name && !fieldErrors.email
 }
 
 const { data: profile, pending } = await useFetch<AccountProfile>(apiPath('/api/v1/account/profile/'), {
@@ -93,6 +104,7 @@ function startEdit () {
   clearProfileIssue()
   profileSaved.value = false
   fieldErrors.first_name = undefined
+  fieldErrors.last_name = undefined
   fieldErrors.email = undefined
   isEditing.value = true
 }
@@ -102,11 +114,96 @@ function cancelEdit () {
   isEditing.value = false
 }
 
+// ── Trocar o e-mail pede o código no número atual ───────────────────
+//
+// E-mail é contato da conta, como o telefone: trocá-lo sem prova deixaria quem recebeu um
+// link encaminhado apontar a conta para um endereço dele. Antes de salvar um e-mail
+// DIFERENTE, a tela manda um código para o número de hoje; com ele confirmado, o
+// servidor aceita UMA troca nos próximos 10 minutos. Salvar o mesmo e-mail não pede nada.
+const stepUpOpen = ref(false)
+const stepUpCode = ref<number[]>([])
+const stepUpPending = ref(false)
+const stepUpSendPending = ref(false)
+const stepUpSent = ref(false)
+const stepUpIssue = ref('')
+const stepUpCodeStr = computed(() => stepUpCode.value.join('').slice(0, 6))
+// A espera de reenvio sem código que valha (#3241): a tela conta o tempo, sem erro.
+const { waitSeconds: stepUpWaitSeconds, fromCooldown: stepUpFromCooldown, reset: resetStepUpWait } = useResendWait(stepUpOpen)
+// Uma retomada por gesto: se o servidor recusar logo depois do código, a tela DIZ o motivo
+// em vez de pedir código para sempre.
+let stepUpResumed = false
+
+function emailChanges (): boolean {
+  const current = (profile.value?.email || '').trim().toLowerCase()
+  return profileForm.email.trim().toLowerCase() !== current
+}
+
+async function sendStepUpCode () {
+  if (stepUpSendPending.value) return
+  stepUpSendPending.value = true
+  stepUpIssue.value = ''
+  resetStepUpWait()
+  try {
+    await $fetch(apiPath('/api/auth/request-code/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: authPhonePayload(profile.value?.phone || session.customerPhone.value || '', 'BR')
+    })
+    stepUpSent.value = true
+  } catch (e) {
+    // Espera de reenvio sem código que valha: não é erro de ninguém.
+    if (stepUpFromCooldown(httpError(e).data as Record<string, unknown> | null | undefined)) return
+    stepUpIssue.value = errorDetail(e, 'Não foi possível enviar o código agora.')
+  } finally {
+    stepUpSendPending.value = false
+  }
+}
+
+async function requireStepUp () {
+  stepUpCode.value = []
+  stepUpIssue.value = ''
+  stepUpSent.value = false
+  stepUpOpen.value = true
+  await sendStepUpCode()
+}
+
+async function confirmStepUp () {
+  if (stepUpPending.value || stepUpCodeStr.value.length !== 6) return
+  stepUpPending.value = true
+  stepUpIssue.value = ''
+  try {
+    await $fetch(apiPath('/api/v1/account/step-up/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { code: stepUpCodeStr.value, purpose: 'email' }
+    })
+    stepUpOpen.value = false
+    await submitProfile()
+  } catch (e) {
+    stepUpIssue.value = errorDetail(e, 'Código inválido ou expirado.')
+    stepUpCode.value = []
+  } finally {
+    stepUpPending.value = false
+  }
+}
+
 async function saveProfile () {
   if (profilePendingSave.value) return
   clearProfileIssue()
   profileSaved.value = false
   if (!validateProfile()) return
+  stepUpResumed = false
+  if (emailChanges()) {
+    await requireStepUp()
+    return
+  }
+  await submitProfile()
+}
+
+async function submitProfile () {
+  if (profilePendingSave.value) return
   profilePendingSave.value = true
   try {
     const response = await $fetch<AccountProfile>(apiPath('/api/v1/account/profile/'), {
@@ -126,6 +223,14 @@ async function saveProfile () {
     isEditing.value = false  // volta pra leitura já com os dados novos
     if (import.meta.client) useSonner.success('Perfil salvo.')
   } catch (e) {
+    const data = httpError(e).data as { code?: unknown } | null | undefined
+    if (data?.code === 'step_up_required' && !stepUpResumed) {
+      // A confirmação venceu (10 minutos) ou já foi usada: pede o código de novo e retoma.
+      stepUpResumed = true
+      profilePendingSave.value = false
+      await requireStepUp()
+      return
+    }
     // O servidor NOMEIA a recusa que tem motivo (e-mail já usado em outra conta)
     // e manda junto as saídas. Antes tudo virava a mesma frase genérica e o
     // cliente ficava sem saber sequer qual campo revisar.
@@ -134,6 +239,7 @@ async function saveProfile () {
     profileIssueActions.value = issue.actions
     if (issue.field === 'email') fieldErrors.email = issue.message
     if (issue.field === 'first_name') fieldErrors.first_name = issue.message
+    if (issue.field === 'last_name') fieldErrors.last_name = issue.message
     if (import.meta.client) useSonner.error(issue.message)
   } finally {
     profilePendingSave.value = false
@@ -193,15 +299,14 @@ useSeoMeta({ title: 'Perfil' })
 
           <!-- Duas coisas diferentes, e a frase precisa separá-las: ENTRAR com
                outro número abre outra conta; MUDAR o número leva esta conta
-               junto. Enquanto só existia a primeira, a copy honesta parava no
-               aviso. Agora ela aponta a saída. -->
-          <div class="mt-1 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p class="shop-meta">
-              Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
-              Entrar com outro número abre outra conta.
-            </p>
-            <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>
-          </div>
+               junto. O botão "Entrar com outra conta" que morava aqui saiu (beta
+               06/11): ao lado de "Leve a conta junto", ele era o caminho errado
+               com cara de certo, e na prática abria uma conta nova. Quem quer
+               mesmo trocar de conta sai pela Conta e entra de novo. -->
+          <p class="mt-1 border-t pt-4 shop-meta">
+            Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
+            Entrar com outro número abre outra conta.
+          </p>
         </div>
       </div>
 
@@ -243,7 +348,8 @@ useSeoMeta({ title: 'Perfil' })
               </UiField>
               <UiField>
                 <UiFieldLabel for="account-last-name">{{ profileCopy.last_name_field }}</UiFieldLabel>
-                <UiInput id="account-last-name" v-model="profileForm.last_name" autocomplete="family-name" />
+                <UiInput id="account-last-name" v-model="profileForm.last_name" autocomplete="family-name" :aria-invalid="!!fieldErrors.last_name" @blur="validateLastName" />
+                <UiFieldError v-if="fieldErrors.last_name" :errors="[fieldErrors.last_name]" />
               </UiField>
             </div>
           </div>
@@ -262,9 +368,7 @@ useSeoMeta({ title: 'Perfil' })
             </UiField>
           </div>
 
-          <!-- No mobile empilha (o label longo do botão esmagava o texto numa
-               coluna de 1 palavra); no desktop volta a ser linha. -->
-          <div class="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
+          <div class="flex border-t pt-4">
             <div class="flex min-w-0 flex-1 items-center gap-3">
               <span class="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-foreground">
                 <Icon name="lucide:phone" class="size-4" />
@@ -278,7 +382,6 @@ useSeoMeta({ title: 'Perfil' })
                 </p>
               </div>
             </div>
-            <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>
           </div>
         </div>
 
@@ -287,6 +390,53 @@ useSeoMeta({ title: 'Perfil' })
           <UiButton type="submit" size="lg" :loading="profilePendingSave" icon="lucide:check">Salvar perfil</UiButton>
         </div>
       </form>
+
+      <!-- Trocar o e-mail: o código vai para o número ATUAL antes de salvar -->
+      <UiDialog v-model:open="stepUpOpen">
+        <UiDialogContent>
+          <UiDialogHeader>
+            <UiDialogTitle>Confirme sua identidade</UiDialogTitle>
+            <UiDialogDescription>
+              Antes de trocar o e-mail, confirme que a conta é sua com um código no número
+              atual, {{ phoneDisplayLabel }}. O e-mail novo é salvo assim que você confirmar.
+            </UiDialogDescription>
+          </UiDialogHeader>
+          <UiAlert v-if="stepUpIssue" variant="destructive">
+            <UiAlertTitle>Não foi possível confirmar</UiAlertTitle>
+            <UiAlertDescription>{{ stepUpIssue }}</UiAlertDescription>
+          </UiAlert>
+          <p v-else-if="stepUpWaitSeconds > 0" class="shop-meta" role="status" data-step-up-wait>
+            {{ resendWaitMessage(stepUpWaitSeconds) }}
+          </p>
+          <div class="space-y-2">
+            <UiPinInput
+              v-model="stepUpCode"
+              :input-count="6"
+              type="number"
+              otp
+              :disabled="!stepUpSent"
+              :aria-invalid="!!stepUpIssue"
+              class="justify-between sm:justify-start"
+            />
+            <UiButton
+              variant="link"
+              size="sm"
+              class="px-0"
+              :loading="stepUpSendPending"
+              :disabled="stepUpSendPending || stepUpWaitSeconds > 0"
+              @click="sendStepUpCode"
+            >
+              {{ stepUpSent ? 'Reenviar código' : 'Enviar código' }}
+            </UiButton>
+          </div>
+          <UiDialogFooter>
+            <UiButton variant="ghost" :disabled="stepUpPending" @click="stepUpOpen = false">Cancelar</UiButton>
+            <UiButton :loading="stepUpPending" :disabled="stepUpPending || stepUpCodeStr.length !== 6" @click="confirmStepUp">
+              Confirmar e salvar
+            </UiButton>
+          </UiDialogFooter>
+        </UiDialogContent>
+      </UiDialog>
     </div>
   </main>
 </template>

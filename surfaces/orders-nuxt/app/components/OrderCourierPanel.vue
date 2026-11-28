@@ -10,17 +10,13 @@ import {
   courierTone,
 } from "~/presentation/courier";
 import { alertActions } from "../../../operator-kit/app/utils/alertActions";
-import {
-  machinesOutSentence,
-} from "~/presentation/board";
-import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
-import type {
-  Action,
-  EquipmentOptionProjection,
-} from "~/generated/ordersContract";
+import type { Action, EquipmentOptionProjection } from "~/generated/ordersContract";
 import type { CourierBlock } from "~/types/orders";
+import { courierCancelNotice } from "../../../operator-kit/app/presentation/courierCancel";
 import { courierProgress } from "../../../operator-kit/app/presentation/courierProgress";
 import { courierChargeNotice } from "../../../operator-kit/app/presentation/courierCharge";
+import { freeMachines, machinePhrase, moneyInput } from "../../../operator-kit/app/presentation/custody";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
 
 const props = defineProps<{
   courier: CourierBlock;
@@ -28,28 +24,35 @@ const props = defineProps<{
   cancelAction?: Action;
   quoteAction?: Action;
   dispatchAction?: Action;
-  /** As maquininhas do pedido (`order.equipment_options`), para a custódia. */
-  equipmentOptions?: EquipmentOptionProjection[];
   dispatchAgainAction?: Action;
-  /** Abrir com a confirmação de "Chamar entregador" já armada (veio do lembrete do cartão). */
-  armDispatch?: boolean;
+  /** O sheet de chamar está abrindo (a página lê as Entregas). */
+  calling?: boolean;
   /** A cotação está a caminho (o toque em "Cotar entrega" ainda não voltou). */
   quoting?: boolean;
   /** A última cotação falhou: a frase do servidor, ou vazio. */
   quoteError?: string;
+  /** "Separar de novo" (`courier-custody`, #2500) e as maquininhas do pedido. */
+  custodyAction?: Action;
+  equipmentOptions?: EquipmentOptionProjection[];
 }>();
 const emit = defineEmits<{
   quote: [];
-  dispatch: [custody: { change_out?: string; equipment?: string[] }];
-  cancel: [];
+  /** Abrir o sheet de chamar (`CourierCallSheet`), o mesmo das Entregas. */
+  call: [];
+  /** Confirmado: depois do aceite vem com o motivo escolhido (`reason_id` da TaOn). */
+  cancel: [reasonId?: number];
   dispatchAgain: [];
   dismissReminder: [];
   dismissQuoteError: [];
+  /** "Separar de novo": o troco e a maquininha da corrida retomada. */
+  separate: [body: { change_out?: string; equipment?: string[] }];
 }>();
 
-const steps = computed(() => courierSteps(props.courier.status));
-const tone = computed(() => courierTone(props.courier.status));
-const failed = computed(() => courierFailed(props.courier.status));
+// O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+const service = computed(() => deliveryServiceName(props.courier.service_name));
+const steps = computed(() => courierSteps(props.courier.ride_state));
+const tone = computed(() => courierTone(props.courier.ride_state));
+const failed = computed(() => courierFailed(props.courier.ride_state));
 const hasRide = computed(() => Boolean(props.courier.status));
 const timelineItems = computed(() =>
   steps.value.map((step) => ({
@@ -64,7 +67,9 @@ const currentStep = computed(
     steps.value.at(-1)?.key,
 );
 
-// Cancelar corrida é irreversível para a solicitação em curso → confirm de 1 toque.
+// Cancelar corrida é irreversível para a solicitação em curso: o primeiro toque
+// só ARMA a confirmação (`CourierCancelConfirm`, a mesma da seção Entregas); o
+// segundo confirma e, depois do aceite, já é o motivo. Um toque nunca cancela.
 const confirmingCancel = ref(false);
 watch(
   () => JSON.stringify(props.cancelAction?.payload_schema),
@@ -73,19 +78,37 @@ watch(
   },
 );
 function requestCancel() {
-  if (!confirmingCancel.value) {
-    confirmingCancel.value = true;
-    return;
-  }
+  confirmingCancel.value = true;
+}
+function confirmCancel(reasonId?: number) {
   confirmingCancel.value = false;
-  emit("cancel");
+  emit("cancel", reasonId);
 }
 
+// O cancelamento pedido (`courier.cancel_state`): espera, dúvida ou recusa da
+// TaOn. Dispensável, e volta quando o estado muda (a recusa não é a espera).
+const cancelState = computed(() =>
+  courierCancelNotice(
+    props.courier.cancel_state?.state,
+    props.courier.cancel_state?.message,
+  ),
+);
+const cancelDismissedFor = ref("");
+const cancelStateKey = computed(
+  () =>
+    `${props.courier.cancel_state?.state ?? ""}:${props.courier.cancel_state?.at ?? ""}`,
+);
+const showCancelState = computed(
+  () =>
+    Boolean(cancelState.value) &&
+    cancelDismissedFor.value !== cancelStateKey.value,
+);
+
 // O pedido mudou depois da chamada e a corrida leva a cobrança antiga (P2-28): o
-// aviso amarelo leva o "Solicitar cancelamento", que arma a MESMA confirmação de
-// baixo; cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
+// aviso amarelo leva o "Cancelar corrida", que arma a MESMA confirmação de baixo;
+// cancelada a corrida, o "Chamar entregador" de sempre leva a cobrança nova.
 const chargeNotice = computed(() =>
-  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true }),
+  courierChargeNotice(props.courier.charge_outdated, { cancelHere: true, service: props.courier.service_name }),
 );
 // O aviso leva o gesto: o botão de baixo só volta para confirmar (um lugar só).
 const chargeOffersCancel = computed(
@@ -97,7 +120,7 @@ const chargeOffersCancel = computed(
 const chargeActions = computed(() => [
   chargeOffersCancel.value &&
     !confirmingCancel.value && {
-      label: "Solicitar cancelamento",
+      label: props.cancelAction?.label || "Cancelar corrida",
       icon: "i-lucide-ban",
       disabled: props.busy || !props.cancelAction?.enabled,
       onClick: requestCancel,
@@ -105,61 +128,84 @@ const chargeActions = computed(() => [
     },
 ]);
 
-// Chamar entregador abre corrida paga na central → confirm de 1 toque, com a
-// pergunta inteira (quem vem, para qual pedido, quem paga) vinda do servidor.
-const confirmingDispatch = ref(false);
-const dispatchQuestion = computed(() =>
-  String(props.dispatchAction?.confirmation?.description ?? ""),
-);
+// A TaOn retomou a corrida encerrada (#2500): o troco e a maquininha tinham
+// voltado para a casa. O aviso diz o que voltou e leva o "Separar de novo", que
+// abre aqui o troco (já com o valor da chamada) e a maquininha livre.
+const toSeparate = computed(() => props.courier.custody_to_separate ?? null);
+const separateWhat = computed(() => {
+  const missing = toSeparate.value;
+  if (!missing) return "";
+  const parts = [missing.change_out_suggested_q > 0 && "O troco", missing.needs_machine && "a maquininha"].filter(Boolean);
+  return parts.length === 2 ? "O troco e a maquininha voltaram" : `${parts[0] === "O troco" ? "O troco" : "A maquininha"} voltou`;
+});
+const separating = ref(false);
+const separateChange = ref("");
+const separateMachines = computed(() => freeMachines(props.equipmentOptions ?? []));
+const separateMachine = ref("");
+// Reinicia o formulário só quando o que falta separar MUDA, não a cada releitura do
+// pedido: o SSE, o poll e a atualização ao montar trazem um objeto novo com o mesmo
+// conteúdo, e vigiar a identidade dele fechava o formulário aberto e apagava o troco
+// digitado no meio do gesto (#3623, achado pelo teste que caía na fila).
 watch(
-  () => JSON.stringify(props.dispatchAction?.payload_schema),
   () => {
-    confirmingDispatch.value = false;
+    const missing = toSeparate.value;
+    return missing ? `${missing.change_out_suggested_q}:${missing.needs_machine}` : "";
   },
+  () => {
+    const missing = toSeparate.value;
+    separating.value = false;
+    separateChange.value = missing ? moneyInput(missing.change_out_suggested_q) : "";
+    // Recomeça com a primeira maquininha livre, como na primeira abertura.
+    separateMachine.value = separateMachines.value[0]?.ref ?? "";
+  },
+  { immediate: true },
 );
-// A custódia que sai com o entregador da TaOn, pré-preenchida pelo pedido:
-// troco da gaveta e/ou a maquininha da casa. Pedido pago não pergunta nada.
-const custody = computed(() => props.courier.custody);
-const asksChange = computed(
-  () => (custody.value?.change_out_suggested_q ?? 0) > 0,
+watch(separateMachines, (free) => {
+  if (!free.some((option) => option.ref === separateMachine.value)) separateMachine.value = free[0]?.ref ?? "";
+}, { immediate: true });
+const separateBlocked = computed(
+  () => Boolean(toSeparate.value?.needs_machine) && !separateMachine.value,
 );
-const asksMachine = computed(() => Boolean(custody.value?.needs_machine));
-const asksCustody = computed(() => asksChange.value || asksMachine.value);
-const free = computed(() => freeMachines(props.equipmentOptions ?? []));
-const changeOut = ref("");
-const machineRef = ref("");
-function armCustody() {
-  changeOut.value = asksChange.value
-    ? moneyInput(custody.value?.change_out_suggested_q ?? 0)
-    : "";
-  machineRef.value = free.value[0]?.ref ?? "";
-}
-const machineItems = computed(() =>
-  free.value.map((opt) => ({ value: opt.ref, label: opt.label })),
-);
-const machineMissing = computed(() => asksMachine.value && !free.value.length);
-function requestDispatch() {
-  if (!confirmingDispatch.value) {
-    armCustody();
-    confirmingDispatch.value = true;
-    return;
-  }
-  if (machineMissing.value) return;
-  confirmingDispatch.value = false;
-  emit("dispatch", {
-    ...(asksChange.value ? { change_out: changeOut.value.trim() || "0" } : {}),
-    ...(asksMachine.value ? { equipment: [machineRef.value] } : {}),
+const separateActions = computed(() => [
+  !separating.value && {
+    label: props.custodyAction?.label || "Separar de novo",
+    icon: "i-lucide-hand-coins",
+    disabled: props.busy || !props.custodyAction?.enabled,
+    onClick: () => {
+      separating.value = true;
+    },
+    ...{ "data-courier-separate": "" },
+  },
+]);
+// Gesto de dinheiro: o rótulo diz tudo o que sai ("Separar R$ 26,00 e a maquininha Azul").
+const separateLabel = computed(() => {
+  const missing = toSeparate.value;
+  const money = missing && missing.change_out_suggested_q > 0 && separateChange.value.trim()
+    ? `R$ ${separateChange.value.trim()}` : "";
+  const label = separateMachines.value.find((option) => option.ref === separateMachine.value)?.label ?? "";
+  const machine = missing?.needs_machine && separateMachine.value ? `a ${machinePhrase(label)}` : "";
+  const parts = [money, machine].filter(Boolean);
+  return parts.length ? `Separar ${parts.join(" e ")}` : "Separar";
+});
+function confirmSeparate() {
+  if (separateBlocked.value) return;
+  const missing = toSeparate.value;
+  emit("separate", {
+    ...(missing && missing.change_out_suggested_q > 0 ? { change_out: separateChange.value } : {}),
+    ...(missing?.needs_machine && separateMachine.value ? { equipment: [separateMachine.value] } : {}),
   });
 }
-// Vindo do lembrete do cartão (`#courier-call`), a página abre já perguntando.
-if (props.armDispatch && props.courier.can_dispatch) {
-  armCustody();
-  confirmingDispatch.value = true;
+
+// Chamar entregador abre o MESMO sheet das Entregas (`CourierCallSheet`, #2876): a
+// página é dona dele (custódia, quem vai junto, cotação da sugestão). Aqui o toque só
+// pede para abrir; um toque nunca chama.
+function requestDispatch() {
+  if (props.busy || props.calling || !props.dispatchAction?.enabled) return;
+  emit("call");
 }
 
 // Lembrete temporário (entrega da casa em preparo há X min, sem entregador chamado):
-// o aviso amarelo leva o "Chamar entregador", que arma a MESMA confirmação de baixo
-// (pergunta, troco e maquininha); armada, o botão de confirmar é o de sempre.
+// o aviso amarelo leva o "Chamar entregador", que abre o MESMO sheet de chamar.
 const nowMs = useNowTick();
 const reminderLine = computed(() =>
   props.courier.can_dispatch
@@ -167,10 +213,10 @@ const reminderLine = computed(() =>
     : null,
 );
 const reminderActions = computed(() => [
-  !confirmingDispatch.value && {
+  {
     label: "Chamar entregador",
-    icon: "i-lucide-send",
-    disabled: props.busy || !props.dispatchAction?.enabled,
+    icon: "i-lucide-bike",
+    disabled: props.busy || props.calling || !props.dispatchAction?.enabled,
     onClick: requestDispatch,
     ...{ "data-courier-reminder-call": "" },
   },
@@ -182,19 +228,14 @@ const reminderActions = computed(() => [
   },
 ]);
 
-function blurDispatch() {
-  // Com campos a preencher, sair do botão não desarma: o operador está
-  // conferindo o troco ou a maquininha. "Voltar" desarma.
-  if (!asksCustody.value) confirmingDispatch.value = false;
-}
-
 // A cotação antes da corrida: valor, tempo e distância numa linha forte, com o
 // "Chamar entregador" logo abaixo como a ação do momento. Com corrida aberta, o
 // valor volta ao cabeçalho (é o custo dela, não uma proposta).
+const quoteValue = computed(() =>
+  props.quoting ? "Cotando a entrega…" : props.courier.estimate_display,
+);
 const showQuote = computed(
-  () =>
-    !hasRide.value &&
-    (props.quoting || Boolean(props.courier.estimate_display)),
+  () => !hasRide.value && (props.quoting || Boolean(props.courier.estimate_display)),
 );
 const quoteActions = computed(() => [
   {
@@ -260,7 +301,9 @@ const vehicle = computed(() =>
           {{ courier.attempts_count }}ª corrida não concluída
         </span>
         <span
-          v-if="hasRide && (courier.final_value_display || courier.estimate_display)"
+          v-if="
+            hasRide && (courier.final_value_display || courier.estimate_display)
+          "
           class="ms-auto text-sm tabular-nums text-muted-foreground"
         >
           {{ courier.final_value_display || courier.estimate_display }}
@@ -269,11 +312,25 @@ const vehicle = computed(() =>
 
       <!-- o andamento: quando chega para coletar e quando a entrega está prevista -->
       <div
-        v-if="progress.pickup || progress.delivery"
+        v-if="progress.waiting || progress.pickup || progress.delivery"
         class="flex flex-col gap-0.5"
         data-testid="courier-progress"
       >
-        <p v-if="progress.pickup" class="font-medium tabular-nums" role="status">
+        <!-- o entregador desistiu (a TaOn redistribui a mesma corrida) ou a TaOn
+             juntou com outra: a corrida segue chamada, sem nada a fazer -->
+        <p
+          v-if="progress.waiting"
+          class="font-medium tabular-nums"
+          role="status"
+          data-testid="courier-waiting"
+        >
+          {{ progress.waiting }}
+        </p>
+        <p
+          v-if="progress.pickup"
+          class="font-medium tabular-nums"
+          role="status"
+        >
           {{ progress.pickup }}
         </p>
         <!-- Depois da coleta a entrega prevista é a linha principal. -->
@@ -296,7 +353,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-cloud-off"
           :title="progress.stale"
-          description="O status na tela pode estar parado. Confira no painel da TaOn."
+          :description="`O status na tela pode estar parado. Confira no painel da ${service}.`"
           close
           data-testid="courier-stale"
           @update:open="staleDismissedFor = courier.sync_since ?? ''"
@@ -323,8 +380,7 @@ const vehicle = computed(() =>
           variant="subtle"
           icon="i-lucide-circle-help"
           :title="
-            courier.error?.message ||
-            'A TaOn não respondeu à última chamada.'
+            courier.error?.message || `A ${service} não respondeu à última chamada.`
           "
           data-courier-no-answer
         >
@@ -342,6 +398,19 @@ const vehicle = computed(() =>
           </template>
         </NuxtAlert>
 
+        <!-- o cancelamento pedido: esperando a TaOn, sem resposta, ou recusado -->
+        <NuxtAlert
+          v-if="showCancelState && cancelState"
+          :color="cancelState.color"
+          variant="subtle"
+          :icon="cancelState.icon"
+          :title="cancelState.message"
+          close
+          role="status"
+          data-courier-cancel-state
+          @update:open="cancelDismissedFor = cancelStateKey"
+        />
+
         <!-- falha terminal do despacho (Machine recusou / dados) -->
         <NuxtAlert
           v-else-if="courier.error"
@@ -351,6 +420,60 @@ const vehicle = computed(() =>
           title="Falha ao abrir a corrida"
           :description="courier.error.message"
         />
+
+        <!-- a TaOn retomou a corrida encerrada: separar de novo o que voltou (#2500) -->
+        <NuxtAlert
+          v-if="toSeparate"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-hand-coins"
+          :title="`${separateWhat} para a casa`"
+          :description="`A ${service} retomou a corrida. Separe de novo antes de entregar a sacola.`"
+          :actions="alertActions('warning', separateActions)"
+          role="status"
+          data-courier-custody-missing
+        />
+        <div v-if="toSeparate && separating" class="flex flex-col gap-3 rounded-lg border border-default p-3" data-courier-separate-form>
+          <NuxtFormField v-if="toSeparate.change_out_suggested_q > 0" label="Troco a levar" name="change_out">
+            <NuxtInput v-model="separateChange" inputmode="decimal" class="w-40" data-courier-separate-change>
+              <template #leading><span class="text-muted">R$</span></template>
+            </NuxtInput>
+          </NuxtFormField>
+          <NuxtFormField v-if="toSeparate.needs_machine" label="Maquininha" name="equipment">
+            <NuxtSelect
+              v-if="separateMachines.length"
+              v-model="separateMachine"
+              :items="separateMachines.map((option) => ({ value: option.ref, label: option.label }))"
+              class="w-60"
+              data-courier-separate-machine
+            />
+            <p v-else class="text-sm text-error" data-courier-separate-no-machine>
+              Nenhuma maquininha livre agora. Receba uma de volta antes de separar.
+            </p>
+          </NuxtFormField>
+          <div class="flex flex-wrap gap-2">
+            <NuxtButton
+              type="button"
+              color="primary"
+              icon="i-lucide-check"
+              :label="separateLabel"
+              :disabled="busy || separateBlocked || !custodyAction?.enabled"
+              :loading="busy"
+              class="min-h-11"
+              data-courier-separate-go
+              @click="confirmSeparate"
+            />
+            <NuxtButton
+              type="button"
+              color="neutral"
+              variant="outline"
+              label="Agora não"
+              class="min-h-11"
+              data-courier-separate-keep
+              @click="separating = false"
+            />
+          </div>
+        </div>
 
         <!-- o pedido mudou depois da chamada: a corrida leva a cobrança antiga -->
         <NuxtAlert
@@ -378,12 +501,15 @@ const vehicle = computed(() =>
         </p>
 
         <!-- entregador -->
+        <!-- A foto da TaOn enquanto a corrida vive, a mesma da página Entregas (#2736). -->
         <NuxtAlert
           v-if="courier.driver?.name"
           color="info"
           variant="subtle"
-          icon="i-lucide-user"
+          :icon="courier.driver.photo_url ? undefined : 'i-lucide-user'"
+          :avatar="courier.driver.photo_url ? { src: courier.driver.photo_url, alt: courier.driver.name, size: 'lg' } : undefined"
           :title="courier.driver.name"
+          data-order-courier-driver
         >
           <template #description
             ><div class="flex flex-wrap items-center gap-x-4 gap-y-1">
@@ -424,7 +550,9 @@ const vehicle = computed(() =>
             class="flex items-center gap-1.5 text-muted-foreground"
           >
             <Icon name="lucide:key-round" class="size-4" /> Código:
-            <strong class="tabular-nums">{{ courier.confirmation_code }}</strong>
+            <strong class="tabular-nums">{{
+              courier.confirmation_code
+            }}</strong>
           </span>
         </div>
       </div>
@@ -453,84 +581,30 @@ const vehicle = computed(() =>
         <div class="flex flex-col items-center gap-1 text-center">
           <p class="text-xs text-muted-foreground">Cotação da entrega</p>
           <p
+            v-if="quoteValue"
             class="text-lg font-semibold tabular-nums"
             role="status"
             data-courier-quote-value
           >
-            {{ quoting ? "Cotando a entrega…" : courier.estimate_display }}
+            {{ quoteValue }}
           </p>
         </div>
       </NuxtCard>
 
-      <template v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel">
-        <div
-          v-if="confirmingDispatch"
-          class="flex flex-col gap-3"
-          data-testid="courier-dispatch-confirm"
-        >
-          <p
-            v-if="dispatchQuestion"
-            class="text-sm"
-            role="status"
-            data-testid="courier-dispatch-question"
-          >
-            {{ dispatchQuestion }}
-          </p>
-          <NuxtFormField
-            v-if="asksChange"
-            label="Troco que o entregador leva da gaveta"
-            data-testid="courier-custody-change"
-          >
-            <NuxtInput
-              v-model="changeOut"
-              class="w-40"
-              type="text"
-              inputmode="decimal"
-              icon="i-lucide-circle-dollar-sign"
-              aria-label="Troco que o entregador leva da gaveta, em reais"
-            />
-          </NuxtFormField>
-          <template v-if="asksMachine">
-            <NuxtFormField
-              v-if="free.length >= 2"
-              label="Qual maquininha vai junto?"
-              data-testid="courier-custody-machine"
-            >
-              <NuxtRadioGroup
-                v-model="machineRef"
-                :items="machineItems"
-                orientation="horizontal"
-              />
-            </NuxtFormField>
-            <p
-              v-else-if="free.length === 1"
-              class="text-sm"
-              data-testid="courier-custody-machine"
-            >
-              Leva a {{ machinePhrase(free[0]!.label) }}.
-            </p>
-            <p
-              v-else
-              class="text-sm text-error"
-              data-testid="courier-custody-machine"
-            >
-              {{ machinesOutSentence(equipmentOptions ?? []) }} Espere uma
-              voltar para chamar.
-            </p>
-          </template>
-        </div>
+      <template
+        v-if="courier.can_quote || courier.can_dispatch || courier.can_cancel"
+      >
         <div
           class="flex flex-wrap gap-2"
           :class="showQuote ? 'justify-center' : ''"
         >
+          <!-- Abre o sheet de chamar (o mesmo das Entregas): troco, maquininha e quem
+               vai junto se conferem lá. Com o lembrete na tela, o gesto mora nele. -->
           <NuxtButton
-            v-if="courier.can_dispatch && (!reminderLine || confirmingDispatch)"
+            v-if="courier.can_dispatch && !reminderLine"
             type="button"
-            :disabled="
-              busy ||
-              !dispatchAction?.enabled ||
-              (confirmingDispatch && machineMissing)
-            "
+            :loading="calling"
+            :disabled="busy || calling || !dispatchAction?.enabled"
             :title="
               dispatchAction?.reason ||
               (dispatchAction?.enabled
@@ -540,28 +614,18 @@ const vehicle = computed(() =>
             :icon="
               hasRide || courier.attempts_count > 0
                 ? 'i-lucide-refresh-cw'
-                : 'i-lucide-send'
+                : 'i-lucide-bike'
             "
             :label="
-              confirmingDispatch
-                ? 'Confirmar chamada'
-                : hasRide || courier.attempts_count > 0
-                  ? 'Chamar outro entregador'
-                  : 'Chamar entregador'
+              hasRide || courier.attempts_count > 0
+                ? 'Chamar outro entregador'
+                : 'Chamar entregador'
             "
-            @blur="blurDispatch"
+            data-courier-call
             @click="requestDispatch"
           />
           <NuxtButton
-            v-if="confirmingDispatch && asksCustody"
-            type="button"
-            label="Voltar"
-            color="neutral"
-            variant="outline"
-            @click="confirmingDispatch = false"
-          />
-          <NuxtButton
-            v-if="courier.can_quote && !confirmingDispatch && !(quoteError && !quoting)"
+            v-if="courier.can_quote && !(quoteError && !quoting)"
             type="button"
             :loading="quoting"
             :disabled="busy || quoting || !quoteAction?.enabled"
@@ -572,28 +636,34 @@ const vehicle = computed(() =>
                 : 'Atualize o pedido para conferir esta ação.')
             "
             icon="i-lucide-calculator"
-            :label="courier.estimate_display ? 'Cotar de novo' : 'Cotar entrega'"
+            :label="
+              courier.estimate_display ? 'Cotar de novo' : 'Cotar entrega'
+            "
             data-courier-quote-button
             color="neutral"
             variant="outline"
             @click="emit('quote')"
           />
           <NuxtButton
-            v-if="courier.can_cancel && (!chargeOffersCancel || confirmingCancel)"
+            v-if="courier.can_cancel && !chargeOffersCancel && !confirmingCancel"
             type="button"
             :disabled="busy || !cancelAction?.enabled"
+            :title="cancelAction?.reason || undefined"
             icon="i-lucide-ban"
-            :label="
-              confirmingCancel
-                ? 'Confirmar solicitação?'
-                : 'Solicitar cancelamento'
-            "
+            :label="cancelAction?.label || 'Cancelar corrida'"
             color="error"
             variant="outline"
-            @blur="confirmingCancel = false"
+            data-courier-cancel
             @click="requestCancel"
           />
         </div>
+        <CourierCancelConfirm
+          v-if="courier.can_cancel && confirmingCancel && cancelAction"
+          :action="cancelAction"
+          :busy="busy"
+          @confirm="confirmCancel"
+          @keep="confirmingCancel = false"
+        />
       </template>
     </div>
   </NuxtCard>

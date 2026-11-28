@@ -177,3 +177,64 @@ class AccountingBackend(Protocol):
     ) -> CreateEntryResult:
         """Marca lançamento como pago."""
         ...
+
+
+# =============================================================================
+# Customer Fence
+# =============================================================================
+#
+# O Orderman trava o titular canônico ANTES da sessão (ordem global de locks
+# Customer → Session) no commit e na associação de titular, para que a exclusão
+# de conta não corra por baixo deles. O cadastro do titular não é do Orderman:
+# a cerca é um porto, e quem o implementa é o kernel dono do cadastro
+# (``shopman.guestman.adapters.orderman.GuestmanCustomerFence``), ligado por
+# ``ORDERMAN["CUSTOMER_FENCE"]``. Sem porto configurado não há cerca, e o
+# Orderman continua instalável sozinho.
+
+
+@dataclass(frozen=True)
+class FencedCustomer:
+    """O titular travado pela cerca até o fim da transação."""
+
+    pk: object
+    ref: str
+    phone: str  # E.164 quando normalizável
+    is_active: bool
+
+
+class CustomerIdentityConflict(Exception):
+    """A identidade da sessão não aponta para um titular só.
+
+    ``code`` é ``customer_identity_ambiguous`` (casa com mais de um titular) ou
+    ``customer_identity_mismatch`` (ref e telefone apontam para titulares
+    diferentes).
+    """
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+@runtime_checkable
+class CustomerFence(Protocol):
+    """Porto da cerca do titular canônico."""
+
+    def lock_by_identity(self, *, customer_ref: str, phone: str) -> FencedCustomer | None:
+        """Trava o titular que casa com ref E telefone (ou o que vier).
+
+        ``None`` quando nenhum titular local casa. Levanta
+        ``CustomerIdentityConflict`` quando a identidade é ambígua ou dividida.
+        """
+        ...
+
+    def lock_by_ref(self, customer_ref: str) -> FencedCustomer | None:
+        """Trava o titular pelo ref; ``None`` quando não existe."""
+        ...
+
+    def owns_phone(self, customer: FencedCustomer, phone: str) -> bool:
+        """O telefone é um contato (phone/whatsapp) do titular."""
+        ...
+
+    def is_active_owner(self, customer: FencedCustomer, customer_ref: str) -> bool:
+        """O titular ainda é ativo e ainda tem este ref."""
+        ...

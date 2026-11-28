@@ -1,5 +1,7 @@
 <script setup lang="ts">
+import { cartLinkName } from '~/presentation/cart'
 import { headerCollapsed } from '~/presentation/scroll'
+import { headerStatusParts } from '~/presentation/shopStatus'
 import { accountNavEntry } from '~/utils/accountNavEntry'
 
 const session = useShopSession()
@@ -12,6 +14,7 @@ const menuOpen = ref(false)
 const shop = computed(() => session.shop.value)
 const openingHours = computed(() => session.openingHours.value)
 const statusLabel = computed(() => session.shopStatus.value?.label?.trim() || '')
+const statusParts = computed(() => headerStatusParts(statusLabel.value))
 const statusOpen = computed(() => !!session.shopStatus.value?.is_open)
 const whatsappUrl = computed(() => session.publicConfig.value?.whatsapp_url || shop.value?.whatsapp_url || '')
 const socialLinks = computed(() => shop.value?.social_links || [])
@@ -109,12 +112,18 @@ onBeforeUnmount(() => {
   >
     <!-- Barra de status: horário/status (esq) · telefone (dir). Ao rolar, o header
          inteiro desliza 2.25rem para cima e ela sai da tela por cima da navbar;
-         reexpande no topo. Ela ocupa a mesma altura no fluxo nos dois estados. -->
-    <div class="bg-ink text-ink-foreground" :aria-hidden="scrolled ? 'true' : undefined">
+         reexpande no topo. Ela ocupa a mesma altura no fluxo nos dois estados.
+         Fora da tela ela fica `inert`, não só `aria-hidden`: o "Ligar"/"WhatsApp" de
+         dentro saía do leitor de tela mas seguia na ordem do Tab, e o foco ia parar
+         num link invisível (axe aria-hidden-focus, OC-32). -->
+    <div class="bg-ink text-ink-foreground" :inert="scrolled ? true : undefined">
       <div class="shop-container flex h-9 items-center justify-between gap-3 text-sm">
         <span class="flex min-w-0 items-center gap-2 opacity-90">
           <Icon name="lucide:clock" class="size-3.5 shrink-0" />
-          <span class="truncate">{{ statusLabel || 'Confira nossos horários' }}</span>
+          <!-- Na tela estreita o estado ("Fechado agora.") sai e a hora de abertura
+               fica inteira; o leitor de tela ouve a frase toda. -->
+          <span v-if="statusParts.lead" class="sr-only sm:not-sr-only sm:truncate" data-shop-status-lead data-decisive="state">{{ statusParts.lead }}</span>
+          <span class="min-w-0" data-shop-status-tail data-decisive="state">{{ statusParts.tail || 'Confira nossos horários' }}</span>
         </span>
         <a
           v-if="statusOpen && shop?.phone_url"
@@ -192,11 +201,13 @@ onBeforeUnmount(() => {
         size="icon"
         class="relative -mr-2 ml-auto size-11 rounded-full text-foreground"
         :class="cartPulse ? 'scale-105' : ''"
-        aria-label="Ver sacola"
+        :aria-label="cartLinkName(cart)"
+        data-header-cart-link
       >
         <Icon name="lucide:shopping-bag" class="size-6" />
         <UiBadge
           v-if="!cart.is_empty"
+          aria-hidden="true"
           variant="default"
           size="sm"
           class="absolute -right-1 -top-1 size-5 min-w-5 rounded-md p-0 text-xs font-semibold tabular-nums ring-2 ring-background"

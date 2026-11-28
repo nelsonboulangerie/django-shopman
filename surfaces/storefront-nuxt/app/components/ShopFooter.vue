@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 import { accountDestinationLink } from '~/utils/accountNavEntry'
+import type { ShellResponse } from '~/types/shopman'
+import { STOREFRONT_SHELL_KEY } from '~/composables/useStorefrontShell'
 
 const session = useShopSession()
 
@@ -9,6 +11,8 @@ const openingHours = computed(() => session.openingHours.value)
 const whatsappUrl = computed(() => session.publicConfig.value?.whatsapp_url || shop.value?.whatsapp_url || '')
 const fullAddressLines = computed(() => addressLines(shop.value?.full_address))
 const year = new Date().getFullYear()
+const { data: shellState } = useNuxtData<ShellResponse>(STOREFRONT_SHELL_KEY)
+const hasTeamPreview = computed(() => Boolean(shellState.value?.shell?.team_preview))
 // "Conta e pedidos" é destino, não porta: deslogado vai ao login JÁ com `next=/conta`;
 // sem isso o guard o toma por "só queria entrar" e o devolve à página de onde saiu.
 const accountHref = computed(() => accountDestinationLink(session.isAuthenticated.value, '/conta'))
@@ -102,6 +106,11 @@ const accountHref = computed(() => accountDestinationLink(session.isAuthenticate
           Falar no WhatsApp
         </UiButton>
       </section>
+    </div>
+
+    <!-- Só para quem é da equipe e vê novidades em teste (DEV-2026-096); o shell decide. -->
+    <div v-if="hasTeamPreview" class="shop-container border-t border-current/15 py-3 text-center">
+      <TeamPreviewNotice placement="footer" />
     </div>
 
     <div class="border-t border-current/15 py-3 text-center text-xs opacity-70">

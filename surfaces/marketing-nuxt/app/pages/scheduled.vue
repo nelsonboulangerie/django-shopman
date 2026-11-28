@@ -41,15 +41,22 @@ useHead({ title: "Agendados" });
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled>
+  <main class="flex min-h-0 flex-1 flex-col" data-marketing-scheduled data-compact-page>
+    <!-- No celular, a linha do chão do kit: a conexão vira o ponto do selo. -->
+    <OperatorCompactBar
+      title="Agendados"
+      :tone="live.tone"
+      :time="live.time"
+      :conn-label="live.label"
+      :options="headerActions"
+    />
     <OperatorPageHeader
       title="Agendados"
       :actions="headerActions"
       actions-label="Mais ações de Agendados"
     >
       <template #status>
-        <!-- No celular o kit desce o estado para a segunda linha da barra (README "Barra
-             do topo no celular"): ele não disputa a largura com o título. -->
+        <!-- Na mesa: o ponto, a hora e, fora do ao vivo, o estado por extenso. -->
         <span class="flex min-w-0" data-marketing-live>
           <OperatorLiveStatus
             :tone="live.tone"
@@ -64,8 +71,10 @@ useHead({ title: "Agendados" });
 
     <section class="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
       <div class="mx-auto flex w-full max-w-3xl flex-col gap-3">
+        <!-- Vazio, quem fala é o estado vazio: duas frases dizendo "nada" era ruído
+             (beta 05/11, ge:MKT-29). -->
         <p
-          v-if="queue"
+          v-if="queue && scheduled.length"
           class="flex min-h-8 items-center text-sm text-muted-foreground"
           role="status"
           :aria-busy="loading"

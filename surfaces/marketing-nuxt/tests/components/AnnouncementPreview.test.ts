@@ -202,6 +202,85 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
+  it("uma plataforma fora da prévia não apaga as outras, e diz o motivo uma vez (ge:MKT-08)", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ...batch({ instagram: "Croissant saiu" }),
+      sample: false,
+      platform_problems: {
+        whatsapp: {
+          code: "whatsapp_flow_not_selected",
+          detail: "O WhatsApp ainda não tem um fluxo aprovado.",
+        },
+      },
+    });
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountPreview({ announcementId: 1, platforms: ["instagram", "whatsapp"] });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.find("[data-testid='preview-error']").exists()).toBe(false);
+    expect(wrapper.text()).toContain("Croissant saiu");
+    const trouble = wrapper.get("[data-preview-platform-problem='whatsapp']").text();
+    expect(trouble).toContain("WhatsApp fica fora desta prévia.");
+    expect(trouble).toContain("O WhatsApp ainda não tem um fluxo aprovado.");
+    wrapper.unmount();
+  });
+
+  it("mostra por que o link relativo não pode ser aprovado, com X que volta (MKT-20)", async () => {
+    const blocked = {
+      ...batch({ instagram: "Croissant saiu" }),
+      sample: false,
+      publish_blockers: [
+        {
+          code: "marketing_link_store_address_missing",
+          detail: "O link do anúncio está sem o endereço do site da loja. Fora da loja, o cliente não conseguiria abrir.",
+          field_detail: "Peça ao suporte técnico para configurar o endereço do site da loja. Depois, atualize a prévia.",
+        },
+      ],
+    };
+    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue(blocked));
+    const wrapper = mountPreview({ announcementId: 1 });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("Croissant saiu");
+    const selector = "[data-preview-publish-blocker='marketing_link_store_address_missing']";
+    const alert = wrapper.get(selector).text();
+    expect(alert).toContain("sem o endereço do site da loja");
+    expect(alert).toContain("suporte técnico");
+    expect(alert).not.toContain("—");
+
+    const close = wrapper.get(selector).find("button");
+    expect(close.exists()).toBe(true);
+    await close.trigger("click");
+    await flushPromises();
+    expect(wrapper.find(selector).exists()).toBe(false);
+
+    await wrapper.setProps({ body: "Croissant saiu de novo" });
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    expect(wrapper.find(selector).exists()).toBe(true);
+    wrapper.unmount();
+  });
+
+  it("não repete a mesma frase no detalhe do campo (ge:MKT-08)", async () => {
+    const same = "O texto passou do limite.";
+    vi.stubGlobal(
+      "$fetch",
+      vi.fn().mockRejectedValueOnce({
+        data: { detail: same, field_errors: { body: [same] }, retryable: false },
+      }),
+    );
+    const wrapper = mountPreview();
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    const text = wrapper.get("[data-testid='preview-error']").text();
+    expect(text.split(same).length - 1).toBe(1);
+    wrapper.unmount();
+  });
+
   it("orienta a correção de erro determinístico sem oferecer repetição inútil", async () => {
     const fetch = vi.fn().mockRejectedValueOnce({
       data: {

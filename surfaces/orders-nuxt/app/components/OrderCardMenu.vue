@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // O ⋯ de um pedido: atender, seleção em lote, declarar volumes, imprimir a Via Pedido,
-// voltar para a estação e abrir o pedido. Uma peça só para o cartão do quadro e a linha da Grade (dono,
+// voltar para a estação e abrir o pedido. Uma peça só para o cartão do painel e a linha da Grade (dono,
 // 07/10/2026: as opções sumiam da Grade), para as duas nunca divergirem.
 // É o `OperatorMoreMenu`, o ⋯ único do kit; os volumes, que pedem um número, abrem um modal
 // próprio (o editor não cabe dentro de um menu).
@@ -36,10 +36,10 @@ const volumesAction = computed(
 );
 const volumesOpen = ref(false);
 const volumesDraft = ref(0);
+// Sem declaração, o rascunho parte de 1: volume nunca se deduz da contagem de
+// itens (que conta unidades: 12 croissants numa sacola não são 12 volumes).
 function openVolumes() {
-  volumesDraft.value =
-    props.card.volumes ||
-    Math.max(1, Math.min(props.card.items_count || 1, 99));
+  volumesDraft.value = props.card.volumes || 1;
   volumesOpen.value = true;
 }
 function saveVolumes() {
@@ -129,6 +129,7 @@ const items = computed(() => [
   <OperatorMoreMenu
     :items="items"
     :label="`Mais ações do pedido ${code.code}`"
+    class="min-h-11 min-w-11 justify-center"
     data-card-menu
   />
   <NuxtModal

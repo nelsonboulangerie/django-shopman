@@ -3,7 +3,7 @@
 ## Por que existe
 
 O repositório é **público**. Em 30/06/2026 a chave de API da Comtele (a única da
-conta, a que manda o SMS do login) entrou em `docs/plans/GO-LIVE-SMS-WHATSAPP-STATUS.md`
+conta, a que manda o SMS do login) entrou em `docs/plans/completed/GO-LIVE-SMS-WHATSAPP-STATUS.md`
 e, no mesmo dia, virou valor de fixture em `test_otp_sms_comtele.py`. Ficou lá
 por quase três meses, até alguém ler o teste. O `secret scanning` do GitHub está
 ligado, mas não reconhece chave da Comtele (não é provedor parceiro), então nada

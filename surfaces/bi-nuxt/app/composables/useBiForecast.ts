@@ -1,5 +1,5 @@
 import type { BIForecastReport, BIReading } from "~/types/bi";
-import { forecastFromQuery, forecastToQuery, type ForecastHorizon } from "~/presentation/forecast";
+import { forecastFromQuery, forecastToQuery, readingFor, type ForecastHorizon } from "~/presentation/forecast";
 import { addDays, todayIso, type PeriodSelection } from "../../../operator-kit/app/presentation/dates";
 
 export type { ForecastHorizon };
@@ -54,7 +54,8 @@ export function useBiForecast() {
     },
   );
 
-  const report = computed(() => data.value?.bi ?? null);
+  // Só a leitura do dia pedido: a anterior some enquanto a nova chega (ge:BI-04).
+  const report = computed(() => readingFor(data.value?.bi, target.value, horizon.value));
   const freshness = computed(() => ({ generated_at: data.value?.generated_at ?? null }));
 
   return { report, freshness, pending, error, refresh, target, horizon, period, presets: FORECAST_PRESETS };

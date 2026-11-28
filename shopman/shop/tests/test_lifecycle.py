@@ -13,9 +13,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shopman.orderman.exceptions import InvalidTransition
 from shopman.orderman.models import Directive, Order
+from shopman.stockman.protocols.sku import PromiseReasonCode
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.lifecycle import dispatch, ensure_confirmable
+
+#: A régua da fila (#2730). Lê as reservas do pedido no banco; com pedido de
+#: mentira, o teste que afirma o que o commit faz com a cobrança diz a resposta.
+CHARGE_WAITS_FOR_THE_QUEUE = "shopman.shop.policies.waitlist_charge.charge_waits_for_the_queue"
 
 
 @pytest.fixture(autouse=True)
@@ -108,7 +113,7 @@ class TestConfirmability:
         order = _make_order(data={})
 
         with pytest.raises(InvalidTransition, match="disponibilidade"):
-            ensure_confirmable(order)
+            ensure_confirmable(order, channel_config=_config())
 
     def test_ensure_confirmable_accepts_positive_availability_decision(self):
         order = _make_order(
@@ -143,41 +148,34 @@ class TestPaymentGuard:
     def test_accepts_cash_on_delivery(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         order = _make_order(data={"payment": {"method": "cash", "status": "pending"}})
-        ensure_payment_captured(order)
+        ensure_payment_captured(order, channel_config=_config())
 
     def test_accepts_canonical_offline_methods(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         for method in ("cash", "credit", "debit"):
             order = _make_order(data={"payment": {"method": method, "status": "pending"}})
-            ensure_payment_captured(order)
+            ensure_payment_captured(order, channel_config=_config())
 
     def test_accepts_empty_payment(self):
         from shopman.shop.lifecycle import ensure_payment_captured
         order = _make_order(data={})
-        ensure_payment_captured(order)
+        ensure_payment_captured(order, channel_config=_config())
 
-    def test_config_failure_fails_closed_for_uncaptured_digital(self):
-        """Config corrompida NÃO pode abrir a porta: pix não capturado deve bloquear."""
+    @pytest.mark.parametrize(
+        "payment",
+        [
+            {"method": "pix", "status": "pending"},
+            {"method": "cash", "status": "pending"},
+            {"method": "pix", "status": "captured"},
+        ],
+    )
+    def test_config_failure_aborts_confirmation_without_runtime_policy_fallback(self, payment):
+        """Config ilegível não vira uma política construída no código."""
         from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "pix", "status": "pending"}})
-        with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            with patch("shopman.shop.lifecycle._payment_is_captured", return_value=False):
-                with pytest.raises(InvalidTransition, match="Pagamento"):
-                    ensure_payment_captured(order)
 
-    def test_config_failure_still_allows_offline_method(self):
-        """Fail-closed não pune método offline (cash/POS): segue passando."""
-        from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "cash", "status": "pending"}})
+        order = _make_order(data={"payment": payment})
         with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            ensure_payment_captured(order)
-
-    def test_config_failure_allows_captured(self):
-        """Com pagamento já capturado, config quebrada não bloqueia."""
-        from shopman.shop.lifecycle import ensure_payment_captured
-        order = _make_order(data={"payment": {"method": "pix", "status": "captured"}})
-        with patch("shopman.shop.lifecycle.ChannelConfig.for_channel", side_effect=RuntimeError("corrupt")):
-            with patch("shopman.shop.lifecycle._payment_is_captured", return_value=True):
+            with pytest.raises(RuntimeError, match="corrupt"):
                 ensure_payment_captured(order)
 
 
@@ -213,6 +211,7 @@ class TestOnCommit:
             Order.Status.ACCEPTED, actor="auto_confirm",
         )
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle._create_alert")
     @patch("shopman.shop.lifecycle.notification")
@@ -234,7 +233,8 @@ class TestOnCommit:
 
         mock_payment.initiate.assert_called_once_with(order)
         order.transition_status.assert_not_called()
-        mock_alert.assert_called_once_with(order, "payment_awaiting_confirmation")
+        # Sem dinheiro, nada a aceitar: o alerta nasce no pagamento (DEV-2026-091).
+        mock_alert.assert_not_called()
         mock_notification.send.assert_called_once_with(order, "order_received")
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
@@ -358,6 +358,7 @@ class TestOnCommit:
         dispatch(order, "on_commit")
         order.transition_status.assert_not_called()
 
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: False)
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
     @patch("shopman.shop.lifecycle.payment")
@@ -373,6 +374,27 @@ class TestOnCommit:
         order = _make_order()
         dispatch(order, "on_commit")
         mock_payment.initiate.assert_called_once_with(order)
+
+    @patch(CHARGE_WAITS_FOR_THE_QUEUE, new=lambda order: True)
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.payment")
+    @patch("shopman.shop.lifecycle.loyalty")
+    @patch("shopman.shop.lifecycle.customer")
+    @patch("shopman.shop.lifecycle.stock")
+    def test_payment_at_commit_waits_for_the_queue(
+        self, mock_stock, mock_customer, mock_loyalty, mock_payment, mock_notification, mock_cc,
+    ):
+        """Fornada de hoje não cobra para garantir vaga (#2730): na fila, o commit
+        reserva e avisa, mas não inicia o pagamento."""
+        mock_cc.for_channel.return_value = _config(
+            confirmation_mode="manual", payment_timing="at_commit",
+        )
+        order = _make_order()
+        dispatch(order, "on_commit")
+        mock_stock.hold.assert_called_once_with(order)
+        mock_payment.initiate.assert_not_called()
+        mock_notification.send.assert_called_once_with(order, "order_received")
 
     @patch("shopman.shop.lifecycle.ChannelConfig")
     @patch("shopman.shop.lifecycle.notification")
@@ -425,7 +447,9 @@ class TestOnCommitAvailabilityCheck:
             payment_timing="external", payment_method="cash",
         )
         mock_availability.decide.return_value = {
-            "approved": False, "reason_code": "insufficient_stock", "available_qty": 0,
+            "approved": False,
+            "reason_code": PromiseReasonCode.INSUFFICIENT_SUPPLY,
+            "available_qty": 0,
         }
         order = _make_order(
             snapshot={"items": [{"sku": "PAO-001", "qty": 5}], "data": {}},
@@ -649,10 +673,11 @@ class TestOnPaid:
     def test_operator_mode_paid_order_stays_accepted_until_operator_starts(
         self, mock_stock, mock_notification, mock_dispatch_work, mock_cc,
     ):
-        """prep_start="operator": pagar NÃO manda pra cozinha nem vira "preparando".
+        """prep_start="operator": pago vai para a Cozinha, mas NÃO vira "preparando".
 
-        O pedido fica em "Aceito"; o cliente lê "Pagamento confirmado". A cozinha
-        só é acionada quando o operador dá "Iniciar preparo" no gestor.
+        Os tickets nascem agora e esperam o "Iniciar preparo" do posto (dono,
+        06/11/2026: a verdade é da cozinha); o pedido fica em "Aceito" e o
+        cliente lê "Pagamento confirmado".
         """
         mock_cc.for_channel.return_value = _config(prep_start="operator")
         order = _make_order(status=Order.Status.ACCEPTED)
@@ -660,7 +685,7 @@ class TestOnPaid:
 
         dispatch(order, "on_paid")
 
-        mock_dispatch_work.assert_not_called()
+        mock_dispatch_work.assert_called_once_with(order)
         order.transition_status.assert_not_called()
         mock_stock.fulfill.assert_called_once_with(order)
         mock_notification.send.assert_called_once_with(order, "payment_confirmed")
@@ -671,8 +696,8 @@ class TestOnPaid:
     def test_on_preparing_dispatches_the_kitchen(
         self, mock_notification, mock_dispatch_work, mock_cc,
     ):
-        """A transição para "preparando" (o "Iniciar preparo" do operador) é o
-        momento em que os tickets do KDS nascem."""
+        """A transição para "preparando" garante os tickets do KDS (idempotente:
+        os do aceite já existem, e só a linha ainda não firada nasce aqui)."""
         mock_cc.for_channel.return_value = _config(prep_start="operator")
         order = _make_order(status=Order.Status.PREPARING)
 
@@ -749,9 +774,9 @@ class TestOnPreparing:
     @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=True)
     @patch("shopman.shop.lifecycle.notification")
     def test_dispatches_kitchen_and_notifies(self, mock_notification, mock_dispatch_work, mock_cc):
-        """on_preparing dispara a cozinha (KDS) + notifica. É o momento em que o
-        trabalho físico nasce — sob prep_start="operator" via "Iniciar preparo";
-        sob "auto" é idempotente (os tickets já foram criados no on_paid)."""
+        """on_preparing garante a cozinha (KDS) + notifica. Idempotente em todo
+        canal: os tickets nasceram no aceite/pago, e o "Iniciar preparo" (da
+        Cozinha ou o atalho do Gestor) só põe o pedido em preparo."""
         mock_cc.for_channel.return_value = _config()
         order = _make_order()
         dispatch(order, "on_preparing")
@@ -841,7 +866,7 @@ class TestOnCancelled:
         mock_loyalty.restore.assert_called_once_with(order, reason="cancelled")
         mock_notification.send.assert_called_once_with(
             order, "order_cancelled",
-            status_note="Cancelamos conforme você nos pediu.", reason_key="customer_request",
+            status_note="Conforme sua solicitação.", reason_key="customer_request",
         )
 
 

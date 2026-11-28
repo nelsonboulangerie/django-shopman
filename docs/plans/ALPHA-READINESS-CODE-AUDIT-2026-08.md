@@ -1,7 +1,7 @@
 # ALPHA-READINESS — Auditoria de código (2026-08-17)
 
 Auditoria crítica de prontidão para **alpha** (testadores reais no staging, sem
-dinheiro real). Complementa [ALPHA-READINESS-AUDIT](ALPHA-READINESS-AUDIT.md),
+dinheiro real). Complementa [ALPHA-READINESS-AUDIT](completed/ALPHA-READINESS-AUDIT.md),
 que cobre o estado de config/simulação do staging — aqui o foco é **corretude e
 segurança do código**: dinheiro, concorrência, auth, superfícies públicas,
 webhooks e integridade de estoque.
@@ -105,7 +105,7 @@ taxa — e, com `expected_total_q`, o checkout barrava com `total_changed`.
 > `TERMINAL_STATUS`, porque o backstage não passa `idempotency_key`); e o
 > **quick-finish sem partição** não passa pelo guardrail de insumos.
 >
-> Plano de execução: [WP-ALPHA-FIX-01](WP-ALPHA-FIX-01-producao-e-efi.md).
+> Plano de execução: [WP-ALPHA-FIX-01](completed/WP-ALPHA-FIX-01-producao-e-efi.md).
 
 Descrição original do mecanismo:
 `packages/craftsman/.../services/execution.py:324` dispara
@@ -234,8 +234,8 @@ se autoconfirmar de graça. **Recomendação:** default `false` no template de p
 ## Áreas verificadas como SÓLIDAS (não assumidas — lidas e/ou testadas)
 
 - **Auth/OTP:** código HMAC-SHA256, `compare_digest`, cap 5/código, 5 códigos/15
-  min, cooldown 60s, cap por IP, invalida anteriores. `SHOPMAN_EXPOSE_DEBUG_OTP`
-  com tripla guarda (default off, exclui prod em runtime, `E010` no boot).
+  min, cooldown 60s, cap por IP, invalida anteriores. OTP nunca é devolvido por
+  HTTP nem escrito em log; desenvolvimento exige sender explícito.
 - **IDOR:** todo endpoint de pedido/conta passa por `get_accessible_order`/escopo
   por `customer.ref`, com 404 uniforme (sem oráculo de existência). Ref de pedido
   tem entropia baixa (~2.400/canal/dia) mas **não é o controle** — segredo do ref
@@ -267,7 +267,7 @@ se autoconfirmar de graça. **Recomendação:** default `false` no template de p
 ## Prioridade sugerida
 
 > Execução detalhada, com as armadilhas que fazem a "correção óbvia" não corrigir
-> nada, em [WP-ALPHA-FIX-01](WP-ALPHA-FIX-01-producao-e-efi.md).
+> nada, em [WP-ALPHA-FIX-01](completed/WP-ALPHA-FIX-01-producao-e-efi.md).
 
 1. **(go-live)** Tirar o silêncio do `finish()` de produção: parar de engolir a
    perna de output, marcador durável + sweeper, quick-finish sem partição honrando

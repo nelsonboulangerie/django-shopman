@@ -14,7 +14,10 @@ import {
   nextActionLabel,
   orderReadback,
   orderTicketLabel,
+  pendingPixBadge,
   pixAwaiting,
+  pixUnpaid,
+  saleResultBarTitle,
   resolveFiscalState,
   saleResultTitle,
   saleResultTone,
@@ -60,7 +63,7 @@ describe("saleResultTitle — o obrigado é nominal quando há cliente", () => {
   });
 });
 
-describe("PIX pendente NÃO veste cara de venda concluída", () => {
+describe("Pix pendente NÃO veste cara de venda concluída", () => {
   // ⚠️ O defeito: `paymentFailed` só era verdadeiro com "error"/"unavailable",
   // e o Pix PENDENTE — QR na tela, polling vivo, dinheiro nenhum na conta —
   // passava por sucesso: check verde, "Venda concluída" em corpo 3xl e o nome
@@ -98,7 +101,7 @@ describe("changeDisplay — troco pronto para o palco", () => {
 });
 
 describe("pixAwaiting — prova pendente na tela", () => {
-  it("PIX com prova + polling = aguardando", () => {
+  it("Pix com prova + polling = aguardando", () => {
     expect(pixAwaiting(pixProof(), "polling")).toBe(true);
   });
   it("confirmado, expirado ou sem prova não é aguardando", () => {
@@ -118,16 +121,16 @@ describe("autoAdvanceSeconds — a tela nunca some sozinha em cima de um gesto",
   it("cartão (link do checkout): contagem curta e cancelável", () => {
     expect(autoAdvanceSeconds({ ...base, payment: cardProof() })).toBe(AUTO_ADVANCE_SECONDS);
   });
-  it("PIX confirmado avança", () => {
+  it("Pix confirmado avança", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "paid" })).toBe(AUTO_ADVANCE_SECONDS);
   });
   it("troco a conferir NUNCA auto-avança", () => {
     expect(autoAdvanceSeconds({ ...base, changeQ: 500 })).toBe(0);
   });
-  it("PIX aguardando NUNCA auto-avança (sair é gesto explícito)", () => {
+  it("Pix aguardando NUNCA auto-avança (sair é gesto explícito)", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "polling" })).toBe(0);
   });
-  it("PIX expirado não some sozinho (prova não resolvida)", () => {
+  it("Pix expirado não some sozinho (prova não resolvida)", () => {
     expect(autoAdvanceSeconds({ ...base, payment: pixProof(), pixStatus: "expired" })).toBe(0);
   });
   it("prefers-reduced-motion desliga a contagem", () => {
@@ -136,17 +139,37 @@ describe("autoAdvanceSeconds — a tela nunca some sozinha em cima de um gesto",
 });
 
 describe("enterAdvances — o Enter que validou não engole a tela do troco", () => {
-  it("sem troco e sem PIX pendente, Enter avança", () => {
+  it("sem troco e sem Pix pendente, Enter avança", () => {
     expect(enterAdvances({ changeQ: 0, payment: null, pixStatus: "idle" })).toBe(true);
   });
   it("com troco, Enter não avança (confirmação explícita)", () => {
     expect(enterAdvances({ changeQ: 1000, payment: null, pixStatus: "idle" })).toBe(false);
   });
-  it("PIX aguardando: só o toque deliberado sai", () => {
+  it("Pix aguardando: só o toque deliberado sai", () => {
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "polling" })).toBe(false);
   });
-  it("PIX confirmado libera o Enter", () => {
+  it("Pix confirmado libera o Enter", () => {
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "paid" })).toBe(true);
+  });
+  it("Pix vencido: o Enter não passa por cima do aviso", () => {
+    expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "expired" })).toBe(false);
+  });
+});
+
+describe("Pix vencido sem pagar NÃO veste cara de venda concluída", () => {
+  // Auditoria do #2918: o Pix vencia, o QR morto seguia na tela e o título
+  // acendia o verde de "Venda concluída" sobre um dinheiro que não entrou.
+  it("o título só registra a venda, sem agradecer", () => {
+    expect(saleResultTitle("Maria da Silva", pixProof(), "expired")).toBe("Venda registrada");
+  });
+  it("o selo não é verde", () => {
+    expect(saleResultTone(pixProof(), "expired")).toBe("failed");
+  });
+  it("pixUnpaid só vale para o Pix com prova que venceu", () => {
+    expect(pixUnpaid(pixProof(), "expired")).toBe(true);
+    expect(pixUnpaid(pixProof(), "polling")).toBe(false);
+    expect(pixUnpaid(pixProof(), "paid")).toBe(false);
+    expect(pixUnpaid(null, "expired")).toBe(false);
   });
 });
 
@@ -261,13 +284,17 @@ describe("danfeOffer — a DANFE por existência da nota, não por previsão", (
     expect(fiscalStateLabel("queued")).toBe("NFC-e em emissão");
     expect(fiscalStateLabel("awaiting_payment")).toBe("NFC-e sai quando o pagamento confirmar");
     expect(fiscalStateLabel("failed")).toBe("NFC-e não autorizada");
-    expect(fiscalStateLabel("not_expected")).toBe("Emissão não estabelecida");
+    expect(fiscalStateLabel("not_expected")).toBe("NFC-e não solicitada");
   });
   it("encomenda paga antes: a nota sai na saída da mercadoria, e a tela diz qual", () => {
     expect(danfeOffer("awaiting_pickup")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na retirada" });
     expect(danfeOffer("awaiting_delivery")).toEqual({ kind: "awaiting_handoff", label: "NFC-e sai na entrega" });
     expect(fiscalStateLabel("awaiting_pickup")).toBe("NFC-e sai na retirada");
     expect(fiscalStateLabel("awaiting_delivery")).toBe("NFC-e sai na entrega");
+  });
+  it("venda cancelada sem tentativa de emissão diz o fato, sem DANFE a esperar (#3130)", () => {
+    expect(fiscalStateLabel("not_issued")).toBe("Sem NFC-e: o pedido foi cancelado");
+    expect(danfeOffer("not_issued")).toBeNull();
   });
 });
 
@@ -286,5 +313,48 @@ describe("P2-31: a próxima ação da tela de resultado", () => {
   it("o papel da encomenda tem o verbo inteiro, como no detalhe", () => {
     expect(orderTicketLabel(false)).toBe("Imprimir Via Pedido");
     expect(orderTicketLabel(true)).toBe("Imprimindo…");
+  });
+});
+
+describe("selo dos Pix abertos fora da tela", () => {
+  it("nenhum Pix aberto: nenhum selo", () => {
+    expect(pendingPixBadge([])).toBeNull();
+  });
+  it("um Pix: diz o pedido", () => {
+    expect(pendingPixBadge(["PED-1"])).toEqual({
+      label: "Pix aguardando · PED-1",
+      title: "Pix do pedido PED-1 aguardando confirmação",
+    });
+  });
+  it("vários: um selo só, com a contagem, e os pedidos inteiros no title", () => {
+    expect(pendingPixBadge(["PED-1", "PED-2"])).toEqual({
+      label: "2 Pix aguardando",
+      title: "Pix aguardando confirmação nos pedidos PED-1, PED-2",
+    });
+  });
+});
+
+describe("saleResultBarTitle — a barra do topo não discorda da tela", () => {
+  // Auditoria do #2918: com o Pix vencido, a barra a 375 px dizia "Venda
+  // concluída" em cima de "Venda registrada".
+  it("Pix vencido: a barra diz o mesmo que a tela", () => {
+    expect(saleResultBarTitle("counter", pixProof(), "expired")).toBe("Venda registrada");
+    expect(saleResultBarTitle("counter", pixProof(), "expired")).toBe(saleResultTitle("Maria", pixProof(), "expired"));
+  });
+  it("Pix aguardando e confirmado acompanham a tela, sem o obrigado nominal", () => {
+    expect(saleResultBarTitle("counter", pixProof(), "polling")).toBe("Aguardando Pix");
+    expect(saleResultBarTitle("counter", pixProof(), "paid")).toBe("Venda concluída");
+    expect(saleResultBarTitle("counter", null, "idle")).toBe("Venda concluída");
+  });
+  it("cobrança não criada e encomenda mantêm o rótulo curto da barra", () => {
+    expect(saleResultBarTitle("counter", { ...pixProof(), status: "error" }, "idle")).toBe("Cobrança não criada");
+    expect(saleResultBarTitle("order", pixProof(), "polling")).toBe("Encomenda registrada");
+  });
+  it("a página do PDV usa esta regra para a barra, e nenhuma outra", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const page = readFileSync(fileURLToPath(new URL("../app/pages/index.vue", import.meta.url)), "utf8");
+    expect(page).toContain("saleResultBarTitle(result.value.salesMode, result.value.payment, pixStatus.value)");
+    expect(page).not.toContain('"Venda concluída"');
   });
 });

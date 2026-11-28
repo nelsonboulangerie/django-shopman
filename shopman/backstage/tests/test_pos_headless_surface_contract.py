@@ -21,6 +21,7 @@ from shopman.backstage.tests.pos_test_runtime import with_screen_total
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 
 def _grant_pos_perm(user) -> None:
@@ -43,7 +44,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -172,6 +173,59 @@ class POSHeadlessSurfaceContractTests(TestCase):
         Quant.objects.create(sku="POS-HEADLESS-ITEM", position=vitrine)
         payload = self.client.get("/api/v1/backstage/pos/").json()
         self.assertTrue(payload["pos"]["products"][0]["sold_out"])
+
+    def test_products_exclude_a_listing_outside_its_canonical_validity(self) -> None:
+        """Listing desligado, futuro ou expirado não chega à decisão de preço."""
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.utils import timezone
+
+        listing = Listing.objects.get(ref="pdv")
+        today = timezone.localdate()
+        invalid_states = (
+            {"is_active": False, "valid_from": None, "valid_until": None},
+            {"is_active": True, "valid_from": today + timedelta(days=1), "valid_until": None},
+            {"is_active": True, "valid_from": None, "valid_until": today - timedelta(days=1)},
+        )
+
+        for state in invalid_states:
+            # Rótulo em texto: sob xdist o pytest 9 serializa o relatório de
+            # CADA subteste (verde também) do worker para o controlador, e
+            # `datetime.date` não serializa — o teste "reprovava" sem asserção
+            # nenhuma falhar (#3637).
+            label = {k: v.isoformat() if hasattr(v, "isoformat") else v for k, v in state.items()}
+            with self.subTest(state=label):
+                for field, value in state.items():
+                    setattr(listing, field, value)
+                listing.save(update_fields=[*state])
+
+                with patch("shopman.offerman.service.CatalogService.unit_prices") as unit_prices:
+                    payload = self.client.get("/api/v1/backstage/pos/").json()
+
+                unit_prices.assert_not_called()
+                self.assertEqual(payload["pos"]["products"], [])
+
+    def test_products_do_not_use_an_unpublished_price_tier(self) -> None:
+        from decimal import Decimal
+
+        listing = Listing.objects.get(ref="pdv")
+        product = Product.objects.get(sku="POS-HEADLESS-ITEM")
+        visible = ListingItem.objects.get(listing=listing, product=product)
+        visible.min_qty = Decimal("0")
+        visible.save(update_fields=["min_qty"])
+        ListingItem.objects.create(
+            listing=listing,
+            product=product,
+            price_q=1,
+            min_qty=Decimal("1"),
+            is_published=False,
+            is_sellable=True,
+        )
+
+        payload = self.client.get("/api/v1/backstage/pos/").json()
+
+        self.assertEqual(payload["pos"]["products"][0]["price_q"], 1300)
 
     def test_kit_without_its_box_is_inert_with_the_reason(self) -> None:
         """Caixa presente sem a caixa física em estoque: tile inerte, "Sem caixa".
@@ -1008,6 +1062,17 @@ class POSHeadlessSurfaceContractTests(TestCase):
         manager = get_user_model().objects.create_user(username="pos-manager-api", password="secret", is_staff=True)
         _grant_adjust_shift_perm(manager)
         PinCredential.set_for(manager, "4321")
+        # O PIN é conferido no diálogo, que devolve o carimbo preso ao desconto
+        # que o gerente viu (#2558); o fechamento leva o carimbo, nunca o PIN.
+        checked = self.client.post(
+            "/api/v1/backstage/pos/manager-approval/check/",
+            data=json.dumps({
+                "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+                "scope": {"tab_ref": "", "discount_q": 100},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(checked.status_code, 200, checked.content)
         payload = {
             "intent_version": POS_SALE_INTENT_VERSION,
             "items": [{"sku": "POS-HEADLESS-ITEM", "name": "Headless Item", "qty": 1, "unit_price_q": 1300}],
@@ -1015,7 +1080,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "payment_method": "cash",
             "payment_collection": "terminal",
             "manual_discount": {"type": "fixed", "value": "1,00", "reason": "cortesia"},
-            "manager_approval": {"username": "pos-manager-api", "pin": "4321"},
+            "manager_approval": {"token": checked.json()["token"]},
             "client_request_id": "pos-headless-manager-approval-002",
         }
 
@@ -1221,7 +1286,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
             total_q=2600,
         )
 
-        response = self.client.get("/api/v1/backstage/pos/customer/lookup/?phone=(43)%2099999-3333")
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"phone": "(43) 99999-3333"}, content_type="application/json",
+        )
 
         self.assertEqual(response.status_code, 200)
         lookup = response.json()["customer"]
@@ -1244,7 +1311,9 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         def refs(query: str) -> list[str]:
-            response = self.client.get(f"/api/v1/backstage/pos/customer/search/?q={query}")
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
+            )
             self.assertEqual(response.status_code, 200)
             return [row["ref"] for row in response.json()["results"]]
 
@@ -1253,7 +1322,37 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertIn("CUST-SEARCH-1", refs("bruno@example"))  # by email
         self.assertIn("CUST-SEARCH-1", refs("11122233"))    # by document (CPF)
         # too short → no results (avoid scanning on a single character)
-        self.assertEqual(self.client.get("/api/v1/backstage/pos/customer/search/?q=b").json()["results"], [])
+        self.assertEqual(refs("b"), [])
+
+    def test_api_customer_search_masks_contacts_and_needs_four_digits(self) -> None:
+        """Beta 07/11: "11" devolvia telefone, CPF e e-mail inteiros de 8 clientes
+        por vez. A lista é para reconhecer: contatos mascarados, e número só com
+        4 dígitos. O cadastro completo vem no lookup por ref."""
+        Customer.objects.create(
+            ref="CUST-MASK-1", first_name="Maria", last_name="Santos",
+            phone="+5543991111111", email="maria.santos@example.com", document="11122233344",
+        )
+
+        def search(query: str) -> list[dict]:
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200)
+            return response.json()["results"]
+
+        self.assertEqual(search("11"), [])
+        self.assertEqual(search("111"), [])
+        self.assertEqual(search("(43)"), [])
+        (row,) = [r for r in search("1111") if r["ref"] == "CUST-MASK-1"]
+        self.assertEqual(row["phone"], "(43) •••••-1111")
+        self.assertEqual(row["document"], "•••.•••.•••-44")
+        self.assertEqual(row["email"], "m•••@example.com")
+        self.assertIn("CUST-MASK-1", [r["ref"] for r in search("Ma")])  # nome curto segue valendo
+
+        lookup = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-MASK-1"}, content_type="application/json",
+        ).json()["customer"]
+        self.assertEqual(lookup["phone"], "+5543991111111")
 
     def test_api_customer_resolve_creates_just_in_time_and_is_idempotent(self) -> None:
         before = Customer.objects.count()
@@ -1321,6 +1420,55 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.json()["customer"])
 
+    def test_api_customer_search_goes_by_post_never_in_the_url(self) -> None:
+        """#2335: o termo (nome, telefone, CPF, e-mail) ia na query string, e
+        dali para o log de acesso e o cache. A busca é POST; GET não existe."""
+        response = self.client.get("/api/v1/backstage/pos/customer/search/", {"q": "Bruno"})
+        self.assertEqual(response.status_code, 405)
+        actions = {a["ref"]: a for a in self.client.get("/api/v1/backstage/pos/").json()["pos"]["actions"]}
+        self.assertEqual(actions["customer_search"]["method"], "POST")
+        self.assertNotIn("?", actions["customer_search"]["href"])
+
+    def test_api_customer_search_locks_after_the_limit(self) -> None:
+        """#2336: sem teto, "aa", "ab", "ac"... percorria a base de clientes. O
+        limite é por operador e responde 429 no dialeto de erro da casa."""
+        from unittest.mock import patch
+
+        from django.core.cache import cache
+
+        from shopman.backstage.api.throttles import POSCustomerSearchThrottle
+
+        def search(term: str):
+            return self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": term}, content_type="application/json",
+            )
+
+        cache.clear()
+        rates = {**POSCustomerSearchThrottle.THROTTLE_RATES, "pos_customer_search": "3/minute"}
+        with patch.object(POSCustomerSearchThrottle, "THROTTLE_RATES", rates):
+            statuses = [search(f"a{c}").status_code for c in "abcd"]
+            blocked = search("ae")
+        cache.clear()
+        self.assertEqual(statuses, [200, 200, 200, 429])
+        self.assertEqual(blocked.status_code, 429)
+        self.assertIn("detail", blocked.json())
+
+    def test_pos_projection_carries_no_money_sum_for_anyone(self) -> None:
+        """D4 / P1-7: a resposta de ``/pos/`` trazia ``shift.total_display`` (o
+        faturamento do dia) à Caixa, cuja contagem do fechamento é cega. A tela
+        só usa a contagem: o dinheiro do dia sai do payload, para todo papel
+        (quem audita o lê na leitura X e no Admin)."""
+        for status in ("new", "confirmed"):
+            Order.objects.create(ref=f"POS-SUM-{status}", channel_ref="pdv", status=status, total_q=4500, data={})
+
+        shift = self.client.get("/api/v1/backstage/pos/").json()["shift"]
+
+        self.assertEqual(shift["count"], 2)
+        self.assertEqual(shift["last_ref"], "POS-SUM-confirmed")
+        for key in ("total_display", "last_total_display", "cod_pending_display", "total_q"):
+            self.assertNotIn(key, shift)
+        self.assertFalse(any("45" in str(value) for value in shift.values()))
+
     def test_api_customer_search_normalizes_formatted_digits(self) -> None:
         # Telefone e CPF são armazenados só com dígitos: a query FORMATADA
         # ("111.222.333-44", "(43) 98888-7777") precisa encontrar mesmo assim.
@@ -1333,8 +1481,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
 
         def refs(query: str) -> list[str]:
-            response = self.client.get(
-                "/api/v1/backstage/pos/customer/search/", {"q": query},
+            response = self.client.post(
+                "/api/v1/backstage/pos/customer/search/", {"q": query}, content_type="application/json",
             )
             self.assertEqual(response.status_code, 200)
             return [row["ref"] for row in response.json()["results"]]
@@ -1531,18 +1679,24 @@ class POSHeadlessSurfaceContractTests(TestCase):
             last_name="Sem Telefone",
             document="52998224725",
         )
-        response = self.client.get(
-            "/api/v1/backstage/pos/customer/lookup/", {"ref": customer.ref},
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": customer.ref}, content_type="application/json",
         )
         self.assertEqual(response.status_code, 200)
         lookup = response.json()["customer"]
         self.assertEqual(lookup["ref"], customer.ref)
         self.assertEqual(lookup["tax_id"], "52998224725")
         # Ref desconhecido → null, nunca 500.
-        missing = self.client.get(
-            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-NAO-EXISTE"},
+        missing = self.client.post(
+            "/api/v1/backstage/pos/customer/lookup/", {"ref": "CUST-NAO-EXISTE"}, content_type="application/json",
         )
         self.assertIsNone(missing.json()["customer"])
+
+    def test_api_customer_lookup_nao_aceita_telefone_na_url(self) -> None:
+        """Beta test de 05/11/2026 (PDV2-07): o telefone ia na query string e
+        ficava no log de acesso. A busca é POST, com o telefone no corpo."""
+        response = self.client.get("/api/v1/backstage/pos/customer/lookup/?phone=5543988776655")
+        self.assertEqual(response.status_code, 405)
 
     def _create_manager(self, pin: str = "4321"):
         from shopman.doorman.models import PinCredential
@@ -1581,6 +1735,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         cancelled = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-1",
                 "order_ref": order_ref,
                 "reason": "Erro de lançamento",
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
@@ -1606,6 +1761,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         cancelled = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-2",
                 "order_ref": order_ref,
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
             }),
@@ -1615,6 +1771,63 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
 
+    def test_api_cancel_recent_sale_replays_the_first_answer(self) -> None:
+        # Fallbacks perigosos, item 18: o toque repetido depois de uma resposta
+        # perdida devolve a resposta da primeira vez, em vez de executar de novo
+        # (a correção com motivo reabriria a venda duas vezes).
+        from unittest.mock import patch
+
+        self._create_manager()
+        order_ref = self._close_sale("pos-headless-cancel-replay")
+        body = json.dumps({
+            "client_request_id": "pos:cancel-replay",
+            "order_ref": order_ref,
+            "reason": "Erro de lançamento",
+            "manager_approval": {"username": "pos-manager", "pin": "4321"},
+        })
+        url = "/api/v1/backstage/pos/sale/recent/cancel/"
+
+        first = self.client.post(url, data=body, content_type="application/json")
+        with patch("shopman.shop.services.pos.reopen_recent_order_for_correction") as reopen:
+            second = self.client.post(url, data=body, content_type="application/json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.json(), first.json())
+        reopen.assert_not_called()
+
+    def test_api_cancel_recent_sale_requires_client_request_id(self) -> None:
+        self._create_manager()
+        order_ref = self._close_sale("pos-headless-cancel-no-key")
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/recent/cancel/",
+            json.dumps({
+                "order_ref": order_ref,
+                "manager_approval": {"username": "pos-manager", "pin": "4321"},
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "client_request_id_required")
+        self.assertNotEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
+
+    def test_api_cancel_recent_sale_rejection_does_not_burn_the_key(self) -> None:
+        # PIN errado não queima a tentativa: o mesmo id com o PIN certo executa.
+        self._create_manager(pin="4321")
+        order_ref = self._close_sale("pos-headless-cancel-retry")
+        url = "/api/v1/backstage/pos/sale/recent/cancel/"
+
+        def _post(pin):
+            return self.client.post(url, data=json.dumps({
+                "client_request_id": "pos:cancel-retry",
+                "order_ref": order_ref,
+                "manager_approval": {"username": "pos-manager", "pin": pin},
+            }), content_type="application/json")
+
+        self.assertEqual(_post("0000").status_code, 422)
+        self.assertEqual(_post("4321").status_code, 200)
+        self.assertEqual(Order.objects.get(ref=order_ref).status, Order.Status.CANCELLED)
+
     def test_api_cancel_recent_sale_requires_manager_approval(self) -> None:
         # Cancelar venda fechada é exceção auditada: sem o desafio gerencial o
         # endpoint recusa ANTES de qualquer efeito, no dialeto de erro do POS.
@@ -1622,7 +1835,8 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
-            data=json.dumps({"order_ref": order_ref}),
+            data=json.dumps({
+                "client_request_id": "pos:cancel-3", "order_ref": order_ref}),
             content_type="application/json",
         )
 
@@ -1637,6 +1851,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-4",
                 "order_ref": order_ref,
                 "manager_approval": {"username": "pos-manager", "pin": "0000"},
             }),
@@ -1692,6 +1907,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         response = self.client.post(
             "/api/v1/backstage/pos/sale/recent/cancel/",
             data=json.dumps({
+                "client_request_id": "pos:cancel-5",
                 "order_ref": "NOPE-404",
                 "manager_approval": {"username": "pos-manager", "pin": "4321"},
             }),

@@ -15,11 +15,11 @@ Concorrentes:
 - ``llm:<modelo>``: um modelo da Anthropic devolvendo a lista em JSON.
 - ``jev``: TypeSafe Jev, uma pergunta sim/não por intenção numa chamada só.
 
-**Texto de cliente só sai da casa para provedor aprovado.** Os dois últimos
-mandam a mensagem (redigida) para fora; cada um só entra se o provedor dele
-estiver em ``SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED`` (``anthropic`` aprovado
-pelo dono em 23/09/2026; ``typesafe`` em 02/10/2026, D-028) — o desenho do Marketing, em que
-credencial sozinha nunca liga provedor. Todos recebem o MESMO texto: a versão
+**Texto de cliente só sai da casa para conexão liberada.** Os dois últimos
+mandam a mensagem (redigida) para fora; cada um só entra se a conexão de IA
+dele estiver marcada como "pode receber mensagem de cliente" (``shopman.shop.ai``;
+Anthropic aprovada pelo dono em 23/09/2026, Jev em 02/10/2026, D-028): o desenho
+do Marketing, em que credencial sozinha nunca liga provedor. Todos recebem o MESMO texto: a versão
 redigida que a pessoa confere (``redact_observation_text``).
 """
 
@@ -31,8 +31,6 @@ import re
 import statistics
 import time
 from dataclasses import dataclass, field
-
-from django.conf import settings
 
 from shopman.shop.services.ai_pricing import Price
 
@@ -64,11 +62,15 @@ class Sample:
     sample_id: int
     text: str  # sempre redigido
     gold: frozenset[str]
+    #: A última fala da casa, redigida (``triage.house_line``): o contexto do Jev (1b, D-040).
+    house_line: str = ""
 
 
 @dataclass
 class Prediction:
     intents: dict[str, float]  # ref → confiança, só as que o concorrente diz que tem
+    #: A confiança do Jev na própria escolha (``choice.confidence``); ``None`` sem ela.
+    confidence: float | None = None
     latency_ms: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -117,16 +119,6 @@ def gold_samples(*, limit: int | None = None) -> list[Sample]:
     ]
 
 
-def provider_approved(provider: str) -> bool:
-    return provider in getattr(settings, "SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED", frozenset())
-
-
-def _require_provider(provider: str) -> None:
-    if not provider_approved(provider):
-        raise ContenderNotConfigured(
-            f"manda texto de cliente (redigido) para {provider}, que não está em "
-            "SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED — decisão do dono."
-        )
 
 
 # ── Concorrentes ────────────────────────────────────────────────────────────
@@ -214,17 +206,21 @@ def build_llm_prompt(sample: Sample, categories: list[Category]) -> str:
 class LLMContender:
     """Um modelo da Anthropic devolvendo o conjunto de intenções em JSON."""
 
-    def __init__(self, *, model: str | None = None, timeout: float = 60.0, client=None):
-        _require_provider("anthropic")
-        api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-        if client is None and not api_key:
-            raise ContenderNotConfigured("LLM não configurado. Defina AI_ASSIST_API_KEY.")
-        if client is None:
-            import anthropic
+    def __init__(
+        self, *, model: str | None = None, timeout: float = 60.0, client=None, purpose: str = "intents"
+    ):
+        # Texto de cliente (redigido): só para conexão liberada (``shopman.shop.ai``).
+        from shopman.shop import ai
 
-            client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        try:
+            if client is None:
+                client, default_model = ai.anthropic_client(purpose, timeout=timeout)
+            else:
+                default_model = "" if model else ai.resolve(purpose).model
+        except ai.AINotConfigured as exc:
+            raise ContenderNotConfigured(f"LLM não configurado: {exc}.") from exc
         self.client = client
-        self.model = model or settings.AI_ASSIST_MODEL
+        self.model = model or default_model
         self.name = f"llm:{self.model}"
 
     def predict(self, sample: Sample, categories: list[Category]) -> Prediction:
@@ -264,25 +260,39 @@ class LLMContender:
         )
 
 
-class JevContender:
-    """TypeSafe Jev: uma pergunta sim/não (``noul``) por intenção, todas numa chamada.
+#: A pergunta de escolha das intenções e a opção que não é nenhuma delas.
+INTENT_QUESTION = "intent"
+OTHER_INTENT = "other"
+OTHER_INTENT_DESCRIPTION = "nenhuma das anteriores: cumprimento, agradecimento ou outro assunto"
+INTENT_INSTRUCTIONS = "Qual é o assunto principal da mensagem do cliente?"
 
-    Formato da referência da API (https://docs.typesafe.ai/api.md, lida em
-    02/10/2026): ``POST /v1/systemone`` com ``Authorization: Bearer``, corpo
-    ``{state, model, questions}``, cada pergunta ``{"type": "noul",
-    "instructions": ...}``; a resposta traz ``answers[id] = {"type": "noul",
-    "noul": <0..1>}`` e ``usage.input_tokens``.
+
+class JevContender:
+    """TypeSafe Jev: UMA pergunta de escolha entre as intenções (e ``other``), numa chamada.
+
+    Até 21/11/2026 eram 12 perguntas sim/não (``noul``) independentes, sem contexto entre
+    elas: medido em produção, só 18% das mensagens passavam de 0,8 e o porteiro mandava 8
+    de 12 turnos à leitura com modelo. Na escolha as intenções competem entre si, e o Jev
+    devolve a probabilidade de cada uma e a confiança na escolha (padrão do ``JevMatcher``).
+    A pergunta "a mensagem traz mais de uma coisa?" (``multiple_parts``) segue ``noul``,
+    na mesma chamada.
+
+    Formato da referência da API (https://docs.typesafe.ai/api.md): ``POST /v1/systemone``
+    com ``Authorization: Bearer``, corpo ``{state, model, questions}``; ``choice`` é
+    ``{"type": "choice", "instructions", "criteria": {opção: descrição}}`` e a resposta
+    ``{"type": "choice", "choice", "probabilities", "confidence"}``; ``noul`` devolve
+    ``{"type": "noul", "noul": <0..1>}``.
     """
 
     name = "jev"
 
     def __init__(self, *, timeout: float = 15.0, session=None):
-        _require_provider("typesafe")
-        self.api_key = (getattr(settings, "JEV_API_KEY", "") or "").strip()
-        if not self.api_key:
-            raise ContenderNotConfigured("Jev não configurado. Defina JEV_API_KEY.")
-        self.url = settings.JEV_API_URL
-        self.model = settings.JEV_MODEL
+        from shopman.shop import ai
+
+        try:
+            self.url, self.api_key, self.model = ai.jev_endpoint(customer_text=True)
+        except ai.AINotConfigured as exc:
+            raise ContenderNotConfigured(f"Jev não configurado: {exc}.") from exc
         self.timeout = timeout
         if session is None:
             import requests
@@ -290,15 +300,28 @@ class JevContender:
             session = requests.Session()
         self.session = session
 
+    @staticmethod
+    def _split(categories: list[Category]) -> tuple[list[Category], list[Category]]:
+        """(as intenções da escolha, as perguntas sim/não à parte: ``multiple_parts``)."""
+        from .intents import MULTIPLE_PARTS
+
+        return ([c for c in categories if c.ref != MULTIPLE_PARTS], [c for c in categories if c.ref == MULTIPLE_PARTS])
+
     def build_request(self, sample: Sample, categories: list[Category]) -> dict:
-        return {
-            "model": self.model,
-            "state": {"customer_message": sample.text},
-            "questions": {
-                c.ref: {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
-                for c in categories
-            },
+        intents, yes_no = self._split(categories)
+        criteria = {c.ref: c.description for c in intents}
+        criteria[OTHER_INTENT] = OTHER_INTENT_DESCRIPTION
+        questions: dict = {
+            INTENT_QUESTION: {"type": "choice", "instructions": INTENT_INSTRUCTIONS, "criteria": criteria},
         }
+        for c in yes_no:
+            questions[c.ref] = {"type": "noul", "instructions": f"A mensagem do cliente inclui isto: {c.description}?"}
+        state = {"customer_message": sample.text}
+        if sample.house_line:
+            # Só a última fala da casa, redigida: o "sim" ao resumo é pedido, não reclamação
+            # (adendo à D-040, dono 21/11/2026: "desde que seguro perante LGPD, sim").
+            state["previous_store_message"] = sample.house_line
+        return {"model": self.model, "state": state, "questions": questions}
 
     def scores(self, sample: Sample, categories: list[Category]) -> Prediction:
         """A probabilidade de TODAS as intenções, inclusive as abaixo do corte.
@@ -307,19 +330,23 @@ class JevContender:
         """
         started = time.perf_counter()
         body = self.build_request(sample, categories)
-        response = self.session.post(
-            self.url,
-            json=body,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            timeout=self.timeout,
+        from shopman.shop import ai
+
+        response = ai.jev_post(
+            self.session, self.url, self.api_key, body, timeout=self.timeout, model=self.model
         )
         latency_ms = (time.perf_counter() - started) * 1000
         if response.status_code >= 400:
             raise ContenderResponseError(jev_http_error(response, body))
         payload = response.json()
         usage = payload.get("usage") or {}
+        intents, yes_no = self._split(categories)
+        probabilities, confidence = parse_jev_choice(payload, question=INTENT_QUESTION)
+        scores = {c.ref: probabilities.get(c.ref, 0.0) for c in intents}
+        scores.update({c.ref: parse_jev_boolean(payload, question=c.ref) for c in yes_no})
         return Prediction(
-            intents={c.ref: parse_jev_boolean(payload, question=c.ref) for c in categories},
+            intents=scores,
+            confidence=confidence,
             latency_ms=latency_ms,
             input_tokens=int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0),
         )
@@ -328,6 +355,33 @@ class JevContender:
         prediction = self.scores(sample, categories)
         prediction.intents = {ref: p for ref, p in prediction.intents.items() if p >= PRESENT_AT}
         return prediction
+
+
+def parse_jev_choice(payload: dict, *, question: str) -> tuple[dict[str, float], float | None]:
+    """(probabilidade de cada opção, confiança na escolha) de uma pergunta ``choice`` do Jev.
+
+    Formato da referência (https://docs.typesafe.ai/api.md#choice-answer)::
+
+        {"answers": {"intent": {"type": "choice", "choice": "order",
+                                "probabilities": {"order": 0.88, ...}, "confidence": 0.81}}}
+
+    Qualquer outro formato falha dizendo as chaves que recebeu.
+    """
+    answers = payload.get("answers")
+    answer = answers.get(question) if isinstance(answers, dict) else None
+    if not isinstance(answer, dict):
+        raise ContenderResponseError(f"Resposta do Jev sem '{question}'. Chaves recebidas: {sorted(payload)}")
+    probabilities = answer.get("probabilities")
+    if not isinstance(probabilities, dict) or answer.get("choice") not in probabilities:
+        raise ContenderResponseError(f"Resposta do Jev ilegível para '{question}'. Chaves: {sorted(answer)}")
+    out = {}
+    for ref, value in probabilities.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
+            raise ContenderResponseError(f"Probabilidade ilegível para '{ref}' em '{question}'.")
+        out[str(ref)] = float(value)
+    confidence = answer.get("confidence")
+    valid = isinstance(confidence, (int, float)) and not isinstance(confidence, bool) and 0.0 <= confidence <= 1.0
+    return out, (float(confidence) if valid else None)
 
 
 def parse_jev_boolean(payload: dict, *, question: str) -> float:
@@ -383,7 +437,7 @@ def jev_http_error(response, body: dict) -> str:
 @dataclass
 class Scoreboard:
     contender: str
-    price: Price
+    price: Price | None  # ``None``: modelo sem preço cadastrado, custo desconhecido (N21)
     total: int = 0
     exact: int = 0
     multi_total: int = 0  # amostras com 2+ intenções no gabarito
@@ -438,7 +492,10 @@ class Scoreboard:
         return precision, recall, f1
 
     @property
-    def cost_usd(self) -> float:
+    def cost_usd(self) -> float | None:
+        """US$ gastos na medição, ou ``None``: custo desconhecido não é custo zero."""
+        if self.price is None:
+            return None
         return self.price.cost(self.input_tokens, self.output_tokens)
 
     def latency(self, quantile: float) -> float | None:
@@ -449,9 +506,18 @@ class Scoreboard:
         return statistics.quantiles(self.latencies, n=100, method="inclusive")[int(quantile * 100) - 1]
 
 
-def run(samples: list[Sample], categories: list[Category], contenders: list, *, prices: dict[str, Price]) -> list[Scoreboard]:
+def _price_of(contender, prices: dict[str, Price | None]) -> Price | None:
+    """O preço do concorrente; fora do dicionário, só o que roda na casa custa zero de fato."""
+    if contender.name in prices:
+        return prices[contender.name]
+    return Price() if isinstance(contender, (RegexContender, EmbeddingContender)) else None
+
+
+def run(
+    samples: list[Sample], categories: list[Category], contenders: list, *, prices: dict[str, Price | None]
+) -> list[Scoreboard]:
     """Cada amostra, para cada concorrente. Erro de um caso não para o piloto."""
-    boards = [Scoreboard(contender=c.name, price=prices.get(c.name, Price())) for c in contenders]
+    boards = [Scoreboard(contender=c.name, price=_price_of(c, prices)) for c in contenders]
     for contender in contenders:
         if hasattr(contender, "prepare"):
             contender.prepare(categories)
@@ -472,11 +538,24 @@ def _pct(value) -> str:
     return "—" if value is None else f"{value:.0%}"
 
 
-def render_report(boards: list[Scoreboard], samples: list[Sample], categories: list[Category]) -> str:
+def unknown_cost(boards: list[Scoreboard], unpriced=()) -> list[str]:
+    """Os concorrentes de custo desconhecido: quem tem preço ``None`` e os modelos sem preço."""
+    names = {board.contender for board in boards if board.price is None}
+    names.update(f"llm:{model}" for model in unpriced)
+    return sorted(names)
+
+
+def render_report(
+    boards: list[Scoreboard], samples: list[Sample], categories: list[Category], *, unpriced=()
+) -> str:
     """O placar em texto corrido — um bloco por concorrente, legível fora do terminal.
 
     É o mesmo texto no console (``benchmark_intent_classifiers``) e no Admin
     (``IntentPilotReport``): quem confere não precisa de tabela alinhada.
+
+    Custo desconhecido não vira zero (N21, K34): o concorrente sem preço sai
+    como "custo desconhecido", a lista deles abre o placar, e o placar se recusa
+    a comparar custo enquanto ela não estiver vazia.
     """
     multi = sum(1 for sample in samples if len(sample.gold) >= 2)
     empty = sum(1 for sample in samples if not sample.gold)
@@ -486,10 +565,23 @@ def render_report(boards: list[Scoreboard], samples: list[Sample], categories: l
         f"{len(samples)} mensagens conferidas ({multi} com 2+ intenções, {empty} sem intenção da lista).",
         "",
     ]
+    unknown = unknown_cost(boards, unpriced)
+    if unknown:
+        lines += [
+            f"Sem preço cadastrado, custo desconhecido: {', '.join(unknown)}.",
+            "Comparação de custo vetada enquanto houver concorrente sem preço: este placar não diz "
+            "quem sai mais barato. Cadastre o preço (ou passe --llm-price-in/--llm-price-out) e meça de novo.",
+            "",
+        ]
     for board in boards:
         precision, recall, f1 = board.micro()
         p50, p95 = board.latency(0.5), board.latency(0.95)
-        per_thousand = board.cost_usd / board.total * 1000 if board.total else 0.0
+        cost = board.cost_usd
+        if cost is None:
+            cost_text = "custo desconhecido (sem preço cadastrado)"
+        else:
+            per_thousand = cost / board.total * 1000 if board.total else 0.0
+            cost_text = f"custo: US$ {per_thousand:.4f} por 1.000 mensagens"
         exact = board.exact / board.total if board.total else None
         multi_exact = board.multi_exact / board.multi_total if board.multi_total else None
         lines.append(f"■ {board.contender}")
@@ -502,7 +594,7 @@ def render_report(boards: list[Scoreboard], samples: list[Sample], categories: l
             f"F1 {'—' if f1 is None else f'{f1:.2f}'.replace('.', ',')}"
         )
         latency = "—" if p50 is None else f"{p50:.0f} ms típico, {p95:.0f} ms no pior caso"
-        lines.append(f"  tempo: {latency} · custo: US$ {per_thousand:.4f} por 1.000 mensagens")
+        lines.append(f"  tempo: {latency} · {cost_text}")
         misses = [
             f"{names.get(ref, ref)} {_pct(board.recall([ref]))}"
             for ref in names
@@ -556,16 +648,27 @@ def build_contenders(
 
 
 def prices_for(contenders, *, llm_price_in=None, llm_price_out=None, jev_price_in=0.042):
-    """({nome: Price}, [modelos sem preço na tabela])."""
-    from shopman.shop.services.ai_pricing import LLM_PRICES
+    """({nome: Price ou ``None``}, [modelos sem preço na tabela]).
 
-    prices, unpriced = {"jev": Price(jev_price_in, 0.0)}, []
+    A distinção é a do freio (``ai_governor.prices_for``): fora da tabela o preço
+    é *estimado*. O freio estima pelo mais caro para errar do lado seguro; o
+    placar compara, e comparar com preço inventado mente. Aqui o estimado vira
+    ``None``: custo desconhecido, nunca zero (N21).
+    """
+    from shopman.shop.ai_governor import prices_for as governor_prices
+
+    prices: dict[str, Price | None] = {"jev": Price(jev_price_in, 0.0)}
+    unpriced: list[str] = []
     for contender in contenders:
         if isinstance(contender, LLMContender):
-            table_in, table_out = LLM_PRICES.get(contender.model, (None, None))
+            (table_in, table_out), estimated = governor_prices(contender.model)
+            if estimated:
+                table_in = table_out = None
             price_in = llm_price_in if llm_price_in is not None else table_in
             price_out = llm_price_out if llm_price_out is not None else table_out
             if price_in is None or price_out is None:
                 unpriced.append(contender.model)
-            prices[contender.name] = Price(price_in or 0.0, price_out or 0.0)
+                prices[contender.name] = None
+            else:
+                prices[contender.name] = Price(price_in, price_out)
     return prices, unpriced

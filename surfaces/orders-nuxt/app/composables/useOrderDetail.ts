@@ -2,14 +2,23 @@ import { useReadMetadata } from "./useReadMetadata";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { useOrderIntention } from "./useOrderIntention";
+import { useDanfePrint } from "./useDanfePrint";
+import { SENT_SENTENCE } from "~/presentation/customerNotice";
+import {
+  httpError,
+  isForbiddenError,
+} from "../../../operator-kit/app/utils/httpError";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type {
-  CancellationReason,
+  CourierBlock,
   OperatorOrderProjection,
   OrderDetailResponse,
 } from "~/types/orders";
+import type { Action } from "~/generated/ordersContract";
+import { deliveryServiceName } from "../../../operator-kit/app/presentation/deliveryService";
+import type { OrderRefundReceipt } from "~/presentation/orderRefund";
 
 export function useOrderDetail(orderRef: string) {
   const intentions = useOrderIntention();
@@ -34,6 +43,34 @@ export function useOrderDetail(orderRef: string) {
 
   const refresh = coalesceRefresh(() => fetchOrder());
 
+  // ── Conferência do cartão com o gateway ────────────────────────────────────
+  //
+  // A leitura do detalhe não pergunta ao gateway (A8-1): o servidor diz
+  // `payment_check_due` quando o pedido deve cartão, e a tela pede o comando ao
+  // abrir o pedido e quando ele volta a dever. O intervalo mínimo entre
+  // perguntas é do servidor. Pagou (o webhook se perdeu): relê o pedido.
+  async function checkPayment() {
+    try {
+      const result = await $fetch<{ changed: boolean }>(
+        `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/payment/check/`,
+        { method: "POST" },
+      );
+      if (result.changed) await refresh();
+    } catch {
+      // Melhor esforço, como era no GET: o `reconcile_payments` do worker é a
+      // rede, e a tela segue com o que leu.
+    }
+  }
+  if (!import.meta.server) {
+    watch(
+      () => data.value?.payment_check_due === true,
+      (due) => {
+        if (due) void checkPayment();
+      },
+      { immediate: true },
+    );
+  }
+
   watch(
     error,
     (value) => {
@@ -57,8 +94,26 @@ export function useOrderDetail(orderRef: string) {
     () => data.value?.order ?? (error.value ? lastConfirmed.value : null),
   );
 
-  // A impressora desta estação, a mesma que o quadro recebe (a Via Pedido sai por ela).
+  // A impressora desta estação, a mesma que o painel recebe (a Via Pedido sai por ela).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
+
+  // ── Por que a leitura falhou ───────────────────────────────────────────────
+  //
+  // Três recusas liam a mesma frase ("Pedido não encontrado ou falha ao carregar"):
+  // a conta que não abre o detalhe (403 de permissão: quem só expede chega aqui pelo
+  // sino), o pedido que não existe (404) e a rede. A tela diz qual foi (P1-20).
+  const forbidden = computed(
+    () => Boolean(error.value) && isForbiddenError(error.value),
+  );
+  const notFound = computed(
+    () => Boolean(error.value) && httpError(error.value).status === 404,
+  );
+
+  // A DANFE no detalhe (P1-14): o MESMO gesto do cartão do painel, que pede ao
+  // servidor a impressão (ou reimpressão) pela impressora do despacho.
+  const danfe = useDanfePrint(deviceAgent, () => refresh());
+  const printDanfe = () => danfe.printDanfe(orderRef);
+  const danfePrinting = computed(() => danfe.isPrinting(orderRef));
 
   const busy = ref(false);
   const mutationError = ref("");
@@ -73,14 +128,26 @@ export function useOrderDetail(orderRef: string) {
   //
   // Guardamos a tentativa para REENVIAR o mesmo ato com a autorização, em vez de
   // pedir ao gerente que refaça o gesto (e escolha o motivo de novo).
-  const managerChallenge = ref<{ code: string; message: string } | null>(null);
-  let lastAttempt: { action: string; body?: Record<string, unknown> } | null =
-    null;
+  const managerChallenge = ref<{
+    code: string;
+    message: string;
+    /** O ato que pediu a assinatura: o diálogo do PIN nomeia o que o gerente assina. */
+    action: string;
+  } | null>(null);
+  /** O recibo da última ação que o servidor aplicou (o estorno lê dele o resultado). */
+  const lastReceipt = ref<Record<string, unknown> | null>(null);
+  let lastAttempt: {
+    action: string;
+    body?: Record<string, unknown>;
+    contract?: Action;
+  } | null = null;
 
   async function act(
     action: string,
     body?: Record<string, unknown>,
     approval?: Record<string, string>,
+    /** A ação que vem da prévia do gesto, não do detalhe (a devolução, o não retirado). */
+    contract?: Action,
   ): Promise<boolean> {
     if (busy.value) return false;
     if (error.value) {
@@ -90,6 +157,7 @@ export function useOrderDetail(orderRef: string) {
     }
     busy.value = true;
     mutationError.value = "";
+    lastReceipt.value = null;
     try {
       if (
         [
@@ -101,6 +169,7 @@ export function useOrderDetail(orderRef: string) {
           "assign",
           "unassign",
           "equipment-back",
+          "courier-back",
           "comment",
           "settle-delivery-cash",
           "requeue-fiscal",
@@ -108,16 +177,22 @@ export function useOrderDetail(orderRef: string) {
           "courier-dispatch",
           "courier-dispatch-again",
           "courier-cancel",
+          "courier-custody",
           "courier-quote",
           "undo-handoff",
           "undo-ready",
           "ifood-accept-retry",
+          "return",
+          "no-show",
+          "refund-retry",
+          "refund",
+          "customer-notice",
         ].includes(action)
       ) {
-        await intentions.execute(
+        lastReceipt.value = await intentions.executeReceipt(
           orderRef,
           action,
-          order.value?.actions?.find((item) => item.ref === action),
+          contract ?? order.value?.actions?.find((item) => item.ref === action),
           body ?? {},
           approval,
         );
@@ -153,8 +228,9 @@ export function useOrderDetail(orderRef: string) {
       ) {
         // Sem toast: o desafio NÃO é falha, é um passo do fluxo. Um toast
         // vermelho aqui ensina o gerente que o sistema quebrou.
-        lastAttempt = { action, body };
+        lastAttempt = { action, body, contract };
         managerChallenge.value = {
+          action,
           code,
           message: httpErrorMessage(
             error,
@@ -185,7 +261,7 @@ export function useOrderDetail(orderRef: string) {
   /** Reenvia o ato que pediu assinatura, agora com ela. PIN ou crachá. */
   async function authorize(approval: Record<string, string>): Promise<boolean> {
     if (!lastAttempt) return false;
-    return act(lastAttempt.action, lastAttempt.body, approval);
+    return act(lastAttempt.action, lastAttempt.body, approval, lastAttempt.contract);
   }
 
   function dismissManagerChallenge() {
@@ -201,22 +277,51 @@ export function useOrderDetail(orderRef: string) {
     return act("advance", Object.keys(body).length ? body : undefined);
   };
   const equipmentBack = () => act("equipment-back");
+  // "Entregador voltou": o MESMO gesto do cartão, que fecha a saída inteira
+  // (entrega, dinheiro, troco e maquininha).
+  const courierBack = () => act("courier-back");
   // Desfazer o que ainda está na janela (a saída tocada; o pronto da Cozinha).
   const undoHandoff = () => act("undo-handoff");
   const undoReady = () => act("undo-ready");
-  // Marketplace (iFood) reject/cancel carry the operator-picked code so the backend
-  // relays a valid reason to the provider; empty string for other channels.
-  const reject = (reason: string, cancellation_code = "") =>
-    act("reject", { reason, cancellation_code });
-  // Cancelar: o motivo é a chave da lista única (`reason_key`, obrigatória fora do
-  // iFood); o texto é a observação interna. No iFood, `reason` + código do iFood.
-  const cancel = (choice: { reasonKey: string; internalNote: string; reason: string; cancellationCode: string }) =>
-    act("cancel", {
-      reason_key: choice.reasonKey,
-      internal_note: choice.internalNote,
-      reason: choice.reason,
-      cancellation_code: choice.cancellationCode,
-    });
+  // Recusar e cancelar: a chave da lista única de motivos (`reason_key`, em qualquer
+  // canal; no iFood o código dele sai da chave, no servidor) e a observação interna.
+  const reject = (choice: { reasonKey: string; internalNote: string }) =>
+    act("reject", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
+  const cancel = (choice: { reasonKey: string; internalNote: string }) =>
+    act("cancel", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
+  // Devolução depois da venda (WP-G12): itens, quantidade e motivo, com a ação
+  // da prévia (`return/preview/`). O PIN do gerente vem pelo desafio de sempre.
+  const returnOrder = (
+    choice: { items: { line_id: string; qty: string }[]; reason: string },
+    contract: Action,
+  ) => act("return", { items: choice.items, reason: choice.reason }, undefined, contract);
+  // Não retirado (WP-G11): não há o que escolher, o destino de cada linha é do
+  // servidor. A ação é a da prévia (`no-show/preview/`), com a base que o comando
+  // confere; a do detalhe só diz se a porta existe. O PIN vem pelo desafio de sempre.
+  const markNotPickedUp = (contract: Action) =>
+    act("no-show", undefined, undefined, contract);
+  // Tentar o estorno de novo (WP-G13): não há o que escolher, o valor e as cobranças
+  // são do servidor. A ação é a do detalhe (`refund-retry`), com a base que o comando
+  // confere; o PIN vem pelo desafio de sempre. `true` diz que a TENTATIVA foi gravada:
+  // se o dinheiro voltou, quem diz é o pedido relido (`cancelled_money`), e a recusa
+  // do meio de pagamento chega escrita na linha da faixa.
+  const retryRefund = () => act("refund-retry");
+  // Estornar UM pedido (#2727, item 5): a exceção financeira do Gerente. A ação é a
+  // da prévia (`refund/preview/`), com a base que o comando confere; o valor e a
+  // segunda confirmação vêm do diálogo. Devolve o recibo DESTA cobrança (o meio de
+  // pagamento confirmou, recusou ou não respondeu), ou `null` quando nada foi aplicado.
+  // Pedido com mais de uma cobrança (#3134): `intentRef` é a escolhida no diálogo.
+  async function refundOrder(
+    contract: Action,
+    amountQ: number,
+    intentRef?: string,
+  ): Promise<OrderRefundReceipt | null> {
+    const body: Record<string, unknown> = { amount_q: amountQ, confirm: true };
+    if (intentRef) body.intent_ref = intentRef;
+    const ok = await act("refund", body, undefined, contract);
+    if (!ok) return null;
+    return (lastReceipt.value?.refund as OrderRefundReceipt | undefined) ?? null;
+  }
   const settleCash = (
     amount: string,
     changeBack?: string,
@@ -251,20 +356,21 @@ export function useOrderDetail(orderRef: string) {
   // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
   // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
   // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
+  // Avisar o cliente (WP-G07): o corpo vem do diálogo (o aviso, a hora nova ou os
+  // itens), a base é a do detalhe. A tela diz "na fila", nunca "enviado": o recibo do
+  // pedido, relido aqui, diz o que o provedor respondeu.
+  async function notifyCustomer(inputs: Record<string, unknown>): Promise<boolean> {
+    const ok = await act("customer-notice", inputs);
+    if (ok) useSonner.success(SENT_SENTENCE);
+    return ok;
+  }
+
   async function resendPaymentLink(): Promise<boolean> {
     const ok = await act("resend-payment-link");
     if (ok) useSonner.success("Reenvio do link solicitado.");
     return ok;
   }
 
-  // Valid cancellation reasons for this order: for iFood, the live per-order coded
-  // list ({code, description}); empty for channels without reason codes.
-  async function fetchCancellationReasons(): Promise<CancellationReason[]> {
-    const res = await $fetch<{ reasons: CancellationReason[] }>(
-      `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/cancellation-reasons/`,
-    );
-    return res.reasons;
-  }
 
   async function saveNotes(
     notes: string,
@@ -284,23 +390,19 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  // Courier ride (external delivery): dispatch/re-dispatch, cancel the active
-  // ride, and "just quote" (stores the estimate; refresh shows it in the panel).
-  // A custódia que sai com o entregador da TaOn (troco da gaveta, maquininha)
-  // vai no mesmo corpo do despacho do Gestor: `change_out` e `equipment`.
-  async function courierDispatch(
-    custody: { change_out?: string; equipment?: string[] } = {},
-  ): Promise<boolean> {
-    const ok = await act("courier-dispatch", custody);
-    if (ok) useSonner.success("Pedido de entregador enviado à central.");
-    return ok;
-  }
+  // Courier ride (external delivery): re-dispatch, cancel the active ride, and
+  // "just quote" (stores the estimate; refresh shows it in the panel). Chamar a
+  // primeira vez é o sheet único das Entregas (#2876), fora daqui.
 
-  // "Chamar de novo": a última chamada ficou sem resposta da TaOn. Libera a
+  // O nome do serviço da corrida, como o cadastro diz ("TaOn"): as frases o usam.
+  const courierService = () => deliveryServiceName((order.value?.courier as CourierBlock | null)?.service_name);
+
+  // "Chamar de novo": a última chamada ficou sem resposta do serviço. Libera a
   // chamada pendente e chama outra (a confirmação é da página).
   async function courierDispatchAgain(): Promise<boolean> {
+    const service = courierService();
     const ok = await act("courier-dispatch-again");
-    if (ok) useSonner.success("Pedido de entregador enviado à TaOn.");
+    if (ok) useSonner.success(`Pedido de entregador enviado à ${service}.`);
     return ok;
   }
 
@@ -309,12 +411,28 @@ export function useOrderDetail(orderRef: string) {
     return act("courier-reminder-dismiss");
   }
 
-  async function courierCancel(): Promise<boolean> {
-    const ok = await act("courier-cancel");
-    if (ok)
-      useSonner.success(
-        "Cancelamento da corrida pedido. Falta a central confirmar.",
-      );
+  // Ouvidoria: o "Resolvido" fecha o pedido de contato com a nota do que foi feito.
+  async function resolveContactRequest(note: string): Promise<boolean> {
+    const ok = await act("customer-contact/resolve", { note });
+    if (ok) useSonner.success("Atendimento registrado.");
+    return ok;
+  }
+
+  /** `reasonId`: o motivo escolhido na confirmação (só depois do aceite). */
+  async function courierCancel(reasonId?: number): Promise<boolean> {
+    const service = courierService();
+    const ok = await act(
+      "courier-cancel",
+      reasonId ? { reason_id: reasonId } : undefined,
+    );
+    if (ok) useSonner.success(`Pedido de cancelamento enviado à ${service}.`);
+    return ok;
+  }
+
+  /** "Separar de novo" (#2500): a custódia da corrida que a TaOn retomou. */
+  async function courierCustody(body: { change_out?: string; equipment?: string[] }): Promise<boolean> {
+    const ok = await act("courier-custody", body);
+    if (ok) useSonner.success("Separado de novo. Entregue com a sacola.");
     return ok;
   }
 
@@ -330,26 +448,36 @@ export function useOrderDetail(orderRef: string) {
     deviceAgent,
     pending,
     error,
+    forbidden,
+    notFound,
     refresh,
+    printDanfe,
+    danfePrinting,
     busy,
     mutationError,
     confirm,
     advance,
     reject,
     cancel,
-    fetchCancellationReasons,
+    courierCustody,
+    returnOrder,
+    markNotPickedUp,
+    retryRefund,
+    refundOrder,
     settleCash,
     equipmentBack,
+    courierBack,
     undoHandoff,
     undoReady,
     requeueFiscal,
     retryIFoodAccept,
     resendPaymentLink,
+    notifyCustomer,
     saveNotes,
     addComment,
-    courierDispatch,
     courierDispatchAgain,
     courierReminderDismiss,
+    resolveContactRequest,
     courierCancel,
     courierQuote,
     managerChallenge,

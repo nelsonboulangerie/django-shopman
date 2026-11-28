@@ -17,6 +17,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from shopman.cashman.models import Terminal
 from shopman.utils import unfold_badge, unfold_link
+from shopman.utils.formatting import format_local
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminIntegerFieldWidget,
@@ -25,6 +26,7 @@ from unfold.widgets import (
     UnfoldBooleanSwitchWidget,
 )
 
+from shopman.backstage.permissions import can_audit_cash
 from shopman.backstage.projections.operator_badge import mask_badge
 from shopman.backstage.services.order_danfe import DESTINATION_FLAG as DANFE_DESTINATION_FLAG
 from shopman.backstage.services.pos_hardware import (
@@ -43,6 +45,9 @@ from shopman.backstage.station_trust import (
     eligible_station_operators,
     terminal_mode,
 )
+
+#: Os campos da tolerância do caixa deste terminal.
+CASH_TOLERANCE_FIELDS = ("cash_tolerance_percent", "cash_tolerance_min", "cash_tolerance_max")
 
 
 class TerminalForm(forms.ModelForm):
@@ -65,9 +70,9 @@ class TerminalForm(forms.ModelForm):
         choices=(
             ("", "Não configurada"),
             (ADAPTER_MANUAL, "Com a chave (o PDV não abre)"),
-            (ADAPTER_AGENT, "Pelo agente local (kick na impressora)"),
+            (ADAPTER_AGENT, "Pelo agente do balcão (abre junto com a impressora)"),
         ),
-        help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 counter_agent.py --install</code>.",
+        help_text="O agente do balcão é um programa no computador do caixa. Quem instala é o suporte.",
     )
     counter_agent_url = forms.URLField(
         label="Endereço do agente do dispositivo",
@@ -75,7 +80,7 @@ class TerminalForm(forms.ModelForm):
         widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
         initial=DEFAULT_AGENT_URL,
-        help_text="Sempre loopback do próprio balcão. O servidor nunca alcança este endereço: quem chama é o navegador.",
+        help_text="Endereço do agente no próprio computador do balcão. Quem chama é o navegador do caixa, nunca o servidor.",
     )
     drawer_rotate_token = forms.BooleanField(
         label="Gerar um token novo",
@@ -193,12 +198,9 @@ class TerminalForm(forms.ModelForm):
         # age — sem nada escrito em tela dizendo por quê.
         choices=(("", "Nenhuma"),),
         help_text=(
-            "Superusuário não aparece aqui e o servidor o recusa: "
-            "<code>is_superuser</code> curto-circuita toda checagem de permissão, "
-            "e um painel de parede com chave-mestra é o incidente de 20/08 com outro "
-            "nome. Conceda a esta conta só o que a Produção precisa "
-            "(<code>backstage.operate_production</code>), e desative a conta para "
-            "desligar o painel sem ir até ele."
+            "A conta do dono não aparece aqui: ela abre tudo, e um painel de parede "
+            "não pode ter a chave da casa inteira. Dê a esta conta só a permissão da "
+            "Produção, e desative a conta para desligar o painel sem ir até ele."
         ),
     )
     prints_delivery_danfe = forms.BooleanField(
@@ -257,12 +259,25 @@ class TerminalForm(forms.ModelForm):
         help_text="Em branco = a da loja. Padrão: R$ 20,00.",
     )
 
+    #: Quem pode mudar a tolerância do caixa. Fechado por padrão: o Admin abre
+    #: só para quem audita o caixa (``TerminalAdmin.get_form``).
+    cash_tolerance_editable = False
+
     class Meta:
         model = Terminal
         fields = ("ref", "label", "channel_ref", "location_ref", "is_active")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.cash_tolerance_editable:
+            # A tolerância decide o veredito da apuração; só o Dono a muda
+            # (decisão do dono, 06/11/2026, beta test ADM-05). Campo desabilitado
+            # mostra o valor e o Django ignora o que chegar no POST.
+            for name in CASH_TOLERANCE_FIELDS:
+                self.fields[name].disabled = True
+            self.fields["cash_tolerance_percent"].help_text = (
+                "Só o Dono altera a tolerância do caixa. Em branco = a da loja."
+            )
         self._stale_print_target = ""
         self._stale_station_operator = ""
         self._load_print_target_choices()
@@ -522,6 +537,12 @@ class TerminalForm(forms.ModelForm):
             metadata.pop("station", None)
         # A tolerância do caixa DESTE terminal, por cima da da loja, chave a
         # chave (services/cash_tolerance.policy_for). Campo vazio = vale a loja.
+        # Quem não pode mudá-la salva o resto do terminal sem tocar no bloco.
+        if not self.cash_tolerance_editable:
+            instance.metadata = metadata
+            if commit:
+                instance.save()
+            return instance
         tolerance = {}
         percent = self.cleaned_data.get("cash_tolerance_percent")
         if percent is not None:
@@ -581,7 +602,7 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                 ),
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
-                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa): só o navegador do balcão alcança o agente local.",
+                "description": "O teste da gaveta se faz no próprio PDV, antes de abrir o caixa: só o computador do balcão alcança o agente.",
             },
         ),
         (
@@ -628,6 +649,14 @@ class TerminalAdmin(_CashmanTerminalAdmin):
             },
         ),
     )
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj, change=change, **kwargs)
+        # Só o Dono muda a tolerância do caixa (decisão do dono, 06/11/2026).
+        # A régua é a da apuração: a tolerância decide o veredito que só quem
+        # audita lê, e a Gerente não audita (``can_audit_cash``).
+        editable = can_audit_cash(request.user)
+        return type(form.__name__, (form,), {"cash_tolerance_editable": editable})
 
     def drawer_install_display(self, obj):
         """Ponte para a tela que entrega o agente e o comando pronto.
@@ -689,13 +718,12 @@ class TerminalAdmin(_CashmanTerminalAdmin):
         )
         if not dispositivos:
             return format_html("{} {}", unfold_badge("nenhum dispositivo", "base"), unfold_link(url, "Ver a lista"))
-        from django.utils import timezone
 
         def _linha(device) -> str:
             nome = device.label or (device.user_agent or "sem identificação")[:60]
             if device.last_used_at is None:
                 return f"{nome} · nunca usado"
-            return f"{nome} · usado em {timezone.localtime(device.last_used_at):%d/%m %H:%M}"
+            return f"{nome} · usado em {format_local(device.last_used_at, '%d/%m {clock}')}"
 
         linhas = format_html("".join("<li>{}</li>" for _ in dispositivos), *[_linha(d) for d in dispositivos])
         badge = unfold_badge(

@@ -10,6 +10,7 @@
 import type { POSPaymentMethodProjection } from "~/types/pos";
 import type { PosReceiptSnapshot } from "~/presentation/receipt";
 import { receiptLines, receiptPaymentPending, receiptPayments } from "~/presentation/receipt";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   receipt: PosReceiptSnapshot;
@@ -20,7 +21,7 @@ const props = defineProps<{
 const lines = computed(() => receiptLines(props.receipt));
 const payments = computed(() => receiptPayments(props.receipt, props.paymentMethods));
 const paymentPending = computed(() => receiptPaymentPending(props.receipt));
-const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleString("pt-BR"));
+const printedAt = computed(() => formatDateClock(props.receipt.printedAtMs, { day: "2-digit", month: "2-digit", year: "numeric" }));
 </script>
 
 <template>
@@ -43,7 +44,7 @@ const printedAt = computed(() => new Date(props.receipt.printedAtMs).toLocaleStr
           <td class="pr-1 tabular-nums">{{ line.qtyLabel }}</td>
           <td class="w-full">
             {{ line.name }}
-            <span v-if="line.discountPct" class="block text-[10px]">Desconto −{{ line.discountPct }}%</span>
+            <span v-if="line.discountDisplay" class="block text-[10px]" data-line-discount>{{ line.discountDisplay }}</span>
           </td>
           <td class="whitespace-nowrap pl-1 text-right tabular-nums">{{ line.totalDisplay }}</td>
         </tr>

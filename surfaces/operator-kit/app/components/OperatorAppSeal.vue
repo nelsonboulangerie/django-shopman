@@ -4,6 +4,8 @@
 // Uma peça para o `OperatorPageHeader` e para os cabeçalhos próprios (a venda do PDV, a
 // Central). O alvo de toque é de 44px (a régua da casa); o selo desenhado tem 36.
 // Na própria Central (sem `operatorHubUrl` para onde voltar, ou `home`), é só identidade.
+// No app que adotou o trocador (o shell recebeu `switcherSections`, modelo de navegação
+// de 31/10), o selo abre o trocador: seções deste app, outros apps, a Central e quem opera.
 import { computed, ref } from "vue";
 
 import { operatorAppNamed } from "../../appIdentity";
@@ -20,7 +22,10 @@ const HUB_BACK = `voltar ${operatorAppNamed("hub", "a")}`;
 
 const config = useRuntimeConfig().public as { operatorHubUrl?: string; operatorPwa?: { identity?: SealIdentity } };
 const identity = config.operatorPwa?.identity;
-const hubUrl = computed(() => (props.home ? "" : config.operatorHubUrl || ""));
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
+const switcherOpen = useState<boolean>("suite-switcher-open", () => false);
+const opensSwitcher = computed(() => switcherEnabled.value && !props.home);
+const hubUrl = computed(() => (props.home || opensSwitcher.value ? "" : config.operatorHubUrl || ""));
 const appColor = identity?.color || "var(--primary)";
 const { attrsFor } = useOperatorAppLink();
 const hubLink = computed(() => attrsFor(hubUrl.value));
@@ -29,6 +34,14 @@ const iconName = computed(() => {
   const icon = identity?.icon || "layout-grid";
   return icon.includes(":") ? icon : `lucide:${icon}`;
 });
+const ariaLabel = computed(() => {
+  const app = identity?.label || "App";
+  if (opensSwitcher.value) return `${app}: trocar de seção ou de app`;
+  return hubUrl.value ? `${app}: ${HUB_BACK}` : identity?.label || undefined;
+});
+function onClick() {
+  if (opensSwitcher.value) switcherOpen.value = true;
+}
 </script>
 
 <template>
@@ -41,8 +54,11 @@ const iconName = computed(() => {
     square
     class="group"
     :class="placement === 'header' ? '-mx-1 my-1.5 rail:hidden' : ''"
-    :aria-label="hubUrl ? `${identity?.label || 'App'}: ${HUB_BACK}` : identity?.label || undefined"
+    :aria-label="ariaLabel"
+    :aria-haspopup="opensSwitcher ? 'dialog' : undefined"
+    :aria-expanded="opensSwitcher ? switcherOpen : undefined"
     data-page-header-app
+    @click="onClick"
   >
     <!-- Com Central para onde voltar, o selo vira a seta de voltar no hover e no foco:
          o caminho fica visível antes do clique, sem texto a mais na barra. -->

@@ -37,8 +37,8 @@ ninguém cumpre é pega na saída, como qualquer outra resposta.
 
 **Origem da resposta.** ``HOUSE`` é texto montado pelo código a partir dos dados
 (copy da casa, resultado de ferramenta, aviso de alergia); ``MODEL`` é texto
-livre de modelo. Hoje nenhum texto do modelo chega ao cliente (``agent.run_agent``
-só devolve o resultado canônico das ferramentas), então R1 e R5 são cumpridas
+livre de modelo. Nenhum texto do modelo chega ao cliente (o turno é a leitura em
+partes, ``intents.run``, e cada parte sai do executor da casa), então R1 e R5 são cumpridas
 por construção e o verificador delas só reprova texto ``MODEL``: é a trava para a
 redação com marcadores (F6) e a régua que o placar aplica às respostas antigas do
 alpha, que eram do modelo.
@@ -89,7 +89,7 @@ HANDOFF = "handoff"  # a conversa foi entregue à equipe
 CART = "cart"  # a sacola mudou
 ORDER = "order"  # o pedido foi registrado
 NOTIFY = "notify"  # aviso de disponibilidade registrado
-VERIFY = "verify"  # verificação com prazo aberta (fatia F5; ainda não existe)
+VERIFY = "verify"  # verificação com prazo aberta ou em espera ("vou verificar", ``verification``)
 
 
 def fold(text: str) -> str:
@@ -273,11 +273,65 @@ _UNAVAILABLE_PATTERNS = _compile(
 )
 
 
+#: As frases: o ponto, a interrogação e a exclamação fecham; o espaço depois delas é guardado na divisão.
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])(\s+)")
+
+
+def _house_phrases() -> tuple[re.Pattern, ...]:
+    """As frases prontas da casa que têm uma palavra da R2 (#3503): a copy da Omotenashi (o padrão e a do Admin) e
+    o texto do motivo de cancelamento ao cliente. Elas dizem o ESTADO ("O prazo para pagar acabou e cancelamos o
+    pedido."), e a R2 não as reescreve: "o prazo está indisponível" adulterava o estado do pedido. Um espaço da
+    copy (``{item}``) casa com qualquer trecho."""
+    from shopman.shop.omotenashi.copy import OMOTENASHI_DEFAULTS
+    from shopman.shop.services.cancel_reasons import AUTOMATIC_CANCEL_REASONS, OPERATOR_CANCEL_REASONS
+
+    texts = {entry.message for moments in OMOTENASHI_DEFAULTS.values() for audiences in moments.values()
+             for entry in audiences.values() if entry.message}
+    texts |= {reason.customer_text for reason in (*OPERATOR_CANCEL_REASONS, *AUTOMATIC_CANCEL_REASONS)
+              if reason.customer_text}
+    try:
+        from shopman.shop.models import OmotenashiCopy
+
+        texts |= set(OmotenashiCopy.objects.filter(active=True).exclude(message="")
+                     .values_list("message", flat=True))
+    except Exception:  # noqa: BLE001 - banco indisponível: valem as frases do código, e a copy do Admin fica sem proteção
+        logger.warning("concierge.house_rules.house_phrases_failed", exc_info=True)
+    found = []
+    for text in texts:
+        for sentence in _SENTENCE_BREAK.split(text)[::2]:
+            folded = fold(sentence).strip()
+            if folded and _hits(_UNAVAILABLE_PATTERNS, folded):
+                found.append(re.compile(re.sub(r"\\\{\w+\\\}", ".+?", re.escape(folded))))
+    return tuple(found)
+
+
+def _house_sentence(sentence: str, phrases: tuple[re.Pattern, ...]) -> bool:
+    folded = fold(sentence).strip()
+    return any(phrase.fullmatch(folded) for phrase in phrases)
+
+
 def _check_unavailable(text: str, ctx: ReplyContext) -> list[str]:
-    return _hits(_UNAVAILABLE_PATTERNS, fold(text))
+    phrases = None
+    found = []
+    for sentence in _SENTENCE_BREAK.split(text)[::2]:
+        hits = _hits(_UNAVAILABLE_PATTERNS, fold(sentence))
+        if not hits:
+            continue
+        phrases = _house_phrases() if phrases is None else phrases
+        if not _house_sentence(sentence, phrases):
+            found.extend(hits)
+    return found
 
 
 def _repair_unavailable(text: str, ctx: ReplyContext) -> str:
+    """Conserta frase a frase; a frase pronta da casa passa intacta (``_house_phrases``)."""
+    phrases = _house_phrases()
+    parts = _SENTENCE_BREAK.split(text)
+    return "".join(part if index % 2 or _house_sentence(part, phrases) else _repair_sentence(part)
+                   for index, part in enumerate(parts))
+
+
+def _repair_sentence(text: str) -> str:
     def word(match: re.Match) -> str:
         plural = match.group(0).casefold().endswith("s")
         return _keep_case(match.group(0), "indisponíveis" if plural else "indisponível")
@@ -421,6 +475,11 @@ _IDENTITY_PATTERNS = _compile(
     r"pessoa(?:\s+de\s+verdade|\s+real)?|humano|humana|gente\s+de\s+verdade|atendente\s+virtual|"
     r"assistente\s+virtual|automatico|automatica|resposta\s+automatica)\b",
     r"\b(?:qual|como)\s+(?:e\s+)?(?:o\s+)?(?:seu|teu)\s+nome\b|\bcomo\s+(?:voce|vc)\s+se\s+chama\b",
+    # "Com quem eu falo?", "quem é você?", "quem tá falando?" (conversa real, 20/11/2026: a
+    # triagem levava à equipe o que é a pergunta de quem atende).
+    r"\bcom\s+quem\s+(?:eu\s+)?(?:falo|estou\s+falando|to\s+falando|ta\s+falando|converso|estou\s+conversando)\b",
+    r"\bquem\s+(?:e|eh)\s+(?:voce|vc|tu)\b|\bquem\s+(?:esta|ta)\s+(?:falando|respondendo|digitando)\b",
+    r"\b(?:e|eh|isso\s+e|aqui\s+e)\s+(?:um\s+)?(?:atendimento|mensagem|resposta)\s+automatic[oa]\b",
 )
 _DENIAL_PATTERNS = _compile(
     r"\bsou\s+(?:uma?\s+)?(?:pessoa|humana?|atendente\s+de\s+verdade|gente\s+de\s+verdade)\b",
@@ -430,6 +489,14 @@ _DENIAL_PATTERNS = _compile(
 
 def asks_identity(text: str) -> bool:
     return bool(_hits(_IDENTITY_PATTERNS, fold(text)))
+
+
+def answers_identity(text: str) -> bool:
+    """A R8 responde a fala: pergunta de quem atende, sem desconto (R7, que vem antes) e
+    sem pedido de atendimento humano junto ("você é robô? quero falar com alguém" é da equipe)."""
+    from .handoff import classify_handoff_request
+
+    return asks_identity(text) and not asks_negotiation(text) and not classify_handoff_request(text)
 
 
 def _check_denial(text: str, ctx: ReplyContext) -> list[str]:
@@ -593,7 +660,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.HOLD, MODEL: Effect.HOLD},
         enforced_by="house_rules._check_fact (resposta do modelo); resposta da casa cumpre por construção",
         must_flag=(
-            "Tem croissant hoje, sai às 9h.",
+            "Tem croissant hoje, fica pronto às 9h.",
             "O pão de forma custa R$ 18,00.",
             "Entregamos em até quarenta minutos.",
             "Peça por aqui: https://exemplo.com/loja",
@@ -621,7 +688,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "O croissant está indisponível hoje.",
-            "A fornada acabou de sair do forno.",
+            "A fornada acabou de ficar pronta.",
             "O atendimento automático está pausado. Suas escolhas foram preservadas.",
         ),
         output_check=_check_unavailable,
@@ -667,8 +734,10 @@ RULES: tuple[HouseRule, ...] = (
         stages=(ENTRY,),
         when=(
             "reclamação, reação alérgica ou mal-estar, cancelamento de pedido que o cliente não poderia "
-            "cancelar pelo site (em preparo, pago, de outra pessoa, ou mais de um pedido sem dizer qual), "
-            "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa"
+            "cancelar pelo site (preparo já começado, de outra pessoa, ou mais de um pedido sem dizer qual), "
+            "Pix ou link que não funcionou, desistência pela taxa de entrega, pedido de pessoa; e a "
+            "reclamação sem a palavra reclamação: como o cliente se sentiu, cobrança da demora, \"por que "
+            "me ofereceu/cobrou…\", produto com defeito ou diferente do de sempre"
         ),
         demands=(
             "equipe, agora; a regra local nunca é tirada pelo modelo. Cancelamento que o próprio cliente "
@@ -679,7 +748,7 @@ RULES: tuple[HouseRule, ...] = (
         on_violation={HOUSE: Effect.ROUTE_TEAM},
         enforced_by=(
             "handoff.classify_handoff_request → cancellation.self_cancellable → triage.decide; "
-            "cancellation.ask/resolve_pending (agent.run_agent)"
+            "cancellation.ask/resolve_pending (intents.run)"
         ),
         entry_flag=(
             "Quero falar com um atendente",
@@ -690,12 +759,36 @@ RULES: tuple[HouseRule, ...] = (
             "Não consegui pagar o pedido",
             "Acabei pedindo em outro lugar para compensar a taxa de entrega",
             "Com essa taxa de entrega vou desistir",
+            # Padrões do WP-04: cada um com a frase que dispara e, abaixo, a que não pode disparar.
+            "Quero falar com uma pessoa",
+            "Me senti ofendida com a resposta",
+            "Fiquei bem chateado com o atendimento",
+            "Que falta de respeito",
+            "Por que demorou tanto pra responder?",
+            "O pedido demorou demais",
+            "Ninguém me respondeu até agora",
+            "Por que me ofereceu um pão que não tem?",
+            "Por que me cobraram duas vezes?",
+            "O pão veio mofado",
+            "O croissant chegou murcho",
+            "Sempre compro o de brioche e hoje estava diferente",
+            "O sabor está diferente do normal",
         ),
         entry_pass=(
             "Qual a taxa de entrega?",
             "Vocês aceitam pix?",
             "Tem croissant hoje?",
             "Cancela",
+            "O bolo serve quantas pessoas?",
+            "Estou com pressa, tem croissant?",
+            "Fiquei curiosa com o pão de fermentação natural",
+            "Quanto tempo demora a entrega?",
+            "Demora muito para ficar pronto?",
+            "Porque me disseram que vocês fazem bolo, fazem?",
+            "Por que o croissant de vocês é tão bom?",
+            "O pão italiano é diferente do francês?",
+            "Tem algum sabor diferente hoje?",
+            "O pão de queijo vem cru para assar em casa?",
         ),
         entry_check=_entry_team,
     ),
@@ -763,7 +856,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         on_violation={HOUSE: Effect.FIXED_REPLY},
         enforced_by=(
-            "discount.handle_request, depois house_rules.fixed_reply_for (agent.run_agent, antes do modelo)"
+            "intents._house_fixed_reply e intents.execute: discount.handle_request, depois house_rules.fixed_reply_for"
         ),
         entry_flag=(
             "Faz um desconto pra mim?",
@@ -807,7 +900,7 @@ RULES: tuple[HouseRule, ...] = (
         when="só cumprimento, agradecimento ou despedida",
         demands="frase da casa curta, sem busca nem modelo",
         on_violation={HOUSE: Effect.FIXED_REPLY},
-        enforced_by="small_talk.small_talk_kind → agent.run_agent",
+        enforced_by="small_talk.small_talk_kind → intents.run",
         entry_flag=("Bom dia!", "Obrigada, até amanhã", "boa tarde, tudo bem?"),
         entry_pass=("Bom dia, tem croissant?", "Obrigada, e o pão de forma?"),
         entry_check=_entry_courtesy,
@@ -880,7 +973,7 @@ RULES: tuple[HouseRule, ...] = (
         ),
         must_pass=(
             "Pedido ORD-20261003-0001 registrado. Total: R$ 52,00.",
-            "Retirada: 03/10 das 16:00 às 16:30.",
+            "Retirada: 03/10 das 16h às 16h30.",
         ),
         output_check=_check_personal_data,
     ),
@@ -915,7 +1008,7 @@ def fixed_reply_for(customer_text: str, *, shop_name: str = "", copy=None) -> tu
 
     for rule_id, matches, key in (
         ("R7", asks_negotiation, NEGOTIATION_COPY_KEY),
-        ("R8", asks_identity, IDENTITY_COPY_KEY),
+        ("R8", answers_identity, IDENTITY_COPY_KEY),
     ):
         if matches(customer_text):
             text = (copy(key) or "").replace("{shop_name}", shop_name or "a casa").strip()
@@ -965,7 +1058,7 @@ def review(texts: Iterable[str], ctx: ReplyContext = ReplyContext()) -> Review:
 
 
 def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = False) -> frozenset[str]:
-    """Os recibos do turno, lidos do que os executores fizeram (``AgentOutcome``)."""
+    """Os recibos do turno, lidos do que os executores fizeram (``TurnOutcome``)."""
     receipts: set[str] = set()
     if team_notified:
         receipts.add(TEAM_NOTIFIED)
@@ -973,6 +1066,10 @@ def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = F
         receipts.update({HANDOFF, TEAM_NOTIFIED})
     if getattr(outcome, "order_ref", ""):
         receipts.add(ORDER)
+    verification = getattr(outcome, "verification", None) or {}
+    if verification.get("requests") or verification.get("waiting"):
+        # A pergunta foi para a equipe (ou está em espera): "te respondo por aqui" é verdade.
+        receipts.update({VERIFY, TEAM_NOTIFIED})
     for event in getattr(outcome, "tool_events", None) or ():
         if not event.get("ok", True):
             continue
@@ -980,6 +1077,10 @@ def receipts_for(outcome=None, *, team_notified: bool = False, handoff: bool = F
         if name in {"set_item", "set_fulfillment"}:
             receipts.add(CART)
         elif name == "place_order":
+            receipts.add(ORDER)
+        elif name in {"order_status", "repay_order"} and event.get("order_found"):
+            # O pedido lido no domínio (consulta, ou a cobrança refeita na conversa, OC-12):
+            # "seu pedido está registrado", a frase da página, é fato, não promessa.
             receipts.add(ORDER)
         elif name == "notify_when_available":
             receipts.add(NOTIFY)

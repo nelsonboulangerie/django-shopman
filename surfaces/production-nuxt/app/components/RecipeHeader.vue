@@ -2,10 +2,10 @@
 // Cabeçalho das telas de receitas: o mesmo `OperatorPageHeader` do kit das outras
 // telas da Produção, com o selo "Receitas" ao lado do título, o voltar (`#lead`), a
 // busca e a ação primária da tela. Atualizar mora no ⋯ "Mais ações" (dados). SEM o
-// progresso do dia: o inventário de receitas não é etapa do lote, é conhecimento da
-// casa. Receitas mora em Ajustes. O `#status` repassa o "onde estou" da tela (o
+// progresso do dia: receitas não são etapa do lote, são conhecimento da casa.
+// O `#status` repassa o "onde estou" da tela (o
 // anterior e próxima da receita, `OperatorRecordNav`) ao mesmo slot do cabeçalho.
-import type { OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
+import type { OperatorActiveFilter, OperatorHeaderAction } from "../../../operator-kit/app/presentation/pageHeader";
 
 const props = defineProps<{
   title: string;
@@ -22,13 +22,16 @@ const props = defineProps<{
   hideRefresh?: boolean;
   /** A ação primária da tela: botão na mesa, ícone fixo (ou topo do ⋯) no celular. */
   primary?: OperatorHeaderAction;
+  activeFilters?: OperatorActiveFilter[];
+  clearFilters?: () => void;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
 
-const eyebrow = computed(() =>
-  props.subtitle ? `Receitas · ${props.subtitle}` : "Receitas",
-);
+const eyebrow = computed(() => {
+  if (props.subtitle) return `Receitas · ${props.subtitle}`;
+  return props.title === "Receitas" ? undefined : "Receitas";
+});
 const refreshAction = computed<OperatorHeaderAction[]>(() =>
   props.hideRefresh
     ? []
@@ -50,6 +53,8 @@ const phoneActions = computed(() => {
     :actions="deskActions"
     :phone-actions="phoneActions"
     actions-label="Mais ações da tela"
+    :active-filters="activeFilters"
+    :clear-filters="clearFilters"
   >
     <template v-if="back" #lead>
       <NuxtButton
@@ -84,5 +89,9 @@ const phoneActions = computed(() => {
         @click="primary.onSelect?.($event)"
       />
     </template>
+    <template v-if="$slots['filters-primary']" #filters-primary><slot name="filters-primary" /></template>
+    <template v-if="$slots['filter-panel']" #filter-panel><slot name="filter-panel" /></template>
+    <template v-if="$slots.filters" #filters><slot name="filters" /></template>
+    <template v-if="$slots['filters-end']" #filters-end><slot name="filters-end" /></template>
   </OperatorPageHeader>
 </template>

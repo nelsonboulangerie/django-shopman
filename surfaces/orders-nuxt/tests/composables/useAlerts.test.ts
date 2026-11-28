@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
+import { FakeEventSource } from "../../../operator-kit/tests/support/fakeEventSource";
+import { ssePath } from "../../../operator-kit/app/utils/ssePath";
 import { useAlerts } from "../../app/composables/useAlerts";
 import type { AlertProjection } from "../../app/types/orders";
 
@@ -142,7 +144,7 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
     expect(options.method).toBe("POST");
     expect(options.body).toMatchObject({ expected_actor_id: 1, base_revision: "rev-1" });
     expect(options.headers["Idempotency-Key"]).toBeTruthy();
-    expect(env.sonner.success).toHaveBeenCalledWith("Pedido WEB-19 aceito.");
+    expect(env.sonner.success).toHaveBeenCalledWith("Pedido 19 aceito.");
   });
 
   it("pedido que já andou: não aceita às cegas, manda abrir o pedido", async () => {
@@ -153,7 +155,7 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
     expect(await a.accept(PARADO)).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     expect(env.sonner.error).toHaveBeenCalledWith(
-      "O pedido WEB-19 não espera mais aceite. Abra o pedido para conferir.",
+      "O pedido 19 não espera mais aceite. Abra o pedido para conferir.",
     );
   });
 
@@ -180,5 +182,124 @@ describe("useAlerts: o Aceitar do pedido parado", () => {
 
     expect(await a.accept(semGesto)).toBe(false);
     expect(env.fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+// U3 do laudo de 23/10: o sino ficava só no poll de 60 s depois do 502 de deploy.
+describe("useAlerts: tempo real que reconecta", () => {
+  it("depois do 502 recria o stream com backoff e refaz o fetch ao reabrir", async () => {
+    env.reset();
+    vi.useFakeTimers();
+    FakeEventSource.instances = [];
+    let mounted!: () => void;
+    let unmount!: () => void;
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("ssePath", ssePath);
+    vi.stubGlobal("onMounted", (fn: () => void) => { mounted = fn; });
+    vi.stubGlobal("onBeforeUnmount", (fn: () => void) => { unmount = fn; });
+    const listeners = { addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.stubGlobal("document", { ...listeners, visibilityState: "visible" });
+    vi.stubGlobal("window", listeners);
+    try {
+      useAlerts();
+      mounted();
+      const first = FakeEventSource.instances[0]!;
+      expect(first.url).toBe("/sse/alerts");
+      first.open();
+      // Primeira abertura: a leitura acabou de acontecer, nada a refazer.
+      expect(env.refresh).not.toHaveBeenCalled();
+      first.emit("backstage-alerts-update");
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      first.failForGood();
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      // A reabertura também cai com 502: a espera dobra.
+      FakeEventSource.instances[1]!.failForGood();
+      await vi.advanceTimersByTimeAsync(3_999);
+      expect(FakeEventSource.instances).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(FakeEventSource.instances).toHaveLength(3);
+
+      env.refresh.mockClear();
+      FakeEventSource.instances[2]!.open();
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      // O poll de 60 s continua de pé, com ou sem push.
+      env.refresh.mockClear();
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(env.refresh).toHaveBeenCalledTimes(1);
+
+      unmount();
+      expect(FakeEventSource.alive()).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+      vi.stubGlobal("onMounted", () => {});
+      vi.stubGlobal("onBeforeUnmount", () => {});
+    }
+  });
+});
+
+// Promover a pergunta frequente (WP-15): a resposta enviada traz o gesto no aviso, e o
+// gesto cria o rascunho (promoveu, já existia, erro).
+describe("useAlerts · promover a pergunta frequente", () => {
+  const PROMOTE = "/api/v1/backstage/alerts/31/concierge-verification/promote-faq/";
+  const verifyCard = {
+    pk: 31,
+    type: "concierge_verify",
+    type_label: "WhatsApp: cliente esperando a resposta da equipe",
+    severity: "warning",
+    severity_label: "Aviso",
+    message: "Pergunta do cliente: “vocês têm estacionamento”.",
+    order_ref: "",
+    created_at_display: "20/11 às 14:00",
+    actions: [{
+      ref: "answer_concierge_verification:31", kind: "answer_concierge_verification", label: "Responder ao cliente",
+      enabled: true, href: "/api/v1/backstage/alerts/31/concierge-verification/answer/", source_alert_effect: "resolves",
+    }],
+  } as unknown as AlertProjection;
+  let withAction: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    env.reset();
+    withAction = vi.fn();
+    Object.assign(env.sonner, { withAction });
+  });
+
+  it("a resposta enviada oferece promover, e o gesto cria o rascunho com o link do Admin", async () => {
+    env.fetchMock.mockResolvedValueOnce({ ok: true, promote_href: PROMOTE });
+    const a = useAlerts();
+
+    expect(await a.answerVerification(verifyCard, "Temos na rua de trás.")).toBeNull();
+
+    const [color, title, options] = withAction.mock.calls[0]!;
+    expect([color, title, options.action.label]).toEqual(["success", "Resposta enviada ao cliente.", "Promover a pergunta frequente"]);
+    env.fetchMock.mockResolvedValueOnce({ ok: true, already: false, admin_url: "https://admin.x/admin/shop/faqentry/9/change/", warning: "" });
+    await options.action.onClick();
+    expect(String(env.fetchMock.mock.calls.at(-1)![0])).toBe(PROMOTE);
+    const [, promoted, promotedOptions] = withAction.mock.calls.at(-1)!;
+    expect(promoted).toContain("Virou rascunho em Perguntas frequentes");
+    expect(promotedOptions.action).toEqual({ label: "Abrir no Admin", to: "https://admin.x/admin/shop/faqentry/9/change/" });
+  });
+
+  it("já promovida diz que o rascunho existe", async () => {
+    env.fetchMock.mockResolvedValueOnce({ ok: true, already: true, admin_url: "", warning: "" });
+    const a = useAlerts();
+
+    await a.promoteToFaq(PROMOTE);
+
+    const [color, title, options] = withAction.mock.calls[0]!;
+    expect([color, title]).toEqual(["info", "Esta pergunta já é um rascunho em Perguntas frequentes."]);
+    expect(options.action).toBeUndefined(); // sem endereço do Admin, sem botão quebrado
+  });
+
+  it("erro ao promover vira aviso de erro, e nada mais", async () => {
+    env.fetchMock.mockRejectedValueOnce(new Error("boom"));
+    const a = useAlerts();
+
+    expect(await a.promoteToFaq(PROMOTE)).toBeNull();
+
+    expect(env.sonner.error).toHaveBeenCalledTimes(1);
+    expect(withAction).not.toHaveBeenCalled();
   });
 });

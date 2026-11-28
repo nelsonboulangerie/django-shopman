@@ -5,7 +5,13 @@ from __future__ import annotations
 from django.db import transaction
 from shopman.orderman.exceptions import InvalidTransition
 
-from shopman.backstage.services.exceptions import OrderConflict, OrderEditError, OrderError, RescheduleError
+from shopman.backstage.services.exceptions import (
+    CustomerNoticeError,
+    OrderConflict,
+    OrderEditError,
+    OrderError,
+    RescheduleError,
+)
 from shopman.shop.services import operator_orders
 from shopman.shop.services.operator_orders import OrderStateConflict
 
@@ -23,7 +29,7 @@ def confirm_order(order, *, actor: str, expected_revision: str | None = None):
         raise OrderError(str(exc) or "Não foi possível aceitar o pedido.") from exc
 
 
-def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellation_code: str = "", expected_revision=None, prepared_identity=None):
+def reject_order(order, *, reason: str, actor: str, rejected_by: str, reason_key: str = "", internal_note: str = "", expected_revision=None, prepared_identity=None):
     if not reason.strip():
         raise OrderError("Motivo obrigatório")
     try:
@@ -32,7 +38,8 @@ def reject_order(order, *, reason: str, actor: str, rejected_by: str, cancellati
             reason=reason.strip(),
             actor=actor,
             rejected_by=rejected_by,
-            cancellation_code=cancellation_code,
+            reason_key=reason_key,
+            internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
             **({"prepared_identity": prepared_identity} if prepared_identity is not None else {}),
         )
@@ -67,6 +74,13 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
             change_out_q = parse_money_to_q(str(change_out_raw))
         except POSError as exc:
             raise OrderError(str(exc) or "Valor de troco inválido.") from exc
+    # Quem espera o lote não inicia o preparo: a tela desliga o gesto, e o
+    # comando recusa com a mesma frase (a régua é a da promessa, #2721).
+    from shopman.backstage.projections.order_queue import batch_wait_refusal
+
+    refusal = batch_wait_refusal(order)
+    if refusal:
+        raise OrderError(refusal)
     shift = None
     if operator is not None and change_out_q:
         from shopman.backstage.services import pos as pos_service
@@ -88,6 +102,33 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
         raise OrderError(str(exc) or "Ação inválida") from exc
 
 
+class OrderRideRevisionChanged(OrderConflict):
+    """Um pedido da corrida mudou depois que a tela foi lida (409 ``revision_changed``).
+
+    ``errors`` aponta cada pedido que mudou, no dialeto canônico: a tela diz
+    qual foi e recarrega, em vez de chamar com endereço ou troco que ninguém viu.
+    """
+
+    code = "revision_changed"
+
+    def __init__(self, message: str, *, refs: list[str]):
+        super().__init__(message)
+        self.refs = list(refs)
+        self.errors = {
+            ref: [f"O pedido {operator_orders.short_ref(ref)} mudou depois que você abriu esta tela."]
+            for ref in self.refs
+        }
+
+
+class OrderRideAlreadyCalled(Exception):
+    """A corrida pedida já existe com estes mesmos pedidos: é sucesso, não recusa."""
+
+    def __init__(self, message: str, *, ride_number: int | None, directive_id: int | None = None):
+        super().__init__(message)
+        self.ride_number = ride_number
+        self.directive_id = directive_id
+
+
 class OrderChangeOutRequired(OrderError):
     """O despacho precisa saber quanto de troco o entregador leva (409 + sugestão)."""
 
@@ -98,7 +139,7 @@ class OrderChangeOutRequired(OrderError):
         self.suggested_q = int(suggested_q)
 
 
-def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", reason_key: str = "", internal_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
+def cancel_order(order, *, reason: str, actor: str, reason_key: str = "", internal_note: str = "", expected_authority_revision: str | None = None, expected_revision=None, prepared_identity=None):
     """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
 
     ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
@@ -112,7 +153,6 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             order,
             reason=reason,
             actor=actor,
-            cancellation_code=cancellation_code,
             reason_key=reason_key,
             internal_note=internal_note,
             **({"expected_revision": expected_revision} if expected_revision is not None else {}),
@@ -129,13 +169,12 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
     return cancelled
 
 
-def prepare_cancellation(order, code):
-    """Resolve the provider reason before the local mutation transaction."""
+def prepare_cancellation(order, reason_key):
+    """Confere o código do iFood do motivo antes da transação local (só no iFood)."""
+    from shopman.shop.services import ifood_callbacks
+
+    code = ifood_callbacks.resolve_cancellation_code(reason_key) if order.channel_ref == "ifood" else ""
     return operator_orders._validate_operator_cancellation_code(order, code)
-
-
-def cancellation_reasons(order) -> list[dict]:
-    return operator_orders.cancellation_reasons(order)
 
 
 def settle_delivery_cash(
@@ -193,7 +232,14 @@ def courier_returned(order, *, actor: str, expected_revision=None):
     from shopman.backstage.services import pos as pos_service
     from shopman.backstage.services.exceptions import POSError, POSTerminalAmbiguous
 
-    needs_shift = any(operator_orders._cod_pending(m) for m in operator_orders.courier_return_members(order))
+    needs_shift = any(
+        (
+            operator_orders._cod_pending(member)
+            if member.status != member.Status.CANCELLED
+            else operator_orders.courier_change(member).pending
+        )
+        for member in operator_orders.courier_return_members(order)
+    )
     try:
         shift = pos_service.current_shift(strict=True) if needs_shift else None
     except POSTerminalAmbiguous as exc:
@@ -435,6 +481,64 @@ def reschedule_order(order, *, date, slot, reason: str, actor: str, expected_rev
             raise RescheduleError(exc.message, code=exc.code, field=exc.field) from exc
 
 
+def customer_notice_options(order):
+    """Os três avisos do "Avisar o cliente" (WP-G07), com o que cada um pede e a revisão lida."""
+    from shopman.shop.services import customer_notice
+
+    return {
+        "base_revision": customer_notice.notice_revision(order),
+        "notices": [
+            {
+                "kind": option.kind,
+                "label": option.label,
+                "enabled": option.enabled,
+                "reason": option.reason,
+                "delay_choices": [
+                    {"value": choice.value, "label": choice.label} for choice in option.delay_choices
+                ],
+                "lines": [
+                    {"line_id": line.line_id, "name": line.name, "qty": str(line.qty), "qty_display": line.qty_display}
+                    for line in option.lines
+                ],
+            }
+            for option in customer_notice.availability(order)
+        ],
+    }
+
+
+def preview_customer_notice(order, *, kind: str, eta: str = "", lines=None) -> dict:
+    """A mensagem da escolha, como o cliente a lê. Nada é gravado nem enviado."""
+    from shopman.shop.services import customer_notice
+
+    if kind not in customer_notice.KINDS:
+        raise CustomerNoticeError("Escolha um dos três avisos.", code="customer_notice_kind", field="kind")
+    try:
+        note = customer_notice.note_for(order, kind, eta=eta, lines=lines)
+    except customer_notice.CustomerNoticeRefused as exc:
+        raise CustomerNoticeError(str(exc), code=exc.code, field=exc.field) from exc
+    return {"kind": kind, "status_note": note, "message": customer_notice.message(order, kind, note)}
+
+
+def notify_customer(order, *, kind: str, eta: str = "", lines=None, expected_revision=None):
+    """Envia o aviso escolhido pelo caminho de notificação do ``shop`` e devolve a Directive."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import customer_notice
+
+    if kind not in customer_notice.KINDS:
+        raise CustomerNoticeError("Escolha um dos três avisos.", code="customer_notice_kind", field="kind")
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if expected_revision is not None and customer_notice.notice_revision(locked) != expected_revision:
+            raise OrderConflict("O pedido mudou. Atualize o pedido e confira a mensagem antes de enviar.")
+        try:
+            note = customer_notice.note_for(locked, kind, eta=eta, lines=lines)
+        except customer_notice.CustomerNoticeRefused as exc:
+            raise CustomerNoticeError(str(exc), code=exc.code, field=exc.field) from exc
+        directive = customer_notice.send(locked, kind, note)
+    return directive, customer_notice.message(order, kind, note)
+
+
 def preview_order_edit(order, *, lines=None, notes=None, fulfillment=None, schedule=None):
     """A prévia da edição (``shop.services.order_edit.plan``): nada é gravado."""
     from shopman.shop.services import order_edit
@@ -471,7 +575,8 @@ def recent_history(*, limit: int = 20):
     return operator_orders.recent_history(limit=limit)
 
 
-def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None, equipment=None):
+def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None, equipment=None,
+                     ride_number: int | None = None):
     """Chama o entregador da TaOn: registra a custódia que sai com ele e abre a corrida.
 
     A custódia (troco da gaveta, maquininha da casa) é a do despacho do Gestor,
@@ -503,7 +608,7 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
                 shift = type(shift).objects.select_for_update().get(pk=shift.pk)
             # A corrida primeiro: as recusas dela (iFood, estado, corrida ativa,
             # revisão) valem antes de perguntar pelo troco.
-            directive = courier.redispatch(order, actor=actor, expected_revision=expected_revision)
+            directive = courier.redispatch(order, actor=actor, expected_revision=expected_revision, ride_number=ride_number)
             operator_orders.record_partner_custody(
                 order, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
             )
@@ -514,6 +619,83 @@ def courier_dispatch(order, *, actor: str, expected_revision=None, operator=None
         raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
     except ValueError as exc:
         raise OrderError(str(exc) or "Não foi possível despachar a corrida.") from exc
+
+
+def courier_group_dispatch(orders, *, actor: str, operator=None, change_out_raw: dict | None = None, machine: str = "",
+                           expected_revisions: dict[str, str] | None = None, ride_number: int | None = None):
+    """Uma corrida da TaOn para vários pedidos, com a custódia de cada um.
+
+    A corrida conjunta é uma saída (``trip_ref``, a mesma do despacho do
+    Gestor): o troco sai da gaveta pedido a pedido, como na chamada de um só,
+    e a maquininha é UMA para a corrida (``machine``), reservada pelo primeiro
+    pedido de cartão e compartilhada pelos outros. Tudo na transação do pedido
+    de corrida: se um pedido recusa (troco sem valor, maquininha que acabou de
+    sair), nada sai da gaveta e a corrida não é pedida.
+
+    ``expected_revisions`` é o que a tela leu de cada pedido
+    (``courier.dispatch_revision``), conferido com os pedidos travados antes de
+    gravar: o pedido que mudou recusa com :class:`OrderRideRevisionChanged`. A
+    corrida que já existe com estes mesmos pedidos levanta
+    :class:`OrderRideAlreadyCalled`, que quem chama trata como feito.
+    """
+    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.pos import parse_money_to_q
+    from shopman.shop.services import courier
+
+    change_out_q: dict[str, int] = {}
+    for ref, raw in (change_out_raw or {}).items():
+        if raw is None or str(raw).strip() == "":
+            continue
+        try:
+            change_out_q[str(ref)] = parse_money_to_q(str(raw))
+        except POSError as exc:
+            code = operator_orders.short_ref(ref)
+            raise OrderError(f"Troco do pedido {code}: {exc or 'valor inválido.'}") from exc
+    shift = None
+    if operator is not None and any(change_out_q.values()):
+        from shopman.backstage.services import pos as pos_service
+
+        shift = pos_service.current_shift()
+    try:
+        with transaction.atomic():
+            if shift is not None:
+                shift = type(shift).objects.select_for_update().get(pk=shift.pk)
+            directive = courier.request_group_dispatch(
+                orders, actor=actor, expected_revisions=expected_revisions, ride_number=ride_number,
+            )
+            trip = str(directive.payload["order_ref"])
+            # Uma maquininha que já saiu numa chamada anterior de um destes
+            # pedidos (corrida que não abriu) é a maquininha da corrida.
+            shared = next((device for device in (operator_orders.trip_machine(order.ref) for order in orders) if device),
+                          None)
+            for order in orders:
+                code = operator_orders.short_ref(order.ref)
+                wants_machine = operator_orders.partner_custody_asks(order)["needs_machine"]
+                try:
+                    recorded = operator_orders.record_partner_custody(
+                        order, actor=actor, change_out_q=change_out_q.get(order.ref), cash_shift=shift,
+                        equipment=[machine] if machine and shared is None and wants_machine else [],
+                        trip_ref=trip, shared_device=shared,
+                    )
+                except operator_orders.ChangeOutRequired as exc:
+                    raise OrderChangeOutRequired(
+                        f"O pedido {code} pede troco: diga quanto o entregador leva.", suggested_q=exc.suggested_q,
+                    ) from exc
+                except OrderStateConflict as exc:
+                    raise OrderStateConflict(f"Pedido {code}: {exc}") from exc
+                except ValueError as exc:
+                    raise ValueError(f"Pedido {code}: {exc}") from exc
+                if recorded.get("device_ref") and shared is None:
+                    shared = {"device_ref": recorded["device_ref"], "device_label": recorded.get("device_label", "")}
+            return directive
+    except courier.RideRevisionChanged as exc:
+        raise OrderRideRevisionChanged(str(exc), refs=exc.refs) from exc
+    except courier.RideAlreadyCalled as exc:
+        raise OrderRideAlreadyCalled(str(exc), ride_number=exc.ride_number, directive_id=exc.directive_id) from exc
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível chamar a corrida.") from exc
 
 
 def courier_dispatch_again(order, *, actor: str, expected_revision=None):
@@ -540,6 +722,66 @@ def courier_cancel(order, *, actor: str, reason_id=None, expected_revision=None)
         raise OrderError(str(exc) or "Não foi possível cancelar a corrida.") from exc
 
 
+def courier_custody(order, *, actor: str, expected_revision=None, operator=None, change_out_raw: str | None = None,
+                    equipment=None) -> dict:
+    """"Separar de novo": a custódia da corrida que a TaOn retomou (#2500).
+
+    As MESMAS peças da chamada (``operator_orders.record_partner_custody``): o troco
+    sai da gaveta no turno de quem separa e a maquininha é reservada. Só vale
+    enquanto a corrida viva pede a custódia que não está com ela
+    (``courier.custody_to_separate``).
+    """
+    from django.db import transaction
+
+    from shopman.backstage.services.exceptions import POSError
+    from shopman.backstage.services.pos import parse_money_to_q
+    from shopman.shop.services import courier
+
+    change_out_q = None
+    if change_out_raw is not None and str(change_out_raw).strip() != "":
+        try:
+            change_out_q = parse_money_to_q(str(change_out_raw))
+        except POSError as exc:
+            raise OrderError(str(exc) or "Valor de troco inválido.") from exc
+    shift = None
+    if operator is not None and change_out_q:
+        from shopman.backstage.services import pos as pos_service
+
+        shift = pos_service.current_shift()
+    try:
+        with transaction.atomic():
+            if shift is not None:
+                shift = type(shift).objects.select_for_update().get(pk=shift.pk)
+            locked = type(order).objects.select_for_update().get(pk=order.pk)
+            if expected_revision is not None and courier.dispatch_revision(locked) != expected_revision:
+                raise OrderConflict("O pedido ou a corrida mudou. Confira o contexto antes de separar.")
+            if courier.custody_to_separate(locked) is None:
+                raise OrderError("Esta corrida não pede o troco nem a maquininha agora. Atualize o pedido.")
+            recorded = operator_orders.record_partner_custody(
+                locked, actor=actor, change_out_q=change_out_q, cash_shift=shift, equipment=list(equipment or []),
+            )
+            locked.emit_event(event_type="courier_custody_separated", actor=actor,
+                              payload={"change_out_q": recorded.get("change_out_q", 0),
+                                       "device_ref": recorded.get("device_ref", "")})
+            return recorded
+    except operator_orders.ChangeOutRequired as exc:
+        raise OrderChangeOutRequired(str(exc), suggested_q=exc.suggested_q) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível separar o troco e a maquininha.") from exc
+
+
+def courier_close_here(order, *, outcome: str, actor: str, expected_revision=None) -> list[str]:
+    """"Encerrar aqui": a corrida que a central nunca fechou (#2736)."""
+    from shopman.shop.services import courier
+
+    try:
+        return courier.close_here(order, outcome=outcome, actor=actor, expected_revision=expected_revision)
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except ValueError as exc:
+        raise OrderError(str(exc) or "Não foi possível encerrar a corrida.") from exc
+
+
 def courier_quote(order) -> dict:
     """Cotação avulsa da entrega ("só cotar", sem abrir corrida)."""
     from shopman.utils.monetary import format_money
@@ -548,7 +790,7 @@ def courier_quote(order) -> dict:
 
     if not courier.can_quote(order):
         raise OrderError("Confira o estado do pedido e da corrida antes de cotar.")
-    estimate = courier.estimate_for_order(order, store=False)
+    estimate = courier.estimate_for_order(order)
     if estimate is None:
         raise OrderError(
             "Cotação indisponível. Verifique o endereço do pedido e a "
@@ -559,4 +801,5 @@ def courier_quote(order) -> dict:
         "value_display": f"R$ {format_money(int(estimate['value_q']))}",
         "minutes": estimate["minutes"],
         "km": estimate["km"],
+        "with_return": bool(estimate.get("with_return")),
     }

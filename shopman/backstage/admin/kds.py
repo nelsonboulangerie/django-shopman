@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from django.conf import settings
 from django.contrib import admin
 from django.utils.html import format_html
 from shopman.utils import unfold_badge, unfold_link
@@ -82,12 +81,13 @@ class KDSInstanceAdmin(ModelAdmin):
 
     @display(description="operação")
     def open_display(self, obj):
-        # KDS é app Nuxt dedicado (kds.) — sem rota Django. Link só quando a base
-        # URL do deployment está configurada (estação fica em /<ref>).
-        base = (getattr(settings, "SHOPMAN_KDS_BASE_URL", "") or "").rstrip("/")
-        if not base:
+        from shopman.shop.services.operator_links import kds_url, orders_url
+
+        # A Saída já é a coluna do Gestor, como no índice da Cozinha.
+        url = orders_url("/?columns=expedition") if obj.type == "expedition" else kds_url(f"/{obj.ref}")
+        if not url:
             return "—"
-        return unfold_link(f"{base}/{obj.ref}", "Abrir", icon="open_in_new", new_tab=True)
+        return unfold_link(url, "Abrir", icon="open_in_new", new_tab=True)
 
     def has_add_permission(self, request):
         return request.user.has_perm("backstage.operate_kds")

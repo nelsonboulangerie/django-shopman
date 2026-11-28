@@ -1,6 +1,7 @@
 # ADR-020 - Campanha anuncia, nao vende
 
-**Status:** Aceito; implementação técnica local concluída em 2026-09-10, rollout pendente
+**Status:** Aceito
+**Implementação:** técnica local concluída em 2026-09-10; rollout pendente
 **Data:** 2026-08-08
 **Escopo:** `shopman/shop` (models/services/handlers de Marketing, `audience.py`, `directives.py`),
 `shopman/backstage` (API + projections), `surfaces/marketing-nuxt`, `guestman`
@@ -149,7 +150,9 @@ rename e **invisivel ao operador**.
 (`shopman/shop/directives.py:82-83`).
 
 O payload e `{"post_id": ...}` (`services/broadcast.py:414-420`, `:447-461`) — pk de `Announcement`,
-nao de `Campaign`. A constituicao §7.1 pede payload em linguagem de dominio; nomear o topic pela
+nao de `Campaign`. A
+[Constituição v1 §7.1 (histórica)](../_archive/constitution-v1.md#71-payload-canônico-não-deve-depender-de-nome-interno-de-model)
+pede payload em linguagem de domínio; nomear o topic pela
 intencao quando ele age sobre o fato desalinharia os dois.
 
 ### 3. Consentimento tem um dono: `CommunicationConsent`, por canal
@@ -317,7 +320,9 @@ par de olhos quando o autor e o revisor.
 
 E `discard()` para de colapsar em `EXPIRED` (`services/broadcast.py:380-387`).
 `AnnouncementStatus.REJECTED` nasce como estado proprio, com `rejected_by` e `rejected_reason`. Recusa e
-fato observavel distinto de vencimento no relogio (constituicao §2.4), e sem isso o Admin nao consegue
+fato observavel distinto de vencimento no relogio
+([Constituição v1 §2.4, histórica](../_archive/constitution-v1.md#24-estados-canônicos-precisam-ser-poucos-e-inequívocos)),
+e sem isso o Admin nao consegue
 responder "quantos anuncios o gestor recusou, e por que".
 
 ### 9. A oferta e anunciada, nao construida: `Action` com link nao autenticado
@@ -397,7 +402,7 @@ aprovado, e despachado, e auditavel. Superficie que gerasse copy inventaria cont
 ADR-012.
 
 **Nao e core.** Nenhum pacote de `packages/` pode nascer dependendo de provedor de LLM (ADR-001 §4;
-constituicao §10).
+[Constituição §5](../constitution.md#5-regras-de-modelagem)).
 
 **E adapter no orquestrador**, e agora ha razao concreta no sentido da ADR-001 §3: uma implementacao
 real, um estado desligado real e **dois chamadores**. O que existe em
@@ -410,7 +415,8 @@ acoplado a `Product` (`_ai_assist_context`, `:705-730`).
 
 **A voz da marca vira dado.** `_AI_ASSIST_VOICE` (`:644-650`) codifica "Nelson Boulangerie", "padaria
 artesanal brasileira", "primeira pessoa do plural" — default de instancia com aparencia de verdade do
-produto, que a constituicao §2.6 e §10 recusam. Vira campo em `Shop`, ao lado de `tagline` e
+produto, que a [Constituição §5](../constitution.md#5-regras-de-modelagem) recusa. Vira campo
+em `Shop`, ao lado de `tagline` e
 `description` (`shopman/shop/models/shop.py:134-137`):
 
 ```python
@@ -616,7 +622,9 @@ da fornada, penalizando o operador que esta com o pao na mao.
 
 ## Referencias
 
-- [Constituicao Semantica](../constitution.md) — §2.2, §2.3, §2.4, §2.6, §3.1, §5, §7.1, §8.3, §10
+- [Constituição v1 (histórica)](../_archive/constitution-v1.md) — bases históricas citadas acima
+- [Constituição vigente C3](../constitution.md#c3-identidade-cross-domain-usa-refs-textuais)
+- [Constituição vigente §5](../constitution.md#5-regras-de-modelagem)
 - [ADR-001 - Protocol/Adapter e fronteiras de core](adr-001-protocol-adapter.md)
 - [ADR-003 - Directives sem Celery](adr-003-directives-sem-celery.md)
 - [ADR-004 - String refs para identificadores cross-domain](adr-004-string-refs.md)

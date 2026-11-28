@@ -68,8 +68,8 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
   },
   {
     arquivo: "composables/usePosCashSession.ts",
-    trecho: "toast.error(`${httpErrorMessage(error, causa)} ${saida}`)",
-    porque: "a saída chega por argumento dos nove chamadores; coberto pelo §1",
+    trecho: "const message = `${httpErrorMessage(error, causa)} ${saida}`",
+    porque: "a saída chega por argumento dos nove chamadores (aviso no diálogo ou toast); coberto pelo §1",
   },
   {
     arquivo: "composables/usePosCashSession.ts",
@@ -95,6 +95,21 @@ const EXCECOES: Array<{ arquivo: string; trecho: string; porque: string }> = [
     arquivo: "pages/index.vue",
     trecho: 'danfeFallbackToast(orderRef, httpErrorMessage(error, "a DANFE não ficou pronta"))',
     porque: "fragmento: o danfeFallbackToast traz 'Ver a nota na tela' ou 'Reimprima nas últimas vendas'",
+  },
+  {
+    arquivo: "composables/useDayClosing.ts",
+    trecho: 'productionBlock.value = httpErrorMessage(err, "Há produção aberta.")',
+    porque: "a saída é o bloco da produção aberta do fechamento: finalizar, cancelar ou liberar com o gerente (beta 05/11, PDV-06)",
+  },
+  {
+    arquivo: "composables/useDayClosing.ts",
+    trecho: 'releaseChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") }',
+    porque: "a saída é o diálogo do gerente, que reabre com a recusa para assinar de novo",
+  },
+  {
+    arquivo: "composables/useDayClosing.ts",
+    trecho: 'readyChallenge.value = { code, message: httpErrorMessage(err, "Revise o gerente e o PIN.") }',
+    porque: "a saída é o diálogo do gerente do gesto em lote dos não retirados, que reabre com a recusa para assinar de novo (#2684)",
   },
 ];
 

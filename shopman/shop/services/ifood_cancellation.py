@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order
@@ -16,6 +15,9 @@ TERMINAL_STATUSES = {"cancelled", "completed", "returned"}
 #: O iFood recusou o cancelamento pedido pela loja. O pedido continua ativo e
 #: alguém decide: seguir com ele ou tentar cancelar de novo com outro motivo.
 REFUSED_ALERT_TYPE = "ifood_cancellation_refused"
+#: O pedido de cancelamento esgotou as tentativas sem chegar ao iFood. O pedido
+#: deixa de ficar travado em "pendente" e o operador decide de novo.
+NOT_DELIVERED_ALERT_TYPE = "ifood_cancellation_not_delivered"
 #: Onde o motivo pode vir no ``metadata`` do evento ``CANCELLATION_REQUEST_FAILED``.
 #: A referência de eventos não fixa a chave; lemos as conhecidas e, sem nenhuma,
 #: qualquer texto cujo nome fale de motivo. O ``metadata`` cru fica gravado.
@@ -48,8 +50,14 @@ def enqueue_locked(order, *, reason: str, actor: str, extra_data: dict | None) -
     external_ref = str(order.external_ref or (order.data or {}).get("external_order_code") or "").strip()
     if not external_ref:
         raise ValueError("Referência iFood ausente. Confira a integração deste pedido.")
-    cfg = getattr(settings, "SHOPMAN_IFOOD", {}) or {}
-    code = str((extra_data or {}).get("ifood_cancellation_code") or cfg.get("cancellation_default_code") or "").strip()
+    from shopman.shop.services import ifood_callbacks
+
+    extra = extra_data or {}
+    # O código do iFood sai do motivo da casa (``ifood_callbacks.DEFAULT_REASON_CODES``).
+    code = str(
+        extra.get("ifood_cancellation_code")
+        or ifood_callbacks.resolve_cancellation_code(extra.get("cancellation_reason_key", ""))
+    ).strip()
     if not code:
         raise ValueError("Escolha um motivo permitido pelo iFood antes de solicitar o cancelamento.")
     request_id = uuid4().hex
@@ -169,3 +177,45 @@ def record_result(payload, *, state: str, retryable: bool = False) -> None:
         # Recusa na hora do envio (4xx do iFood): o pedido já não está pendente,
         # mas ninguém sabia. Mesmo aviso da recusa que chega por evento.
         alert_refused(order, reason="")
+
+
+@transaction.atomic
+def record_not_delivered(payload, *, error: str = "") -> bool:
+    """A solicitação de cancelamento não chegou ao iFood em nenhuma tentativa.
+
+    Antes, o pedido ficava ``error``/``retryable`` para sempre: ``is_pending``
+    seguia verdadeiro, ninguém avançava nem pedia de novo, e nenhum aviso saía.
+    Agora o pedido destrava (``retryable=False``) e o Gestor recebe o aviso.
+    """
+    order = Order.objects.select_for_update().filter(ref=payload.get("order_ref"), channel_ref="ifood").first()
+    if order is None or order.status in TERMINAL_STATUSES or (order.data or {}).get("ifood_cancelled"):
+        return False
+    data = dict(order.data or {})
+    request = dict(data.get(KEY) or {})
+    if request.get("id") != payload.get("cancellation_request_id") or request.get("state") in {"confirmed", "refused"}:
+        return False
+    request.update(
+        state="error", retryable=False, updated_at=timezone.now().isoformat(),
+        last_error="O pedido de cancelamento não chegou ao iFood. O pedido continua ativo lá.",
+    )
+    data[KEY] = request
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    display = str(((order.data or {}).get("ifood") or {}).get("display_id") or "").strip()
+    name = f"{order.ref} (iFood #{display})" if display else order.ref
+    create_operator_alert(
+        type=NOT_DELIVERED_ALERT_TYPE,
+        severity="error",
+        message=(
+            f"O cancelamento do pedido {name} não chegou ao iFood: o envio falhou em todas as tentativas. "
+            "Lá o pedido continua ativo. Tente cancelar de novo ou cancele pelo Portal do iFood."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"{NOT_DELIVERED_ALERT_TYPE}:{order.ref}:{request.get('id') or ''}",
+        debounce_minutes=24 * 60,
+        http_error=str(error)[:200],
+    )
+    return True

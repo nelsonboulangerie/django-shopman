@@ -11,14 +11,18 @@ abertura, a partir do que a casa já registra:
 - **TV (menuboard)**: ligada, coleções escolhidas e com produto, e as TVs
   autorizadas (``TrustedDevice`` com ``subject_type="display"``) — a TV busca o
   quadro a cada 30 s, e cada busca carimba ``last_used_at``.
-- **Feed Google/Meta**: ligado (pausado, a plataforma recebe 404) e com coleções
-  que têm produto.
+- **Feed Google/Meta**: ligado (pausado, a plataforma recebe tudo fora de estoque) e com coleções
+  que têm produto. No Google, também o código da loja do Perfil da Empresa (sem ele não vai
+  retirada nem estoque da loja) e o estado dos dois recursos da loja física que o Google
+  revisa à parte, a retirada no mesmo dia e a disponibilidade na loja
+  (``services/google_store_review``, lido pelo worker; abrir Canais não chama o Google).
 - **Loja online**: a prontidão de Pix, cartão e código de login
   (``integration_readiness``) — sem eles o cliente não entra ou não paga.
 
 Cada item traz a AÇÃO que o resolve, com destino declarado (``gestor`` = rota do
 app, ``admin`` = Admin, ``pair`` = mostrar o endereço e o QR para abrir na TV,
-``collections`` = abrir a escolha de coleções do próprio card). Item que exigiria
+``collections`` = abrir a escolha de coleções do próprio card, ``external`` = endereço
+completo fora do sistema, como o Merchant Center). Item que exigiria
 dado que a casa não guarda fica de fora, em vez de adivinhado.
 """
 
@@ -30,6 +34,7 @@ from datetime import datetime, timedelta
 from django.conf import settings
 from django.db.models import Count, Q
 from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 
 #: A conferência com o iFood roda no maintenance-worker a cada ~5 min; duas voltas
 #: sem ela é o worker parado, não atraso.
@@ -40,8 +45,10 @@ DISPLAY_SEEN_STALE_AFTER = timedelta(minutes=5)
 #: Uma TV só conta como "em uso" se buscou o quadro no último dia — autorização
 #: antiga de uma TV trocada não deve acender aviso de vencimento.
 DISPLAY_IN_USE_WINDOW = timedelta(days=1)
-#: A autorização da TV vence (``DEVICE_TRUST_TTL_DAYS``) e ela passa a receber
-#: 403. Avisar com uma semana de folga.
+#: A autorização da TV vence ``DEVICE_TRUST_TTL_DAYS`` depois do ÚLTIMO uso, e ela
+#: passa a receber 403. Cada busca do quadro renova o prazo, então uma TV em uso
+#: (``DISPLAY_IN_USE_WINDOW``) só chega a uma semana do vencimento se o prazo
+#: configurado for menor que isso. Avisar com uma semana de folga.
 DISPLAY_EXPIRY_WARNING = timedelta(days=7)
 
 OK = "ok"
@@ -64,7 +71,7 @@ class ChannelHealthItem:
     label: str
     hint: str = ""
     action_label: str = ""
-    # gestor | admin | pair | collections — quem resolve o caminho.
+    # gestor | admin | pair | collections | external — quem resolve o caminho.
     action_target: str = ""
     action_path: str = ""
 
@@ -93,8 +100,8 @@ class ChannelHealthBoardProjection:
 def _hhmm(value: datetime, now: datetime) -> str:
     local = timezone.localtime(value)
     if local.date() == timezone.localtime(now).date():
-        return local.strftime("%H:%M")
-    return local.strftime("%d/%m às %H:%M")
+        return format_clock(local)
+    return format_local(local, "%d/%m às {clock}")
 
 
 def _plural(count: int, one: str, many: str) -> str:
@@ -378,10 +385,112 @@ def _display_health(channel, *, now: datetime) -> ChannelHealthProjection:
         preview = (ChannelHealthLink(label="Ver a tela da TV", target="django", path=output),)
     else:
         platform = "o Google" if fmt == "google_merchant" else "a Meta" if fmt == "meta_catalog" else "a plataforma"
-        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe erro ao buscar o feed", now=now)]
+        items = [_active_item(channel, paused_label=f"Pausado: {platform} recebe todos os produtos como fora de estoque", now=now)]
         items += _collection_items(display)
-        preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),)
+        if fmt == "google_merchant":
+            items += _google_store_items(now=now)
+        preview = (ChannelHealthLink(label="Ver o feed", target="django", path=output),) if output else ()
     return _health(channel.ref, items, preview)
+
+
+# ── Google: a loja física ────────────────────────────────────────────────────
+
+#: Onde o operador acerta o código da loja e a conta do Google.
+_GOOGLE_ADMIN_PATH = "/admin/shop/shopintegrations/"
+#: O motivo de uma recusa não vem pela API: mora no Merchant Center.
+_MERCHANT_CENTER_URL = "https://merchants.google.com/mc/overview?a={account}"
+#: Leitura mais velha que isto é worker parado, não revisão lenta do Google.
+GOOGLE_REVIEW_STALE_AFTER = timedelta(hours=26)
+
+#: Os dois recursos que o Google revisa, na ordem da tela.
+_GOOGLE_FEATURES = (
+    ("google_pickup", "pickup", "A retirada no mesmo dia"),
+    ("google_in_stock", "in_stock", "A disponibilidade na loja"),
+)
+
+
+def _google_store_items(*, now: datetime) -> list[ChannelHealthItem]:
+    """O código da loja e o estado, no Google, da retirada e da disponibilidade na loja."""
+    from shopman.shop.adapters import catalog_projection_google as google
+    from shopman.shop.services import google_store_review as review
+
+    cfg = google._get_config()
+    if not google._configured(cfg):
+        return [ChannelHealthItem(
+            key="google_account", state=TODO, label="O envio ao Google está parado: falta a conta do Merchant Center",
+            hint="Sem ela, nenhum produto chega ao Google.",
+            action_label="Abrir integrações", action_target="admin", action_path=_GOOGLE_ADMIN_PATH,
+        )]
+    merchant_center = _MERCHANT_CENTER_URL.format(account=cfg.get("account_id"))
+    items: list[ChannelHealthItem] = []
+    if google._store_code(cfg):
+        items.append(ChannelHealthItem(
+            key="google_store_code", state=OK, label="Código da loja do Perfil da Empresa preenchido",
+        ))
+    else:
+        items.append(ChannelHealthItem(
+            key="google_store_code", state=TODO,
+            label="Falta o código da loja do Perfil da Empresa: o Google não mostra retirada nem estoque da loja",
+            hint="Copie o código da loja no Perfil da Empresa no Google e preencha na conta do Merchant Center.",
+            action_label="Abrir integrações", action_target="admin", action_path=_GOOGLE_ADMIN_PATH,
+        ))
+
+    reading = review.last_review()
+    if reading is None:
+        for key, _field, name in _GOOGLE_FEATURES:
+            items.append(ChannelHealthItem(
+                key=key, state=TODO, label=f"{name}: o estado no Google ainda não foi lido",
+                hint="O sistema confere a cada hora. Se não aparecer até amanhã, " + _ASK_SUPPORT_LOWER,
+            ))
+        return items
+    # "às 15h" hoje; "em 16/11 às 15h" em outro dia.
+    when = _hhmm(reading.checked_at, now)
+    when = f"às {when}" if timezone.localtime(reading.checked_at).date() == timezone.localtime(now).date() else f"em {when}"
+    if not reading.ok:
+        for key, _field, name in _GOOGLE_FEATURES:
+            items.append(ChannelHealthItem(
+                key=key, state=TODO, label=f"{name}: não deu para ler o estado no Google {when}",
+                hint="O estado pode ser qualquer um até a próxima leitura. " + _ASK_SUPPORT,
+                action_label="Abrir o Merchant Center", action_target="external", action_path=merchant_center,
+            ))
+        return items
+    stale = now - reading.checked_at > GOOGLE_REVIEW_STALE_AFTER
+    for key, field, name in _GOOGLE_FEATURES:
+        items.append(_google_feature_item(
+            key, name, getattr(reading, field), when=when, stale=stale, merchant_center=merchant_center,
+        ))
+    return items
+
+
+def _google_feature_item(
+    key: str, name: str, state: str, *, when: str, stale: bool, merchant_center: str,
+) -> ChannelHealthItem:
+    from shopman.shop.services import google_store_review as review
+
+    if stale:
+        return ChannelHealthItem(
+            key=key, state=TODO, label=f"{name}: a última leitura no Google foi {when}",
+            hint="O estado pode ter mudado desde então. " + _ASK_SUPPORT,
+            action_label="Abrir o Merchant Center", action_target="external", action_path=merchant_center,
+        )
+    if state == review.ACTIVE:
+        return ChannelHealthItem(key=key, state=OK, label=f"{name}: aprovada pelo Google (conferido {when})")
+    if state == review.RUNNING:
+        return ChannelHealthItem(
+            key=key, state=TODO, label=f"{name}: em análise no Google",
+            hint=f"Nada a fazer agora: o Google avisa quando terminar. Conferido {when}.",
+        )
+    labels = {
+        review.FAILED: (f"{name}: negada pelo Google", "O motivo está no Merchant Center."),
+        review.ACTION_REQUIRED: (f"{name}: o Google pede uma ação", "O que falta está no Merchant Center."),
+    }
+    label, hint = labels.get(
+        state, (f"{name}: não foi pedida ao Google", "Peça no Merchant Center.")
+    )
+    return ChannelHealthItem(
+        key=key, state=TODO, label=label, hint=f"{hint} Conferido {when}.",
+        action_label="Abrir o Merchant Center", action_target="external", action_path=merchant_center,
+    )
 
 
 # ── Loja online ───────────────────────────────────────────────────────────────
@@ -425,7 +534,7 @@ def build_channel_health(*, now: datetime | None = None) -> ChannelHealthBoardPr
     from shopman.shop.models import Channel
 
     now = now or timezone.now()
-    storefront_ref = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+    storefront_ref = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
     channels: list[ChannelHealthProjection] = []
     for channel in Channel.objects.order_by("name", "ref"):
         if channel.commerce_policy == Channel.CommercePolicy.DISPLAY:

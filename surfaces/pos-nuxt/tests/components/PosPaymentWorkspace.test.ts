@@ -5,6 +5,13 @@ import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
 import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { formatBRL } from "~/utils/posIntent";
 
+import { warmUpMount } from "../support/mountWarmup";
+import { unmountMounted } from "../support/mountedWrappers";
+
+// Este arquivo roda no primeiro lote, com o Vite frio: o primeiro mount paga a
+// raiz do app num hook, fora do primeiro teste (ver `mountWarmup.ts`).
+warmUpMount();
+
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
   return { price_q: 1000, qty: 1, notes: "", ...overrides };
 }
@@ -28,7 +35,7 @@ function props(overrides: Record<string, unknown> = {}) {
     fulfillmentOptions: [{ ref: "pickup", label: "Retirada", description: "", requires_address: false }],
     paymentMethods: [
       { ref: "cash", label: "Dinheiro" },
-      { ref: "pix", label: "PIX" },
+      { ref: "pix", label: "Pix" },
       { ref: "card", label: "Cartão" },
       { ref: "mixed", label: "Misto" },
     ],
@@ -44,8 +51,7 @@ function props(overrides: Record<string, unknown> = {}) {
     discountType: "percent",
     discountValue: "",
     discountReason: "",
-    managerUsername: "",
-    managerPin: "",
+    managerApproved: false,
     managers: [],
     fulfillmentType: "pickup",
     fulfillmentConfirmed: true,
@@ -107,14 +113,14 @@ describe("PosPaymentWorkspace — instrumento de pagamento", () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
     const text = wrapper.text();
     expect(text).toContain("Dinheiro");
-    expect(text).toContain("PIX");
+    expect(text).toContain("Pix");
     expect(text).toContain("Cartão");
     expect(text).not.toContain("Misto"); // injectableMethods filtra "mixed"
   });
 
   it("tocar num método lança um tender (addTender com o ref)", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props() });
-    const pix = wrapper.findAll("button").find((b) => b.text().includes("PIX"));
+    const pix = wrapper.findAll("button").find((b) => b.text().includes("Pix"));
     await pix!.trigger("click");
     expect(wrapper.emitted("addTender")?.[0]).toEqual(["pix"]);
   });
@@ -249,8 +255,7 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
       props: props({
         paymentCovered: true,
         review: review({ requires_manager_approval: true }),
-        managerUsername: "",
-        managerPin: "",
+        managerApproved: false,
       }),
     });
     const button = cta(wrapper)!;
@@ -1025,7 +1030,7 @@ describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () 
     const method = (label: string) => wrapper.findAll("button").find((b) => b.text().includes(label))!;
     expect(method("Dinheiro").attributes("disabled")).toBeUndefined();
     expect(method("Cartão").attributes("disabled")).toBeDefined();
-    expect(method("PIX").attributes("disabled")).toBeDefined();
+    expect(method("Pix").attributes("disabled")).toBeDefined();
   });
 
   it("o cadastro só-com-CPF identifica a encomenda: o servidor aceita, a tela também", async () => {
@@ -1373,7 +1378,7 @@ describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () =>
   // o documento. O `afterEach` limpa o resto de um teste para o seguinte não ler
   // o modal do anterior como se fosse o seu.
   const modalDeDividir = () => document.body.textContent?.includes("Em quantas pessoas") ?? false;
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
   // As teclas do checkout entram pelo `defineExpose` — o mesmo objeto que o
   // shell (`pages/index.vue`) segura no `paymentWorkspaceRef`. O `mountSuspended`
   // não o promove ao `vm`; ele fica na instância, em `$.exposed`.
@@ -1471,7 +1476,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
   const comFiscal = { capabilities: { supports_fiscal_document: true }, receipt_channels: [] };
   const registryLines = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
 
   it("e-mail de comprovante não anuncia cadastro sem uma escolha explícita", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
@@ -1662,7 +1667,7 @@ it("balcão não abre entrega ou agenda pelos atalhos expostos", async () => {
 // P1-7: o Pix da venda mista não liquida pela palavra solta. Antes de validar, o
 // mesmo degrau da maquininha pede a conferência, e o botão diz o que afirma.
 describe("Pix na venda mista: Recebi o Pix", () => {
-  afterEach(() => { document.body.innerHTML = ""; });
+  afterEach(() => { unmountMounted(); document.body.innerHTML = ""; });
   const mixed = [
     { method: "cash", amount_q: 200, collection: "terminal" as const },
     { method: "pix", amount_q: 800, collection: "terminal" as const },
@@ -1682,6 +1687,38 @@ describe("Pix na venda mista: Recebi o Pix", () => {
     await w.vm.$nextTick();
     expect(w.emitted("confirmPix")).toHaveLength(1);
     expect(w.emitted("submit")).toHaveLength(1);
+  });
+
+  it("o selo da forma diz Pix, com maiúscula só na primeira letra (nada de caixa alta por CSS)", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: mixed, paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    const badges = [...document.querySelectorAll<HTMLElement>("[data-pos-confirm-method]")];
+    expect(badges.map((badge) => badge.textContent!.trim())).toEqual(["Pix"]);
+    for (const badge of badges) {
+      expect(badge.className).not.toMatch(/\buppercase\b/);
+      expect(badge.className).not.toMatch(/\btracking-(wide|wider|widest)\b/);
+    }
+  });
+
+  it("o mesmo selo na maquininha: Crédito e Pix, como se escrevem", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentMethods: [{ ref: "credit", label: "Crédito" }, { ref: "pix", label: "Pix" }],
+        paymentTenders: [
+          { method: "credit", amount_q: 200, collection: "terminal" as const },
+          { method: "pix", amount_q: 800, collection: "terminal" as const },
+        ],
+        paymentCovered: true, paymentRemainingQ: 0,
+      }),
+    });
+    await cta(w)!.trigger("click");
+    await w.vm.$nextTick();
+    const badges = [...document.querySelectorAll<HTMLElement>("[data-pos-confirm-method]")];
+    expect(badges.map((badge) => badge.textContent!.trim())).toEqual(["Crédito", "Pix"]);
+    expect(badges.every((badge) => !/\buppercase\b/.test(badge.className))).toBe(true);
   });
 
   it("Pix sozinho segue sem o gesto: quem confirma é o provedor", async () => {

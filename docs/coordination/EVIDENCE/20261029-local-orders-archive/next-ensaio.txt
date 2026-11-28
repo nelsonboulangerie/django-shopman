@@ -1,0 +1,56 @@
+# ORDEM — 2026-10-20, turno 5b: ENSAIO na loja de TESTE do iFood (frente 6, #1929) — coordenação DSH
+
+> **AUTORIZADO PELO DONO em 2026-10-20, 20:5x UTC**: escrita liberada na loja de TESTE do iFood,
+> merchant f36a17d0-e10b-4fdd-a16d-c8ffd866e59b, item SHOPMAN-TEST-ADAPTER, com restauração
+> integral no fim. A autorização vale só para este merchant e este item: qualquer outro destino
+> continua negado pela política. Nenhuma loja real, nenhum catálogo inteiro.
+> Canal: next-ensaio.md. PR existente: #1929 (draft). Base: origin/main = 65b658d31.
+
+## O que já está pronto (e não é mais bloqueio)
+
+- #1905 (foto), #1931 (tela de categorias), #1947, #1948: mergeados.
+- O PR #1929 já tem roteiro (docs/runbooks/ifood-catalog-test-rehearsal.md) e registro
+  (docs/coordination/ROUNDS/IFOOD-E-ensaio-teste.md), e identificou: merchant de teste
+  f36a17d0-e10b-4fdd-a16d-c8ffd866e59b, app "NB Teste (C)", catálogo 343e3649-18eb-4c08-99b4-
+  4302df1cdf5e contexto DEFAULT, item de teste SKU SHOPMAN-TEST-ADAPTER na categoria "Categoria
+  Item Normal", destino temporário "Categoria Pizza".
+
+## Tarefa
+
+1. git fetch origin && git merge origin/main (o PR está DIRTY por causa dos merges de 20/10).
+2. Prepare o ambiente ISOLADO do ensaio com SHOPMAN_IFOOD_CATALOG_WRITE_POLICY contendo
+   environment = "test" e merchant_allowlist = ["f36a17d0-e10b-4fdd-a16d-c8ffd866e59b"].
+   Nenhuma outra política, nenhuma variável de liberação geral. Credenciais vêm do .env do dono;
+   não copie segredo para código, teste, doc ou PR.
+3. Execute o roteiro no item de teste, nesta ordem, conferindo a leitura remota depois de cada
+   passo: pausar → retomar → preço → duas alterações rápidas → descrição → mover de categoria →
+   foto → restaurar tudo ao estado inicial. Registre antes/depois com data e hora.
+4. Se algum passo falhar, PARE, restaure o item e escreva no PR a leitura remota que provou a
+   falha. Não invente sucesso.
+5. Saia do draft, atualize BOARD (EM_PR) e o ROUNDS com a evidência; fila.
+
+## Limites
+
+- Só a loja de teste e o item de teste. Nenhuma loja real, nenhum catálogo inteiro.
+- Nenhuma mudança no código de produção do adapter por causa do ensaio: se o ensaio revelar
+  defeito, conserte com teste e diga no PR.
+
+---
+
+# ADENDO (coordenação, 20/10 21:1x UTC): o critério de originalValue
+
+O ensaio parou na conferência de preço, com razão: o PATCH items/price devolveu 200 e o item
+perdeu `originalValue`. Critério fechado, para o próximo passo:
+
+1. **Invariante do ensaio**: o item remoto fica idêntico ao baseline, exceto o campo pretendido.
+   Preço pretendido não autoriza mudar a forma do item.
+2. **Correção**: o PATCH de preço do adapter manda `value` **e** `originalValue` com o mesmo
+   número (é o que o upsert já faz). Teste de payload provando os dois campos.
+3. **Se a API descartar `originalValue` mesmo enviado**, aceita-se a diferença e ela é registrada
+   em docs/reference/ifood-catalog-write-policy.md com a razão: com value igual a originalValue a
+   ausência do campo nunca exibe desconto, então não há promoção fantasma. O ensaio segue.
+4. **Depois da correção**: repetir do preço em diante (duas alterações rápidas, descrição,
+   categoria e foto) e restaurar. Sem a correção, não repetir: a divergência já está provada.
+5. O PR #1929 pode mergear como registro (não muda comportamento), mas a frente só fecha quando o
+   roteiro inteiro fechar num novo PR.
+

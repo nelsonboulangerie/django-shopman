@@ -2,7 +2,7 @@
 
 A camada de leitura que a superfície de Produção consome em ``/recipes``: o
 inventário (cartões), a receita com as suas versões, a **lente** sobre uma
-fórmula (porcentagem do padeiro, métricas com faixa de referência, partes,
+fórmula (porcentagem do padeiro, métricas com faixa de referência, preps,
 mistura final e BOM), a comparação entre duas versões, as referências da
 literatura por tipo, as opções de insumo e o rascunho lido de uma anotação ou
 foto.
@@ -25,29 +25,33 @@ from urllib.parse import urlsplit
 
 from django.db.models import Count, Q
 from django.utils import timezone
-from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
+from shopman.craftsman.models import ProductionMode, Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.services.recipe_book import (
     BAKERY_KINDS,
-    REFERENCE_RANGES,
     FormulaAnalysis,
     FormulaDiffMetric,
     FormulaDiffRow,
     FormulaItemAnalysis,
-    FormulaPartAnalysis,
     FormulaWarning,
     analyze,
     check_references,
     classify_ingredient,
     diff_versions,
     execution_in_sync,
+    ingredient_formulas_for,
     item_grams,
-    part_formulas_for,
     reference_for,
     suggest_anchor_kind,
 )
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.services import recipe_book as recipe_book_service
-from shopman.backstage.services import recipe_external_references, recipe_favorites, recipe_ratings
+from shopman.backstage.services import (
+    recipe_external_references,
+    recipe_favorites,
+    recipe_ratings,
+    recipe_review,
+)
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeSheetNotFound, RecipeVersionNotFound
 from shopman.backstage.services.recipe_capture import CapturedRecipe, is_configured
 from shopman.backstage.services.recipe_matching import (
@@ -74,13 +78,6 @@ ROLE_LABELS: dict[str, str] = {
     "other": "Outro",
 }
 
-PART_KIND_LABELS: dict[str, str] = {
-    "preferment": "Pré-fermento",
-    "autolyse": "Autólise",
-    "soaker": "Grãos hidratados",
-    "old_dough": "Massa velha",
-}
-
 ANCHOR_LABELS: dict[str, str] = {
     "flour": "Farinhas totais",
     "total": "Massa total",
@@ -91,7 +88,6 @@ METRIC_LABELS: dict[str, str] = {
     "hydration_pct": "Hidratação",
     "salt_pct": "Sal",
     "yeast_pct": "Fermento",
-    "prefermented_flour_pct": "Farinha pré-fermentada",
     "fat_pct": "Gordura",
     "sugar_pct": "Açúcar",
     "egg_pct": "Ovos",
@@ -100,18 +96,6 @@ METRIC_LABELS: dict[str, str] = {
 #: Métricas que valem zero sem ser aviso: pão de levain não leva fermento, massa
 #: magra não leva açúcar. Só hidratação e sal em zero merecem atenção.
 _METRICS_MEANINGFUL_AT_ZERO = ("hydration_pct", "salt_pct")
-
-#: Tipos de receita que ganham as faixas de farinha por parte na tabela de referência.
-_KINDS_WITH_PARTS = ("bread", "viennoiserie", "sweet_dough")
-
-PART_REFERENCE_LABELS: dict[str, str] = {
-    "levain": "Levain",
-    "poolish": "Poolish",
-    "biga": "Biga",
-    "soaker": "Grãos hidratados (yudane, tangzhong)",
-    "old_dough": "Massa velha",
-    "autolyse": "Autólise",
-}
 
 SOURCE_LABELS: dict[str, str] = {
     "manual": "Manual",
@@ -143,13 +127,26 @@ class RecipeEntryCardProjection:
     output_sku: str
     output_name: str
     has_ficha: bool
+    #: A receita diante da produção, dito por extenso (beta 05/11/2026, PROD-06):
+    #: ``in_use`` (a ficha dela é a que a produção usa), ``unpublished`` (nunca
+    #: publicada), ``replaced`` (publicada, mas outra receita usa o mesmo SKU),
+    #: ``off`` (publicada e sem ficha ativa) ou vazio (sem SKU e sem ficha).
+    ficha_status: str
+    #: O selo da lista, curto (o selo sai em sentença); vazio em ``in_use``.
+    ficha_status_label: str
+    #: A frase ao lado do selo, quando há quem dizer: ``<ficha> usa este SKU`` em
+    #: ``replaced``. Frase não vai dentro do selo.
+    ficha_status_detail: str
+    #: Modo de produção da ficha vigente (``batch`` | ``made_to_order``); vazio sem ficha.
+    production_mode: str
+    production_mode_label: str
     current_version_number: int | None
     version_count: int
     draft_count: int
     anchor_kind: str
     hydration_display: str
     updated_at_display: str
-    is_archived: bool
+    is_active: bool
     #: Estrela do operador que pediu a lista (``OperatorRecipeFavorite``): é
     #: preferência dele, não atributo da receita; outro operador vê a sua.
     is_favorite: bool
@@ -157,6 +154,13 @@ class RecipeEntryCardProjection:
     #: Vazio quando a versão atual ainda não foi avaliada.
     rating_display: str
     rating_count: int
+    #: De onde veio a versão atual (``recipe_review.provenance_of``): house,
+    #: notebook ou agent. Vazio sem versão publicada.
+    provenance_kind: str
+    provenance_label: str
+    #: Conferência da versão atual: pending, confirmed ou changed. Vazio sem versão.
+    review_status: str
+    review_label: str
 
 
 @dataclass(frozen=True)
@@ -188,12 +192,16 @@ class RecipeBookAccessProjection:
     can_view: bool
     can_edit: bool
     capture_available: bool
+    #: O Compras, para o atalho do insumo que não existe (#2390). Vazio para quem
+    #: não opera Compras ou sem a superfície configurada: o atalho não aparece.
+    purchase_url: str = ""
 
 
 @dataclass(frozen=True)
 class FormulaItemProjection:
     """One ingredient line of a formula, with its share of the anchor."""
 
+    ref: str
     sku: str
     name: str
     role: str
@@ -204,21 +212,13 @@ class FormulaItemProjection:
     pct_display: str
     is_anchor: bool
     matched: bool
-
-
-@dataclass(frozen=True)
-class FormulaPartProjection:
-    """A part of the base formula (preferment, autolyse, soaker, old dough)."""
-
-    sku: str
-    entry_ref: str
-    name: str
-    kind: str
-    kind_label: str
-    flour_pct_display: str
-    quantity_display: str
-    cap_pct_display: str
-    has_formula: bool
+    recipe_version_ref: str
+    composition: str
+    composition_label: str
+    quantity_rule_display: str
+    #: A anotação prática do item ("a conferir com o fornecedor"), como escrita na
+    #: fórmula ou na ficha (#2386). Vazia quando o item não tem nota.
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -246,7 +246,7 @@ class FormulaWarningProjection:
 
 @dataclass(frozen=True)
 class FormulaLensProjection:
-    """The lens over a formula: anchor, items with percentages, metrics, parts, final mix, BOM."""
+    """The lens over a formula: anchor, unified ingredients, metrics, final mix and BOM."""
 
     is_bakery: bool
     anchor_kind: str
@@ -255,17 +255,16 @@ class FormulaLensProjection:
     standardized: bool
     anchor_total_display: str
     total_mass_display: str
-    items: tuple[FormulaItemProjection, ...]
+    ingredients: tuple[FormulaItemProjection, ...]
     final_mix: tuple[FormulaItemProjection, ...]
-    #: A mistura final diz algo que a receita base já não disse? Sem partes ela é a
+    #: A mistura final diz algo que a receita base já não disse? Sem composições inclusas ela é a
     #: própria base, e mostrar a mesma tabela duas vezes só ensina o padeiro a
     #: parar de ler. A tela pergunta isto antes de desenhar o painel.
     final_mix_differs: bool
     bom: tuple[FormulaItemProjection, ...]
-    #: Idem para a ficha técnica: ela só difere da base quando há parte pronta
-    #: (é aí que a farinha do levain sai da lista e entra como levain).
+    #: Idem para a ficha técnica: ela difere quando uma receita usada como
+    #: ingrediente substitui parte da composição direta.
     bom_differs: bool
-    parts: tuple[FormulaPartProjection, ...]
     metrics: tuple[FormulaMetricProjection, ...]
     warnings: tuple[FormulaWarningProjection, ...]
 
@@ -311,6 +310,45 @@ class RecipeVersionProjection:
     lens: FormulaLensProjection
     formula: dict
     origin: dict
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    review_by_name: str
+    review_at_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewItemProjection:
+    """One recipe waiting for the baker's check, in the order of what sells most."""
+
+    ref: str
+    name: str
+    kind_label: str
+    output_sku: str
+    output_name: str
+    version_number: int
+    provenance_kind: str
+    provenance_label: str
+    provenance_detail: str
+    review_status: str
+    review_label: str
+    #: A massa da peça, em destaque (foi ali que as seis fichas erraram). Vazio na massa.
+    dough_sku: str
+    dough_name: str
+    #: "1.240 vendidos em 12 meses" ou, para a massa, "... por 3 produtos". Vazio sem venda.
+    sold_display: str
+
+
+@dataclass(frozen=True)
+class RecipeReviewQueueProjection:
+    """The baker's check queue: current versions nobody from the house confirmed yet."""
+
+    items: tuple[RecipeReviewItemProjection, ...]
+    total: int
+    confirmed_total: int
+    recipe_total: int
 
 
 @dataclass(frozen=True)
@@ -426,6 +464,14 @@ class LifecycleOptionProjection:
 
 
 @dataclass(frozen=True)
+class ProductionModeOptionProjection:
+    """Uma escolha do modo de produção ("Em lote", "Na hora")."""
+
+    value: str
+    label: str
+
+
+@dataclass(frozen=True)
 class ExecutionSheetProjection:
     """Configuração operacional da ficha que a versão publicada materializa."""
 
@@ -440,6 +486,9 @@ class ExecutionSheetProjection:
     shelf_life_reviewed_by: str
     production_lifecycle: str
     lifecycle_options: tuple[LifecycleOptionProjection, ...]
+    #: ``Recipe.production_mode``: "Em lote" (planejado e estocado) ou "Na hora".
+    production_mode: str
+    production_mode_options: tuple[ProductionModeOptionProjection, ...]
 
 
 @dataclass(frozen=True)
@@ -481,6 +530,8 @@ class RecipeSheetCardProjection:
     batch_size: str
     item_count: int
     is_active: bool
+    production_mode: str
+    production_mode_label: str
     has_entry: bool
     updated_at_display: str
 
@@ -530,7 +581,8 @@ class RecipeEntryDetailProjection:
     output_sku: str
     output_name: str
     notes: str
-    is_archived: bool
+    is_active: bool
+    ingredient_defaults: dict[str, Any] | None
     current_version_number: int | None
     ficha_ref: str
     #: A ficha de execução ainda é a que a versão atual escreveu (ADR-027)?
@@ -582,6 +634,16 @@ class RecipeCompareProjection:
 
     a_title: str
     b_title: str
+    #: Qual é qual (P2-20): o estado de cada lado ("Publicada · em uso", "Rascunho")
+    #: e de quando ("publicada 20/11/2026 14:00"). A tela não precisa adivinhar.
+    a_status: str
+    a_status_label: str
+    a_is_current: bool
+    a_when_display: str
+    b_status: str
+    b_status_label: str
+    b_is_current: bool
+    b_when_display: str
     rows: tuple[RecipeCompareRowProjection, ...]
     metrics: tuple[RecipeCompareMetricProjection, ...]
 
@@ -615,8 +677,10 @@ class IngredientOptionProjection:
     name: str
     unit: str
     role: str
-    is_part: bool
-    entry_ref: str
+    has_recipe: bool
+    recipe_version_ref: str
+    default_quantity: dict[str, Any] | None
+    default_composition: str
 
 
 @dataclass(frozen=True)
@@ -731,7 +795,7 @@ def _delta_tone(left: Decimal | None, right: Decimal | None, delta: Decimal | No
 def _datetime_display(value) -> str:
     if not value:
         return ""
-    return timezone.localtime(value).strftime("%d/%m/%Y %H:%M")
+    return format_local(value, "%d/%m/%Y {clock}")
 
 
 def _date_display(value) -> str:
@@ -749,7 +813,7 @@ def _status_label(status: str) -> str:
 
 
 def _role_label(role: str) -> str:
-    return ROLE_LABELS.get(role) or PART_KIND_LABELS.get(role) or ROLE_LABELS["other"]
+    return ROLE_LABELS.get(role, ROLE_LABELS["other"])
 
 
 def _kind_options() -> tuple[KindOptionProjection, ...]:
@@ -772,6 +836,16 @@ def wire_formula(formula: Any) -> dict:
     else:
         out["basis_g"] = int(basis) if basis == basis.to_integral_value() else float(basis)
     return out
+
+
+def _wire_ingredient_defaults(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict) or not isinstance(value.get("quantity"), dict):
+        return None
+    quantity = dict(value["quantity"])
+    for key in ("minimum", "target", "maximum"):
+        number = _decimal(quantity.get(key))
+        quantity[key] = None if number is None else (int(number) if number == number.to_integral_value() else float(number))
+    return {"quantity": quantity, "composition": str(value.get("composition") or "additional")}
 
 
 def _output_names(skus: set[str]) -> dict[str, str]:
@@ -810,12 +884,13 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     """
     formula = formula if isinstance(formula, dict) else {}
     kind = kind or RecipeEntry.Kind.OTHER
-    analysis = analyze(formula, part_formulas_for(formula))
+    analysis = analyze(formula, ingredient_formulas_for(formula))
     references = check_references(analysis, kind)
     anchor = formula.get("anchor") if isinstance(formula.get("anchor"), dict) else {}
     anchor_sku = str(anchor.get("sku") or "")
     anchor_kind = analysis.anchor_kind
     flagged = {warning.metric for warning in references}
+    notes = _item_notes(formula)
 
     basis = _decimal(formula.get("basis_g"))
     return FormulaLensProjection(
@@ -826,12 +901,11 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
         standardized=formula.get("standardized") is True,
         anchor_total_display=_grams_display(analysis.anchor_total_g),
         total_mass_display=_grams_display(analysis.total_mass_g),
-        items=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.items),
-        final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.final_mix),
-        final_mix_differs=_subtracting_parts(analysis),
+        ingredients=tuple(_lens_item(item, anchor_kind, anchor_sku, notes) for item in analysis.ingredients),
+        final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku, notes) for item in analysis.final_mix),
+        final_mix_differs=_has_included_composition(analysis),
         bom=tuple(_bom_item(line, analysis.anchor_total_g) for line in analysis.bom),
-        bom_differs=_subtracting_parts(analysis) or _capped_old_dough(analysis),
-        parts=tuple(_lens_part(part) for part in analysis.parts),
+        bom_differs=_has_recipe_ingredient(analysis),
         metrics=tuple(
             _metric(code, value, kind, flagged) for code, value in analysis.metrics().items()
         ),
@@ -839,29 +913,44 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     )
 
 
-def _subtracting_parts(analysis: FormulaAnalysis) -> bool:
-    """Alguma parte de fato tira da base? É ela que faz a mistura final ser outra coisa.
-
-    Parte sem fórmula conhecida fica na base e não tira nada; massa velha é teto,
-    não composição. Nos dois casos a mistura final É a receita base.
-    """
-    return any(part.has_formula and part.quantity_g for part in analysis.parts)
+def _has_included_composition(analysis: FormulaAnalysis) -> bool:
+    """Uma receita inclusa substitui parte da composição direta."""
+    return any(item.recipe_version_ref and item.composition == "included" for item in analysis.ingredients)
 
 
-def _capped_old_dough(analysis: FormulaAnalysis) -> bool:
-    """Há massa velha com teto? Ela não tira da base, mas entra na ficha como linha opcional."""
-    return any(part.kind == "old_dough" and part.cap_pct for part in analysis.parts)
+def _has_recipe_ingredient(analysis: FormulaAnalysis) -> bool:
+    """A BOM imediata difere quando a fórmula usa outro ingrediente produzido."""
+    return any(item.recipe_version_ref for item in analysis.ingredients)
 
 
 def _anchor_label(anchor_kind: str, anchor_sku: str, analysis: FormulaAnalysis) -> str:
     label = ANCHOR_LABELS.get(anchor_kind, anchor_kind)
     if anchor_kind != "ingredient":
         return label
-    name = next((item.name for item in analysis.items if item.sku == anchor_sku), anchor_sku)
+    name = next((item.name for item in analysis.ingredients if item.sku == anchor_sku), anchor_sku)
     return f"{label} ({name})" if name else label
 
 
-def _lens_item(item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str) -> FormulaItemProjection:
+def _item_notes(formula: dict) -> dict[str, str]:
+    """A nota de cada item, pela ``ref`` da linha (#2386).
+
+    A análise do Craftsman não carrega a anotação (ela só vira ``meta.note`` na
+    BOM ao publicar), então a lente a lê da própria fórmula, que é a fonte.
+    """
+    notes: dict[str, str] = {}
+    for item in formula.get("ingredients") or []:
+        if not isinstance(item, dict):
+            continue
+        ref = str(item.get("ref") or "")
+        note = item.get("note")
+        if ref and isinstance(note, str) and note.strip():
+            notes[ref] = note.strip()
+    return notes
+
+
+def _lens_item(
+    item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str, notes: dict[str, str] | None = None
+) -> FormulaItemProjection:
     if anchor_kind == "flour":
         is_anchor = item.role == "flour"
     elif anchor_kind == "ingredient":
@@ -869,6 +958,7 @@ def _lens_item(item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str) -> 
     else:
         is_anchor = False
     return FormulaItemProjection(
+        ref=item.ingredient_ref,
         sku=item.sku,
         name=item.name,
         role=item.role,
@@ -879,6 +969,19 @@ def _lens_item(item: FormulaItemAnalysis, anchor_kind: str, anchor_sku: str) -> 
         pct_display=_pct_display(item.pct),
         is_anchor=is_anchor,
         matched=bool(item.sku),
+        recipe_version_ref=item.recipe_version_ref,
+        composition=item.composition,
+        composition_label=_composition_label(item.composition),
+        quantity_rule_display=_quantity_rule_display(
+            item.minimum,
+            item.target,
+            item.maximum,
+            item.unit,
+            kind=item.quantity_kind,
+            basis_kind=item.basis_kind,
+            basis_sku=item.basis_sku,
+        ),
+        note=(notes or {}).get(item.ingredient_ref, ""),
     )
 
 
@@ -893,6 +996,7 @@ def _bom_item(line: dict, anchor_total: Decimal | None) -> FormulaItemProjection
     role = str(line.get("role") or "other")
     sku = str(line.get("sku") or "")
     return FormulaItemProjection(
+        ref=str(line.get("ref") or ""),
         sku=sku,
         name=str(line.get("name") or sku),
         role=role,
@@ -903,21 +1007,49 @@ def _bom_item(line: dict, anchor_total: Decimal | None) -> FormulaItemProjection
         pct_display=_pct_display(pct),
         is_anchor=False,
         matched=bool(sku),
+        recipe_version_ref=str((line.get("meta") or {}).get("recipe_version_ref") or ""),
+        composition=str((line.get("meta") or {}).get("composition") or "additional"),
+        composition_label=_composition_label(str((line.get("meta") or {}).get("composition") or "additional")),
+        quantity_rule_display="",
+        note=str((line.get("meta") or {}).get("note") or ""),
     )
 
 
-def _lens_part(part: FormulaPartAnalysis) -> FormulaPartProjection:
-    return FormulaPartProjection(
-        sku=part.sku,
-        entry_ref=part.entry_ref,
-        name=part.name,
-        kind=part.kind,
-        kind_label=PART_KIND_LABELS.get(part.kind, part.kind),
-        flour_pct_display=_pct_display(part.flour_pct),
-        quantity_display=_grams_display(part.quantity_g),
-        cap_pct_display=_pct_display(part.cap_pct),
-        has_formula=part.has_formula,
-    )
+def _composition_label(composition: str) -> str:
+    return "Inclusa" if composition == "included" else "Adicional"
+
+
+def _quantity_rule_display(
+    minimum: Decimal | None,
+    target: Decimal | None,
+    maximum: Decimal | None,
+    unit: str,
+    *,
+    kind: str = "fixed",
+    basis_kind: str = "",
+    basis_sku: str = "",
+) -> str:
+    if target is None:
+        return ""
+    if kind == "ratio":
+        basis = {
+            "flour": " das farinhas",
+            "total": " da fórmula",
+            "ingredient": f" de {basis_sku}" if basis_sku else " do ingrediente-base",
+        }.get(basis_kind, "")
+        suffix = f"%{basis}"
+    else:
+        suffix = f" {unit}" if unit else ""
+    target_display = f"{_number(target)}{suffix}"
+    if minimum == target == maximum:
+        return "Exata" if kind == "fixed" else f"Exata: {target_display}"
+    if minimum is not None and maximum is not None:
+        return f"Faixa: {_number(minimum)} a {_number(maximum)}{suffix}; alvo {target_display}"
+    if minimum is not None:
+        return f"Mínima: a partir de {_number(minimum)}{suffix}"
+    if maximum is not None:
+        return f"Máxima: até {_number(maximum)}{suffix}"
+    return f"Alvo {target_display}"
 
 
 def _metric(code: str, value: Decimal | None, kind: str, flagged: set[str]) -> FormulaMetricProjection:
@@ -962,6 +1094,8 @@ def build_recipe_book(
     only_without_sku: bool = False,
     only_with_draft: bool = False,
     only_favorites: bool = False,
+    only_unreviewed: bool = False,
+    production_mode: str = "",
     sort: str = "updated",
     page: int = 1,
     page_size: int = 48,
@@ -973,7 +1107,7 @@ def build_recipe_book(
     tela, sobre ``is_favorite``, como "Sem SKU" e "Com rascunho".
     """
     entries_qs = (
-        RecipeEntry.objects.filter(is_archived=bool(archived))
+        RecipeEntry.objects.filter(is_active=not bool(archived))
         .select_related("current_version")
         .annotate(
             version_total=Count("versions", distinct=True),
@@ -987,6 +1121,10 @@ def build_recipe_book(
         entries_qs = entries_qs.filter(
             Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term)
         )
+    if production_mode:
+        entries_qs = entries_qs.filter(
+            ref__in=Recipe.objects.filter(is_active=True, production_mode=production_mode).values("ref")
+        )
     if only_without_sku:
         entries_qs = entries_qs.filter(output_sku="")
     if only_with_draft:
@@ -994,6 +1132,15 @@ def build_recipe_book(
     favorites = recipe_favorites.favorite_refs(operator_ref)
     if only_favorites:
         entries_qs = entries_qs.filter(ref__in=favorites)
+    if only_unreviewed:
+        # A conferência mora no JSON da versão e o "mudou depois" é conta de
+        # digital: o recorte sai em Python, sobre o inventário (cem e poucas).
+        pending = [
+            entry.ref
+            for entry in RecipeEntry.objects.filter(current_version__isnull=False).select_related("current_version")
+            if recipe_review.review_of(entry.current_version).status != recipe_review.REVIEW_CONFIRMED
+        ]
+        entries_qs = entries_qs.filter(ref__in=pending)
 
     ordering = {
         "updated": ("-updated_at", "name", "ref"),
@@ -1007,14 +1154,26 @@ def build_recipe_book(
     start = (current - 1) * size
     entries = list(entries_qs[start : start + size])
     names = _output_names({entry.output_sku for entry in entries if entry.output_sku})
-    ficha_refs = set(
-        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list("ref", flat=True)
+    ficha_modes = dict(
+        Recipe.objects.filter(ref__in=[entry.ref for entry in entries], is_active=True).values_list(
+            "ref", "production_mode"
+        )
     )
     ratings = recipe_ratings.overall_by_entry(
         [entry.ref for entry in entries],
         {entry.ref: entry.current_version.number for entry in entries if entry.current_version is not None},
     )
-    cards = tuple(_card(entry, names, ficha_refs, favorites, ratings) for entry in entries)
+    # Só a receita publicada e sem ficha ativa pergunta quem usa o SKU dela: nas
+    # outras a resposta já está na mão, e a lista não paga a consulta.
+    in_use_by_sku = _active_sheet_names_by_sku({
+        entry.output_sku
+        for entry in entries
+        if entry.output_sku
+        and entry.ref not in ficha_modes
+        and entry.current_version is not None
+        and entry.current_version.status == RecipeVersion.Status.PUBLISHED
+    })
+    cards = tuple(_card(entry, names, ficha_modes, favorites, ratings, in_use_by_sku) for entry in entries)
     return RecipeBookListProjection(
         entries=cards,
         kinds=_kind_options(),
@@ -1027,12 +1186,41 @@ def build_recipe_book(
     )
 
 
+def _active_sheet_names_by_sku(skus: set[str]) -> dict[str, str]:
+    """``SKU`` (em maiúsculas) → nome da ficha ativa que o produz, para os SKUs pedidos."""
+    if not skus:
+        return {}
+    query = Q()
+    for sku in skus:
+        query |= Q(output_sku__iexact=sku)
+    return {
+        str(sku).upper(): name
+        for sku, name in Recipe.objects.filter(query, is_active=True).order_by("-pk").values_list("output_sku", "name")
+    }
+
+
+def ficha_status_of(
+    entry: RecipeEntry, *, has_ficha: bool, in_use_by_sku: dict[str, str]
+) -> tuple[str, str, str]:
+    """``(status, selo, frase)`` da receita diante da produção. Ver ``RecipeEntryCardProjection.ficha_status``."""
+    if has_ficha:
+        return "in_use", "", ""
+    current = entry.current_version
+    if current is None or current.status != RecipeVersion.Status.PUBLISHED:
+        return ("unpublished", "Ainda não publicada", "") if entry.output_sku else ("", "", "")
+    other = in_use_by_sku.get(str(entry.output_sku or "").upper())
+    if other:
+        return "replaced", "Fora da produção", f"{other} usa este SKU"
+    return "off", "Fora da produção", ""
+
+
 def _card(
     entry: RecipeEntry,
     names: dict[str, str],
-    ficha_refs: set[str],
+    ficha_modes: dict[str, str],
     favorites: set[str],
     ratings: dict[str, tuple[Decimal | None, int]],
+    in_use_by_sku: dict[str, str] | None = None,
 ) -> RecipeEntryCardProjection:
     current = entry.current_version
     formula = dict(current.formula or {}) if current is not None else {}
@@ -1040,7 +1228,10 @@ def _card(
     anchor_kind = str(anchor.get("kind") or "") if current is not None else ""
     hydration = ""
     if anchor_kind == "flour":
-        hydration = _pct_display(analyze(formula, part_formulas_for(formula)).hydration_pct)
+        hydration = _pct_display(analyze(formula, ingredient_formulas_for(formula)).hydration_pct)
+    status, status_label, status_detail = ficha_status_of(
+        entry, has_ficha=entry.ref in ficha_modes, in_use_by_sku=in_use_by_sku or {}
+    )
     return RecipeEntryCardProjection(
         ref=entry.ref,
         name=entry.name,
@@ -1048,18 +1239,37 @@ def _card(
         kind_label=_kind_label(entry.kind),
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
-        has_ficha=entry.ref in ficha_refs,
+        has_ficha=entry.ref in ficha_modes,
+        ficha_status=status,
+        ficha_status_label=status_label,
+        ficha_status_detail=status_detail,
+        production_mode=ficha_modes.get(entry.ref, ""),
+        production_mode_label=_production_mode_label(ficha_modes.get(entry.ref, "")),
         current_version_number=current.number if current is not None else None,
         version_count=int(getattr(entry, "version_total", 0) or 0),
         draft_count=int(getattr(entry, "draft_total", 0) or 0),
         anchor_kind=anchor_kind,
         hydration_display=hydration,
         updated_at_display=_date_display(entry.updated_at),
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
         is_favorite=entry.ref in favorites,
         rating_display=_rating_display(ratings.get(entry.ref, (None, 0))[0]),
         rating_count=ratings.get(entry.ref, (None, 0))[1],
+        **_card_review_fields(current),
     )
+
+
+def _card_review_fields(current: RecipeVersion | None) -> dict:
+    if current is None:
+        return {"provenance_kind": "", "provenance_label": "", "review_status": "", "review_label": ""}
+    provenance = recipe_review.provenance_of(current)
+    review = recipe_review.review_of(current)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "review_status": review.status,
+        "review_label": review.label,
+    }
 
 
 def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetailProjection:
@@ -1084,7 +1294,8 @@ def build_recipe_entry(ref: str, *, operator_ref: str = "") -> RecipeEntryDetail
         output_sku=entry.output_sku,
         output_name=names.get(entry.output_sku, "") if entry.output_sku else "",
         notes=entry.notes or "",
-        is_archived=entry.is_archived,
+        is_active=entry.is_active,
+        ingredient_defaults=_wire_ingredient_defaults((entry.meta or {}).get("ingredient_defaults")),
         current_version_number=current.number if current is not None else None,
         ficha_ref=entry.ref if ficha is not None else "",
         execution_in_sync=execution_in_sync(current, ficha),
@@ -1122,6 +1333,8 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
             shelf_life_reviewed_by="",
             production_lifecycle=choices[0].value if choices else "",
             lifecycle_options=choices,
+            production_mode=ProductionMode.BATCH,
+            production_mode_options=_production_mode_options(),
         )
 
     meta = recipe.meta or {}
@@ -1147,7 +1360,20 @@ def _execution_sheet(recipe: Recipe | None) -> ExecutionSheetProjection:
         shelf_life_reviewed_by=str(meta.get("shelf_life_reviewed_by") or "") if reviewed else "",
         production_lifecycle=lifecycle,
         lifecycle_options=choices,
+        production_mode=str(recipe.production_mode),
+        production_mode_options=_production_mode_options(),
     )
+
+
+def _production_mode_options() -> tuple[ProductionModeOptionProjection, ...]:
+    return tuple(
+        ProductionModeOptionProjection(value=str(value), label=str(label))
+        for value, label in ProductionMode.choices
+    )
+
+
+def _production_mode_label(mode: str) -> str:
+    return str(dict(ProductionMode.choices).get(mode, "")) if mode else ""
 
 
 def _safe_int(value: Any, *, minimum: int) -> int | None:
@@ -1250,8 +1476,8 @@ def _seconds_display(seconds: int | None) -> str:
         return ""
     hours, rest = divmod(seconds, 3600)
     minutes, secs = divmod(rest, 60)
-    parts = [f"{hours} h" if hours else "", f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
-    return " ".join(part for part in parts if part)
+    preps = [f"{hours} h" if hours else "", f"{minutes} min" if minutes else "", f"{secs} s" if secs else ""]
+    return " ".join(prep for prep in preps if prep)
 
 
 def _celsius_display(celsius: float | None) -> str:
@@ -1303,6 +1529,81 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
         lens=build_formula_lens(version.formula or {}, kind),
         formula=wire_formula(version.formula),
         origin=dict(version.origin or {}),
+        **_version_review_fields(version),
+    )
+
+
+def _version_review_fields(version: RecipeVersion) -> dict:
+    provenance = recipe_review.provenance_of(version)
+    if version.status == RecipeVersion.Status.DRAFT:
+        review_status, review_label, by_name, at_display = "", "", "", ""
+    else:
+        review = recipe_review.review_of(version)
+        review_status, review_label, by_name = review.status, review.label, review.by_name
+        at_display = _iso_display(review.at)
+    return {
+        "provenance_kind": provenance.kind,
+        "provenance_label": provenance.label,
+        "provenance_detail": provenance.detail,
+        "review_status": review_status,
+        "review_label": review_label,
+        "review_by_name": by_name,
+        "review_at_display": at_display,
+    }
+
+
+def _iso_display(value: str) -> str:
+    if not value:
+        return ""
+    from django.utils.dateparse import parse_datetime
+
+    parsed = parse_datetime(value)
+    return _datetime_display(parsed) if parsed is not None else ""
+
+
+def _sold_display(qty: Decimal, via: int) -> str:
+    if qty <= 0:
+        return ""
+    whole = int(qty.to_integral_value(rounding=ROUND_HALF_UP))
+    text = f"{whole:,}".replace(",", ".")
+    noun = "vendido" if whole == 1 else "vendidos"
+    suffix = ""
+    if via == 1:
+        suffix = " por 1 produto"
+    elif via > 1:
+        suffix = f" por {via} produtos"
+    return f"{text} {noun} em 12 meses{suffix}"
+
+
+def build_recipe_review_queue(*, sold: dict | None = None) -> RecipeReviewQueueProjection:
+    """A fila do padeiro (WP-RECEITAS-DA-CASA F2): o que falta conferir, do que mais sai."""
+    queue = recipe_review.review_queue(sold=sold)
+    names = _output_names({item.entry.output_sku for item in queue if item.entry.output_sku})
+    recipe_total = RecipeEntry.objects.filter(is_active=True, current_version__isnull=False).count()
+    items = tuple(
+        RecipeReviewItemProjection(
+            ref=item.entry.ref,
+            name=item.entry.name,
+            kind_label=_kind_label(item.entry.kind),
+            output_sku=item.entry.output_sku,
+            output_name=names.get(item.entry.output_sku, "") if item.entry.output_sku else "",
+            version_number=item.version.number,
+            provenance_kind=item.provenance.kind,
+            provenance_label=item.provenance.label,
+            provenance_detail=item.provenance.detail,
+            review_status=item.review.status,
+            review_label=item.review.label,
+            dough_sku=item.dough_sku,
+            dough_name=item.dough_name,
+            sold_display=_sold_display(item.sold_qty, item.sold_via),
+        )
+        for item in queue
+    )
+    return RecipeReviewQueueProjection(
+        items=items,
+        total=len(items),
+        confirmed_total=recipe_total - len(items),
+        recipe_total=recipe_total,
     )
 
 
@@ -1310,11 +1611,11 @@ def build_recipe_version(version: RecipeVersion, *, kind: str) -> RecipeVersionP
 
 USAGE_CAVEAT_MESSAGES: dict[str, str] = {
     "loss_is_residual": (
-        "A perda é o que entrou na fornada menos o que saiu dela, pela conta e não pela balança: "
+        "A perda é o que entrou no lote menos o que saiu dele, pela conta e não pela balança: "
         "massa na bacia, aparas e peça não anotada entram todas aqui."
     ),
     "unversioned_not_attributed": (
-        "Fornada sem carimbo de versão (ficha nunca publicada pelo inventário, ou planejada antes "
+        "Lote sem carimbo de versão (ficha nunca publicada pelo inventário, ou planejada antes "
         "da publicação) fica em \"Sem versão\" e não conta para versão nenhuma."
     ),
     "bake_loss_house_default": (
@@ -1415,8 +1716,8 @@ def _version_usage(row: dict, *, number: int | None, ref: str, grade_labels: dic
     assumed = int(row["started_assumed"])
     avg_loss = (loss / batches) if batches else None
     loss_pct = (loss / started * 100) if started else None
-    batches_display = f"{batches} fornada" if batches == 1 else f"{batches} fornadas"
-    avg_loss_display = f"{_number(avg_loss)} por fornada" if avg_loss is not None else ""
+    batches_display = f"{batches} lote" if batches == 1 else f"{batches} lotes"
+    avg_loss_display = f"{_number(avg_loss)} por lote" if avg_loss is not None else ""
     summary = batches_display
     if yield_pct is not None:
         summary += f"; aproveitamento médio {_pct_display(yield_pct)}"
@@ -1504,6 +1805,8 @@ def build_recipe_compare(a_ref: str, b_ref: str) -> RecipeCompareProjection:
     return RecipeCompareProjection(
         a_title=_version_title(a),
         b_title=_version_title(b),
+        **_compare_side("a", a),
+        **_compare_side("b", b),
         rows=tuple(_compare_row(row) for row in diff.rows),
         metrics=tuple(_compare_metric(metric) for metric in diff.metrics),
     )
@@ -1511,6 +1814,21 @@ def build_recipe_compare(a_ref: str, b_ref: str) -> RecipeCompareProjection:
 
 def _version_title(version: RecipeVersion) -> str:
     return f"{version.entry.name} (versão {version.number})"
+
+
+def _compare_side(side: str, version: RecipeVersion) -> dict:
+    """O estado e a data de um lado da comparação: qual é a publicada, e de quando."""
+    is_current = version.entry.current_version_id == version.pk
+    if version.published_at:
+        when = f"publicada {_datetime_display(version.published_at)}"
+    else:
+        when = f"criada {_datetime_display(version.created_at)}" if version.created_at else ""
+    return {
+        f"{side}_status": version.status,
+        f"{side}_status_label": _status_label(version.status),
+        f"{side}_is_current": is_current,
+        f"{side}_when_display": when,
+    }
 
 
 def _compare_row(row: FormulaDiffRow) -> RecipeCompareRowProjection:
@@ -1557,10 +1875,6 @@ def build_recipe_reference(kind: str) -> RecipeReferenceProjection:
         bounds = reference_for(code, kind)
         if bounds:
             ranges.append(_range(code, label, bounds))
-    if kind in _KINDS_WITH_PARTS:
-        for key, bounds in REFERENCE_RANGES["part_flour_pct"].items():
-            part_label = PART_REFERENCE_LABELS.get(key, key)
-            ranges.append(_range(f"part_flour_pct:{key}", f"Farinha na parte: {part_label}", bounds))
     return RecipeReferenceProjection(kind=kind, kind_label=_kind_label(kind), ranges=tuple(ranges))
 
 
@@ -1575,20 +1889,20 @@ def _range(code: str, label: str, bounds: dict) -> ReferenceRangeProjection:
     )
 
 
-# ── Insumos e partes ─────────────────────────────────────────────────────────
+# ── Ingredientes, inclusive os produzidos por outra receita ─────────────────
 
 
-def _part_entries() -> list[RecipeEntry]:
-    """As receitas com versão atual e SKU: são as partes que outra receita pode consumir."""
+def _recipe_ingredient_entries() -> list[RecipeEntry]:
+    """Receitas com versão atual e SKU que podem ser escolhidas como ingrediente."""
     return list(
-        RecipeEntry.objects.filter(current_version__isnull=False, is_archived=False)
+        RecipeEntry.objects.filter(current_version__isnull=False, is_active=True)
         .exclude(output_sku="")
         .select_related("current_version")
         .order_by("name", "ref")
     )
 
 
-def _part_candidate(entry: RecipeEntry) -> IngredientCandidate:
+def _recipe_ingredient_candidate(entry: RecipeEntry) -> IngredientCandidate:
     return IngredientCandidate(
         sku=entry.output_sku,
         name=entry.name,
@@ -1598,45 +1912,115 @@ def _part_candidate(entry: RecipeEntry) -> IngredientCandidate:
     )
 
 
-def _part_option(entry: RecipeEntry) -> IngredientOptionProjection:
-    candidate = _part_candidate(entry)
+def _recipe_ingredient_option(entry: RecipeEntry) -> IngredientOptionProjection:
+    candidate = _recipe_ingredient_candidate(entry)
+    current = entry.current_version
+    defaults = (entry.meta or {}).get("ingredient_defaults") or {}
     return IngredientOptionProjection(
         sku=candidate.sku,
         name=candidate.name,
         unit=candidate.unit,
         role=candidate.role,
-        is_part=True,
-        entry_ref=entry.ref,
+        has_recipe=current is not None,
+        recipe_version_ref=current.version_ref if current is not None else "",
+        default_quantity=(
+            (_wire_ingredient_defaults(defaults) or {}).get("quantity")
+            if isinstance(defaults.get("quantity"), dict)
+            else None
+        ),
+        default_composition=(
+            str(defaults.get("composition"))
+            if defaults.get("composition") in {"additional", "included"}
+            else "additional"
+        ),
     )
 
 
-def _material_option(candidate: IngredientCandidate, part_refs: dict[str, str]) -> IngredientOptionProjection:
-    entry_ref = part_refs.get(candidate.sku, "")
+def _material_option(candidate: IngredientCandidate, recipe_entries: dict[str, RecipeEntry]) -> IngredientOptionProjection:
+    entry = recipe_entries.get(candidate.sku)
+    current = entry.current_version if entry is not None else None
+    defaults = ((entry.meta or {}).get("ingredient_defaults") or {}) if entry is not None else {}
     return IngredientOptionProjection(
         sku=candidate.sku,
         name=candidate.name,
         unit=candidate.unit,
         role=candidate.role,
-        is_part=bool(entry_ref),
-        entry_ref=entry_ref,
+        has_recipe=current is not None,
+        recipe_version_ref=current.version_ref if current is not None else "",
+        default_quantity=(
+            (_wire_ingredient_defaults(defaults) or {}).get("quantity")
+            if isinstance(defaults.get("quantity"), dict)
+            else None
+        ),
+        default_composition=(
+            str(defaults.get("composition"))
+            if defaults.get("composition") in {"additional", "included"}
+            else "additional"
+        ),
     )
+
+
+def _old_dough_ingredient_options(term: str) -> list[IngredientOptionProjection]:
+    """Recovered dough with physical stock appears in the ordinary picker.
+
+    It is neither a purchasable Material nor a special formula kind.  The
+    stock lot owns the source recipe/version and composition snapshot.
+    """
+    from shopman.stockman.models import Batch
+
+    batches = Batch.objects.filter(metadata__resource_kind="old_dough").order_by(
+        "sku", "-production_date", "-pk"
+    )
+    options: list[IngredientOptionProjection] = []
+    seen: set[str] = set()
+    for batch in batches:
+        if batch.sku in seen:
+            continue
+        metadata = batch.metadata or {}
+        name = str(metadata.get("ingredient_name") or batch.sku)
+        version_ref = str(metadata.get("recipe_version_ref") or "")
+        entry_ref = version_ref.rsplit("@", 1)[0] if "@" in version_ref else ""
+        if term and term not in name.lower() and term not in batch.sku.lower() and term not in entry_ref.lower():
+            continue
+        seen.add(batch.sku)
+        options.append(
+            IngredientOptionProjection(
+                sku=batch.sku,
+                name=name,
+                unit="g",
+                role="other",
+                has_recipe=bool(version_ref),
+                recipe_version_ref=version_ref,
+                default_quantity={
+                    "kind": "ratio",
+                    "minimum": None,
+                    "target": 20,
+                    "maximum": 20,
+                    "basis": {"kind": "total"},
+                },
+                default_composition="included",
+            )
+        )
+    return options
 
 
 def build_ingredient_options(query: str = "") -> tuple[IngredientOptionProjection, ...]:
-    """Opções para casar um ingrediente: as partes (receitas com fórmula) e os insumos."""
+    """Opções unificadas: insumos comprados e ingredientes produzidos por receita."""
     term = (query or "").strip().lower()
-    parts = [
+    recipe_entries = [
         entry
-        for entry in _part_entries()
+        for entry in _recipe_ingredient_entries()
         if not term or term in entry.name.lower() or term in entry.output_sku.lower() or term in entry.ref.lower()
     ]
-    part_skus = {entry.output_sku for entry in parts}
-    options = [_part_option(entry) for entry in parts]
+    recipe_skus = {entry.output_sku for entry in recipe_entries}
+    options = [_recipe_ingredient_option(entry) for entry in recipe_entries]
     options.extend(
         _material_option(candidate, {})
         for candidate in search_ingredients(term)
-        if candidate.sku not in part_skus
+        if candidate.sku not in recipe_skus
     )
+    existing_skus = {option.sku for option in options}
+    options.extend(option for option in _old_dough_ingredient_options(term) if option.sku not in existing_skus)
     return tuple(options)
 
 
@@ -1647,18 +2031,18 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
     """O rascunho lido, com cada ingrediente casado com um insumo (ou com candidatos).
 
     O casamento sugere; abaixo de ``DEFAULT_MIN_SCORE`` o ``sku`` fica vazio e a
-    tela pergunta. As partes (receitas com fórmula) entram como opções extras.
-    A ``formula`` inicial já vem com a âncora sugerida pelo conteúdo e os itens
+    tela pergunta. Ingredientes com receita própria entram como opções extras;
+    A ``formula`` inicial já vem com a âncora sugerida pelo conteúdo e os ingredientes
     de massa em grama; volume e contagem ficam como foram lidos.
     """
-    part_entries = _part_entries()
-    part_candidates = tuple(_part_candidate(entry) for entry in part_entries)
-    part_refs = {entry.output_sku: entry.ref for entry in part_entries}
+    recipe_entries = _recipe_ingredient_entries()
+    recipe_candidates = tuple(_recipe_ingredient_candidate(entry) for entry in recipe_entries)
+    recipe_entries_by_sku = {entry.output_sku: entry for entry in recipe_entries}
 
     items: list[CaptureItemProjection] = []
     formula_items: list[dict] = []
     for item in captured.items:
-        candidates = candidates_for(item.name, extra_options=part_candidates)
+        candidates = candidates_for(item.name, extra_options=recipe_candidates)
         best = candidates[0] if candidates and candidates[0].score >= DEFAULT_MIN_SCORE else None
         sku = best.sku if best is not None else ""
         role = item.role if item.role and item.role != "other" else classify_ingredient(item.name, sku)
@@ -1670,26 +2054,44 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
             role=role,
             sku=sku,
             match_confidence=f"{best.score}%" if best is not None else "",
-            candidates=tuple(_material_option(candidate, part_refs) for candidate in candidates),
+            candidates=tuple(_material_option(candidate, recipe_entries_by_sku) for candidate in candidates),
         ))
         if item.quantity is not None and item.quantity > 0:
             quantity, unit = item.quantity, item.unit
             if unit == "kg":
                 quantity, unit = quantity * _THOUSAND, "g"
-            line = {"sku": sku, "name": item.name, "role": role, "quantity": _plain_number(quantity), "unit": unit}
+            line = {
+                "ref": f"ingredient-{len(formula_items) + 1}",
+                "sku": sku,
+                "name": item.name,
+                "role": role,
+                "quantity": {
+                    "kind": "fixed",
+                    "minimum": _plain_number(quantity),
+                    "target": _plain_number(quantity),
+                    "maximum": _plain_number(quantity),
+                    "unit": unit,
+                },
+                "composition": "additional",
+            }
             if item.note:
                 line["note"] = item.note
             formula_items.append(line)
 
-    grams = [(line["role"], item_grams(line)) for line in formula_items]
+    grams = [
+        (
+            line["role"],
+            item_grams({"quantity": line["quantity"]["target"], "unit": line["quantity"]["unit"]}),
+        )
+        for line in formula_items
+    ]
     flour_g = sum((g for role, g in grams if role == "flour" and g is not None), Decimal(0))
     total_g = sum((g for _, g in grams if g is not None), Decimal(0))
     formula = {
         "anchor": {"kind": suggest_anchor_kind(flour_g, total_g, captured.kind)},
         "basis_g": None,
         "standardized": False,
-        "items": formula_items,
-        "parts": [],
+        "ingredients": formula_items,
     }
     return RecipeCaptureDraftProjection(
         name=captured.name,
@@ -1708,27 +2110,45 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
 
 
 def resolve_recipe_book_access(user) -> RecipeBookAccessProjection:
-    """Ler = o gate do app de Produção (ou ver a ficha); escrever = gerir a produção (ou mudar a ficha)."""
+    """Ler = o gate do app de Produção (ou ver a ficha); escrever = mudar a ficha (``craftsman.change_recipe``).
+
+    Criar, editar, conferir e publicar ficha técnica é da gestão da produção
+    (Gerente e Dono), decisão do dono de 05/11/2026. A Cozinha opera lotes
+    (``shop.manage_production``) e só LÊ a ficha: gerir a produção não abre a
+    escrita da receita, que mexe em custo, insumo e no que o chão produz.
+    """
     is_superuser = bool(getattr(user, "is_superuser", False))
-    can_edit = is_superuser or user.has_perm("shop.manage_production") or user.has_perm("craftsman.change_recipe")
+    can_edit = is_superuser or user.has_perm("craftsman.change_recipe")
     can_view = can_edit or user.has_perm("backstage.operate_production") or user.has_perm("craftsman.view_recipe")
     return RecipeBookAccessProjection(
         can_view=bool(can_view),
         can_edit=bool(can_edit),
         capture_available=is_configured(),
+        purchase_url=_purchase_url(user) if can_edit else "",
     )
+
+
+def _purchase_url(user) -> str:
+    """O mesmo atalho do "Pedir no Compras" da Produção: quem não opera Compras não o vê."""
+    from shopman.backstage.projections.hub import purchase_surface_url
+
+    return purchase_surface_url(user)
 
 
 # ── Ficha de execução: lista e detalhe ──────────────────────────────────────
 
 
-def build_recipe_sheet_list(*, query="", active="", sort="updated", page=1, page_size=48) -> RecipeSheetListProjection:
+def build_recipe_sheet_list(
+    *, query="", active="", production_mode="", sort="updated", page=1, page_size=48
+) -> RecipeSheetListProjection:
     """As fichas de execução, com busca por nome/ref/SKU e recorte por situação."""
     sheets_qs = Recipe.objects.annotate(item_count=Count("items"))
     if active in ("1", "true", "yes"):
         sheets_qs = sheets_qs.filter(is_active=True)
     elif active in ("0", "false", "no"):
         sheets_qs = sheets_qs.filter(is_active=False)
+    if production_mode:
+        sheets_qs = sheets_qs.filter(production_mode=production_mode)
     term = (query or "").strip()
     if term:
         sheets_qs = sheets_qs.filter(Q(name__icontains=term) | Q(ref__icontains=term) | Q(output_sku__icontains=term))
@@ -1769,6 +2189,8 @@ def _sheet_card(sheet: Recipe, names: dict[str, str], entry_refs: set[str]) -> R
         batch_size=_plain_number(sheet.batch_size),
         item_count=int(getattr(sheet, "item_count", 0) or 0),
         is_active=bool(sheet.is_active),
+        production_mode=str(sheet.production_mode),
+        production_mode_label=_production_mode_label(sheet.production_mode),
         has_entry=sheet.ref in entry_refs,
         updated_at_display=_datetime_display(sheet.updated_at),
     )

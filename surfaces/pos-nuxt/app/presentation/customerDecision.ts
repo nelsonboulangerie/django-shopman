@@ -16,6 +16,8 @@
 //
 // Sem rede e sem DOM: o componente é dono do I/O, isto é dono da frase e dos
 // dois caminhos de um toque.
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+
 
 /** O cadastro em jogo, do lado da tela. */
 export interface CustomerDecisionParty {
@@ -492,7 +494,7 @@ export interface ServerConflictCandidate {
    * O dono não é uma pessoa: é um cadastro só com o dado, sem nome.
    *
    * Vem do servidor pela mesma régua com que ele decide se pode escrever um
-   * nome por cima (`_should_refresh_name`). Cobre o cadastro sem nome nenhum e
+   * nome por cima (`should_refresh_name`). Cobre o cadastro sem nome nenhum e
    * o rótulo de espera "Cliente 0011" — que engana quem olhar só o `name`.
    */
   owner_unnamed?: boolean;
@@ -710,7 +712,7 @@ export function mergeUndoDeadlineLabel(raw: string | null | undefined, now: Date
   const deadline = new Date(String(raw || ""));
   if (Number.isNaN(deadline.getTime())) return "";
 
-  const hour = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const hour = formatClock(deadline);
   const days = Math.round(
     (new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime()
       - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime())

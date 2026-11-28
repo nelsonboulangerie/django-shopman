@@ -91,7 +91,7 @@ def _pedidos() -> int:
 def test_enviar_receber_e_poder_pedir_de_novo(cenario, operador):
     material, _f, _c = cenario
 
-    send_purchase_request(material.sku, user=operador)
+    send_purchase_request(material.sku, reviewed=True, user=operador)
     assert _status(material) == "sent"
 
     # Chegou só um saco: o insumo ainda está abaixo do mínimo e volta a pedir.
@@ -107,7 +107,7 @@ def test_enviar_receber_e_poder_pedir_de_novo(cenario, operador):
     assert material.metadata["purchase"]["category"] == "Farinhas"
 
     Directive.objects.filter(topic=NOTIFICATION_SEND).update(status="done")
-    send_purchase_request(material.sku, user=operador)
+    send_purchase_request(material.sku, reviewed=True, user=operador)
 
     assert _status(material) == "sent"
     assert _pedidos() == 2
@@ -116,10 +116,10 @@ def test_enviar_receber_e_poder_pedir_de_novo(cenario, operador):
 @pytest.mark.django_db
 def test_pedido_em_aberto_nao_sai_duas_vezes(cenario, operador):
     material, _f, _c = cenario
-    send_purchase_request(material.sku, user=operador)
+    send_purchase_request(material.sku, reviewed=True, user=operador)
 
     with pytest.raises(PurchaseError) as recusa:
-        send_purchase_request(material.sku, user=operador)
+        send_purchase_request(material.sku, reviewed=True, user=operador)
 
     assert recusa.value.code == "purchase_request_open"
     assert recusa.value.status_code == 409
@@ -129,7 +129,7 @@ def test_pedido_em_aberto_nao_sai_duas_vezes(cenario, operador):
 @pytest.mark.django_db
 def test_cancelar_libera_o_insumo_para_pedir_de_novo(cenario, operador):
     material, _f, _c = cenario
-    send_purchase_request(material.sku, user=operador)
+    send_purchase_request(material.sku, reviewed=True, user=operador)
 
     cancel_purchase_request(material.sku)
 
@@ -138,7 +138,7 @@ def test_cancelar_libera_o_insumo_para_pedir_de_novo(cenario, operador):
     assert not [key for key in material.metadata["purchase"] if key.startswith("request_")]
 
     Directive.objects.filter(topic=NOTIFICATION_SEND).update(status="done")
-    send_purchase_request(material.sku, user=operador)
+    send_purchase_request(material.sku, reviewed=True, user=operador)
     assert _status(material) == "sent"
 
 

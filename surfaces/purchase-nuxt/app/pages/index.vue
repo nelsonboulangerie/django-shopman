@@ -111,11 +111,16 @@ const blockerAlerts = computed(() =>
           action: blocker.action ? { label: blocker.action.label, to: baseSectionPath(blocker.action.baseView) } : undefined,
         })),
 );
+
+const { tone: sealTone, time: sealTime, connLabel: sealConn } = usePurchaseReadSeal();
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col">
-    <OperatorPageHeader title="Painel" :actions="headerActions" actions-label="Mais ações do Painel" :alerts="blockerAlerts">
+  <main class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão do kit (selo com o lugar e o ponto
+         da leitura, sino e ⋮) toma o lugar da barra de cima, como no Gestor. -->
+    <OperatorCompactBar title="Painel" :tone="sealTone" :time="sealTime" :conn-label="sealConn" :search="false" :options="headerActions" />
+    <OperatorPageHeader :seal-tone="sealTone" :seal-time="sealTime" title="Painel" :actions="headerActions" actions-label="Mais ações do Painel" :alerts="blockerAlerts">
       <template #status>
         <PurchaseReadStatus />
       </template>

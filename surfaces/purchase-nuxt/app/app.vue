@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { baseSectionOf, purchaseSections } from "~/presentation/purchaseSections";
 import type { PurchaseView } from "~/types/purchase";
+import { formatClock } from "../../operator-kit/app/presentation/clock";
 
 // Compras no shell da suíte (WP-FASE2-UX-OPERADOR, onda do Compras), como o Gestor:
-// barra lateral em três estados na mesa, gaveta e barra inferior abaixo de `lg`. Cada
-// seção é uma rota (Painel `/`, Comprar `/buy`, Receber `/receive`, Base `/base/…`),
-// e as quatro dividem o mesmo carregamento (`usePurchaseDesk`, em `useState`).
+// barra lateral em três estados na mesa e, com o trocador (modelo de navegação,
+// 31/10/2026), a barra de baixo do celular com as seções do chão (Painel, Comprar,
+// Receber, Contar estoque) em toda tela, inclusive na Base, a única do escritório, onde
+// nenhuma fica acesa (`office-uses-floor-bar`, dono, 04/11/2026). O selo abre o trocador
+// com todas. Cada seção é uma rota (Painel `/`, Comprar `/buy`, Receber
+// `/receive`, Base `/base/…`, Contar estoque `/count`), e todas dividem o mesmo
+// carregamento (`usePurchaseDesk`, em `useState`).
 const OPERATOR_PERM = "backstage.operate_purchase";
 const { canIdentify, sessionState, sessionUnavailable, refresh, locked, mustChange, operator, lock, stationRef } =
   useOperatorLock(OPERATOR_PERM);
@@ -34,7 +39,7 @@ watch(
   [pending, backendReady],
   ([isPending, ready]) => {
     if (!isPending && ready) {
-      readAt.value = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+      readAt.value = formatClock(new Date());
     }
   },
   { immediate: true },
@@ -51,13 +56,14 @@ const sections = computed(() =>
   purchaseSections({ urgentMaterials: metrics.value.urgentMaterials, receivePending: receiptTotalPending.value }),
 );
 
-// A seção e a sub-seção da Base vêm da rota. O carregamento da Contagem (e o que mais
+// A seção e a sub-seção da Base vêm da rota. O carregamento da contagem (e o que mais
 // depender da vista) segue a mesma fonte.
 const route = useRoute();
 function viewOf(path: string): PurchaseView {
   if (path.startsWith("/buy")) return "buy";
   if (path.startsWith("/receive")) return "receive";
   if (path.startsWith("/base")) return "base";
+  if (path.startsWith("/count")) return "count";
   return "panel";
 }
 watch(
@@ -82,6 +88,10 @@ useOperatorWindowTitle();
         v-if="surface.showPage"
         storage-key="purchase"
         :sections="sections"
+        :switcher-sections="sections"
+        default-form="floor"
+        floor-bar
+        office-uses-floor-bar
         label="Seções do Compras"
         :operator-name="operator?.name"
         @lock="lock"
@@ -97,13 +107,7 @@ useOperatorWindowTitle();
           <NuxtPage />
         </div>
       </OperatorSuiteShell>
-      <main v-else-if="surface.showForbidden" class="grid min-h-dvh flex-1 place-items-center p-4">
-        <NuxtEmpty
-          icon="i-lucide-shield-x"
-          title="Seu acesso não inclui o Compras"
-          description="Peça a um responsável a permissão de comprar e receber insumos. Entrar novamente não concede essa permissão."
-        />
-      </main>
+      <OperatorSurfaceForbidden v-else-if="surface.showForbidden" :perm="OPERATOR_PERM" />
       <main
         v-else-if="surface.showChecking"
         class="grid min-h-dvh flex-1 place-items-center p-4"

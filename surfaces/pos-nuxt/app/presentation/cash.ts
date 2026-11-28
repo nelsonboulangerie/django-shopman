@@ -11,7 +11,14 @@ import type {
   POSCashRuntimeProjection,
   POSChangeDenomination,
   POSChangeRequestProjection,
+  POSOfflineReviewSaleProjection,
 } from "~/types/pos";
+import { formatBRL } from "~/utils/posIntent";
+import { formatClock, formatDateClock } from "../../../operator-kit/app/presentation/clock";
+
+// A hora do turno é a do BALCÃO, não a do dispositivo: um celular em outro fuso
+// lia outra abertura (beta 05/11, PDV2-24). A mesma régua da leitura X/Z.
+const STORE_TIME_ZONE = "America/Sao_Paulo";
 
 /**
  * O rótulo que o operador lê. O REF continua `sangria`/`suprimento` — é o
@@ -28,6 +35,25 @@ const MOVEMENT_LABELS: Record<string, string> = {
 
 export function movementLabel(kind: string): string {
   return MOVEMENT_LABELS[kind] || kind;
+}
+
+/**
+ * A confirmação do movimento aceito, com o valor: o registro passava calado, e a
+ * única frase que o operador lia era o aviso do comprovante (beta 05/11, op:PDV-11
+ * e PDV-10). O valor vem primeiro; o aviso do papel, se houver, vem depois.
+ */
+export function cashMovementDoneMessage(kind: string, amount: string): string {
+  const q = amountToQ(amount);
+  const value = q === null ? "O valor" : formatBRL(q);
+  return kind === "sangria" ? `${value} saiu da gaveta.` : `${value} entrou na gaveta.`;
+}
+
+/**
+ * A confirmação do pedido de troco atendido, com o valor: o pedido sumir da lista
+ * não confirmava nada a quem olhava para a gaveta (beta 05/11, PDV-10).
+ */
+export function changeServedMessage(amountQ: number | null | undefined): string {
+  return typeof amountQ === "number" && amountQ > 0 ? `Troco de ${formatBRL(amountQ)} atendido.` : "Pedido de troco atendido.";
 }
 
 /**
@@ -103,11 +129,12 @@ export function amountInputError(raw: string): string {
  * absent.
  */
 export function formatOpenedAt(raw: string | null | undefined): string {
-  if (!raw) return "—";
+  // Sem hora, nada: a frase que a usa se escreve sem ela (copy sem travessão).
+  if (!raw) return "";
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
-    : date.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    : formatDateClock(date, { day: "2-digit", month: "2-digit" }, { timeZone: STORE_TIME_ZONE });
 }
 
 /**
@@ -220,9 +247,28 @@ export function parseAmountToQ(raw: string): number {
  * que só aceita valor positivo, e não serve à contagem.
  */
 export function amountToQ(raw: string): number | null {
-  const limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(",", ".");
+  let limpo = String(raw ?? "").trim().replace(/\s/g, "").replace(/^R\$/i, "");
+  // Com vírgula, ela é o decimal e o ponto é milhar ("5.000,00", como a própria
+  // tela escreve o valor de volta). Sem vírgula, o ponto segue sendo o decimal.
+  // Mesma regra do servidor (`parse_money_to_q`).
+  if (limpo.includes(",")) {
+    if (!/^\d{1,3}(\.\d{3})*,\d{0,2}$|^\d+,\d{0,2}$/.test(limpo)) return null;
+    limpo = limpo.replace(/\./g, "").replace(",", ".").replace(/\.$/, "");
+  }
   if (!/^\d+(\.\d{1,2})?$/.test(limpo)) return null;
   return Math.round(Number(limpo) * 100);
+}
+
+/**
+ * O valor digitado, por extenso em reais, para o operador conferir ANTES de
+ * registrar: "5000" vira "R$ 5.000,00". O campo é texto livre (5000 é cinco mil,
+ * a mesma leitura do teclado do pagamento), e sem o eco um R$ 50,00 digitado sem
+ * vírgula passava como R$ 5.000,00 até o comprovante (beta 05/11, PDV-01).
+ * "" quando não há valor legível: o erro do campo já fala nesse caso.
+ */
+export function amountEcho(raw: string): string {
+  const q = amountToQ(raw);
+  return q === null || q <= 0 ? "" : formatBRL(q);
 }
 
 /** Centavos → o texto que um campo de valor aceita de volta: 12050 → "120,50". */
@@ -265,9 +311,29 @@ export function changeRequestSummary(
   cashManagement?: POSCashManagementCapability | null,
 ): string {
   const valor = request.amount_display || "";
-  const partes = (request.denominations || []).map((q) => denominationLabel(cashManagement, q));
-  if (!partes.length) return valor;
-  return valor ? `${valor} · em ${partes.join(", ")}` : `em ${partes.join(", ")}`;
+  // "em 2" não dizia 2 o quê (beta 05/11, PDV-24): a frase diz notas e moedas,
+  // com o símbolo, como se pede no balcão.
+  const known = changeDenominations(cashManagement);
+  const notes: string[] = [];
+  const coins: string[] = [];
+  for (const q of request.denominations || []) {
+    const denom = known.find((d) => d.q === q);
+    const label = denom ? `R$ ${denom.label}` : formatBRL(q);
+    (denom?.shape === "coin" ? coins : notes).push(label);
+  }
+  const groups = [
+    notes.length ? `${notes.length > 1 ? "notas" : "nota"} de ${joinPt(notes)}` : "",
+    coins.length ? `${coins.length > 1 ? "moedas" : "moeda"} de ${joinPt(coins)}` : "",
+  ].filter(Boolean);
+  if (!groups.length) return valor;
+  const em = `em ${groups.join(" e ")}`;
+  return valor ? `${valor} ${em}` : em;
+}
+
+/** "a", "a e b", "a, b e c". */
+function joinPt(list: string[]): string {
+  if (list.length <= 1) return list[0] || "";
+  return `${list.slice(0, -1).join(", ")} e ${list[list.length - 1]}`;
 }
 
 /** Format the request timestamp for the pending list (pt-BR, hour and minute). */
@@ -276,7 +342,7 @@ export function formatRequestedAt(raw: string | null | undefined): string {
   const date = new Date(raw);
   return Number.isNaN(date.getTime())
     ? raw
-    : date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    : formatClock(date);
 }
 
 /** The lobby's single screen state — drives which card the antesala shows. */
@@ -512,8 +578,20 @@ export function sessionActionTiles(input: {
  */
 export function endOfDayTiles(input: {
   shiftOpen?: boolean;
+  /**
+   * Quem opera fecha o caixa? A mesma régua do servidor (`can_close_day`). Sem ela,
+   * o card fica, apagado e com o motivo: a Caixa contava a gaveta inteira e só no
+   * último toque ouvia "Fechar o caixa é da gerência" (beta 07/11). Ausente = fecha.
+   */
+  canCloseShift?: boolean;
   justClosedShift?: boolean;
   canAuditCash: boolean;
+  /**
+   * Este dispositivo é um balcão (posto vinculado)? A leitura X/Z é da gaveta de
+   * um balcão, e o relatório recusa fora dele: o card levava o Dono a "Este
+   * dispositivo não é um balcão" (beta 05/11, PDV-21). Ausente = balcão.
+   */
+  atCounter?: boolean;
   dayClosing: { already_closed: boolean; today_display: string; existing_closing_display: string } | null;
 }): SessionTile[] {
   const tiles: SessionTile[] = [];
@@ -522,8 +600,10 @@ export function endOfDayTiles(input: {
       key: "close_shift",
       icon: "lucide:lock",
       label: "Fechar caixa",
-      description: "Contagem cega · encerra o turno",
-      disabled: false,
+      description: input.canCloseShift === false
+        ? "Fechar o caixa é da gerência. Chame quem fecha o dia."
+        : "Contagem cega · encerra o turno",
+      disabled: input.canCloseShift === false,
       // Destrutivo no ÍCONE, não no card inteiro: é a ação que encerra, e a
       // tela precisa dizer isso sem pintar um quadrado de vermelho na frente
       // do operador o turno todo.
@@ -545,7 +625,7 @@ export function endOfDayTiles(input: {
       badge: nextStep ? "Próximo passo" : done ? "Feito" : undefined,
     });
   }
-  if (input.canAuditCash) {
+  if (input.canAuditCash && input.atCounter !== false) {
     tiles.push({
       key: "cash_report",
       icon: "lucide:receipt-text",
@@ -579,6 +659,40 @@ export function stationDevicesNotice(runtime: POSCashRuntimeProjection | null | 
 }
 
 /**
+ * Fechar o caixa encerra o turno da GAVETA, e a gaveta é de todos os
+ * dispositivos do balcão: os outros param de vender até alguém abrir o caixa de
+ * novo. O diálogo dizia só "O turno encerra aqui" (beta 05/11, PDV-20).
+ * "" com um dispositivo só.
+ */
+export function closeShiftDevicesWarning(runtime: POSCashRuntimeProjection | null | undefined): string {
+  const others = (runtime?.station_devices ?? 0) - 1;
+  if (others < 1) return "";
+  return others === 1
+    ? "O outro dispositivo desta gaveta para de vender até alguém abrir o caixa de novo."
+    : `Os outros ${others} dispositivos desta gaveta param de vender até alguém abrir o caixa de novo.`;
+}
+
+/**
+ * A linha do turno no Fim do dia: o balcão, a hora em que ABRIU e quem abriu.
+ *
+ * Quem abriu é `opened_by_username`, não quem opera agora: "turno aberto às
+ * 08:45 · por joyce" atribuía à joyce a abertura do admin (beta 05/11, PDV-19).
+ */
+export function shiftOpenedLine(input: {
+  terminalLabel: string;
+  openedAt: string | null | undefined;
+  openedBy?: string | null;
+}): string {
+  if (!input.openedAt) return "";
+  const at = new Date(input.openedAt);
+  const time = Number.isNaN(at.getTime())
+    ? ""
+    : formatClock(at, STORE_TIME_ZONE);
+  const opened = time ? `turno aberto às ${time}${input.openedBy ? ` por ${input.openedBy}` : ""}` : "";
+  return [input.terminalLabel, opened].filter(Boolean).join(" · ");
+}
+
+/**
  * As cédulas e moedas do Real, para CONTAR A GAVETA (Fim do dia, v4 passo 1).
  *
  * Não é a lista do pedido de troco (`change_denominations`, que a casa configura
@@ -599,3 +713,31 @@ export const DRAWER_DENOMINATIONS: readonly POSChangeDenomination[] = [
   { q: 10, label: "0,10", shape: "coin" },
   { q: 5, label: "0,05", shape: "coin" },
 ];
+
+/**
+ * O aviso do fechamento quando há venda sem conexão "a conferir": cobrada por um
+ * preço que o catálogo não explica. A venda entrou (o dinheiro está na gaveta);
+ * o caixa só fecha com o gerente. Conta as VENDAS, não os itens.
+ */
+export function offlineReviewClosingNotice(sales: readonly POSOfflineReviewSaleProjection[]): string {
+  const count = new Set(sales.map((sale) => sale.order_ref)).size;
+  if (!count) return "";
+  return count === 1
+    ? "1 venda sem conexão a conferir"
+    : `${count} vendas sem conexão a conferir`;
+}
+
+/**
+ * Uma linha por item: o que foi cobrado, o que o catálogo pedia naquela hora e
+ * quem cobrou. "Pão (PAO): cobrado R$ 0,01, catálogo R$ 12,00. Marina, 14:32."
+ */
+export function offlineReviewLine(sale: POSOfflineReviewSaleProjection): string {
+  const item = sale.qty_display && sale.qty_display !== "1"
+    ? `${sale.qty_display} × ${sale.name} (${sale.sku})`
+    : `${sale.name} (${sale.sku})`;
+  const catalog = sale.catalog_price_display
+    ? `catálogo ${sale.catalog_price_display}`
+    : "fora do catálogo";
+  const who = [sale.operator, sale.captured_at_display].filter(Boolean).join(", ");
+  return `${item}: cobrado ${sale.charged_price_display}, ${catalog}.${who ? ` ${who}.` : ""}`;
+}

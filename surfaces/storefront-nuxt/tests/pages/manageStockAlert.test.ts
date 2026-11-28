@@ -15,7 +15,7 @@ const activeState = {
   ok: true,
   sku: 'CROISSANT',
   product_name: 'Croissant',
-  event_label: 'saiu do forno',
+  event_label: 'fornada pronta',
   state: 'active',
   can_pause: true,
   can_resume: false,

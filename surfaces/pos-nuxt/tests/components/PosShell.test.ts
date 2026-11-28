@@ -10,12 +10,13 @@
 import { mockNuxtImport, mountSuspended } from "@nuxt/test-utils/runtime";
 import { flushPromises, type VueWrapper } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { nextTick, ref } from "vue";
 
 import App from "~/app.vue";
 
-const { calls } = vi.hoisted(() => ({
+const { calls, session } = vi.hoisted(() => ({
   calls: { terminal: 0, operatorLock: 0, autoLock: 0, events: 0, shell: 0 },
+  session: { state: "anonymous", canIdentify: false },
 }));
 
 // Os composables de operador viram contadores: a pergunta deste arquivo é SE
@@ -30,7 +31,9 @@ mockNuxtImport("useOperatorLock", () => () => {
   // senha é o que o shell de operador mostra.
   return {
     locked: ref(false),
-    canIdentify: ref(false),
+    canIdentify: ref(session.canIdentify),
+    sessionState: ref(session.state),
+    operator: ref(session.canIdentify ? { id: 9, name: "Diofer" } : null),
     // `sessionUnavailable` false = a antessala RESPONDEU (403), não é falha de
     // rede. É o que distingue "não é estação" de "não consegui perguntar".
     sessionUnavailable: ref(false),
@@ -80,6 +83,8 @@ describe("app.vue — um shell por rota", () => {
     calls.autoLock = 0;
     calls.events = 0;
     calls.shell = 0;
+    session.state = "anonymous";
+    session.canIdentify = false;
   });
   afterEach(() => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
@@ -139,5 +144,37 @@ describe("app.vue — um shell por rota", () => {
     // Dispositivo sem estação reconhecida: a tela de senha, no lugar da página.
     expect(wrapper.text()).toContain("Entre para operar o caixa");
     expect(wrapper.find('[data-testid="page"]').exists()).toBe(false);
+  });
+
+  // #3194 (P2-15): o login recarrega a página, e a sessão que caía logo depois de
+  // entrar voltava a "Entre para operar o caixa", como se ninguém tivesse entrado.
+  // A aba lembra quem entrou (kit, `sessionStorage`), e o login diz o que houve.
+  it("a aba onde alguém entrou: o login diz que a sessão terminou", async () => {
+    window.sessionStorage.setItem("shopman:operator-signed-in-here", "1");
+    try {
+      const wrapper = await open("/", { ...OPERATOR_CHROME, ...PAGE_STUB });
+      await nextTick();
+
+      expect(wrapper.text()).toContain("Sua sessão terminou");
+      expect(wrapper.text()).toContain("Entre de novo para continuar.");
+      // "De onde parou" prometia o que a casa não garante: o que foi lançado depois do
+      // último salvamento não chega ao servidor com a sessão caída.
+      expect(wrapper.text()).not.toContain("de onde parou");
+      expect(wrapper.text()).not.toContain("Entre para operar o caixa");
+    } finally {
+      window.sessionStorage.clear();
+    }
+  });
+
+  it("quem não opera o caixa vê a recusa do kit, com saída, e não a casca do PDV (beta 05/11, CEN-03)", async () => {
+    session.state = "forbidden";
+    session.canIdentify = true;
+    const wrapper = await open("/", { ...OPERATOR_CHROME, ...PAGE_STUB });
+
+    expect(wrapper.find("[data-operator-surface-forbidden]").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Seu acesso não inclui");
+    expect(wrapper.text()).toContain("Trocar operador");
+    expect(wrapper.find('[data-testid="page"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Entre para operar o caixa");
   });
 });

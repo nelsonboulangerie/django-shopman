@@ -45,10 +45,13 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         ),
     },
     # Só sai quando não falta nada (quem ainda paga recebe o payment_requested).
+    # ``{commitment_suffix}`` é a data da ENCOMENDA (" para retirada amanhã, a partir
+    # das 9h"), sem ponto final; vazio no pedido de hoje
+    # (``services/notification._commitment_suffix``).
     "order_accepted": {
         "subject": "Pedido {order_ref_short} confirmado",
         "body": (
-            "Seu pedido *{order_ref_short}* está confirmado. O total é *{order_total_display}*. "
+            "Seu pedido *{order_ref_short}* está confirmado{commitment_suffix}. O total é *{order_total_display}*. "
             "Vamos preparar com todo carinho. ✨\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
@@ -92,7 +95,7 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     "order_cancelled": {
         "subject": "Pedido {order_ref_short} cancelado",
         "body": (
-            "Oi{customer_name_greeting}. Seu pedido *{order_ref_short}* foi cancelado. {status_note} "
+            "Oi{customer_name_greeting}. Seu pedido *{order_ref_short}* foi cancelado{cancellation_reason_suffix} "
             "Qualquer dúvida, estamos à disposição. 😌\n"
             "Veja os detalhes: {tracking_url}"
         ),
@@ -138,6 +141,43 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
         "body": (
             "Oi{customer_name_greeting}! Atualizamos seu pedido *{order_ref_short}* conforme combinado. "
             "{status_note} Qualquer dúvida, estamos à disposição.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
+    # ── "Avisar o cliente" (WP-G07) ──────────────────────────────────────
+    # O Caixa avisa com um toque, no detalhe do pedido (``services/customer_notice``).
+    # Notícia ruim que a casa dá antes de o cliente perceber: a voz é a do diálogo
+    # "Resolver" ("Aqui é da … 💛 … e sinto muito por isso"), aprovada em 19/11, e o
+    # texto é o que o dono aprovou em 20/11/2026. O modelo da Meta é o mesmo texto,
+    # com o link no botão ``Acompanhar pedido``
+    # (``docs/reference/whatsapp-templates-meta.md``). ``{status_note}``, sem ponto
+    # final: a nova hora ("hoje, às 16h30"), o que vai faltar ("Focaccia (2
+    # unidades)") ou a data combinada ("retirada amanhã, a partir das 9h").
+    "order_delayed": {
+        "subject": "Pedido {order_ref_short}: nova previsão",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 Seu pedido *{order_ref_short}* "
+            "vai atrasar um pouco: a nova previsão é {status_note}, e sinto muito por isso. "
+            "Qualquer dúvida, é só responder aqui.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
+    "order_item_missing": {
+        "subject": "Pedido {order_ref_short}: item em falta",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 No seu pedido *{order_ref_short}*, "
+            "vai faltar o item {status_note}, e sinto muito por isso. Posso trocar por outro "
+            "produto ou devolver esse valor. Me responde aqui como fica melhor para você.\n"
+            "Acompanhe por aqui: {tracking_url}"
+        ),
+    },
+    "order_reschedule_needed": {
+        "subject": "Pedido {order_ref_short}: precisamos remarcar",
+        "body": (
+            "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛 Não vamos conseguir aprontar "
+            "seu pedido *{order_ref_short}* para {status_note}, como combinamos, e sinto muito "
+            "por isso. Posso remarcar para outro dia ou cancelar e devolver o valor. Me responde "
+            "aqui como fica melhor para você.\n"
             "Acompanhe por aqui: {tracking_url}"
         ),
     },
@@ -209,10 +249,10 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # ── Fila de espera, fidelidade, acesso e produto ─────────────────────
     "waitlist_available": {
-        "subject": "Sua fornada saiu: confirme o pedido {order_ref_short}",
+        "subject": "Chegou a sua vez: confirme o pedido {order_ref_short}",
         "body": (
-            "Oba! 💛✨ Acabou de sair do forno{customer_name_greeting}! "
-            "Confirme o pedido *{order_ref_short}* para garantir: {tracking_url}"
+            "Oi{customer_name_greeting}! A fornada que você esperava ficou pronta. "
+            "Confirme seu pedido *{order_ref_short}* para garantir a sua vaga: {tracking_url}"
         ),
     },
     "waitlist_released": {
@@ -240,14 +280,30 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
             "{cart_note}O acesso vale por 5 minutos."
         ),
     },
-    # Login que começou no SITE: a mensagem da pessoa já fez a aba de lá entrar. O link
-    # é reserva (se ela não achar o caminho de volta), e o "Não foi você?" é a defesa
-    # contra quem pede a alguém que envie a mensagem com o código dele.
+    # Login que começou no site de um COMPUTADOR (decisão do dono, 23/10): o botão da
+    # resposta nomeia o que libera ("Liberar o Chrome no Windows") e só o toque nele
+    # deixa a aba de lá entrar. ``{release_target}`` nunca vem vazio ("o Chrome no
+    # Windows", ou "o navegador do computador"). O "Não foi você?" vai na bolha de cima,
+    # a defesa contra quem pede a alguém que envie a mensagem com o código dele.
     "access_link_site": {
-        "subject": "Você entrou na loja",
+        "subject": "Liberar a loja no computador",
         "body": (
-            "Pronto{customer_name_greeting}! Seu acesso foi liberado.\n"
-            "{cart_note}Volte à loja para continuar."
+            "Pronto{customer_name_greeting}! Toque abaixo para entrar na loja com {release_target}.\n"
+            "{cart_note}Depois, é só voltar ao computador."
+        ),
+    },
+    # Telefone digitado pela equipe (D4, OC-08; ``services/phone_confirmation.py``).
+    # Sem nome, de propósito: se o número foi digitado errado, quem o recebe não lê
+    # o nome de outra pessoa. A resposta do próprio número é a confirmação (o
+    # vínculo do ManyChat marca o contato como verificado pelo canal), por isso o
+    # texto pede que quem não fez o cadastro NÃO responda. Fora da janela de 24h
+    # sai o modelo `confirmar_numero` (whatsapp-templates-meta.md), com o botão.
+    "phone_confirmation_requested": {
+        "subject": "Confirme que este número é seu",
+        "body": (
+            "Oi! Este número acabou de ser cadastrado na nossa loja. "
+            "Se ele é seu, responda *Sim, é meu* para confirmar. "
+            "Se não foi você, é só ignorar esta mensagem."
         ),
     },
     # Dois usos: o "Me avise" (sem reserva, CTA "Garanta o seu:") e a reserva que a
@@ -264,14 +320,182 @@ CUSTOMER_COPY: dict[str, dict[str, str]] = {
     },
     # `{availability_note}` nunca vem vazia e vem SEM ponto final (o ponto é daqui:
     # o template da Meta não termina em variável). services/availability_copy.py.
+    # "Fornada pronta", e não "{product_name} ficou pronto": o nome do produto pode
+    # ser feminino (a Tabatière, a Baguette) e "pronto" erraria a concordância. A
+    # fornada é sempre feminina.
     "production_ready": {
-        "subject": "{product_name} saiu do forno",
+        "subject": "Fornada pronta: {product_name}",
         "body": (
-            "Olha só o que acabou de sair do forno: *{product_name}*! {availability_note}.\n"
+            "Olha só a fornada que acabou de ficar pronta: *{product_name}*! {availability_note}.\n"
             "Garanta já o seu: {action_url}{management_note}"
         ),
     },
 }
+
+# Os rótulos dos botões nativos das mensagens de acesso. O WhatsApp corta o rótulo de
+# botão em 20 caracteres (limite da Meta para botão de link), então "Liberar o Chrome
+# no Windows" (27) não cabe inteiro: o rótulo encurta para o navegador ("Liberar o
+# Chrome") e o corpo da mensagem diz o resto ("com o Chrome no Windows").
+ACCESS_BUTTON_MAX_CHARS = 20
+ACCESS_BUTTON_COPY: dict[str, str] = {
+    # Login começado no site do CELULAR: o botão entra no navegador que ele abrir.
+    "return_to_store": "Voltar à loja",
+    # Login pedido direto no WhatsApp (sem site antes).
+    "enter_store": "Entrar na loja",
+    "continue_order": "Continuar pedido",
+    # Login começado no site do COMPUTADOR: o botão nomeia o que libera.
+    "release": "Liberar {target}",
+    "release_fallback": "Liberar o computador",
+    "revoke": "Encerrar acesso",
+    "revoke_lead": "Não reconhece este acesso?",
+}
+
+
+# ── Promessa em risco: a proposta que o operador leva ao cliente (WP-G08) ────
+#
+# NÃO é aviso automático: não tem ``NotificationTemplate`` nem modelo na Meta, e
+# nada aqui é enviado pelo sistema. É o texto que o diálogo "Resolver" do Gestor
+# monta para o operador CONFERIR e levar ao cliente (copiar, ou abrir a conversa
+# no WhatsApp com ele já escrito). Mora aqui porque é frase ao cliente sobre o
+# pedido, e a voz é a mesma: a concierge, no feminino, sem travessão.
+#
+# Três regras a mais, porque quem manda é uma pessoa e o cliente ainda não decidiu:
+#
+# - é PROPOSTA ("Posso trocar…?"), nunca fato consumado: o operador só conclui
+#   depois da resposta;
+# - fala a língua do cliente: "não vamos ter Focaccia amanhã", nunca "lote",
+#   "reserva" ou "fornada cancelada";
+# - não depende do gênero do produto (#2809 item 6, decisão da coordenação em
+#   22/11/2026): o catálogo não sabe se é "o" ou "a", e "O item Focaccia" soava
+#   como sistema. A oração carrega o nome sem concordar com ele;
+# - no máximo um 💛 (na abertura) e um ✨ (no fecho) por mensagem.
+#
+# ``{customer_name_greeting}`` é ", Ana" ou vazio (o primeiro nome); sem o nome da
+# loja a abertura não diz "Aqui é da".
+PROMISE_PROPOSAL_COPY: dict[str, str] = {
+    "opening": "Oi{customer_name_greeting}! Aqui é da {shop_name} 💛",
+    "opening_without_shop": "Oi{customer_name_greeting}! 💛",
+    # O que houve, com um item ou com vários: as orações de PROMISE_ITEM_SITUATION,
+    # cada uma já com o nome do produto. Vários itens na MESMA situação viram uma
+    # oração só (coordenação, 21/11/2026, #2809 item 5): "não vamos ter Focaccia e
+    # Brioche amanhã".
+    "happened": "No seu pedido {order_ref_short}, {items}, e sinto muito por isso.",
+    # O que a casa propõe, uma frase por escolha do diálogo.
+    "swap": "Posso trocar por {offer}? Me avisa e eu ajusto por aqui ✨",
+    "swap_named": "Posso trocar {item} por {offer}? Me avisa e eu ajusto por aqui ✨",
+    "reschedule": "Posso remarcar o seu pedido para outro dia? Me diz qual fica melhor para você ✨",
+    "remove_refund": "Posso tirar {removed} do pedido e devolver {amount} {route}? Me avisa e eu ajusto por aqui ✨",
+    "remove": "Posso tirar {removed} do pedido? O total fica em {total}. Me avisa e eu ajusto por aqui ✨",
+    "cancel_refund": (
+        "Se preferir, cancelo o pedido e devolvo {amount} {route}. Me avisa como fica melhor para você ✨"
+    ),
+    "cancel": "Se preferir, cancelo o pedido. Me avisa como fica melhor para você ✨",
+}
+
+#: O que houve com o item, nas palavras do cliente, numa oração que traz o nome do
+#: produto (``{item}``) sem concordar com ele. ``{day}`` é " hoje", " amanhã",
+#: " para sábado, 21/11" ou vazio; ``{lacking}`` é "falta 1 de 3" / "faltam 2 de 4".
+#: O verbo só afirma o que a casa sabe: o que a Produção ainda pode fazer e a reserva
+#: que se soltou "pode ser que" faltem; o lote cancelado "não vamos ter".
+PROMISE_ITEM_SITUATION: dict[str, str] = {
+    "not_ready": "não vamos ter {item}{day}",
+    "not_ready_partial": "vamos ter menos {item} do que você pediu{day} ({lacking})",
+    "may_not_be_ready": "pode ser que não tenhamos {item}{day}",
+    "may_not_be_ready_partial": "pode ser que tenhamos menos {item} do que você pediu{day} ({lacking})",
+    "late": "o preparo de {item} atrasou",
+    "out_of_stock": "estamos sem {item}",
+    "out_of_stock_partial": "temos menos {item} do que você pediu ({lacking})",
+    "may_be_missing": "pode ser que falte {item}",
+    "may_be_missing_partial": "pode ser que falte parte de {item} ({lacking})",
+}
+
+#: A mesma oração para vários itens na mesma situação (#2809 item 5), com
+#: ``{item}`` = "Focaccia e Brioche". A falta em parte não junta: cada item diz
+#: quanto falta dele, numa oração própria.
+PROMISE_ITEMS_SITUATION: dict[str, str] = {
+    "not_ready": "não vamos ter {item}{day}",
+    "may_not_be_ready": "pode ser que não tenhamos {item}{day}",
+    "late": "o preparo de {item} atrasou",
+    "out_of_stock": "estamos sem {item}",
+    "may_be_missing": "pode ser que faltem {item}",
+}
+
+#: O que sai do pedido no "tirar o item": um item inteiro, vários inteiros, ou só a parte que falta.
+PROMISE_REMOVED: dict[str, str] = {"one": "esse item", "many": "esses itens", "part": "o que falta"}
+
+#: Por onde o dinheiro volta, na frase do cliente (as mesmas palavras do ``order_updated``).
+PROMISE_REFUND_ROUTE: dict[str, str] = {"pix": "pelo Pix", "card": "no seu cartão", "cash": "em dinheiro"}
+
+
+def promise_proposal(
+    proposal: str,
+    *,
+    shop_name: str,
+    customer_name: str,
+    order_ref_short: str,
+    items: list[dict[str, str]],
+    **values: str,
+) -> str:
+    """A mensagem de uma escolha do diálogo "Resolver": abertura, o que houve e a proposta.
+
+    ``proposal`` é uma chave de :data:`PROMISE_PROPOSAL_COPY` ("swap",
+    "swap_named", "reschedule", "remove", "remove_refund", "cancel",
+    "cancel_refund"). ``items`` são os itens em risco, cada um ``{"name",
+    "situation", "day", "lacking"}`` com ``situation`` de
+    :data:`PROMISE_ITEM_SITUATION`. ``values`` preenche a proposta (``offer``,
+    ``item``, ``removed``, ``amount``, ``route``, ``total``). Uma linha só, sem
+    quebra: é o que cabe no ``?text=`` do WhatsApp e no botão de copiar.
+    """
+    name = str(customer_name or "").strip()
+    greeting = f", {name}" if name else ""
+    shop = str(shop_name or "").strip()
+    opening = PROMISE_PROPOSAL_COPY["opening" if shop else "opening_without_shop"].format(
+        customer_name_greeting=greeting, shop_name=shop,
+    )
+    happened = PROMISE_PROPOSAL_COPY["happened"].format(
+        items=_listed(_grouped_entries(items)), order_ref_short=order_ref_short,
+    )
+    return " ".join((opening, happened, PROMISE_PROPOSAL_COPY[proposal].format(**values)))
+
+
+def _listed(parts: list[str]) -> str:
+    """ "A", "A e B", "A, B e C"."""
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " e " + parts[-1]
+
+
+def _grouped_entries(items: list[dict[str, str]]) -> list[str]:
+    """Uma oração por situação: os itens na mesma situação (e no mesmo dia) juntos.
+
+    A ordem é a da primeira aparição de cada situação. A falta em parte fica sozinha:
+    cada item diz quanto falta dele.
+    """
+    groups: dict[tuple[str, str], list[str]] = {}
+    order: list[tuple[str, ...]] = []
+    for index, item in enumerate(items):
+        situation, day = str(item["situation"]), str(item.get("day", ""))
+        if situation in PROMISE_ITEMS_SITUATION:
+            key = (situation, day)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(str(item["name"]))
+        else:
+            order.append(("single", str(index)))
+    entries = []
+    for key in order:
+        if key[0] == "single":
+            item = items[int(key[1])]
+            entries.append(PROMISE_ITEM_SITUATION[item["situation"]].format(
+                item=item["name"], day=item.get("day", ""), lacking=item.get("lacking", ""),
+            ))
+            continue
+        situation, day = key
+        names = groups[key]
+        if len(names) == 1:
+            entries.append(PROMISE_ITEM_SITUATION[situation].format(item=names[0], day=day, lacking=""))
+        else:
+            entries.append(PROMISE_ITEMS_SITUATION[situation].format(item=_listed(names), day=day))
+    return entries
 
 
 def plain_bodies() -> dict[str, str]:
@@ -296,3 +520,25 @@ def _gsm_ascii(text: str) -> str:
     ascii_only = "".join(ch for ch in decomposed if ord(ch) < 128)
     # Emoji some por inteiro; o espaço que o antecedia não fica pendurado.
     return "\n".join(" ".join(line.split()) for line in ascii_only.split("\n"))
+
+
+#: Nomes genéricos que o lifecycle pede e o envio só qualifica depois
+#: (``order_ready`` vira ``order_ready_pickup``/``order_ready_delivery``). Quando o
+#: envio falha antes de qualificar, a diretiva fica com o genérico, e a tela lia
+#: "Order ready" (beta 06/11, W3).
+_GENERIC_TEMPLATE_LABELS = {
+    "order_ready": "Pedido pronto",
+}
+
+
+def template_label(template: str) -> str:
+    """O nome do aviso na língua de quem opera ("Pedido pronto"), nunca a chave."""
+    from shopman.shop.services.marketing_platform_configuration import WHATSAPP_EVENT_LABELS
+
+    key = str(template or "")
+    return (
+        WHATSAPP_EVENT_LABELS.get(key)
+        or _GENERIC_TEMPLATE_LABELS.get(key)
+        or key.replace("_", " ").strip().capitalize()
+        or "Aviso"
+    )

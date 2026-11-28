@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -24,6 +25,7 @@ from shopman.backstage.services.exceptions import (
     AiAssistNotConfigured,
     CatalogError,
 )
+from shopman.shop.observability import ServerTimingMixin
 
 
 def _actor(request) -> str:
@@ -32,19 +34,40 @@ def _actor(request) -> str:
     return getattr(user, "username", None) or "operator"
 
 
+
+def _not_applied(exc) -> dict:
+    """Recusa no dialeto da casa: ``{detail, field, errors}`` quando há campo."""
+    body = {"outcome": "not_applied", "detail": str(exc)}
+    field = getattr(exc, "field", "")
+    if field:
+        body["field"] = field
+        body["errors"] = {field: [str(exc)]}
+    return body
+
 class _CatalogBase(OperationalObservationMixin, APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_catalog"
+
+
+class _CatalogPeriodSerializer(serializers.Serializer):
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if attrs.get("date_from") and attrs.get("date_to") and attrs["date_to"] < attrs["date_from"]:
+            raise serializers.ValidationError({"date_to": ["A data final deve ser igual ou posterior à inicial."]})
+        return attrs
 
 
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
         summary="Catalog matrix (produto × superfície)",
+        parameters=[_CatalogPeriodSerializer],
         responses={200: OpenApiResponse(description="Matriz de catálogo por superfície.")},
     ),
 )
-class CatalogMatrixView(_CatalogBase):
+class CatalogMatrixView(ServerTimingMixin, _CatalogBase):
     def get(self, request):
         from shopman.backstage.projections.catalog import (
             build_catalog_matrix,
@@ -53,11 +76,13 @@ class CatalogMatrixView(_CatalogBase):
         )
 
         params = request.query_params
+        period = _CatalogPeriodSerializer(data=params)
+        period.is_valid(raise_exception=True)
         collection_ref = (params.get("collection") or "").strip()
         query = (params.get("q") or "").strip()
         order = (params.get("order") or "name").strip()
         filters = {name: params.get(name) == "true"
-            for name in ("is_published", "is_sellable", "has_vocation", "pim_complete") if params.get(name) in ("true", "false")}
+            for name in ("archived", "is_published", "is_sellable", "has_vocation", "pim_complete") if params.get(name) in ("true", "false")}
         # Listas de opção da faceta (estoque e envio): valor fora da lista é
         # ignorado pela projection, então não há recorte torto.
         for name in ("stock", "sync_status"):
@@ -69,7 +94,7 @@ class CatalogMatrixView(_CatalogBase):
             filters["surface"] = surface
         matrix = build_catalog_matrix(collection_ref, user=request.user, query=query, order=order,
             page=as_int(params, "page", default=1) or 1,
-            page_size=as_int(params, "page_size", default=50) or 50, filters=filters)
+            page_size=as_int(params, "page_size", default=50) or 50, filters=filters, **period.validated_data)
         actions = (*curation_actions(collection_ref, request.user), product_create_action(request.user))
         return Response(read_data(matrix=projection_data(matrix), collection_ref=collection_ref,
             actions=[projection_data(action) for action in actions]))
@@ -116,7 +141,7 @@ class CatalogCellView(_CatalogBase):
             return Response({"detail": "Atualize a célula: a gravação exige intenção e revisão."}, status=400)
         if data.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "A identificação mudou. Confira a célula."}, status=409)
-        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q") if field in data}
+        patch = {field: data[field] for field in ("is_published", "is_sellable", "price_q", "min_qty") if field in data}
         if "price_q" in patch:
             patch["price_q"] = as_int(data, "price_q", default=None)
         ref = mutation_fingerprint({"sku": sku, "surface": surface_ref})
@@ -128,9 +153,9 @@ class CatalogCellView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc), "current": getattr(exc, "current", {}), "conflicting_fields": getattr(exc, "fields", [])}, 409
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "intention": key, "sku": sku, "surface_ref": surface_ref,
-                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q}, 200
+                "is_published": item.is_published, "is_sellable": item.is_sellable, "price_q": item.price_q, "min_qty": str(getattr(item, "min_qty", ""))}, 200
 
         try:
             result = run_idempotent_mutation(scope=scope, key=key,
@@ -142,13 +167,17 @@ class CatalogCellView(_CatalogBase):
             return Response({"outcome": "in_progress"}, status=202)
 
 
-class CatalogCellsView(_CatalogBase):
-    """Lote de células numa ida, com recibo linha a linha e recibo local."""
+class _CatalogBatchView(_CatalogBase):
+    """Lote numa ida, com recibo linha a linha e recibo local."""
+
+    operation = ""
+    list_key = ""
+    command = None
 
     def _scope(self, request):
         from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.cells"})
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": self.operation})
 
     def get(self, request):
         from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
@@ -174,21 +203,21 @@ class CatalogCellsView(_CatalogBase):
 
         data = request.data
         key = request.headers.get("Idempotency-Key") or (data.get("idempotency_key") if isinstance(data, dict) else None)
-        cells = data.get("cells") if isinstance(data, dict) else None
-        if (not isinstance(data, dict) or not isinstance(cells, list) or not cells
+        entries = data.get(self.list_key) if isinstance(data, dict) else None
+        if (not isinstance(data, dict) or not isinstance(entries, list) or not entries
                 or not isinstance(key, str) or not key or len(key) > 128 or not data.get("base_revision")):
             return Response({"detail": "Atualize o catálogo: o lote exige intenção e revisão.", "error": {"code": "intention_required"}}, status=400)
         if data.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "A identificação mudou. Confira o lote.", "error": {"code": "actor_changed"}}, status=409)
-        payload = {"cells": cells}
+        payload = {self.list_key: entries}
         scope = self._scope(request)
         fingerprint = mutation_fingerprint({"scope": scope, "payload": payload})
 
         def execute():
             try:
-                result = catalog_service.set_cells(cells, actor=_actor(request))
+                result = type(self).command(entries, actor=_actor(request))
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "intention": key, **result}, 200
 
         try:
@@ -199,7 +228,117 @@ class CatalogCellsView(_CatalogBase):
         except RemoteMutationInProgress:
             return Response({"outcome": "unknown", "detail": "Lote em processamento; consulte esta intenção."}, status=202)
 
-class CatalogProductDetailView(_CatalogBase):
+
+class CatalogCellsView(_CatalogBatchView):
+    """Tabelão por canal: preço e flags de várias células numa ida."""
+
+    operation = "catalog.cells"
+    list_key = "cells"
+    command = staticmethod(catalog_service.set_cells)
+
+
+class CatalogProductSheetView(_CatalogBatchView):
+    """Tabelão de produtos: GET sem intenção lê a planilha; POST grava as linhas."""
+
+    operation = "catalog.product-sheet"
+    list_key = "rows"
+    command = staticmethod(catalog_service.set_product_rows)
+
+    def get(self, request):
+        if request.query_params.get("idempotency_key"):
+            return super().get(request)
+        return Response(catalog_service.product_sheet())
+
+
+class CatalogProductsDuplicateView(_CatalogBatchView):
+    """Duplicar vários: uma cópia oculta e fora de venda por produto selecionado."""
+
+    operation = "catalog.products-duplicate"
+    list_key = "products"
+    command = staticmethod(catalog_service.duplicate_products)
+
+
+class CatalogProductArchiveView(_CatalogBase):
+    """Arquivar/desarquivar um ou vários produtos, com recibo por linha."""
+
+    def _scope(self, request):
+        from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+        return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": "catalog.products-active"})
+
+    def get(self, request):
+        from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not key:
+            return Response({"detail": "Informe a intenção."}, status=400)
+        try:
+            receipt = lookup_local_mutation(scope=self._scope(request), key=key)
+        except RemoteMutationInProgress:
+            receipt = None
+        if receipt is None:
+            return Response({"outcome": "unknown", "detail": "Resultado ainda não confirmado."}, status=202)
+        return Response(receipt.response_body, status=receipt.response_code)
+
+    def post(self, request):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        data = request.data if isinstance(request.data, dict) else {}
+        key = request.headers.get("Idempotency-Key") or data.get("idempotency_key")
+        products = data.get("products")
+        is_active = data.get("is_active")
+        if (
+            not isinstance(key, str)
+            or not key
+            or len(key) > 128
+            or not isinstance(products, list)
+            or not products
+            or not isinstance(is_active, bool)
+            or not data.get("base_revision")
+        ):
+            return Response({"detail": "Atualize os produtos e confirme o gesto.", "error": {"code": "intention_required"}}, status=400)
+        if data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Confira os produtos.", "error": {"code": "actor_changed"}}, status=409)
+
+        scope = self._scope(request)
+        fingerprint = mutation_fingerprint({"scope": scope, "products": products, "is_active": is_active})
+
+        def execute():
+            try:
+                receipt = catalog_service.set_products_active(products, is_active=is_active, actor=request.user)
+            except (CatalogError, ValidationError) as exc:
+                return _not_applied(exc), 400
+            return {"ok": True, "outcome": "applied", "intention": key, **receipt}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=execute)
+            return Response(result.response_body, status=result.response_code)
+        except RemoteMutationConflict:
+            return Response({"detail": "Esta intenção já representa outro gesto.", "error": {"code": "intention_conflict"}}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "unknown", "detail": "Gesto em processamento; consulte esta intenção."}, status=202)
+
+class CatalogProductOptionsView(ServerTimingMixin, _CatalogBase):
+    """Busca leve de produtos para compor um combo, sem montar a matriz."""
+
+    def get(self, request):
+        from django.db.models import Q
+        from shopman.offerman.models import Product
+
+        term = str(request.query_params.get("q") or "").strip()[:200]
+        products = Product.objects.filter(is_active=True)
+        if term:
+            products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
+        rows = list(products.order_by("name", "sku").values("sku", "name", "unit")[:21])
+        return Response({"products": rows[:20], "has_next": len(rows) > 20})
+
+
+class CatalogProductDetailView(ServerTimingMixin, _CatalogBase):
     """Partial product edits have leaf revisions and an atomic local receipt."""
 
     def _scope(self, request, sku):
@@ -211,6 +350,26 @@ class CatalogProductDetailView(_CatalogBase):
         from shopman.backstage.projections.catalog import product_detail_action
 
         product = catalog_service.get_product_detail(sku)
+        from shopman.offerman.models import ListingItem
+
+        from shopman.backstage.projections.catalog import cell_action
+        from shopman.shop.models import Channel
+        from shopman.shop.services import listing_mirror
+
+        items = {item.listing.ref: item for item in ListingItem.objects.filter(product__sku=sku).select_related("listing", "product").order_by("-min_qty", "-pk")}
+        links = []
+        for channel in Channel.objects.filter(commerce_policy=Channel.CommercePolicy.ORDER).order_by("display_order", "pk"):
+            item = items.get(channel.ref)
+            action = projection_data(cell_action(sku, channel.ref, request.user, item=item, unit=product["unit"]))
+            source = listing_mirror.source_ref_from_config(channel.config)
+            if source:
+                action["enabled"] = False
+                action["reason"] = "Este canal acompanha o catálogo de outro canal. Edite o canal de origem."
+            links.append({"surface_ref": channel.ref, "name": channel.name, "in_listing": item is not None,
+                "price_q": item.price_q if item else product["base_price_q"], "min_qty": str(item.min_qty) if item else "1",
+                "is_published": item.is_published if item else False, "is_sellable": item.is_sellable if item else False,
+                "action": action})
+        product["listing_links"] = links
         return {"product": product, "action": projection_data(product_detail_action(sku, product, request.user))}
 
     def get(self, request, sku: str):
@@ -321,7 +480,7 @@ class CatalogAiAssistView(_CatalogBase):
     descarta ela sozinha na superfície. Não grava nada — quem persiste é o PATCH
     do produto (ou o POST social), depois do "Aceitar".
 
-    503 quando o deployment não tem ``AI_ASSIST_API_KEY``: a superfície mostra um
+    503 quando não há conexão de IA para ``copy``: a superfície mostra um
     aviso, não um erro. O assist é conveniência, não caminho crítico.
     """
 
@@ -394,18 +553,20 @@ class _CatalogPreviewMutationView(_CatalogBase):
 
             def execute():
                 try:
-                    return self.apply_command(payload, actor_id=request.user.pk), 200
+                    body = self.apply_command(payload, actor_id=request.user.pk)
+                    return body, 422 if body.get("outcome") == "not_applied" else 200
                 except CatalogConflict as exc:
                     return {"outcome": "not_applied", "detail": str(exc), "error": {"code": "catalog_changed"}}, 409
                 except (CatalogError, ValidationError) as exc:
-                    return {"outcome": "not_applied", "detail": str(exc)}, 400
+                    return _not_applied(exc), 400
 
             result = run_idempotent_mutation(
                 scope=scope, key=key, fingerprint=mutation_fingerprint({"scope": scope, "payload": payload}), execute=execute,
             )
             return Response(result.response_body, status=result.response_code)
         except (CatalogError, ValidationError) as exc:
-            return Response({"detail": str(exc)}, status=400)
+            # A prévia recusa no mesmo dialeto da confirmação: o campo vai junto.
+            return Response(_not_applied(exc), status=400)
         except RemoteMutationConflict:
             return Response({"detail": "Esta intenção já representa outra alteração.", "error": {"code": "intention_conflict"}}, status=409)
         except RemoteMutationInProgress:
@@ -488,7 +649,7 @@ class _CatalogReorderView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 409
             except (CatalogError, ValidationError) as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
             return {"ok": True, "outcome": "applied", "count": count}, 200
 
         try:
@@ -603,7 +764,7 @@ class CatalogResyncView(_CatalogBase):
             except CatalogConflict as exc:
                 return {"outcome": "not_applied", "detail": str(exc)}, 409
             except CatalogError as exc:
-                return {"outcome": "not_applied", "detail": str(exc)}, 400
+                return _not_applied(exc), 400
 
         try:
             result = run_idempotent_mutation(scope=scope, key=key, fingerprint=mutation_fingerprint(payload), execute=execute)

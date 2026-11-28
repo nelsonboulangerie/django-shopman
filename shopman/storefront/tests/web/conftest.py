@@ -138,10 +138,10 @@ def _grant_order_access(client, order_ref: str) -> None:
 
 @pytest.fixture
 def channel(db):
-    return Channel.objects.create(
-        ref="web",
-        name="Loja Online",
-    )
+    # ``update_or_create``: o teste marcado com ``@pytest.mark.channels("web")``
+    # já materializou a linha; esta fixture só lhe dá o nome da loja.
+    channel, _ = Channel.objects.update_or_create(ref="web", defaults={"name": "Loja Online"})
+    return channel
 
 
 @pytest.fixture

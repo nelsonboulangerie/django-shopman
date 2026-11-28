@@ -2,19 +2,26 @@
 // Cancelar uma venda fechada é EXCEÇÃO auditada (anti-fraude), não fluxo do
 // operador: confirmação destrutiva + desafio gerencial num só diálogo.
 //
-// ⚠️ A identificação vem do `OperatorIdentify` do operator-kit — a MESMA peça da
-// tela de bloqueio e do `OperatorManagerAuth`. Este era o TERCEIRO componente
-// desenhando lista + teclado por conta própria, e o terceiro em que o crachá do
-// gerente não valia: quem tem o crachá no pescoço digitava o nome à mão.
-//
-// A lista de gerentes é a mesma do `OperatorManagerAuth`; vazia, cai no campo
-// de nome, que é a única porta quando ninguém foi provisionado.
+// ⚠️ O diálogo É o `OperatorManagerAuth` do operator-kit, a mesma autorização de
+// gerente de toda a suíte. Este componente só põe o contexto do ato (qual pedido,
+// o prazo, o motivo) no slot `context`. Antes ele montava a própria moldura em
+// volta do `OperatorIdentify`, e cada moldura repetia a decisão de cair num campo
+// de nome digitado quando a lista chegava vazia (dono, 28/10/2026).
 import type { POSManagerProjection } from "~/types/pos";
 
 const props = defineProps<{
   open: boolean;
   orderRef: string;
+  /**
+   * O valor da venda que o gerente assina ("R$ 42,00"), na frente do PIN. Sem
+   * ele, o diálogo dizia só o número do pedido, e o gerente assinava o
+   * cancelamento de uma venda de R$ 4,00 ou de R$ 400,00 do mesmo jeito (P1-6).
+   */
+  totalDisplay: string;
   reason: string;
+  /** O que foi registrado: a venda de balcão ou a encomenda. O nome do ato segue o
+   *  objeto, e o gerente lê "Cancelar a encomenda" quando é encomenda (P2-7, #3192). */
+  noun?: "venda" | "encomenda";
   maxAgeMinutes?: number;
   managers?: POSManagerProjection[];
   /** Quem CONTINUA operando depois da assinatura. Ver OperatorManagerAuth. */
@@ -29,67 +36,38 @@ const emit = defineEmits<{
   confirm: [string, string];
   confirmBadge: [string];
 }>();
-
-const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
-const managers = computed(() => props.managers ?? []);
-
-watch(() => props.open, (open) => {
-  if (open) identify.value?.reset();
-});
-
-function onPin(payload: { username: string; pin: string }) {
-  if (props.busy || !payload.username || !payload.pin) return;
-  emit("confirm", payload.username, payload.pin);
-}
-
-function onBadge(token: string) {
-  if (props.busy) return;
-  emit("confirmBadge", token);
-}
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
-    <UiDialogContent class="sm:max-w-sm">
-      <UiDialogHeader class="items-center text-center">
-        <div class="mx-auto grid size-12 place-items-center rounded-md border border-destructive/40 bg-destructive/10 text-destructive">
-          <Icon name="lucide:rotate-ccw" class="size-6" />
-        </div>
-        <UiDialogTitle class="text-lg">Cancelar venda</UiDialogTitle>
-        <UiDialogDescription>
-          O pedido {{ orderRef }} será cancelado. Esta operação exige a autorização de um gerente.
-          <template v-if="maxAgeMinutes">
-            Disponível por até {{ maxAgeMinutes }} minutos após a venda; depois, cancele pelo gestor.
-          </template>
-        </UiDialogDescription>
-        <!-- Autorizar não é logar: a sessão não troca. Ver OperatorManagerAuth. -->
-        <p v-if="operatorName" class="text-sm font-medium text-foreground">
-          Você continua como {{ operatorName }}.
-        </p>
-      </UiDialogHeader>
-
-      <div class="flex flex-col items-center gap-4 pb-1">
-        <UiInput
-          :model-value="reason"
-          placeholder="Motivo do cancelamento (opcional)"
-          autocomplete="off"
-          class="h-8 w-full text-center text-base"
-          @update:model-value="(value) => emit('update:reason', String(value))"
-        />
-        <OperatorIdentify
-          ref="identify"
-          :people="managers"
-          :busy="busy"
-          :error="error"
-          :badge-enabled="open"
-          allow-typed-name
-          name-label="Nome do gerente"
-          prompt="Quem autoriza?"
-          change-label="Trocar gerente"
-          @pin="onPin"
-          @badge="onBadge"
-        />
-      </div>
-    </UiDialogContent>
-  </UiDialog>
+  <OperatorManagerAuth
+    :open="props.open"
+    action="cancel_sale"
+    :operator-name="props.operatorName"
+    :managers="props.managers ?? []"
+    :busy="props.busy"
+    :error="props.error"
+    @update:open="(value: boolean) => emit('update:open', value)"
+    @authorize="(username: string, pin: string) => emit('confirm', username, pin)"
+    @authorize-badge="(token: string) => emit('confirmBadge', token)"
+  >
+    <template #context>
+      <p class="text-base font-semibold text-highlighted" data-cancel-sale-total>
+        Cancelar a {{ props.noun ?? "venda" }} de <span class="tabular-nums">{{ props.totalDisplay }}</span>
+      </p>
+      <p class="text-sm text-muted-foreground">
+        Pedido {{ props.orderRef }}.
+        <template v-if="props.maxAgeMinutes">
+          Disponível por até {{ props.maxAgeMinutes }} minutos após a {{ props.noun ?? "venda" }}; depois, cancele pelo Gestor.
+        </template>
+      </p>
+      <NuxtInput
+        :model-value="props.reason"
+        placeholder="Motivo do cancelamento (opcional)"
+        aria-label="Motivo do cancelamento (opcional)"
+        autocomplete="off"
+        class="w-full"
+        @update:model-value="(value: string | number) => emit('update:reason', String(value))"
+      />
+    </template>
+  </OperatorManagerAuth>
 </template>

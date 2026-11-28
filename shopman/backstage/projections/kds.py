@@ -23,8 +23,9 @@ from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 
-from shopman.shop.services import operator_orders
+from shopman.shop.services import operator_orders, order_undo
 from shopman.shop.services.fulfillment_window import promised_at, window_label
 from shopman.shop.services.order_helpers import get_commitment_date, get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
@@ -107,6 +108,10 @@ class KDSTicketProjection:
     # gestor) and the customer's checkout note (order_notes). Empty when absent.
     kitchen_note: str = ""
     customer_note: str = ""
+    # Venda de balcão: "Consumir aqui" ou "Para levar" (#3193), o que o PDV marcou
+    # na comanda. É a linha de cima do card no lugar de "Retirada": a cozinha sabe
+    # se monta no prato ou embala. Vazio fora do balcão, ou se o balcão não disse.
+    service_label: str = ""
     # Pedido de teste da homologação do iFood NÃO vira ticket (``kds.dispatch``
     # o suprime). O crachá existe para o que já está no painel: ticket criado
     # antes desta trava, ou disparado por outro caminho. Vazio no pedido de
@@ -159,6 +164,13 @@ class KDSTicketProjection:
     # (``kds/tickets/<pk>/changes/seen/``) e só então o Pronto destrava.
     changes: tuple[KDSChangeProjection, ...] = ()
     change_ticket_pks: tuple[int, ...] = ()
+    # Quando o PEDIDO entrou ("05:43") e há quantos segundos, que não é o mesmo que
+    # o ticket: o pedido sem estação espera no Gestor até alguém tocar "Iniciar
+    # preparo", e o card dizia "1m · Novo" a um cliente que já esperava 33 min
+    # (beta 05/11, KDS-04). O relógio e a régua do alvo seguem no tempo de cozinha;
+    # isto é o contexto. Vazio/``None`` sem origem.
+    order_created_at_display: str = ""
+    order_elapsed_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -564,7 +576,9 @@ def _history_entry(ticket, instance, *, source, names, today) -> KDSHistoryEntry
     return KDSHistoryEntryProjection(
         ticket=card,
         state=ticket.status,
-        items_summary=", ".join(_station_items([ticket])),
+        # O histórico é da Cozinha e fala como o card dela ("2× Croque"), não como o
+        # resumo do Gestor ("2x"): duas grafias na mesma tela (beta 05/11, KDS-18).
+        items_summary=", ".join(_station_items([ticket], times="×")),
         steps=tuple(steps),
         undone=undone,
         prep_display=prep_display,
@@ -701,6 +715,18 @@ class KitchenPaperProjection:
     fired_at_display: str
 
 
+#: O que o balcão marcou na comanda (``Session.data.pos.counter_service``, #3193).
+_COUNTER_SERVICE_LABELS = {"here": "Consumir aqui", "to_go": "Para levar"}
+
+
+def counter_service_label(source_data: dict) -> str:
+    """"Consumir aqui" / "Para levar" da venda de balcão; vazio fora dela."""
+    pos_data = source_data.get("pos") or {}
+    if (pos_data.get("sales_mode") or "counter") != "counter":
+        return ""
+    return _COUNTER_SERVICE_LABELS.get(str(pos_data.get("counter_service") or ""), "")
+
+
 def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     """O que a Via Cozinha deste ticket imprime (``receipt_escpos.kitchen_ticket``)."""
     from shopman.shop.models import Channel
@@ -718,6 +744,9 @@ def build_kitchen_paper(ticket) -> KitchenPaperProjection:
     fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
     if fulfillment_type == "delivery":
         fulfillment_label = "ENTREGA"
+    elif card.service_label:
+        # O papel diz o mesmo que o card: no balcão, comer aqui ou levar (#3193).
+        fulfillment_label = card.service_label.upper()
     elif fulfillment_type == "pickup":
         fulfillment_label = "RETIRADA"
     else:
@@ -791,6 +820,7 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     """
     from shopman.orderman.models import Session
 
+    from shopman.backstage.models import KDSTicket
     from shopman.shop.services.kds import kitchen_done_session_keys
 
     # O painel é do DIA: pedido de outro dia que ficou aberto (esquecido em
@@ -817,20 +847,45 @@ def build_kds_customer_status(*, limit: int = 24) -> KDSCustomerStatusProjection
     ready: list[KDSCustomerOrderProjection] = []
     committed_session_keys: set[str] = set()
 
-    for order in orders_qs:
+    orders = list(orders_qs)
+    # Pedido aceito que ninguém começou a fazer não é "Em preparo" para o cliente:
+    # o painel prometia preparo que não tinha começado (beta 05/11, KDS-05). Desde
+    # 06/11 o ticket nasce no aceite e espera "Iniciar preparo" no posto, então ter
+    # ticket não basta: Aceito entra quando alguma estação iniciou o preparo.
+    accepted_keys = {
+        order.session_key for order in orders if order.status == Order.Status.ACCEPTED and order.session_key
+    }
+    in_kitchen_keys = (
+        set(
+            KDSTicket.objects.filter(session_key__in=accepted_keys)
+            .exclude(status__in=["pending", "cancelled"])
+            .values_list("session_key", flat=True)
+        )
+        if accepted_keys
+        else set()
+    )
+
+    for order in orders:
         if order.session_key:
             committed_session_keys.add(order.session_key)
         if (get_commitment_date(order) or timezone.localdate(order.created_at)) != today:
             continue
         if get_fulfillment_type(order) == "delivery":
             continue
+        if order.status == Order.Status.ACCEPTED and order.session_key not in in_kitchen_keys:
+            continue
+        # O pronto com a janela de desfazer aberta (#3167, F-3 do laudo do Gestor)
+        # ainda não é "Pronto para retirar" para o cliente: o aviso de pronto
+        # espera a mesma janela (``order_undo.ready_hold``), e o desfazer devolve o
+        # pedido ao preparo. Antes o número subia na TV e sumia de novo.
+        shows_ready = order.status == Order.Status.READY and not order_undo.ready_hold(order)
         projection = KDSCustomerOrderProjection(
             ref=order.ref,
-            status=order.status,
-            status_label="Pronto para retirar" if order.status == Order.Status.READY else "Em preparo",
+            status=order.status if shows_ready or order.status != Order.Status.READY else Order.Status.PREPARING,
+            status_label="Pronto para retirar" if shows_ready else "Em preparo",
             updated_at_display=_format_time(order.ready_at or order.updated_at or order.created_at),
         )
-        if order.status == Order.Status.READY:
+        if shows_ready:
             ready.append(projection)
         else:
             preparing.append(projection)
@@ -917,12 +972,12 @@ def _public_comanda_code(session) -> str:
 _EXIT_STATE_LABELS = {"pending": "na fila", "in_progress": "em preparo", "done": "pronto"}
 
 
-def _station_items(tickets) -> tuple[str, ...]:
+def _station_items(tickets, *, times: str = "x") -> tuple[str, ...]:
     """Os itens dos tickets de uma estação, na régua do resumo do card ("2x Croissant")."""
     from shopman.shop.services.order_helpers import json_quantity
 
     return tuple(
-        f"{json_quantity(item.get('qty', 1))}x {item.get('name') or item.get('sku') or ''}".strip()
+        f"{json_quantity(item.get('qty', 1))}{times} {item.get('name') or item.get('sku') or ''}".strip()
         for ticket in tickets
         for item in (ticket.items or [])
         if isinstance(item, dict)
@@ -1204,11 +1259,14 @@ def _build_ticket(
         source, source_data, handle_ref, ticket.session_key
     )
     channel_ref = getattr(source, "channel_ref", "") if source is not None else ""
+    # O telefone não é nome: sem nome, o card fica com o código do pedido (beta
+    # 05/11, KDS-07: o detalhe mostrava "+5543993333333" a quem só prepara).
     customer_name = (
         source_data.get("customer", {}).get("name", "")
-        or handle_ref
+        or ("" if _looks_like_phone(handle_ref) else handle_ref)
         or ""
     )
+    source_created_at = getattr(source, "created_at", None) if source is not None else None
     fulfillment_type = source_data.get("fulfillment_type") or source_data.get("delivery_method", "")
     is_delivery = fulfillment_type == "delivery"
     fulfillment_icon = "local_shipping" if is_delivery else "storefront"
@@ -1256,6 +1314,7 @@ def _build_ticket(
         completed_at_display=_format_time(ticket.completed_at),
         kitchen_note=str(source_data.get("kitchen_note", "") or ""),
         customer_note=str(source_data.get("order_notes", "") or ""),
+        service_label=counter_service_label(source_data),
         test_order_label=_test_order_label(source) if source is not None else "",
         is_preorder=_is_preorder(source),
         due_time_display=_due_time_display(source, promised, is_delivery=is_delivery),
@@ -1267,7 +1326,17 @@ def _build_ticket(
         **_finish_block(ticket, source),
         **_volumes_fields(source),
         **_start_fields(ticket, source_data, names or {}),
+        order_created_at_display=_format_time(source_created_at),
+        order_elapsed_seconds=(
+            int((elapsed_until - source_created_at).total_seconds()) if source_created_at else None
+        ),
     )
+
+
+def _looks_like_phone(value) -> bool:
+    """``+5543993333333`` / ``(43) 99333-3333``: só dígitos e pontuação de telefone."""
+    text = str(value or "").strip()
+    return len([ch for ch in text if ch.isdigit()]) >= 8 and all(ch.isdigit() or ch in "+()-. " for ch in text)
 
 
 def ticket_seen(ticket) -> bool:
@@ -1285,12 +1354,10 @@ def ticket_seen(ticket) -> bool:
 
 
 def _is_preorder(source) -> bool:
-    """Encomenda: o pedido tem data combinada e foi feito antes dela."""
-    commitment = get_commitment_date(source)
-    created_at = getattr(source, "created_at", None)
-    if commitment is None or created_at is None:
-        return False
-    return timezone.localdate(created_at) < commitment
+    """Encomenda: a régua única do shop (``order_helpers.is_preorder``, #3163)."""
+    from shopman.shop.services.order_helpers import is_preorder
+
+    return is_preorder(source)
 
 
 def _due_time_display(source, promised, *, is_delivery: bool) -> str:
@@ -1306,7 +1373,7 @@ def _due_time_display(source, promised, *, is_delivery: bool) -> str:
     slot = str(((getattr(source, "data", None) or {}).get("delivery_time_slot")) or "").strip()
     label = window_label(slot) if slot else ""
     if not label:
-        return f"{verb} às {timezone.localtime(promised):%H:%M}"
+        return f"{verb} às {format_clock(promised)}"
     if label[:2].isdigit():
         return f"{verb} das {label}"
     return f"{verb} {label[:1].lower()}{label[1:]}"
@@ -1314,10 +1381,7 @@ def _due_time_display(source, promised, *, is_delivery: bool) -> str:
 
 def _clock(moment) -> str:
     """ "17h" / "14h30": a hora como a casa fala; vazio sem hora."""
-    if moment is None:
-        return ""
-    local = timezone.localtime(moment)
-    return f"{local.hour}h" if local.minute == 0 else f"{local.hour}h{local.minute:02d}"
+    return format_clock(moment)
 
 
 def _volumes_fields(source) -> dict:
@@ -1394,11 +1458,18 @@ def _ticket_status_label(status: str) -> str:
 
 
 def _add_stock_warnings(items: list[dict]) -> list[dict]:
-    """Add stock_warning to items where physical stock is low or zero."""
+    """Avisa no item da Cozinha quando o estoque físico zerou ou está acabando.
+
+    "Acabando" é a régua única do balcão e da Cozinha (DEV-2026-077,
+    ``shop/services/running_low.py``): a porcentagem do SKU sobre o que o dia
+    teve. O ``StockAlert.min_quantity`` do Stockman NÃO entra aqui: ele é o
+    alerta de reposição do painel, outro significado.
+    """
     try:
-        from shopman.stockman.models import Quant, StockAlert
+        from shopman.stockman.models import Quant
     except ImportError:
         return items
+    from shopman.shop.services.running_low import running_low_skus
 
     skus = [item.get("sku") for item in items if item.get("sku")]
     if not skus:
@@ -1412,9 +1483,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
     )
     stock_by_sku = {row["sku"]: row["total"] for row in quant_qs}
 
-    alert_mins: dict[str, Decimal] = {}
-    for alert in StockAlert.objects.filter(sku__in=skus, is_active=True):
-        alert_mins[alert.sku] = alert.min_quantity
+    low = running_low_skus({sku: int(qty) for sku, qty in stock_by_sku.items() if qty > 0})
 
     enriched = []
     for item in items:
@@ -1424,7 +1493,7 @@ def _add_stock_warnings(items: list[dict]) -> list[dict]:
 
         if available <= 0:
             item["stock_warning"] = "Sem estoque"
-        elif sku in alert_mins and available < alert_mins[sku]:
+        elif sku in low:
             item["stock_warning"] = f"Últimas {int(available)} un."
 
         enriched.append(item)
@@ -1436,11 +1505,11 @@ def _format_datetime(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%d/%m às %H:%M")
+    return format_local(local, "%d/%m às {clock}")
 
 
 def _format_time(dt) -> str:
     if dt is None:
         return ""
     local = timezone.localtime(dt)
-    return local.strftime("%H:%M")
+    return format_clock(local)

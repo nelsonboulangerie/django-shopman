@@ -59,7 +59,9 @@ def test_sem_loja_configurada_sobra_a_rota_do_django(settings):
 
 
 @pytest.mark.django_db
-def test_a_resposta_do_endpoint_e_a_mensagem_dizem_a_MESMA_url(com_loja, settings):
+def test_a_resposta_do_endpoint_e_a_mensagem_dizem_a_MESMA_url(
+    com_loja, settings, django_capture_on_commit_callbacks
+):
     """O defeito era exatamente as duas discordarem."""
     import json
     from unittest.mock import patch
@@ -80,7 +82,10 @@ def test_a_resposta_do_endpoint_e_a_mensagem_dizem_a_MESMA_url(com_loja, setting
 
     access_link_created.connect(_captura, weak=False)
     try:
-        with patch("shopman.shop.notifications.notify"):
+        with (
+            patch("shopman.shop.notifications.notify"),
+            django_capture_on_commit_callbacks(execute=True),
+        ):
             r = Client().post(
                 "/api/auth/access/create/",
                 data=json.dumps({"subscriber": {"id": "1", "whatsapp_id": "5543999990001"}}),

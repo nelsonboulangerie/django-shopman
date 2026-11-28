@@ -12,10 +12,9 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E007  Database backend is SQLite in production
   SHOPMAN_E008  Doorman access-link API key is not configured
   SHOPMAN_E009  Real payment adapter is missing required credentials/files
-  SHOPMAN_E010  Debug OTP exposure enabled outside non-production
   SHOPMAN_E011  Machine courier adapter enabled without API credentials
   SHOPMAN_E012  Piloto automático de staging habilitado em produção
-  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
+  SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão
   SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
   SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
   SHOPMAN_E016  Catálogo de qualidade não tem exatamente um grau padrão ativo
@@ -30,6 +29,8 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E025  Chave HMAC dos recibos de privacidade ausente ou inválida
   SHOPMAN_E026  Ambiente de cobrança (EFI_SANDBOX) ou fiscal (FOCUS_NFE_ENVIRONMENT) não declarado em produção
   SHOPMAN_E027  Dinheiro ou nota de verdade com porta de teste aberta (em qualquer ambiente)
+  SHOPMAN_E028  Caminho de SHOPMAN_FISCAL_EMISSION_RESOLVER que não importa ou não é chamável (todo check)
+  SHOPMAN_E029  Adapter fiscal de simulação (fiscal_simulated) fora de DEBUG
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -38,8 +39,6 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W004  Listing.ref has no matching Channel.ref
   SHOPMAN_W005  OFFERMAN pricing backend not configured
   SHOPMAN_W006  Mock payment adapter explicitly allowed outside DEBUG
-  SHOPMAN_W007  Debug OTP exposure explicitly allowed in staging
-  SHOPMAN_W008  iFood webhook token is not configured (integration webhook unauthenticated)
   SHOPMAN_W009  Manychat webhook secret is not configured
   SHOPMAN_W010  Machine courier enabled without webhook token (status via polling only)
   SHOPMAN_W011  Piloto automático de staging ligado (pedidos andam sozinhos)
@@ -64,6 +63,7 @@ import json
 import logging
 import os
 from collections.abc import Mapping
+from pathlib import Path
 from urllib.parse import urlparse
 
 from django.conf import settings
@@ -220,57 +220,27 @@ def check_webhook_tokens(app_configs, **kwargs):
 
     Every endpoint already fails CLOSED without a token (rejects all requests —
     there is no bypass). The severity here reflects the CONSEQUENCE of a missing
-    token, not a security risk:
-
-    - EFI (``critical=True``) → **Error**: the PIX confirmation webhook is in
-      active use; without the token real payments silently never confirm. Block
-      the deploy.
-    - iFood (``critical=False``) → **Warning**: fail-closed, mas NÃO é "opcional"
-      se você recebe pedidos por webhook. ``/api/webhooks/ifood/`` ingere o pedido
-      no canal iFood; sem o token, TODO callback do iFood toma 401 e nenhum pedido
-      entra. É Warning (não Error) só porque um deployment que não usa iFood deve
-      poder subir sem ele — mas se usa, este token é obrigatório.
+    token, not a security risk: the EFI PIX confirmation webhook is in active
+    use; without the token real payments silently never confirm. Block the
+    deploy.
     """
     messages = []
     if settings.DEBUG:
         return messages
 
-    # (settings_attr, persona, env_var, critical)
-    integrations = [
-        ("SHOPMAN_EFI_WEBHOOK", "EFI", "EFI_WEBHOOK_TOKEN", True),
-        ("SHOPMAN_IFOOD", "iFood", "IFOOD_WEBHOOK_TOKEN", False),
-    ]
-    for attr, name, env_var, critical in integrations:
-        cfg = getattr(settings, attr, {}) or {}
-        if cfg.get("webhook_token"):
-            continue
-        if critical:
-            messages.append(
-                Error(
-                    f"{attr}['webhook_token'] não está configurado em produção.",
-                    hint=(
-                        f"{name} confirma pagamento real via webhook; sem o token "
-                        f"a confirmação nunca chega e o pagamento trava. Defina "
-                        f"{env_var} via variável de ambiente."
-                    ),
-                    id="SHOPMAN_E004",
-                )
+    cfg = getattr(settings, "SHOPMAN_EFI_WEBHOOK", {}) or {}
+    if not cfg.get("webhook_token"):
+        messages.append(
+            Error(
+                "SHOPMAN_EFI_WEBHOOK['webhook_token'] não está configurado em produção.",
+                hint=(
+                    "EFI confirma pagamento real via webhook; sem o token "
+                    "a confirmação nunca chega e o pagamento trava. Defina "
+                    "EFI_WEBHOOK_TOKEN via variável de ambiente."
+                ),
+                id="SHOPMAN_E004",
             )
-        else:
-            messages.append(
-                Warning(
-                    f"{attr}['webhook_token'] não configurado — o webhook {name} "
-                    f"(/api/webhooks/ifood/) rejeita TODO callback com 401.",
-                    hint=(
-                        f"Se você recebe pedidos {name} por webhook, eles NÃO entram "
-                        f"sem este token — o endpoint ingere o pedido no canal {name}, "
-                        f"mas sem {env_var} (igual ao configurado no portal {name}) "
-                        f"todo callback toma 401. Defina {env_var}. Deixe vazio só se "
-                        f"não usa o webhook {name}."
-                    ),
-                    id="SHOPMAN_W008",
-                )
-            )
+        )
     return messages
 
 
@@ -429,17 +399,24 @@ def check_operator_cookie_domain(app_configs, **kwargs):
     if settings.DEBUG:
         return errors
 
-    operator_base_urls = {
-        "SHOPMAN_POS_BASE_URL": getattr(settings, "SHOPMAN_POS_BASE_URL", ""),
-        "SHOPMAN_KDS_BASE_URL": getattr(settings, "SHOPMAN_KDS_BASE_URL", ""),
-        "SHOPMAN_ORDERS_BASE_URL": getattr(settings, "SHOPMAN_ORDERS_BASE_URL", ""),
-        "SHOPMAN_PRODUCTION_BASE_URL": getattr(settings, "SHOPMAN_PRODUCTION_BASE_URL", ""),
-        "SHOPMAN_MARKETING_BASE_URL": getattr(settings, "SHOPMAN_MARKETING_BASE_URL", ""),
-        "SHOPMAN_BI_BASE_URL": getattr(settings, "SHOPMAN_BI_BASE_URL", ""),
-    }
-    configured_urls = {key: value for key, value in operator_base_urls.items() if value}
     api_host = str(getattr(settings, "SHOPMAN_OPERATOR_API_HOST", "") or "").strip().lower()
     cookie_domain = str(getattr(settings, "SHOPMAN_OPERATOR_COOKIE_DOMAIN", "") or "").strip().lower()
+    registry = json.loads(
+        (Path(__file__).resolve().parents[2] / "surfaces" / "registry.json").read_text(encoding="utf-8")
+    )
+    bare_domain = cookie_domain.lstrip(".")
+    operator_base_urls: dict[str, str] = {}
+    for surface_id, surface in registry["surfaces"].items():
+        if surface.get("kind") != "operator" or surface.get("deployment") != "digitalocean":
+            continue
+        env = surface.get("base_url_env")
+        value = str(getattr(settings, env, "") or "") if env else ""
+        # A Central não tem base_url_env porque não lista a si mesma. Seu host
+        # ainda pertence à sessão comum e é derivado da topologia declarada.
+        if not value and surface.get("subdomain") and bare_domain:
+            value = f"https://{surface['subdomain']}.{bare_domain}"
+        operator_base_urls[surface_id] = value
+    configured_urls = {key: value for key, value in operator_base_urls.items() if value}
 
     if not configured_urls and not api_host and not cookie_domain:
         return errors
@@ -450,7 +427,7 @@ def check_operator_cookie_domain(app_configs, **kwargs):
                 "Superfícies operacionais publicadas sem SHOPMAN_OPERATOR_API_HOST.",
                 hint=(
                     "Defina SHOPMAN_OPERATOR_API_HOST para o host de API que os apps Nuxt "
-                    "de operador usam como upstream, ex.: api.boulangerie.com.br."
+                    "de operador usam como upstream, ex.: api.<domínio-da-loja>."
                 ),
                 id="SHOPMAN_E014",
             )
@@ -461,7 +438,7 @@ def check_operator_cookie_domain(app_configs, **kwargs):
                 "Zona operacional publicada sem SHOPMAN_OPERATOR_COOKIE_DOMAIN.",
                 hint=(
                     "Defina SHOPMAN_OPERATOR_COOKIE_DOMAIN com o domínio-pai dos apps "
-                    "operacionais, ex.: .boulangerie.com.br. Sem isso, login/CSRF ficam "
+                    "operacionais, ex.: .<domínio-da-loja>. Sem isso, login/CSRF ficam "
                     "host-only e quebram ao alternar entre gestor, KDS, PDV e produção."
                 ),
                 id="SHOPMAN_E014",
@@ -469,7 +446,6 @@ def check_operator_cookie_domain(app_configs, **kwargs):
         )
         return errors
 
-    bare_domain = cookie_domain.lstrip(".")
     invalid_hosts = []
     for key, value in configured_urls.items():
         host = (urlparse(str(value)).hostname or "").lower()
@@ -491,34 +467,6 @@ def check_operator_cookie_domain(app_configs, **kwargs):
             )
         )
     return errors
-
-
-@register(deploy=True)
-def check_debug_otp_exposure(app_configs, **kwargs):
-    messages = []
-    if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
-        return messages
-
-    if is_production():
-        messages.append(
-            Error(
-                "SHOPMAN_EXPOSE_DEBUG_OTP está habilitado fora de ambiente não produtivo.",
-                hint=(
-                    "Desabilite SHOPMAN_EXPOSE_DEBUG_OTP antes de produção. "
-                    "O código OTP debug só pode aparecer em desenvolvimento ou staging técnico."
-                ),
-                id="SHOPMAN_E010",
-            )
-        )
-    elif not settings.DEBUG:
-        messages.append(
-            Warning(
-                "OTP debug está exposto em ambiente não-DEBUG.",
-                hint=("Permitido apenas para staging técnico. Remova SHOPMAN_EXPOSE_DEBUG_OTP antes de go-live."),
-                id="SHOPMAN_W007",
-            )
-        )
-    return messages
 
 
 @register(deploy=True)
@@ -692,12 +640,18 @@ def check_fiscal_adapter(app_configs, **kwargs):
 
     from django.db.utils import OperationalError, ProgrammingError
 
-    from shopman.shop.services.pos import fiscal_toggle_enabled
+    from shopman.shop.models import Shop
+    from shopman.shop.services.pos import _fiscal_toggle_in_defaults
 
+    # O ``migrate`` roda os checks ANTES de migrar: o modelo já tem a coluna
+    # nova e o banco ainda não. ``fiscal_toggle_enabled`` (o ``Shop.load()``
+    # inteiro) engolia o erro e soltava um traceback no meio do release. O check
+    # lê só a coluna de que precisa e fica quieto enquanto o schema não chegou.
     try:
-        offers_fiscal = fiscal_toggle_enabled()
+        defaults = Shop.objects.values_list("defaults", flat=True).first()
     except (OperationalError, ProgrammingError):
-        return warnings  # tables not ready (initial migration)
+        return warnings  # schema ainda não migrado (primeira migração ou coluna nova)
+    offers_fiscal = _fiscal_toggle_in_defaults(defaults)
 
     if offers_fiscal:
         warnings.append(
@@ -716,16 +670,41 @@ def check_fiscal_adapter(app_configs, **kwargs):
     return warnings
 
 
+@register()
+def check_simulated_fiscal_adapter(app_configs, **kwargs):
+    """O adapter fiscal de simulação só existe na pilha de teste local (#2585).
+
+    Ele responde como a SEFAZ sem ir a ela, e se declara homologação: num ambiente
+    servido, cada venda "teria nota" sem nota nenhuma. Fora de DEBUG é erro em todo
+    check, não só no ``--deploy``: o worker de um staging também não pode subir com ele.
+    """
+    if settings.DEBUG:
+        return []
+    paths = _declared_adapter_paths("fiscal", "SHOPMAN_FISCAL_ADAPTER")
+    return [
+        Error(
+            f"{origin} aponta para o adapter fiscal de simulação fora de DEBUG.",
+            hint=(
+                "fiscal_simulated é da pilha de teste local. Aponte para o emissor real "
+                "(shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend) ou apague a variável."
+            ),
+            id="SHOPMAN_E029",
+        )
+        for origin, path in sorted(paths.items())
+        if "fiscal_simulated" in path
+    ]
+
+
 @register(deploy=True)
 def check_fiscal_emission_resolver(app_configs, **kwargs):
     """Adapter fiscal ligado + canal de venda ativo ⇒ resolver de emissão que resolve.
 
     Silêncio é o pior modo de falha deste domínio. Quem decide SE a nota sai é o
     resolver (``shop/services/fiscal.emission_resolver``); com o resolver vazio,
-    ou apontando para um caminho que não importa, o motor cai no fallback
-    (opt-in do operador, ``order.data['fiscal']['issue_document']``) e registra
-    um warning no log — e o sistema simplesmente não emite, venda após venda,
-    sem nada na tela de ninguém.
+    o motor cai no fallback (opt-in do operador,
+    ``order.data['fiscal']['issue_document']``) e o sistema simplesmente não
+    emite, venda após venda, sem nada na tela de ninguém. Caminho que não importa
+    é o ``SHOPMAN_E028``, que vale fora do ``--deploy`` também.
 
     Erro de deploy, não warning: com emissão obrigatória valendo, cada venda que
     passa sem nota é passivo fiscal, e o log de um worker não é onde isso se
@@ -767,6 +746,28 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
         )
         return errors
 
+    # Caminho que não importa ou não é chamável: ``SHOPMAN_E028``, que roda em
+    # TODO ``check`` (boot do runserver e o ``migrate`` do PRE_DEPLOY), não só no
+    # ``--deploy``.
+    return errors
+
+
+@register()
+def check_fiscal_emission_resolver_importable(app_configs, **kwargs):
+    """Todo caminho de ``SHOPMAN_FISCAL_EMISSION_RESOLVER`` importa e é chamável.
+
+    Par de boot do ``SHOPMAN_E013`` (fallbacks perigosos, item 16). Um typo no
+    caminho, ou um resolver que o código deployado ainda não tem (o
+    ``intermediated_sale`` do delta do Dia D num build velho), fazia o motor cair
+    no fallback com um ``warning`` e a NFC-e parar de sair sem ninguém ver. O
+    motor agora grita em runtime (log de erro + alerta crítico); este check
+    impede que o deploy suba assim. Sem consulta ao banco e sem depender de
+    ``DEBUG``: caminho quebrado é defeito em qualquer ambiente.
+    """
+    errors = []
+    raw = getattr(settings, "SHOPMAN_FISCAL_EMISSION_RESOLVER", "") or ""
+    paths = [p.strip() for p in str(raw).split(",") if p.strip()]
+
     from django.utils.module_loading import import_string
 
     for path in paths:
@@ -777,11 +778,11 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
                 Error(
                     f"SHOPMAN_FISCAL_EMISSION_RESOLVER aponta para '{path}', que não importa: {exc}.",
                     hint=(
-                        "O motor engole o erro e cai no fallback (opt-in do operador): "
-                        "a emissão fica silenciosamente desligada. Corrija o caminho ou "
-                        "remova-o da lista."
+                        "O motor ignora esse caminho (com alerta crítico) e a nota só sai "
+                        "pelas outras regras ou quando o cliente pede. Corrija o caminho "
+                        "ou remova-o da lista."
                     ),
-                    id="SHOPMAN_E013",
+                    id="SHOPMAN_E028",
                 )
             )
             continue
@@ -793,7 +794,7 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
                         "Um resolver é callable(order) -> bool. Fábricas como "
                         "`channels('pdv')` precisam de um wrapper importável já aplicado."
                     ),
-                    id="SHOPMAN_E013",
+                    id="SHOPMAN_E028",
                 )
             )
     return errors
@@ -905,7 +906,7 @@ def POS_CHANNEL_REF() -> str:
     """Ref do canal de balcão — cujo preço NÃO é público (ADR-018 §5.1)."""
     from django.conf import settings
 
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 @register(deploy=True)
@@ -1435,16 +1436,31 @@ def _declared_adapter_paths(adapter_type: str, settings_name: str) -> dict[str, 
             found[origin] = str(value)
 
     collect(settings_name, getattr(settings, settings_name, None))
-    try:
-        from shopman.shop.adapters import _shop_integrations_value
+    from django.db.utils import OperationalError, ProgrammingError
 
-        collect(f"Shop.integrations[{adapter_type}]", _shop_integrations_value(adapter_type))
+    from shopman.shop.models import Shop
+
+    # Só a coluna ``integrations``, e não o ``Shop.load()`` inteiro: o release
+    # roda ``check --deploy`` ANTES do ``migrate``, com o modelo já pedindo a
+    # coluna nova que o banco ainda não tem (``staff_hours_start``, 06/11). A
+    # loja inteira caía e soltava traceback no release; a coluna de que este
+    # check precisa já existe e responde.
+    try:
+        integrations = Shop.objects.values_list("integrations", flat=True).first()
+    except (OperationalError, ProgrammingError):
+        # Sem banco ou sem a tabela (build, primeira migração): vale o que o
+        # settings declara, em WARNING de uma linha, sem traceback.
+        logging.getLogger(__name__).warning(
+            "live_provider_check: tabela da loja ainda não migrada; só o settings foi conferido"
+        )
     except Exception:
-        # Sem banco (build, check sem migração) vale o que o settings declara,
-        # mas em WARNING: um override do Admin pode estar fora desta conta.
+        # Um override do Admin pode estar fora desta conta.
         logging.getLogger(__name__).warning(
             "live_provider_check: Shop.integrations ilegível; só o settings foi conferido", exc_info=True
         )
+    else:
+        if isinstance(integrations, Mapping):
+            collect(f"Shop.integrations[{adapter_type}]", integrations.get(adapter_type))
     return found
 
 
@@ -1494,7 +1510,6 @@ def _open_test_doors() -> list[str]:
         ("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", "simulador de pagamento permitido"),
         ("SHOPMAN_EXPOSE_MOCK_CAPTURE", 'botão "Simular pagamento" para o cliente'),
         ("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", "Pix simulado se confirma sozinho"),
-        ("SHOPMAN_EXPOSE_DEBUG_OTP", "código de login devolvido na resposta"),
         ("SHOPMAN_STAGING_AUTOPILOT", "pedidos avançam sozinhos"),
     ):
         if getattr(settings, name, False):
@@ -1502,6 +1517,11 @@ def _open_test_doors() -> list[str]:
     for origin, path in sorted(_declared_adapter_paths("payment", "SHOPMAN_PAYMENT_ADAPTERS").items()):
         if "payment_mock" in path:
             doors.append(f"{origin}=payment_mock (pagamento simulado): aponte para o gateway real")
+    for origin, path in sorted(_declared_adapter_paths("fiscal", "SHOPMAN_FISCAL_ADAPTER").items()):
+        if "fiscal_simulated" in path:
+            doors.append(f"{origin}=fiscal_simulated (nota simulada): aponte para o emissor real")
+    if getattr(settings, "TEST_STACK_CONTROL_DIR", None):
+        doors.append("TEST_STACK_CONTROL_DIR (relógio de teste da pilha local): apague a variável")
     return doors
 
 

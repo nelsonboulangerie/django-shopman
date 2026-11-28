@@ -37,6 +37,7 @@ Referência completa do dialeto: ``docs/reference/errors.md``.
 
 from __future__ import annotations
 
+import logging
 import math
 
 from rest_framework import exceptions
@@ -44,6 +45,37 @@ from rest_framework.settings import api_settings
 from rest_framework.views import exception_handler as drf_exception_handler
 
 FALLBACK_DETAIL = "Não conseguimos processar os dados enviados. Confira e tente novamente."
+
+logger = logging.getLogger(__name__)
+
+
+def _public_error_types() -> tuple[type[BaseException], ...]:
+    """Famílias de exceção que nascem com texto para a tela.
+
+    ``ValueError`` é a convenção dos services da casa para recusa ao operador
+    (``raise ValueError("Informe uma referência de comanda.")``); as demais são
+    as bases de erro dos cores, todas com ``message`` humana.
+    """
+    from shopman.cashman.exceptions import CashError
+    from shopman.orderman.exceptions import OrderError
+    from shopman.payman.exceptions import PaymentError
+    from shopman.utils.exceptions import BaseError
+
+    return (ValueError, BaseError, OrderError, CashError, PaymentError)
+
+
+def public_error_detail(exc: BaseException, fallback: str) -> str:
+    """O ``detail`` que pode ir à tela para uma exceção pega por ``except Exception``.
+
+    Recusa de negócio fala o próprio texto. Qualquer outra exceção (banco, rede,
+    bug) fala só o ``fallback`` fixo: o texto dela pode carregar SQL, caminho de
+    arquivo ou dado de terceiro, e vai para o log com o traceback, nunca para o
+    cliente.
+    """
+    if isinstance(exc, _public_error_types()):
+        return str(exc) or fallback
+    logger.warning("api_unexpected_error type=%s", type(exc).__name__, exc_info=exc)
+    return fallback
 
 
 def exception_handler(exc, context):

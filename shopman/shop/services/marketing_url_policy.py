@@ -13,7 +13,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import re
-from urllib.parse import parse_qsl, unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
 from django.conf import settings
 
@@ -77,6 +77,25 @@ def validate_media_url(value: object, *, field: str = "content.image_url") -> st
     if not host or host not in trusted_media_hosts():
         _reject("marketing_media_host_not_allowed", "media", field)
     return raw
+
+
+def media_fetch_url(value: object, *, field: str = "content.image_url") -> str:
+    """URL absoluta que o servidor pode buscar, com o host tirado da lista de confiança.
+
+    ``validate_media_url`` diz se a URL passa; esta devolve a URL REMONTADA, com o
+    host vindo do próprio conjunto ``trusted_media_hosts()`` e não do texto
+    recebido. Quem busca mídia do lado do servidor usa esta, nunca a string crua.
+    """
+
+    safe = validate_media_url(value, field=field)
+    if not safe:
+        return ""
+    parsed = _split(safe, kind="media", field=field)
+    host = _normalized_host(parsed.hostname)
+    trusted = next((candidate for candidate in sorted(trusted_media_hosts()) if candidate == host), "")
+    if not trusted:
+        _reject("marketing_media_host_not_allowed", "media", field)
+    return urlunsplit(("https", trusted, parsed.path, parsed.query, ""))
 
 
 def validate_media_redirect(

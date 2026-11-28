@@ -2,9 +2,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
+import { isGeneratedDir } from "./support/generatedDirs";
 
-// Trava do ⋯ ÚNICO (WP-FASE2-UX-OPERADOR, D9): "Mais ações" se escreve com o
+// Trava do ⋮ ÚNICO (WP-FASE2-UX-OPERADOR, D9): "Mais ações" se escreve com o
 // `OperatorMoreMenu`, nunca com um botão de reticências montado na tela.
 //
 // Motivo medido (09/10/2026): o Gestor tinha três formas de ⋯ (`outline` na fila e no
@@ -17,7 +18,7 @@ import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
 // quando a onda de cada um trocar o menu pela peça.
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ROOTS = [...OPERATOR_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
+const ROOTS = [...OPERATOR_KIT_SURFACES, "operator-kit"].map((dir) => join(surfacesDir, dir, "app"));
 const SKIP_DIRS = new Set(["node_modules", ".nuxt", ".output", "dist"]);
 
 const ELLIPSIS = /i-lucide-ellipsis(?:-vertical)?\b/g;
@@ -54,7 +55,7 @@ function vueFiles(dir: string, found: string[] = []): string[] {
     return found;
   }
   for (const entry of entries) {
-    if (SKIP_DIRS.has(entry)) continue;
+    if (SKIP_DIRS.has(entry) || isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) vueFiles(full, found);
     else if (full.endsWith(".vue")) found.push(full);
@@ -89,10 +90,12 @@ describe("⋯ único: Mais ações só pelo OperatorMoreMenu", () => {
     expect(stale, "baixe o teto em ALLOWED").toEqual([]);
   });
 
-  it("o ⋯ vertical não existe na suíte", () => {
-    const vertical = [...ROOTS.flatMap((root) => vueFiles(root))]
-      .filter((file) => readFileSync(file, "utf8").includes("i-lucide-ellipsis-vertical"))
+  // O ⋮ é VERTICAL e mora no canto da barra do topo (dono, 03/11/2026). Antes era o
+  // horizontal, e esta trava proibia o vertical; agora proíbe o horizontal.
+  it("o ⋯ horizontal não existe na suíte: o Mais é ⋮", () => {
+    const horizontal = [...ROOTS.flatMap((root) => vueFiles(root))]
+      .filter((file) => /i-lucide-ellipsis(?!-vertical)\b/.test(readFileSync(file, "utf8")))
       .map((file) => relative(surfacesDir, file));
-    expect(vertical).toEqual([]);
+    expect(horizontal).toEqual([]);
   });
 });

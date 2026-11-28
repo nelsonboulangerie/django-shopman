@@ -8,8 +8,10 @@ import {
   displayItemView,
   displayPhase,
   firstName,
+  handOverCustomerDisplaySnapshot,
+  idleCustomerDisplaySnapshot,
 } from "~/presentation/customerDisplay";
-import { lineDiscountBadge, lineTotalQ, manualDiscountLabel, manualDiscountWasOverridden, pricingDiscountBadge } from "~/presentation/lineDiscounts";
+import { applyLinePrices, lineDiscountBadge, lineTotalQ, manualDiscountLabel, pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -64,6 +66,35 @@ function pixProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
     hasProof: true,
     ...overrides,
   };
+}
+
+function cardProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
+  return pixProof({
+    method: "card",
+    icon: "lucide:credit-card",
+    status: "captured",
+    tone: "neutral",
+    qrCodeSrc: "",
+    copyPaste: "",
+    isPix: false,
+    isCard: true,
+    hasProof: false,
+    ...overrides,
+  });
+}
+
+function linkProof(overrides: Partial<PaymentProofView> = {}): PaymentProofView {
+  return pixProof({
+    method: "link",
+    icon: "lucide:link",
+    status: "pending",
+    qrCodeSrc: "",
+    copyPaste: "",
+    checkoutUrl: "https://pay.example/abc",
+    isPix: false,
+    isLink: true,
+    ...overrides,
+  });
 }
 
 /** Resultado congelado do fechamento — o troco (`changeQ`) viaja dentro dele. */
@@ -208,6 +239,26 @@ describe("displayPhase — as transições que o cliente acompanha", () => {
     const result = res(pixProof(), receipt());
     expect(displayPhase(inputs({ result, pixStatus: "expired" }))).toBe("payment");
   });
+  it("cartão recusado: falha, nunca o obrigado", () => {
+    const result = res(cardProof({ status: "error" }), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("payment_failed");
+  });
+  it("link de pagamento não criado: falha, nunca o obrigado", () => {
+    const result = res(linkProof({ status: "unavailable", hasProof: false }), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("payment_failed");
+  });
+  it("Pix sem QR (gateway recusou): falha, não espera um QR que não existe", () => {
+    const result = res(pixProof({ status: "error", hasProof: false, qrCodeSrc: "" }), receipt());
+    expect(displayPhase(inputs({ result, pixStatus: "idle" }))).toBe("payment_failed");
+  });
+  it("cartão aprovado: resultado (obrigado)", () => {
+    const result = res(cardProof(), receipt());
+    expect(displayPhase(inputs({ result }))).toBe("result");
+  });
+  it("Pix pendente com QR segue em pagamento (não é falha)", () => {
+    const result = res(pixProof({ status: "pending" }), receipt());
+    expect(displayPhase(inputs({ result, pixStatus: "polling" }))).toBe("payment");
+  });
   it("a próxima venda derruba o resultado: comanda nova com itens volta a 'sale'", () => {
     expect(displayPhase(inputs({ items: [item()], result: null }))).toBe("sale");
   });
@@ -285,6 +336,20 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
       pixStatus: "expired",
     }));
     expect(snap.pix?.status).toBe("expired");
+  });
+
+  it("cobrança falhada: o total, sem troco e sem nome para o obrigado", () => {
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      result: res(
+        cardProof({ status: "error", amountDisplay: "R$ 23,50" }),
+        receipt({ customerName: "Maria da Silva", orderRef: "PDV-043", totalDisplay: "R$ 23,50" }),
+      ),
+    }));
+    expect(snap.phase).toBe("payment_failed");
+    expect(snap.totalDisplay).toBe("R$ 23,50");
+    expect(snap.changeDisplay).toBe("");
+    expect(snap.customerFirstName).toBe("");
+    expect(snap.pix).toBeNull();
   });
 
   it("resultado em dinheiro: troco congelado em destaque + obrigado com nome", () => {
@@ -366,13 +431,13 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
   });
 });
 
-describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", () => {
-  // A checagem era um chute: "tem automático carimbado e o operador pediu
-  // manual, logo o manual perdeu". Acertava por acidente enquanto o manual só
-  // existia em percentuais pequenos, e passou a errar assim que ele aceitou
-  // reais. A régua agora é a do kernel: os dois medidos por unidade, contra a
-  // etiqueta.
+describe("lineDiscounts — o descarte do desconto manual é o que o MOTOR disse", () => {
+  // A tela media os dois descontos com a régua dela e adivinhava o descarte
+  // (laudo de soberania, 18/10/2026): primeiro um chute, depois a régua do kernel
+  // copiada, e cada cópia diverge do motor em algum arredondamento. Agora o eco do
+  // servidor diz, por linha, se o desconto do operador foi descartado.
   const tabatiere = (discount: POSCartItem["discount"]): POSCartItem => ({
+    line_id: "L1",
     sku: "TAB",
     name: "Tabatière",
     qty: 2,
@@ -384,25 +449,27 @@ describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", 
     discount,
   });
 
-  it("10% (R$ 0,60) perde para o automático de R$ 0,90", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 10, reason: "cortesia", type: "percent" }))).toBe(true);
+  it("o eco que diz descartado volta como descarte, e a linha fica com o automático", () => {
+    const line = { ...tabatiere({ value: 10, reason: "cortesia", type: "percent" }), price_pending: true };
+    const discarded = applyLinePrices([line], {
+      L1: {
+        charged_price_q: 510, list_price_q: 600, manual_discount_discarded: true,
+        pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+      },
+    });
+    expect(discarded).toEqual(["L1"]);
+    expect(line.price_pending).toBe(false);
+    expect(lineTotalQ(line)).toBe(1020);
   });
 
-  it("30% (R$ 1,80) ganha — e o operador não pode ouvir que não valeu", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 30, reason: "cortesia", type: "percent" }))).toBe(false);
-  });
-
-  it("R$ 2,50 por unidade ganha; R$ 0,50 perde", () => {
-    expect(manualDiscountWasOverridden(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }))).toBe(false);
-    expect(manualDiscountWasOverridden(tabatiere({ value: 0.5, reason: "cortesia", type: "fixed" }))).toBe(true);
-  });
-
-  it("sem desconto automático na linha, o manual nunca perde", () => {
-    const semAuto: POSCartItem = {
-      sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500, notes: "",
-      discount: { value: 1, reason: "cortesia", type: "fixed" },
-    };
-    expect(manualDiscountWasOverridden(semAuto)).toBe(false);
+  it("R$ 2,50 por unidade ganha: o eco diz que valeu, e ninguém ouve que não", () => {
+    const line = { ...tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }), price_pending: true };
+    const discarded = applyLinePrices([line], {
+      L1: { charged_price_q: 350, list_price_q: 600, pricing_discount: null, manual_discount_discarded: false },
+    });
+    expect(discarded).toEqual([]);
+    expect(line.pricing_discount).toBeNull();
+    expect(lineTotalQ(line)).toBe(700);
   });
 
   it("o rótulo da linha fala o formato que o operador digitou", () => {
@@ -411,5 +478,32 @@ describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", 
       .toBe("Cortesia −10%");
     expect(manualDiscountLabel(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }), reasons))
       .toBe(`Cortesia −${formatBRL(250)}`);
+  });
+});
+
+/**
+ * Beta 07/11: a cliente pagava R$ 13,00 da encomenda e a parede mostrava "Total
+ * R$ 286,00" da última comanda. Fora da venda, a parede volta às boas-vindas; no
+ * "Receber e entregar", ela mostra o que falta pagar e para quem.
+ */
+describe("Tela do cliente fora da tela de venda", () => {
+  it("as boas-vindas não carregam carrinho nem total", () => {
+    const idle = idleCustomerDisplaySnapshot("Nelson Boulangerie", 1);
+    expect(idle).toMatchObject({ phase: "idle", shopName: "Nelson Boulangerie", items: [], totalDisplay: "", pix: null });
+  });
+
+  it("o recebimento da encomenda mostra o valor e o primeiro nome", () => {
+    const snap = handOverCustomerDisplaySnapshot(
+      { shopName: "Nelson", amountDisplay: "R$ 13,00", customerName: "Maria Santos", orderRef: "WEB-261107-D13" },
+      1,
+    );
+    expect(snap).toMatchObject({
+      phase: "payment",
+      totalDisplay: "R$ 13,00",
+      customerFirstName: "Maria",
+      orderRef: "WEB-261107-D13",
+      items: [],
+      totalPending: false,
+    });
   });
 });

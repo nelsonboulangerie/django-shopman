@@ -41,6 +41,7 @@ from datetime import datetime, timedelta
 from django.db import transaction
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -67,11 +68,7 @@ class UndoRefused(ValueError):
 def _fulfillment_config(order):
     from shopman.shop.config import ChannelConfig
 
-    try:
-        return ChannelConfig.for_channel(order.channel_ref).fulfillment
-    except Exception:
-        logger.debug("order_undo: config indisponível channel=%s", order.channel_ref, exc_info=True)
-        return ChannelConfig.Fulfillment()
+    return ChannelConfig.for_channel(order.channel_ref).fulfillment
 
 
 def auto_ready_enabled(order) -> bool:
@@ -101,7 +98,7 @@ def _parse(value) -> datetime | None:
 
 def _clock(value) -> str:
     moment = _parse(value)
-    return timezone.localtime(moment).strftime("%H:%M") if moment else ""
+    return format_clock(moment) if moment else ""
 
 
 # ── "Pronto" automático ──────────────────────────────────────────────────
@@ -131,11 +128,16 @@ def ready_hold(order, *, now=None) -> dict:
     return record
 
 
-def record_auto_ready(order, *, ticket_ids, actor: str) -> dict:
+def record_auto_ready(order, *, ticket_ids, actor: str, via: str = "station") -> dict:
     """Grava o registro ANTES da transição (o signal lê ``order.data``).
 
     Chamado com o pedido travado, por ``kds.on_all_tickets_done``. Sem janela
     configurada, não grava nada: o pronto avisa na hora, como antes.
+
+    ``via`` é a porta do toque que fechou a última estação
+    (``KDSTicket.COMPLETED_VIA_*``): a tela da estação, a Saída, o PDV ou o
+    leitor. É o que deixa o Gestor dizer quem marcou o pronto, em vez de chamar
+    de "automático" um pronto que alguém tocou.
     """
     seconds = ready_undo_seconds(order)
     if seconds <= 0:
@@ -147,6 +149,7 @@ def record_auto_ready(order, *, ticket_ids, actor: str) -> dict:
         "undo_until": (now + timedelta(seconds=seconds)).isoformat(),
         "ticket_ids": [int(pk) for pk in ticket_ids if pk],
         "actor": str(actor or "")[:150],
+        "via": str(via or "station"),
     }
     data = dict(order.data or {})
     data[AUTO_READY_KEY] = record

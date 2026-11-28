@@ -33,7 +33,7 @@ class NoopPricingBackend:
         qty: Decimal,
         listing: str | None,
         list_unit_price_q: int,
-        list_total_price_q: int,
+        list_line_total_q: int,
         context: dict | None = None,
     ) -> ContextualPrice:
         return ContextualPrice(
@@ -41,9 +41,9 @@ class NoopPricingBackend:
             qty=qty,
             listing=listing,
             list_unit_price_q=list_unit_price_q,
-            list_total_price_q=list_total_price_q,
+            list_line_total_q=list_line_total_q,
             final_unit_price_q=list_unit_price_q,
-            final_total_price_q=list_total_price_q,
+            final_line_total_q=list_line_total_q,
             adjustments=[],
             metadata={"source": "list_price", "context": context or {}},
         )

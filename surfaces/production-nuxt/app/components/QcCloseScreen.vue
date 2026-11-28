@@ -1,16 +1,27 @@
 <script setup lang="ts">
-// Fechamento de um único lote. Os quatro botões são buckets de qualidade
+// Finalização de um único lote. Os quatro botões são buckets de qualidade
 // disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
-// nos demais graus nem em Perda.
+// nos demais graus nem em Perda. Quando rendeu menos (beta 05/11), o operador
+// toca no grau padrão e digita o que saiu: a diferença para o previsto é
+// perda, registrada com a causa escolhida, quem fechou e a hora (dono, 24/11).
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import {
+  QUANTITY_MAX,
+  backspaceQuantityText,
   defaultGradeRef,
+  formatQcNumber,
+  formatQcQuantity,
   gradeBandClass,
+  isCountUnit,
   isLowerQualityGrade,
   ovenAnchor,
-  typeBackspace,
-  typeDigit,
+  quantityDecimals,
+  quantityText,
+  parseQuantityText,
+  roundQuantity,
+  typeQuantityKey,
+  yieldReasons as yieldReasonsFor,
   type QcPartitionGroup,
 } from "~/presentation/qc";
 import {
@@ -33,12 +44,33 @@ const props = withDefaults(
     submitting: boolean;
     mode?: "close" | "correct";
     initialPartition?: QcPartitionGroup[];
+    /** A unidade do lote ("un", "kg", "g"). Peça é inteira; peso aceita vírgula. */
+    unit?: string;
   }>(),
   {
     mode: "close",
     initialPartition: () => [],
+    unit: "",
   },
 );
+
+const countUnit = computed(() => isCountUnit(props.unit));
+const decimals = computed(() => quantityDecimals(props.unit));
+/** "unidades" na peça; a unidade escrita no peso ("kg"). Para leitor de tela. */
+const unitWord = computed(() =>
+  countUnit.value ? "unidades" : props.unit.trim().toLowerCase(),
+);
+/** O número na tela: "32" na peça, "2,5 kg" no peso. */
+function qty(value: number): string {
+  return countUnit.value ? formatQcNumber(value) : formatQcQuantity(value, props.unit);
+}
+/** O número com a unidade sempre escrita: "32 un.", "2,5 kg". */
+function qtyWithUnit(value: number): string {
+  return formatQcQuantity(value, props.unit);
+}
+function round(value: number): number {
+  return roundQuantity(value, decimals.value);
+}
 
 const emit = defineEmits<{
   back: [];
@@ -56,6 +88,8 @@ const emit = defineEmits<{
 type QuantityTarget = { kind: "grade"; gradeRef: string } | { kind: "loss" };
 type SheetQuestion =
   | { kind: "overshoot" }
+  | { kind: "shortfall" }
+  | { kind: "loss_exceeds" }
   | { kind: "grade_reason"; gradeRef: string }
   | { kind: "loss_reason" }
   | { kind: "correction_reason" };
@@ -64,9 +98,9 @@ type SheetQuestion =
 // seu nome. A tela pergunta; nunca escreve o motivo pelo operador. A lista
 // curta cobre os casos de sempre e o texto continua editável.
 const CORRECTION_REASONS = [
-  "Defeito visto depois do fechamento",
-  "Contagem errada no fechamento",
-  "Grau ou motivo trocado no fechamento",
+  "Defeito visto depois da finalização",
+  "Contagem errada na finalização",
+  "Grau ou motivo trocado na finalização",
 ] as const;
 
 function quantityOf(group: QcPartitionGroup): number {
@@ -114,6 +148,8 @@ const lossDefectRef = ref(
 );
 const overshootConfirmed = ref(false);
 const overshootReason = ref("");
+// O que o operador digitou no grau padrão (só na Finalização). null = saldo.
+const defaultOverride = ref<number | null>(null);
 const correctionReason = ref("");
 const submitLatched = ref(false);
 
@@ -146,8 +182,20 @@ const explicitTotal = computed(() =>
 const defaultQuantity = computed(() => {
   if (!defaultRef.value) return 0;
   if (anchor.anchor === null) return explicitGradeQuantity(defaultRef.value);
-  return Math.max(0, anchor.anchor - explicitTotal.value - lossQuantity.value);
+  if (defaultOverride.value !== null) return defaultOverride.value;
+  return Math.max(
+    0,
+    round(anchor.anchor - explicitTotal.value - lossQuantity.value),
+  );
 });
+// O grau padrão segue o saldo até o operador digitar nele (só na Finalização;
+// a correção mantém o total do lote).
+const defaultIsBalance = computed(
+  () => anchor.anchor !== null && defaultOverride.value === null,
+);
+const defaultEditable = computed(
+  () => anchor.anchor !== null && props.mode === "close",
+);
 
 function gradeQuantity(gradeRef: string): number {
   return gradeRef === defaultRef.value
@@ -156,14 +204,24 @@ function gradeQuantity(gradeRef: string): number {
 }
 
 const finishedTotal = computed(() =>
-  orderedGrades.value.reduce(
-    (total, grade) => total + gradeQuantity(grade.ref),
-    0,
+  round(
+    orderedGrades.value.reduce(
+      (total, grade) => total + gradeQuantity(grade.ref),
+      0,
+    ),
   ),
 );
-const total = computed(() => finishedTotal.value + lossQuantity.value);
+const total = computed(() => round(finishedTotal.value + lossQuantity.value));
 const overshootQuantity = computed(() =>
-  anchor.anchor === null ? 0 : Math.max(0, total.value - anchor.anchor),
+  anchor.anchor === null ? 0 : Math.max(0, round(total.value - anchor.anchor)),
+);
+// Rendeu menos que o previsto: é perda, e a causa escolhida a classifica.
+const shortfallQuantity = computed(() =>
+  anchor.anchor === null ? 0 : Math.max(0, round(anchor.anchor - total.value)),
+);
+// Perda maior que o lote inteiro é dígito a mais, nunca um caso de "acima".
+const lossExceedsLot = computed(
+  () => anchor.anchor !== null && lossQuantity.value > anchor.anchor,
 );
 
 const activeGrade = computed(() => {
@@ -175,7 +233,8 @@ const activeLabel = computed(() => {
   if (activeTarget.value?.kind === "loss") return "Perda";
   if (activeGrade.value) return activeGrade.value.label;
   const grade = props.grades.find((item) => item.ref === defaultRef.value);
-  return grade ? `${grade.label} · Saldo automático` : "Escolha um grau";
+  if (!grade) return "Escolha um grau";
+  return defaultIsBalance.value ? `${grade.label} · Saldo automático` : grade.label;
 });
 const activeQuantity = computed(() => {
   if (activeTarget.value?.kind === "loss") return lossQuantity.value;
@@ -205,12 +264,14 @@ function setTargetQuantity(quantity: number) {
       nextQuantity = Math.min(quantity, maximum);
       if (quantity > maximum) {
         useSonner.warning(
-          `Máximo ${maximum}; os outros graus já ocupam o restante.`,
+          `Máximo ${qty(maximum)}; os outros graus já ocupam o restante.`,
         );
       }
     }
     lossQuantity.value = nextQuantity;
     if (nextQuantity === 0) lossDefectRef.value = "";
+  } else if (target.gradeRef === defaultRef.value && defaultEditable.value) {
+    defaultOverride.value = quantity;
   } else {
     let nextQuantity = quantity;
     if (props.mode === "correct" && target.gradeRef !== defaultRef.value) {
@@ -226,7 +287,7 @@ function setTargetQuantity(quantity: number) {
       );
       if (quantity > nextQuantity) {
         useSonner.warning(
-          `Máximo ${nextQuantity}; Perda e os outros graus já ocupam o restante.`,
+          `Máximo ${qty(nextQuantity)}; Perda e os outros graus já ocupam o restante.`,
         );
       }
     }
@@ -244,66 +305,113 @@ function setTargetQuantity(quantity: number) {
   resetOvershootConfirmation();
 }
 
-function onDigit(digit: string) {
+// O texto do teclado enquanto o operador digita ("2," ainda não é número).
+// null = mostra a quantidade do alvo, formatada.
+const entryText = ref<string | null>(null);
+const activeText = computed(
+  () => entryText.value ?? quantityText(activeQuantity.value),
+);
+
+function pressQuantityKey(key: string) {
   if (!activeTarget.value) return;
-  setTargetQuantity(typeDigit(activeQuantity.value, digit, fresh.value));
+  const result = typeQuantityKey(
+    activeText.value,
+    key,
+    fresh.value,
+    decimals.value,
+  );
+  if (!result.ok) {
+    if (result.reason === "max") {
+      useSonner.warning(`O teclado vai até ${formatQcNumber(QUANTITY_MAX)}.`);
+    } else if (result.reason === "decimals") {
+      useSonner.warning(`Até ${decimals.value} casas depois da vírgula.`);
+    }
+    return;
+  }
+  entryText.value = result.text;
+  setTargetQuantity(round(parseQuantityText(result.text)));
   fresh.value = false;
+}
+
+function onDigit(digit: string) {
+  pressQuantityKey(digit);
+}
+
+function onComma() {
+  pressQuantityKey(",");
 }
 
 function onBackspace() {
   if (!activeTarget.value) return;
-  setTargetQuantity(typeBackspace(activeQuantity.value));
+  const next = backspaceQuantityText(activeText.value);
+  entryText.value = next;
+  setTargetQuantity(round(parseQuantityText(next)));
+  fresh.value = false;
 }
 
 function onClear() {
   if (!activeTarget.value) return;
+  entryText.value = null;
   setTargetQuantity(0);
   fresh.value = true;
 }
 
 function pickGrade(grade: QCGradeProjection) {
-  if (grade.ref === defaultRef.value && anchor.anchor !== null) {
+  if (grade.ref === defaultRef.value && defaultEditable.value) {
+    activeTarget.value = { kind: "grade", gradeRef: grade.ref };
+  } else if (grade.ref === defaultRef.value && anchor.anchor !== null) {
     // Normal continua sendo o próprio botão/grau, mas sua quantidade é o
     // saldo: não há um segundo input capaz de duplicá-la.
     activeTarget.value = null;
   } else {
     activeTarget.value = { kind: "grade", gradeRef: grade.ref };
   }
+  entryText.value = null;
   fresh.value = true;
 }
 
-// Segundo toque/clique rápido no mesmo grau toma toda a capacidade que
-// resta para ele. Usamos ativações consecutivas, e não apenas `dblclick`, para
-// o mesmo gesto funcionar com mouse, toque e Enter/Espaço no botão focado.
-const DOUBLE_ACTIVATION_MS = 600;
-let lastGradeActivation: { ref: string; at: number } | null = null;
-
-function takeAvailableBalance(grade: QCGradeProjection) {
-  if (anchor.anchor === null || grade.ref === defaultRef.value) return;
+// "Usar o saldo" é um botão com nome, à vista no alvo escolhido (P2-09): o
+// gesto secreto de dois toques levava o lote inteiro para um grau sem querer.
+const balanceAction = computed<
+  { kind: "take"; quantity: number } | { kind: "restore" } | null
+>(() => {
+  const target = activeTarget.value;
+  if (!target || anchor.anchor === null) return null;
+  if (target.kind === "grade" && target.gradeRef === defaultRef.value) {
+    return defaultOverride.value === null ? null : { kind: "restore" };
+  }
   const usedElsewhere = orderedGrades.value
     .filter(
       (item) =>
-        item.ref !== defaultRef.value && item.ref !== grade.ref,
+        item.ref !== defaultRef.value &&
+        !(target.kind === "grade" && item.ref === target.gradeRef),
     )
     .reduce(
       (sum, item) => sum + explicitGradeQuantity(item.ref),
-      lossQuantity.value,
+      target.kind === "loss" ? 0 : lossQuantity.value,
     );
-  setTargetQuantity(Math.max(0, anchor.anchor - usedElsewhere));
-}
+  const available = Math.max(0, round(anchor.anchor - usedElsewhere));
+  return available > 0 && available !== activeQuantity.value
+    ? { kind: "take", quantity: available }
+    : null;
+});
 
-function activateGrade(grade: QCGradeProjection) {
-  const now = Date.now();
-  const repeated =
-    lastGradeActivation?.ref === grade.ref &&
-    now - lastGradeActivation.at <= DOUBLE_ACTIVATION_MS;
-  lastGradeActivation = repeated ? null : { ref: grade.ref, at: now };
-  pickGrade(grade);
-  if (repeated) takeAvailableBalance(grade);
+function useBalance() {
+  const action = balanceAction.value;
+  if (!action) return;
+  if (action.kind === "restore") {
+    defaultOverride.value = null;
+    resetOvershootConfirmation();
+  } else {
+    setTargetQuantity(action.quantity);
+  }
+  entryText.value = null;
+  fresh.value = true;
 }
 
 function pickLoss() {
   activeTarget.value = { kind: "loss" };
+  entryText.value = null;
   fresh.value = true;
 }
 
@@ -317,6 +425,16 @@ function gradeNeedsReason(grade: QCGradeProjection): boolean {
 
 function pendingQuestions(): SheetQuestion[] {
   const questions: SheetQuestion[] = [];
+  if (lossExceedsLot.value) {
+    // Bloqueia: nenhuma resposta transforma 99 de perda num lote de 3.
+    return [{ kind: "loss_exceeds" }];
+  }
+  if (
+    shortfallQuantity.value > 0 &&
+    (!overshootConfirmed.value || !overshootReason.value.trim())
+  ) {
+    questions.push({ kind: "shortfall" });
+  }
   if (
     overshootQuantity.value > 0 &&
     (!overshootConfirmed.value || !overshootReason.value.trim())
@@ -376,25 +494,42 @@ const activeDefects = computed(() =>
 );
 const sheetTitle = computed(() => {
   if (sheetQuestion.value?.kind === "overshoot") {
-    return `Foram contabilizadas ${total.value} de ${anchor.anchor} unidades?`;
+    return `Saíram ${qty(total.value)}, mais que os ${qty(anchor.anchor ?? 0)} previstos?`;
+  }
+  if (sheetQuestion.value?.kind === "shortfall") {
+    return `Rendeu ${formatQcNumber(total.value)} de ${qty(anchor.anchor ?? 0)} previstos?`;
+  }
+  if (sheetQuestion.value?.kind === "loss_exceeds") {
+    return `A perda (${qty(lossQuantity.value)}) é maior que o lote (${qty(anchor.anchor ?? 0)}). Confira.`;
   }
   if (sheetQuestion.value?.kind === "loss_reason") {
-    return `Qual o motivo principal da perda de ${lossQuantity.value}?`;
+    return `Qual o motivo principal da perda de ${qty(lossQuantity.value)}?`;
   }
   if (sheetQuestion.value?.kind === "correction_reason") {
     return "Por que a qualidade deste lote está sendo corrigida?";
   }
   return questionGrade.value
-    ? `Qual o motivo principal de ${gradeQuantity(questionGrade.value.ref)} em ${questionGrade.value.label}?`
+    ? `Qual o motivo principal de ${qty(gradeQuantity(questionGrade.value.ref))} em ${questionGrade.value.label}?`
     : "Motivo principal";
 });
 
+// "Outro" abre o texto; os motivos prontos fecham em um toque.
+const yieldOtherOpen = ref(false);
+const yieldReasons = computed(() =>
+  yieldReasonsFor(
+    sheetQuestion.value?.kind === "overshoot" ? "overshoot" : "shortfall",
+    props.unit,
+  ),
+);
+
 function openQuestion(question: SheetQuestion, thenSubmit: boolean) {
+  yieldOtherOpen.value = false;
   sheetQuestion.value = question;
   submitAfterAnswer.value = thenSubmit;
 }
 
 function advanceQuestions() {
+  yieldOtherOpen.value = false;
   const remaining = pendingQuestions();
   if (submitAfterAnswer.value && remaining.length) {
     sheetQuestion.value = remaining[0] ?? null;
@@ -420,6 +555,17 @@ function answerDefect(defect: QCDefectProjection) {
   advanceQuestions();
 }
 
+function answerYieldReason(reason: string) {
+  overshootReason.value = reason;
+  confirmOvershoot();
+}
+
+function openYieldOther() {
+  // O texto começa vazio: "Outro" é a palavra do operador, nunca a nossa.
+  overshootReason.value = "";
+  yieldOtherOpen.value = true;
+}
+
 function confirmOvershoot() {
   const reason = overshootReason.value.trim();
   if (!reason) return;
@@ -436,9 +582,15 @@ function confirmCorrectionReason() {
 }
 
 function fixOvershoot() {
+  yieldOtherOpen.value = false;
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
   fresh.value = true;
+}
+
+function fixLoss() {
+  fixOvershoot();
+  pickLoss();
 }
 
 function onConfirm() {
@@ -472,6 +624,7 @@ const isDirty = computed(() =>
     ? partitionKey(buildPartition()) !== partitionKey(props.initialPartition)
     : Object.values(gradeQuantities.value).some((quantity) => quantity > 0) ||
       lossQuantity.value > 0 ||
+      defaultOverride.value !== null ||
       Object.values(gradeDefectRefs.value).some(Boolean) ||
       Boolean(lossDefectRef.value || overshootReason.value.trim()),
 );
@@ -513,7 +666,7 @@ function discardQuestion(action: "leave" | "switch") {
     : {
         title: "Descartar as quantidades e os motivos informados?",
         description:
-          "O lote continua aberto no Fechamento, sem nada do que você digitou.",
+          "O lote continua aberto na Finalização, sem nada do que você digitou.",
         confirmLabel,
       };
 }
@@ -546,6 +699,16 @@ function onKeydown(event: KeyboardEvent) {
   if (sheetQuestion.value) return;
   if (hasOpenDialogOutside()) return;
   if (isEditableKeyboardTarget(event.target)) return;
+
+  // A vírgula do lote que se pesa: "," "." e a tecla decimal do numpad.
+  if (
+    !countUnit.value &&
+    (event.key === "," || event.key === "." || event.code === "NumpadDecimal")
+  ) {
+    event.preventDefault();
+    onComma();
+    return;
+  }
 
   const shortcut = resolveQuantityKeyboardShortcut(event);
   if (!shortcut) return;
@@ -602,8 +765,11 @@ const actionBarAction = computed<OperatorActionBarAction>(() => ({
       : "",
   onSelect: () => onConfirm(),
 }));
+// "Realizado" é só o que se vende (P2-10): a perda não entra na conta.
 const actionBarValue = computed(() =>
-  anchor.anchor !== null ? `${total.value} de ${anchor.anchor}` : String(total.value),
+  anchor.anchor !== null
+    ? `${formatQcNumber(finishedTotal.value)} de ${qty(anchor.anchor)}`
+    : qty(finishedTotal.value),
 );
 </script>
 
@@ -614,7 +780,9 @@ const actionBarValue = computed(() =>
   >
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6">
-        <header class="flex h-14 shrink-0 items-center justify-between gap-3">
+        <header
+          class="grid shrink-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 py-2 sm:flex sm:min-h-14 sm:justify-between sm:py-0"
+        >
           <NuxtButton
             color="neutral"
             variant="outline"
@@ -622,7 +790,7 @@ const actionBarValue = computed(() =>
             label="Voltar"
             @click="requestBack"
           />
-          <div class="min-w-0 text-center">
+          <div class="min-w-0 text-center max-sm:text-left">
             <p class="truncate text-base font-semibold">{{ title }}</p>
             <p class="truncate text-xs text-muted-foreground">
               <template v-if="mode === 'correct'"
@@ -631,9 +799,12 @@ const actionBarValue = computed(() =>
               {{ subtitle }}
             </p>
           </div>
-          <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
+          <div
+            class="col-span-2 rounded-md border bg-muted/40 px-3 py-2 text-center text-sm tabular-nums sm:col-span-1"
+            data-qc-anchor
+          >
             <template v-if="anchor.anchor !== null">
-              {{ anchor.anchor }} previstos
+              Previsto: {{ qtyWithUnit(anchor.anchor) }}
             </template>
             <template v-else>Sem quantidade prevista</template>
           </div>
@@ -654,35 +825,68 @@ const actionBarValue = computed(() =>
             >
               {{ activeLabel }}
             </span>
-            <span class="text-4xl font-semibold tabular-nums">
-              {{ activeQuantity }}
+            <span class="flex items-end justify-between gap-3">
+              <span class="text-4xl font-semibold tabular-nums" data-qc-active-qty>
+                {{ activeText
+                }}<span
+                  v-if="!countUnit"
+                  class="ml-1 text-xl font-medium text-muted-foreground"
+                  >{{ unitWord }}</span
+                >
+              </span>
+              <NuxtButton
+                v-if="balanceAction"
+                color="neutral"
+                variant="outline"
+                class="min-h-11 shrink-0"
+                :label="
+                  balanceAction.kind === 'restore'
+                    ? 'Voltar ao saldo automático'
+                    : `Usar o saldo: ${qty(balanceAction.quantity)}`
+                "
+                data-qc-use-balance
+                @click="useBalance"
+              />
             </span>
           </div>
         </div>
 
-        <p class="flex h-9 shrink-0 items-center text-sm text-muted-foreground">
-          <template v-if="activeTarget"
-            >Digitando em: {{ activeLabel }} · Dois toques usam o saldo</template
-          >
-          <template v-else>
-            Escolha um grau ou Perda; dois toques usam o saldo disponível.
-          </template>
+        <p class="flex min-h-9 shrink-0 items-center py-1 text-sm text-muted-foreground">
+          <template v-if="activeTarget">Digitando em: {{ activeLabel }}</template>
+          <template v-else>Escolha um grau ou Perda para digitar a quantidade.</template>
         </p>
 
+        <!-- Uma coluna no celular (graus em cima, teclado embaixo); duas na mesa. -->
         <div
-          class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] items-start gap-8"
+          class="grid shrink-0 grid-cols-1 items-start gap-4 sm:grid-cols-[minmax(0,1fr)_12rem] sm:gap-8"
           data-qc-layout
         >
-          <OperatorNumpad
-            class="h-76 self-start"
-            subject="quantidade"
-            :disabled="!activeTarget"
-            @digit="onDigit"
-            @backspace="onBackspace"
-            @clear="onClear"
-          />
+          <div class="order-2 flex flex-col gap-1.5 sm:order-none">
+            <OperatorNumpad
+              class="h-76 self-stretch"
+              subject="quantidade"
+              :disabled="!activeTarget"
+              @digit="onDigit"
+              @backspace="onBackspace"
+              @clear="onClear"
+            />
+            <NuxtButton
+              v-if="!countUnit"
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="min-h-11 justify-center text-lg font-semibold"
+              label=","
+              aria-label="Vírgula"
+              aria-keyshortcuts=","
+              :disabled="!activeTarget"
+              data-qc-comma
+              @click="onComma"
+            />
+          </div>
 
-          <div class="flex flex-col">
+          <div class="order-1 flex flex-col sm:order-none">
             <div
               class="flex flex-col gap-2"
               role="group"
@@ -708,9 +912,9 @@ const actionBarValue = computed(() =>
                   variant="ghost"
                   :data-grade-ref="grade.ref"
                   class="absolute inset-0 z-0 h-auto w-full rounded-none p-0 text-left font-normal focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-                  :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
+                  :aria-label="`${grade.label}: ${formatQcNumber(gradeQuantity(grade.ref))} ${unitWord}${grade.ref === defaultRef && defaultIsBalance ? ', saldo' : ''}`"
                   :aria-pressed="gradeQuantity(grade.ref) > 0"
-                  @click="activateGrade(grade)"
+                  @click="pickGrade(grade)"
                 >
                   <span
                     class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 pl-4 pr-3"
@@ -718,7 +922,7 @@ const actionBarValue = computed(() =>
                     <span class="min-w-0">
                       <span class="block font-medium">{{ grade.label }}</span>
                       <span
-                        v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                        v-if="grade.ref === defaultRef && defaultIsBalance"
                         class="block text-xs leading-tight text-muted-foreground"
                       >
                         Saldo automático
@@ -731,7 +935,7 @@ const actionBarValue = computed(() =>
                       </span>
                     </span>
                     <span class="text-sm font-semibold tabular-nums">
-                      {{ gradeQuantity(grade.ref) }}
+                      {{ qty(gradeQuantity(grade.ref)) }}
                     </span>
                   </span>
                 </NuxtButton>
@@ -772,7 +976,7 @@ const actionBarValue = computed(() =>
                 color="neutral"
                 variant="ghost"
                 class="absolute inset-0 z-0 h-auto w-full rounded-none p-0 text-left font-normal hover:bg-destructive/10 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-destructive/50"
-                :aria-label="`Perda: ${lossQuantity} unidades`"
+                :aria-label="`Perda: ${formatQcNumber(lossQuantity)} ${unitWord}`"
                 @click="pickLoss"
               >
                 <span
@@ -794,7 +998,7 @@ const actionBarValue = computed(() =>
                     </span>
                   </span>
                   <span class="text-sm font-semibold tabular-nums">
-                    {{ lossQuantity }}
+                    {{ qty(lossQuantity) }}
                   </span>
                 </span>
               </NuxtButton>
@@ -853,36 +1057,116 @@ const actionBarValue = computed(() =>
       "
     >
       <template #body>
-        <div v-if="sheetQuestion?.kind === 'overshoot'" class="grid gap-3">
-          <label class="grid gap-1.5 text-sm">
-            <span class="font-medium">
-              Por que o realizado ficou acima do previsto?
-            </span>
+        <div
+          v-if="sheetQuestion?.kind === 'loss_exceeds'"
+          class="grid gap-3"
+          data-loss-exceeds
+        >
+          <p class="text-sm text-muted-foreground">
+            A perda não pode passar do que entrou no forno.
+          </p>
+          <NuxtButton
+            size="xl"
+            block
+            class="h-auto whitespace-normal"
+            label="Corrigir a perda"
+            @click="fixLoss"
+          />
+        </div>
+        <!-- Rendeu menos ou mais que o previsto: o motivo em um toque, como os
+             da perda; "Outro" abre o texto (decisão de 05/11, #2150). -->
+        <div
+          v-else-if="
+            sheetQuestion?.kind === 'shortfall' ||
+            sheetQuestion?.kind === 'overshoot'
+          "
+          class="grid gap-3"
+          :data-shortfall="sheetQuestion?.kind === 'shortfall' ? '' : undefined"
+          :data-overshoot="sheetQuestion?.kind === 'overshoot' ? '' : undefined"
+        >
+          <p class="text-sm text-muted-foreground">
+            <template v-if="sheetQuestion?.kind === 'shortfall'">
+              Por que rendeu menos? A diferença de
+              {{ qtyWithUnit(shortfallQuantity) }} fica registrada como perda,
+              com este motivo, seu nome e a hora.
+            </template>
+            <template v-else>
+              Por que o realizado ficou acima do previsto? A diferença de
+              {{ qtyWithUnit(overshootQuantity) }} fica registrada com este
+              motivo, seu nome e a hora.
+            </template>
+          </p>
+          <div
+            v-if="!yieldOtherOpen"
+            class="grid grid-cols-1 gap-2 sm:grid-cols-2"
+            role="group"
+            :aria-label="
+              sheetQuestion?.kind === 'shortfall'
+                ? 'Motivo de ter rendido menos'
+                : 'Motivo de ter rendido mais'
+            "
+          >
+            <NuxtButton
+              v-for="reason in yieldReasons"
+              :key="reason"
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="min-h-14 h-auto justify-start whitespace-normal text-left"
+              data-yield-reason
+              @click="answerYieldReason(reason)"
+            >
+              <!-- Slot, e não label: o label do Nuxt UI trunca, e motivo não se corta. -->
+              <span class="whitespace-normal text-left">{{ reason }}</span>
+            </NuxtButton>
+            <NuxtButton
+              color="neutral"
+              variant="outline"
+              size="xl"
+              block
+              class="min-h-14 h-auto justify-start whitespace-normal text-left"
+              label="Outro"
+              trailing-icon="i-lucide-pencil"
+              data-yield-other
+              @click="openYieldOther"
+            />
+          </div>
+          <label v-else class="grid gap-1.5 text-sm">
+            <span class="font-medium">Qual foi o motivo?</span>
             <NuxtTextarea
               v-model="overshootReason"
               :rows="3"
               :maxlength="500"
               required
+              autofocus
               class="w-full"
-              aria-label="Motivo do realizado acima do previsto"
-              placeholder="Ex.: contagem conferida e unidades menores que o padrão"
+              :aria-label="
+                sheetQuestion?.kind === 'shortfall'
+                  ? 'Motivo de ter rendido menos que o previsto'
+                  : 'Motivo do realizado acima do previsto'
+              "
             />
           </label>
-          <div class="grid grid-cols-2 gap-2">
+          <div
+            class="grid gap-2"
+            :class="yieldOtherOpen ? 'grid-cols-2' : 'grid-cols-1'"
+          >
             <NuxtButton
               color="neutral"
               variant="outline"
               size="xl"
               block
               class="h-auto whitespace-normal"
-              label="Corrigir"
+              label="Corrigir a contagem"
               @click="fixOvershoot"
             />
             <NuxtButton
+              v-if="yieldOtherOpen"
               size="xl"
               block
               class="h-auto whitespace-normal"
-              :label="`Confirmar ${total} unidades`"
+              :label="`Confirmar ${qtyWithUnit(total)}`"
               :disabled="!overshootReason.trim()"
               @click="confirmOvershoot"
             />
@@ -937,7 +1221,7 @@ const actionBarValue = computed(() =>
             @click="confirmCorrectionReason"
           />
         </div>
-        <div v-else class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div v-else class="grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 sm:grid-cols-3">
           <!-- Motivos são cartões de escolha com título e explicação. -->
           <NuxtButton
             v-for="defect in activeDefects"

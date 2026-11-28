@@ -1,0 +1,14 @@
+{% extends "unfold/layouts/unauthenticated.html" %}
+{% load unfold %}
+{% comment %}
+  A porta trancada do Admin. Sem este arquivo o Django responde um "403 Forbidden"
+  cru, sem layout e sem saída (beta test 05/11/2026, ADM-06). As telas que a
+  pessoa não abre já saem do menu e da Configuração; esta página é para o link
+  antigo, o favorito e o endereço digitado.
+{% endcomment %}
+{% block title %}Sem acesso a esta tela{% endblock %}
+{% block content %}
+  {% include "unfold/helpers/unauthenticated_title.html" with title="Sem acesso a esta tela" %}
+  {% component "unfold/components/text.html" %}Esta tela é de outro papel da equipe. Se você precisa dela, peça ao dono da loja.{% endcomponent %}
+  {% component "unfold/components/button.html" with href="/admin/" class="mt-6" %}Voltar ao início{% endcomponent %}
+{% endblock %}

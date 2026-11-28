@@ -1,9 +1,4 @@
-"""`apply_catalog_decisions` apaga o que o dono marcou `excluir` — e deixa a lápide.
-
-A lápide tem de nascer ANTES do delete e na mesma transação: o vínculo com a
-coleção é CASCADE, e depois do delete a prateleira de origem não existe mais em
-lugar nenhum (ver `shop.services.retired_urls`).
-"""
+"""Decisões de catálogo preservam os registros históricos do BI e dos pedidos."""
 
 from __future__ import annotations
 
@@ -12,15 +7,8 @@ from django.core.management import call_command
 from shopman.offerman.models import Collection, CollectionItem, Product
 
 from config.management.commands.apply_catalog_decisions import UNPUBLISH
-from shopman.shop.models import RetiredProduct
 
 pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture(autouse=True)
-def _sem_lapides_da_migracao():
-    """A 0068 semeia as oito lápides de 23/09 no banco de teste; aqui partimos do zero."""
-    RetiredProduct.objects.all().delete()
 
 
 def _produto_na_prateleira(sku: str, ref: str) -> Product:
@@ -30,24 +18,20 @@ def _produto_na_prateleira(sku: str, ref: str) -> Product:
     return produto
 
 
-def test_apagar_grava_a_lapide_com_a_prateleira_de_origem():
+def test_apagar_remove_o_produto():
     _produto_na_prateleira("PU", "doces")
 
     call_command("apply_catalog_decisions", "--apply", stdout=None)
 
     assert not Product.objects.filter(sku="PU").exists()
-    lapide = RetiredProduct.objects.get(sku="PU")
-    assert lapide.collection_refs == "doces"
-    assert lapide.note == "era ideia, não virou produto"
 
 
-def test_o_ensaio_nao_grava_nem_a_lapide():
+def test_o_ensaio_preserva_o_produto():
     _produto_na_prateleira("PU", "doces")
 
     call_command("apply_catalog_decisions", stdout=None)
 
     assert Product.objects.filter(sku="PU").exists()
-    assert not RetiredProduct.objects.filter(sku="PU").exists()
 
 
 def test_a_cream_soda_sai_apagada_mesmo_tendo_saido_em_pedido():
@@ -65,7 +49,6 @@ def test_a_cream_soda_sai_apagada_mesmo_tendo_saido_em_pedido():
 
     assert not Product.objects.filter(sku="CV").exists()
     assert OrderItem.objects.filter(sku="CV").exists()
-    assert RetiredProduct.objects.get(sku="CV").collection_refs == "bebidas-geladas"
 
 
 def test_a_decisao_de_despublicar_nao_depende_de_ficha():

@@ -183,7 +183,10 @@ def make_customer(
     }
     if price_tier is not None:
         fields["price_tier"] = price_tier
-    return Customer.objects.create(**fields)
+    from shopman.storefront.tests.identity_fakes import proven
+
+    # A cliente da jornada já provou o telefone e o e-mail (OC-08).
+    return proven(Customer.objects.create(**fields))
 
 
 def authenticate(client: Client, customer) -> None:
@@ -192,11 +195,12 @@ def authenticate(client: Client, customer) -> None:
     After this, requests via ``client`` have ``request.customer`` populated and
     ``get_authenticated_customer`` returns the ``Customer`` — no OTP/HTTP needed.
     """
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=customer.email or None,
@@ -258,15 +262,15 @@ def apply_coupon(client: Client, code: str):
     return resp.status_code, (resp.json() if resp.content else None)
 
 
-def last_pickup_slot() -> str:
-    """The latest configured pickup slot — always selectable for *today*
-    regardless of wall-clock, so today-pickup checkouts are not time-flaky."""
-    from shopman.storefront.services.pickup_slots import get_slots
+def today_pickup_slot() -> str:
+    """Uma meia hora de retirada de HOJE que a grade oferece (ver ``_pickup_today``)."""
+    from shopman.storefront.tests._pickup_today import today_pickup_slot as offered
 
-    return get_slots()[-1]["ref"]
+    return offered()
 
 
 def first_pickup_slot() -> str:
+    """O primeiro turno de encomenda da casa: para retirada em OUTRO dia."""
     from shopman.storefront.services.pickup_slots import get_slots
 
     return get_slots()[0]["ref"]
@@ -294,7 +298,7 @@ def checkout(client: Client, *, name="Ana Silva", phone=DEFAULT_PHONE, **overrid
 
     payload = with_baseline(client, payload)  # baseline como o app calcula
     if payload.get("fulfillment_type") == "pickup" and "delivery_time_slot" not in payload:
-        payload["delivery_time_slot"] = last_pickup_slot()
+        payload["delivery_time_slot"] = today_pickup_slot()
         payload.setdefault("delivery_date", timezone.localdate().isoformat())
     resp = client.post(
         "/api/v1/checkout/",

@@ -32,16 +32,45 @@ describe("P04: 'Mesa 6' grande e '#1007' pequeno", () => {
   });
 });
 
-describe("P03: 'Consumir aqui F7' e 'Agora F8' também no Balcão", () => {
+describe("P03: 'Agora F7' também no Balcão; o recebimento do Balcão são dois chips (#3193)", () => {
   it("os chips não somem no modo Balcão", () => {
     const header = read("../app/components/PosTabHeader.vue");
     expect(header).not.toMatch(/v-if="hasOpenTab && salesMode !== 'counter'"/);
-    expect(header).toContain("'Consumir aqui'");
+    expect(header).toContain('label: "Consumir aqui"');
+    expect(header).toContain('label: "Para levar"');
     expect(header).toContain("'Agora'");
     const page = read("../app/pages/index.vue");
     expect(page).not.toContain('if (cart.salesMode === "counter") return;');
-    expect(page).toContain("leaveCounterThen(openFulfillmentHere)");
+    // Opção A do dono: o F8 do balcão troca entre os dois; a encomenda fica no
+    // seletor de modo, e o "Agora" segue sendo a porta do agendamento.
+    expect(page).not.toContain("leaveCounterThen(openFulfillmentHere)");
+    expect(page).toContain('if (cart.salesMode === "counter") { toggleCounterService(); return; }');
     expect(page).toContain("leaveCounterThen(openScheduleHere)");
+  });
+
+  // A barra segue o funil da encomenda (dono, 19/11/2026, #2754): cliente,
+  // quando, recebimento. A tecla é da POSIÇÃO do chip, e a página abre pela
+  // tecla o mesmo que o chip abre pelo toque.
+  it("a barra vem na ordem cliente, quando, recebimento, e a tecla acompanha a posição", () => {
+    const header = read("../app/components/PosTabHeader.vue");
+    const chips = [...header.matchAll(/data-context-entry="(\w+)"|>(F\d)<\/OperatorKbd>/g)].map((m) => m[1] || m[2]);
+    // No balcão o lugar do recebimento são os dois chips (`service`); na encomenda,
+    // o recebimento. Os dois nunca aparecem juntos, e os dois respondem ao F8.
+    expect(chips).toEqual(["customer", "F6", "schedule", "F7", "service", "F8", "fulfillment", "F8"]);
+    expect(header).toContain("Quando (F7)");
+    expect(header).toContain("Recebimento (F8)");
+    const page = read("../app/pages/index.vue");
+    expect(page).toMatch(/case "F7":[^}]*?openScheduleHere\(\);/);
+    expect(page).toMatch(/case "F8":[^}]*?openFulfillmentHere\(\);/);
+  });
+
+  it("na encomenda por combinar, a barra respeita o funil: sem data, o Recebimento leva ao Quando", () => {
+    const page = read("../app/pages/index.vue");
+    const fulfillment = page.slice(page.indexOf("function openFulfillmentHere()"), page.indexOf("function openScheduleHere()"));
+    expect(fulfillment).toContain('orderSetupIssue.value === "schedule"');
+    expect(fulfillment).toContain("openScheduleHere();");
+    const schedule = page.slice(page.indexOf("function openScheduleHere()"), page.indexOf("const orderEntrySchedule"));
+    expect(schedule).not.toContain("openFulfillmentHere");
   });
 });
 
@@ -91,7 +120,7 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
     expect(cart).toContain("(era {{ qtyWas }})");
     expect(cart).toContain('{{ discountOpen ? "Aplicar" : "Pronto" }}</NuxtButton>');
   });
-  it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, PIX e Maquininha", () => {
+  it("com itens a enviar, a folha fechada promove 'Enviar à cozinha'; aberta, Pix e Maquininha", () => {
     // A folha fechada é a barra da ação do momento do kit; a primária é o envio
     // quando há o que enviar (`sheetFirePrimary`), e a gaveta aberta paga direto.
     expect(cart).toContain("<OperatorActionBar");
@@ -114,18 +143,18 @@ describe("P08/P10/P20/P21/P22: a comanda da v4", () => {
 });
 
 describe("P26: cartões do celular nas Encomendas", () => {
-  it("preparo só quando diz algo e o pagamento na voz do balcão", () => {
+  it("preparo só quando diz algo e o pagamento com o mesmo nome do computador", () => {
     expect(phoneCardPills({ situation: "ready", situation_label: "Pronta", balance_q: 0, fulfillment_type: "pickup" }))
-      .toEqual([{ label: "Pronta", tone: "success" }, { label: "Paga", tone: "success" }]);
+      .toEqual([{ label: "Pronta", tone: "success" }, { label: "Pago", tone: "success" }]);
     expect(phoneCardPills({ situation: "to_pay", situation_label: "A pagar", balance_q: 4100, fulfillment_type: "delivery" }))
-      .toEqual([{ label: "Pagar na entrega", tone: "warning" }]);
+      .toEqual([{ label: "A receber", tone: "warning" }]);
     expect(phoneCardPills({ situation: "check_payment", situation_label: "Conferir", balance_q: null, fulfillment_type: "pickup" }))
       .toEqual([{ label: "Conferir pagamento", tone: "warning" }]);
   });
 });
 
 describe("P31: o passo 1 do Fim do dia é a contagem cega dentro do corredor", () => {
-  it("o passo 1 fica corrente e a tela não manda para a Sessão de caixa", () => {
+  it("o passo 1 fica corrente e a tela não manda para o Caixa", () => {
     const steps = closingSteps({ cashOpen: true, counted: 0, total: 3, step: "cash", dayClosed: false });
     expect(steps[0]).toMatchObject({ key: "cash", state: "current" });
     const page = read("../app/pages/session/closing.vue");
@@ -202,5 +231,14 @@ describe("Fase 2, limpeza do PDV", () => {
     const board = read("../app/components/PosTabBoard.vue");
     expect(board).not.toContain(":class=\"tabView === 'grid' ? 'border-primary bg-primary/5' : ''\"");
     expect(board.match(/active-variant="solid"/g)).toHaveLength(4);
+  });
+});
+
+describe("PDV-09 (revisão #2152): o filtro do balcão vale só para o FINALIZAR", () => {
+  it("a comanda e o Envio Auto/Manual leem o roteamento inteiro; a tela de pagamento, o do balcão", () => {
+    const page = read("../app/pages/index.vue");
+    expect(page).toContain("const kitchenStations = computed<Record<string, string>>(() => kitchenRoutedSkus(");
+    expect(page).toMatch(/<PosPaymentWorkspace[\s\S]*?:kitchen-stations="checkoutKitchenStations"/);
+    expect(page).toMatch(/<PosCartPanel[\s\S]*?:kitchen-stations="kitchenStations"/);
   });
 });

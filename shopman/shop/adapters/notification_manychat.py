@@ -160,20 +160,35 @@ def _message_buttons(template: str, context: dict) -> list[dict[str, str]]:
     next step legible and prevents the recovery link from dominating the copy.
     Other notifications keep their existing plain text contract.
     """
+    from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
+
     if template not in {"access_link", "access_link_site"}:
         return []
+
+    if template == "access_link_site":
+        # Login começado no computador: o botão principal LIBERA a aba de lá e diz qual
+        # é ("Liberar o Chrome no Windows"). Sem o link de liberar não há o que mandar:
+        # o link de entrada abriria a loja no celular, que não é o que a pessoa pediu.
+        release_url = str(context.get("release_url") or "").strip()
+        if not release_url:
+            return []
+        caption = str(context.get("release_caption") or "").strip() or ACCESS_BUTTON_COPY["release_fallback"]
+        buttons = [{"type": "url", "caption": caption, "url": release_url}]
+        revoke_url = str(context.get("revoke_url") or "").strip()
+        if revoke_url:
+            buttons.append({"type": "url", "caption": ACCESS_BUTTON_COPY["revoke"], "url": revoke_url})
+        return buttons
 
     access_url = str(context.get("access_url") or "").strip()
     if not access_url:
         return []
 
-    primary_caption = "Continuar pedido" if context.get("has_cart_context") else "Entrar na loja"
-    buttons = [{"type": "url", "caption": primary_caption, "url": access_url}]
-
-    revoke_url = str(context.get("revoke_url") or "").strip()
-    if template == "access_link_site" and revoke_url:
-        buttons.append({"type": "url", "caption": "Encerrar acesso", "url": revoke_url})
-    return buttons
+    primary_caption = str(context.get("access_caption") or "").strip() or (
+        ACCESS_BUTTON_COPY["continue_order"]
+        if context.get("has_cart_context")
+        else ACCESS_BUTTON_COPY["enter_store"]
+    )
+    return [{"type": "url", "caption": primary_caption, "url": access_url}]
 
 
 def _message_contents(
@@ -189,11 +204,13 @@ def _message_contents(
     dominant bubble. Both are still sent atomically in one SendContent call.
     """
     if template == "access_link_site" and len(buttons) == 2:
+        from shopman.shop.notification_copy import ACCESS_BUTTON_COPY
+
         primary, revoke = buttons
         return [
             {
                 "type": "text",
-                "text": "Não reconhece este acesso?",
+                "text": ACCESS_BUTTON_COPY["revoke_lead"],
                 "buttons": [revoke],
             },
             {
@@ -325,12 +342,17 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     )
 
     # O template do flow: o próprio evento, ou a variante com o botão de rastreio do
-    # entregador quando o `order_dispatched` tem corrida com link.
+    # entregador quando o `order_dispatched` tem corrida com link, ou a variante com a
+    # data quando o `order_accepted` é de encomenda.
     flow_template = template
     if template == "order_dispatched" and not sandbox_flow_override:
         flow_template, flow_ns, ctx = _courier_tracking_variant(
             template, flow_ns, ctx, mc_config
         )
+    elif template == "order_accepted" and not sandbox_flow_override:
+        flow_template, flow_ns = _preorder_accepted_variant(template, flow_ns, ctx, mc_config)
+    elif template == "payment_requested" and not sandbox_flow_override:
+        flow_template, flow_ns = _card_repayment_variant(template, flow_ns, ctx, mc_config)
 
     if flow_ns and _flow_lacks_name(template, ctx):
         # O template aprovado diz "Oi, {{1}}!" e a Meta recusa variável vazia; o campo
@@ -508,6 +530,93 @@ def _courier_tracking_variant(
     return COURIER_DISPATCH_VARIANT, variant_ns, {**ctx, "courier_tracking_path": path}
 
 
+#: Nome do modelo aprovado da variante com a data da encomenda (para o log dizer o que ligar).
+PREORDER_ACCEPTED_TEMPLATE_NAME = "pedido_encomenda_confirmada"
+
+
+def _preorder_accepted_variant(
+    template: str, flow_ns: str | None, ctx: dict, mc_config: dict
+) -> tuple[str, str | None]:
+    """Trocar o flow do ``order_accepted`` pelo da encomenda, se der.
+
+    Devolve ``(template do flow, flow_ns)``. A variante só sai na ENCOMENDA, que é
+    quando o ``status_note`` do ``order_accepted`` traz a promessa ("retirada amanhã,
+    a partir das 9h", ``services/notification._commitment_note``); no pedido do dia ele
+    vem vazio e o aviso segue no ``pedido_confirmado``.
+
+    Ligar é ter o flow da variante: ``MANYCHAT_FLOW_MAP["order_accepted_preorder"]``
+    ou o ``NotificationTemplate`` desse evento. Enquanto o modelo está em análise na
+    Meta não há flow, e a encomenda sai pelo ``pedido_confirmado`` (sem a data), como
+    antes. Mesma precedência do ``send``: Admin antes do ``flow_map``.
+    """
+    from shopman.shop.services.manychat_marketing_safety import PREORDER_ACCEPTED_VARIANT
+
+    if not str(ctx.get("status_note") or "").strip():
+        return template, flow_ns
+    variant_ns = _load_db_flow_ns(PREORDER_ACCEPTED_VARIANT) or (
+        mc_config.get("flow_map", {}).get(PREORDER_ACCEPTED_VARIANT)
+    )
+    if not variant_ns:
+        if flow_ns:
+            # Estado esperado enquanto o modelo está em análise: info, não alarme.
+            logger.info(
+                "manychat.preorder_accepted_flow_pending template=%s: a confirmação da "
+                "encomenda saiu sem a data. Ligue o flow do modelo %s em %s.",
+                template,
+                PREORDER_ACCEPTED_TEMPLATE_NAME,
+                PREORDER_ACCEPTED_VARIANT,
+            )
+        return template, flow_ns
+    return PREORDER_ACCEPTED_VARIANT, variant_ns
+
+
+#: Nome do modelo da cobrança de cartão recusada depois do aceite (para o log).
+CARD_REPAYMENT_TEMPLATE_NAME = "pagamento_cartao_falhou"
+
+
+def _card_repayment_variant(
+    template: str, flow_ns: str | None, ctx: dict, mc_config: dict
+) -> tuple[str, str | None]:
+    """Trocar o flow do ``payment_requested`` pelo do novo pagamento, se der.
+
+    A variante só sai quando o pedido espera o novo pagamento depois da cobrança de
+    cartão recusada (``payment.repayment``), com Pix aceito no canal (o modelo
+    oferece "Pix ou outro cartão") e com prazo (a Meta não aceita variável vazia).
+
+    Falha fechada: ligar é ter o flow da variante
+    (``MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]`` ou o
+    ``NotificationTemplate`` desse evento). Enquanto o modelo não está aprovado na
+    Meta não há flow, e o aviso sai pelo ``pagamento_solicitado`` aprovado, nunca
+    por texto que a Meta não aprovou.
+    """
+    from shopman.shop.services.manychat_marketing_safety import CARD_REPAYMENT_VARIANT
+
+    payment = ctx.get("payment") if isinstance(ctx.get("payment"), dict) else {}
+    repayment = payment.get("repayment") if isinstance(payment.get("repayment"), dict) else None
+    if (
+        repayment is None
+        or not repayment.get("pix_allowed")
+        or str(payment.get("method") or "").lower() != "card"
+        or not str(ctx.get("payment_deadline") or "").strip()
+    ):
+        return template, flow_ns
+    variant_ns = _load_db_flow_ns(CARD_REPAYMENT_VARIANT) or (
+        mc_config.get("flow_map", {}).get(CARD_REPAYMENT_VARIANT)
+    )
+    if not variant_ns:
+        if flow_ns:
+            # Estado esperado enquanto o modelo está em análise: info, não alarme.
+            logger.info(
+                "manychat.card_repayment_flow_pending template=%s: o novo pagamento saiu "
+                "pelo pagamento_solicitado. Ligue o flow do modelo %s em %s.",
+                template,
+                CARD_REPAYMENT_TEMPLATE_NAME,
+                CARD_REPAYMENT_VARIANT,
+            )
+        return template, flow_ns
+    return CARD_REPAYMENT_VARIANT, variant_ns
+
+
 def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
     """Reservar o assinante pela janela de assentamento, ou devolver o adiamento.
 
@@ -555,17 +664,26 @@ def _reserve_flow_subscriber(subscriber_id, template: str) -> dict | None:
 #: ``management_note`` é a exceção consciente: o flow configurado só resolve variáveis
 #: de campos personalizados, então a nota que contém a capacidade de uma única
 #: assinatura fica armazenada no perfil do ManyChat. A capacidade não identifica o
-#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-029 e o
+#: contato nem abre a conta, mas continua sendo segredo operacional; ADR-039 e o
 #: runbook registram a limitação e os controles exigidos no provedor.
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
     "customer_ref", "customer_uuid", "hold_ids", "management_url",
+    # Não é campo do ManyChat: é o VALOR que o campo `order_ref` leva (ver abaixo).
+    "order_link_ref",
 })
+
+#: O campo do botão aprovado na Meta (`/pedido/{{1}}`) e a chave do contexto com o
+#: valor que ele leva: o ref com a capacidade do pedido, `<ref>~<selo>` (DEV-2026-093).
+#: O campo `order_ref` só vai em botão, nunca no corpo, então trocar o valor dele não
+#: muda texto nenhum e não pede re-submeter modelo.
+_ORDER_BUTTON_FIELD = "order_ref"
+_ORDER_BUTTON_VALUE_KEY = "order_link_ref"
 
 #: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
 #: substituído pelo link COMUM (ver `_safe_field_value`). Elas mesmas nunca viajam.
-#: É sufixo, e não uma lista, porque toda chave de link ganhou a sua gêmea pública —
-#: uma lista voltaria a ficar para trás na próxima.
+#: É sufixo, e não uma lista, porque qualquer chave que um dia carregar link pessoal
+#: ganha a sua gêmea pública pelo mesmo nome; uma lista voltaria a ficar para trás.
 _PUBLIC_SUFFIX = "_public"
 
 
@@ -577,12 +695,14 @@ _ACCESS_TOKEN_IN_QUERY = re.compile(r"[?&]t=")
 def _safe_field_value(name: str, value, ctx: dict):
     """O valor que pode SAIR daqui, ou ``None`` para "não mande este campo".
 
-    ⚠️ Os links de cliente (`tracking_url`, `payment_url`, `reorder_url`, `action_url`)
-    carregam um LINK DE ACESSO PESSOAL: o despacho o cunha por destinatário, ele vale
-    horas e cria sessão de cliente identificado. Como campo personalizado, esse token
-    passa a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
-    marketing — legível por qualquer pessoa com acesso à conta, e utilizável enquanto o
-    cliente não clicar.
+    ⚠️ O link de campanha (`action_url`) carrega um LINK DE ACESSO PESSOAL: o despacho o
+    cunha por destinatário, ele vale horas e cria sessão de cliente identificado. Os
+    links do aviso de pedido (`tracking_url`, `payment_url`) levam só a capacidade do
+    pedido (`/pedido/<ref>~<selo>`, DEV-2026-093), que não é credencial de login nem de
+    conta: abre aquele pedido e nada mais. Passam por aqui intactos; o `reorder_url` é
+    o histórico da conta, sem nada. Como campo personalizado, um token passa a viver em texto claro no perfil
+    do cliente dentro de uma ferramenta SaaS de marketing — legível por qualquer pessoa
+    com acesso à conta, e utilizável enquanto o cliente não clicar.
 
     ⚠️ E simplesmente NÃO mandar não serve: o flow do ManyChat não lê o `flow_token`,
     as variáveis dele saem dos campos personalizados. Um link ausente sai como botão EM
@@ -593,10 +713,9 @@ def _safe_field_value(name: str, value, ctx: dict):
     seguro dele.
 
     ⚠️ A recusa vale para QUALQUER chave, não para uma lista delas. Ela nasceu olhando
-    só o `action_url` (campanha/estoque), e por isso não via os três links que TODO aviso
-    de pedido carrega: `tracking_url`, `payment_url` e `reorder_url` saíam com o token
-    inteiro. Era inerte só porque nenhum flow estava mapeado — mapear o primeiro é que
-    ligava o vazamento. Filtro que depende de lembrarem de o inscrever não é filtro.
+    só o `action_url` (campanha/estoque), e por isso não via os links do aviso de pedido,
+    que naquela época saíam com o token inteiro. Filtro que depende de lembrarem de o
+    inscrever não é filtro.
     """
     if not _ACCESS_TOKEN_IN_QUERY.search(str(value)):
         return value
@@ -615,14 +734,17 @@ def _shareable_context(ctx: dict) -> dict:
     metade das saídas não é filtro.
     """
     shareable: dict[str, str] = {}
-    for name, value in (ctx or {}).items():
+    ctx = dict(ctx or {})
+    if ctx.get(_ORDER_BUTTON_VALUE_KEY) and ctx.get(_ORDER_BUTTON_FIELD):
+        ctx[_ORDER_BUTTON_FIELD] = ctx[_ORDER_BUTTON_VALUE_KEY]
+    for name, value in ctx.items():
         if (
             name in _FIELD_DENYLIST
             or name.endswith(_PUBLIC_SUFFIX)
             or not isinstance(value, (str, int, float))
         ):
             continue
-        safe = _safe_field_value(name, value, ctx or {})
+        safe = _safe_field_value(name, value, ctx)
         if safe is None:
             continue
         text = str(safe).strip()

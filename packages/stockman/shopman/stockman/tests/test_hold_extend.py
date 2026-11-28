@@ -69,3 +69,16 @@ def test_retag_reference_refuses_terminal_hold(hold_id):
     hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
     assert hold.status == HoldStatus.RELEASED
     assert hold.metadata.get("reference") != "order:WEB-2"
+
+
+def test_extend_refuses_expired_hold(hold_id):
+    """Hold vencido não se estende: o saldo dele pode já ter outro dono."""
+    hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
+    hold.expires_at = timezone.now() - timedelta(minutes=1)
+    hold.save(update_fields=["expires_at"])
+
+    assert StockHolds.extend(hold_id, expires_at=timezone.now() + timedelta(hours=48)) is False
+
+    hold.refresh_from_db()
+    assert hold.expires_at < timezone.now()
+    assert not Hold.objects.active().filter(pk=hold.pk).exists()

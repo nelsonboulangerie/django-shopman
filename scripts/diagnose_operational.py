@@ -512,9 +512,6 @@ def _adapter_configuration_lines() -> list[CheckLine]:
     efi_token = getattr(settings, "SHOPMAN_EFI_WEBHOOK", {}).get("webhook_token", "")
     lines.append(_secret_presence_line("efi webhook token", efi_token, settings.DEBUG))
 
-    ifood_token = getattr(settings, "SHOPMAN_IFOOD", {}).get("webhook_token", "")
-    lines.append(_secret_presence_line("ifood webhook token", ifood_token, settings.DEBUG))
-
     lines.append(_geoip_freshness_line())
 
     stripe_configured = any("payment_stripe" in str(adapter) for adapter in payment_adapters.values())

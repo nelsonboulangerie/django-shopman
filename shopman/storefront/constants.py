@@ -36,7 +36,7 @@ HAS_STOCKMAN = True
 
 
 # Override via SHOPMAN_STOREFRONT_CHANNEL_REF in your Django settings.
-STOREFRONT_CHANNEL_REF: str = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+STOREFRONT_CHANNEL_REF: str = settings.SHOPMAN_STOREFRONT_CHANNEL_REF
 
 # Override via SHOPMAN_POS_CHANNEL_REF in your Django settings.
-POS_CHANNEL_REF: str = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+POS_CHANNEL_REF: str = settings.SHOPMAN_POS_CHANNEL_REF

@@ -68,7 +68,7 @@ const visibleItems = computed(() => [
   })),
   {
     label: "Mais",
-    icon: "i-lucide-ellipsis",
+    icon: "i-lucide-ellipsis-vertical",
     active: activeInOverflow.value,
     chip: overflowAttention.value ? { color: "warning" as const } : undefined,
     "aria-label": props.operatorName

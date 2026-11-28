@@ -25,6 +25,7 @@
 // a peça se chama "barra lateral"; `rail` é só o nome no código.
 import type { ChipProps } from "@nuxt/ui";
 import { useScreen } from "../composables/useScreen";
+import { SUPPORT_ENTRY, SUPPORT_ENTRY_ICON, SUPPORT_ENTRY_LABEL } from "../composables/useSupportEntry";
 
 import { activeSectionKey, type OperatorSection } from "../presentation/appBar";
 import {
@@ -56,7 +57,43 @@ const props = defineProps<{
    * da gaveta) é só identidade, sem "voltar à Central" apontando para ela mesma.
    */
   home?: boolean;
+  /**
+   * Liga o trocador (modelo de navegação, 31/10/2026): todas as seções do app, com a
+   * forma de cada uma. Sem ele, o shell segue com ☰ e a barra de baixo de sempre.
+   */
+  switcherSections?: readonly OperatorSection[];
+  /** A forma de uma tela que não é seção (o item aberto). Só com o trocador. */
+  defaultForm?: "floor" | "office" | "wall";
+  /**
+   * As telas de chão também levam a barra de baixo, com as seções do chão. Para o app em
+   * que o chão troca de lugar o dia todo (as etapas do lote na Produção: dono, 03/11/2026,
+   * "as tabs no topo são subdivisões da seção; seção vai para baixo").
+   */
+  floorBar?: boolean;
+  /**
+   * As telas do escritório levam a MESMA barra de baixo do chão (nenhuma acesa, porque a
+   * seção do escritório não está nela). Para o app em que o escritório é um canto só e o
+   * celular vive no chão: o Compras, cuja Base é a única seção do escritório (dono,
+   * 04/11/2026). Sem ela, uma vaga só no escritório some (`quickBarLayout`) e o caminho
+   * de volta fica só no selo. Pede `floorBar`.
+   */
+  officeUsesFloorBar?: boolean;
+  /**
+   * Liga o Suporte (dono, 16/11/2026): item no pé da barra lateral, entre Atalhos e
+   * Bloquear, e a mesma entrada no trocador e no menu do celular. O chamado abre com
+   * este contexto mais o nome da tela de agora (ADR-045). Sem ele, nada aparece.
+   */
+  supportContext?: Record<string, unknown>;
 }>();
+// Quem monta pode abrir o painel de fora (o link `/support` da Central).
+const supportOpen = defineModel<boolean>("supportOpen", { default: false });
+function openSupport(): void {
+  supportOpen.value = true;
+}
+provide(
+  SUPPORT_ENTRY,
+  computed(() => (props.supportContext ? openSupport : null)),
+);
 
 const emit = defineEmits<{ lock: []; select: [key: string] }>();
 const route = useRoute();
@@ -78,9 +115,66 @@ const footSections = computed(() =>
 const quickSections = computed(() =>
   props.sections.filter((section) => section.where !== "rail"),
 );
+// Com o trocador, a forma da tela decide a barra de baixo. Chão: nenhuma (o posto define o
+// lugar; trocar é pelo selo). Escritório: as seções do escritório, "Mais" abre o trocador.
+// Escrito já no setup (o servidor não roda `watchEffect`): o cabeçalho, filho do shell,
+// tem de desenhar o mesmo selo no servidor e na hidratação.
+const switcherEnabled = useState<boolean>("suite-switcher-enabled", () => false);
+const wantsSwitcher = () => Boolean(props.switcherSections) && !props.home;
+switcherEnabled.value = wantsSwitcher();
+watch(wantsSwitcher, (enabled) => {
+  switcherEnabled.value = enabled;
+});
+const pool = computed(() => props.switcherSections ?? props.sections);
+function exactKey(path: string): string | undefined {
+  const clean = (path || "/").split("?")[0]!.replace(/(.)\/$/, "$1");
+  let best: { key: string; len: number } | undefined;
+  for (const section of pool.value) {
+    for (const cand of [section.to, ...(section.match || [])]) {
+      if (!cand) continue;
+      const c = cand.split("?")[0]!.replace(/(.)\/$/, "$1");
+      const hit = c === "/" ? clean === "/" : clean === c || clean.startsWith(c + "/");
+      if (hit && (!best || c.length > best.len)) best = { key: section.key, len: c.length };
+    }
+  }
+  return best?.key;
+}
+const switcherCurrent = computed(() => props.current ?? exactKey(route.path));
+// O chamado leva o NOME da tela de agora (o que o operador lê no topo), não o caminho.
+const supportContextHere = computed(() => {
+  if (!props.supportContext) return undefined;
+  const section =
+    pool.value.find((s) => s.key === switcherCurrent.value) ??
+    props.sections.find((s) => s.key === active.value);
+  return section ? { ...props.supportContext, screen: section.label } : props.supportContext;
+});
+const form = computed(
+  () => pool.value.find((s) => s.key === switcherCurrent.value)?.form ?? props.defaultForm ?? "office",
+);
+const switcherOpen = useState<boolean>("suite-switcher-open", () => false);
+const officeQuick = computed(() =>
+  (props.switcherSections ?? [])
+    .filter((s) => (s.form ?? "office") === "office")
+    .map((s) => ({ ...s, quick: undefined })),
+);
+const floorQuick = computed(() =>
+  (props.switcherSections ?? []).filter((s) => s.form === "floor"),
+);
+// A barra de baixo com o trocador: a da forma da tela. Chão só com `floorBar`; o
+// escritório leva a do chão só com `officeUsesFloorBar`.
+const formQuick = computed(() => {
+  if (form.value === "office") {
+    return props.floorBar && props.officeUsesFloorBar ? floorQuick.value : officeQuick.value;
+  }
+  if (form.value === "floor" && props.floorBar) return floorQuick.value;
+  return null;
+});
 // A gaveta (abaixo de lg, o DashboardSidebar abre como slideover): o ☰ da barra do
-// topo e o "Mais" da barra inferior a abrem.
-const drawerOpen = ref(false);
+// topo e o "Mais" da barra inferior a abrem. No app sem trocador (a Central, `home`), a
+// linha do chão do celular esconde o ☰, e o selo dela (`OperatorCompactSeal`) passa a ser
+// a porta da gaveta: por isso o estado é compartilhado, e não um `ref` local.
+const drawerOpen = useState<boolean>("suite-drawer-open", () => false);
+drawerOpen.value = false; // o shell que monta começa com a gaveta fechada
 const shortcuts = useOperatorShortcuts();
 const appLabel = (
   useRuntimeConfig().public?.operatorPwa as
@@ -126,7 +220,7 @@ provideSuiteRail({
 });
 
 function go(section: OperatorSection) {
-  if (section.to) void navigateTo(section.to);
+  if (section.to) void (/^https?:\/\//.test(section.to) ? navigateTo(section.to, { external: true }) : navigateTo(section.to));
   else emit("select", section.key);
 }
 
@@ -195,6 +289,18 @@ function footItems(isCollapsed: boolean) {
         shortcuts.open.value = true;
       },
     },
+    ...(props.supportContext
+      ? [
+          {
+            label: SUPPORT_ENTRY_LABEL,
+            icon: SUPPORT_ENTRY_ICON,
+            tooltip: { text: SUPPORT_ENTRY_LABEL },
+            "aria-label": SUPPORT_ENTRY_LABEL,
+            "data-rail-support": "",
+            onSelect: openSupport,
+          },
+        ]
+      : []),
     ...(props.operatorName
       ? [
           {
@@ -280,7 +386,8 @@ function menuDotSize(size: string): ChipProps["size"] {
               v-if="!isCollapsed && signalOf(item)"
               :count="signalOf(item)!.count"
               :color="signalOf(item)!.color"
-              :dot="signalOf(item)!.count === undefined"
+              :unknown="signalOf(item)!.unknown"
+              :dot="signalOf(item)!.count === undefined && !signalOf(item)!.unknown"
               :dot-size="menuDotSize(ui.linkLeadingChipSize())"
             />
           </template>
@@ -313,7 +420,18 @@ function menuDotSize(size: string): ChipProps["size"] {
             :class="isCollapsed ? 'flex-col items-center' : 'flex-row items-center'"
           >
             <ClientOnly><OperatorInbox placement="rail" /></ClientOnly>
-            <NuxtPopover v-if="operatorName" :content="{ side: 'right', align: 'end' }">
+            <!-- Na mesa o menu abre ao lado do rail; na gaveta do celular (abaixo de lg)
+                 abre para cima, dentro da tela, com a largura dela no máximo. Era
+                 `side: right` nos dois, e no celular o menu ia até x=584 numa tela de 375
+                 (beta 05/11, CEN-08 e CEN-03 da rodada gestor). -->
+            <NuxtPopover
+              v-if="operatorName"
+              :content="{
+                side: isDesktop ? 'right' : 'top',
+                align: isDesktop ? 'end' : 'start',
+                collisionPadding: 16,
+              }"
+            >
               <NuxtButton
                 color="neutral"
                 variant="soft"
@@ -324,12 +442,17 @@ function menuDotSize(size: string): ChipProps["size"] {
                 data-suite-rail-menu
               />
               <template #content>
-                <OperatorMenuItems
-                  mode="rail"
-                  :operator-name="operatorName"
-                  @lock="emit('lock')"
-                  @hide="setRail('hidden')"
-                />
+                <!-- A largura mora no conteúdo, não num `:ui` por instância (o shell
+                     não leva `:ui`: trava `canonicalPilot.guardrails` do Gestor). -->
+                <div class="w-72 max-w-[calc(100vw-2rem)]" data-suite-rail-menu-content>
+                  <OperatorMenuItems
+                    mode="rail"
+                    :rail-hidable="isDesktop"
+                    :operator-name="operatorName"
+                    @lock="emit('lock')"
+                    @hide="setRail('hidden')"
+                  />
+                </div>
               </template>
             </NuxtPopover>
           </div>
@@ -348,6 +471,15 @@ function menuDotSize(size: string): ChipProps["size"] {
         </div>
 
         <OperatorQuickBar
+          v-if="switcherEnabled && formQuick"
+          :sections="formQuick"
+          :current="switcherCurrent"
+          :label="label"
+          @select="emit('select', $event)"
+          @more="switcherOpen = true"
+        />
+        <OperatorQuickBar
+          v-else-if="!switcherEnabled"
           :sections="quickSections"
           :current="active"
           :label="label"
@@ -359,9 +491,11 @@ function menuDotSize(size: string): ChipProps["size"] {
   </NuxtDashboardGroup>
   <!-- Aviso com prazo correndo: interrompe a tela até alguém ver (dono, 07/10). -->
   <ClientOnly><OperatorUrgentAlert /></ClientOnly>
+  <ClientOnly><OperatorSwitcher v-if="switcherEnabled" :sections="pool" :current="switcherCurrent" :operator-name="operatorName" @lock="emit('lock')" @select="emit('select', $event)" /></ClientOnly>
   <OperatorShortcutsHelp
     :sections="topSections"
     :app-label="label.replace(/^Seções d[oa] /, '')"
     rail
   />
+  <SupportPanel v-if="supportContextHere" v-model:open="supportOpen" :context="supportContextHere" />
 </template>

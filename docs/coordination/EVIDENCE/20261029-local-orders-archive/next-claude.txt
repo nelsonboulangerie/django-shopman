@@ -1,0 +1,57 @@
+# ORDEM — 2026-10-20: retomar de onde parou (coordenação Claude) — coordenação DSH
+
+> Leia SÓ este arquivo. Não releia docs/plans, não reaudite o repo, não rode a suíte inteira:
+> o estado abaixo foi medido em 20/10 21:0x UTC contra origin/main 65b658d31.
+> Objetivo desta ordem: terminar o que estava na sua mão e parar. Uma frente, um PR, fila.
+
+## Onde você parou (medido agora)
+
+Você tem **trabalho não commitado** numa worktree sua:
+
+- worktree (caminho absoluto, não está travada e é a única dona do branch: entre nela e trabalhe ali):
+  /Users/pablovalentini/Dev/Claude/django-shopman/.claude/worktrees/agent-a71b2305ec79e0f1d
+  Se ela não abrir, salve o que existe com git diff > /tmp/manychat-$(date +%s).patch ANTES de
+  qualquer coisa (nunca git stash, o stash é do repositório inteiro) e recrie a worktree com o mesmo
+  branch.
+- branch: claude/liga-encomenda-confirmada (+0 commits à frente do main: nada commitado)
+- arquivos sujos (2):
+  - config/settings.py (+7/-3) — é o MANYCHAT_FLOW_MAP
+  - docs/reference/whatsapp-templates-meta.md (+25/-14)
+- última atividade: ~56 min antes desta checagem (a máquina reiniciou)
+
+É a frente do **ManyChat**: ligar evento → flow no MANYCHAT_FLOW_MAP e documentar os modelos. O
+BOARD lista como pendência: faltam 4 modelos (pontos_fidelidade, pedido_entregue_v2,
+fila_vaga_disponivel_v2, produto_chegou_v2), pagamento_falhou em análise na Meta, e depois os flows
+de pedido_em_preparo e reembolso_processado.
+
+## Tarefa (nesta ordem, e só isto)
+
+1. Entre naquela worktree, confira o diff dos dois arquivos e **termine a ligação** que estava
+   fazendo. Não reescreva o que já está no main.
+2. Se o diff estiver coerente: commit, push, PR, gh pr merge <N>. Se estiver pela metade e você não
+   conseguir fechar em ~30 min de trabalho, commite como está, abra PR **draft** com WIP: e diga no
+   corpo o próximo passo exato.
+3. Atualize a linha do ManyChat no BOARD (estado + PR) e registre ROUNDS/MANYCHAT-<slug>.md.
+4. **Pare.** Não pegue outra frente sem uma ordem nova.
+
+## O que NÃO é seu agora (não toque, há sessões Codex trabalhando)
+
+- surfaces/operator-kit/**, surfaces/orders-nuxt/app/pages/catalog.vue, CatalogProductPanel.vue,
+  CatalogBulkGrid.vue, app/types/catalog.ts
+- shopman/backstage/api/catalog.py, shopman/backstage/projections/catalog.py,
+  shopman/shop/projections/catalog_context.py
+- shopman/backstage/api/purchase.py, shopman/backstage/projections/purchase.py,
+  surfaces/purchase-nuxt/**
+- config/synthetic_purge.py, shopman/shop/adapters/catalog_projection_ifood.py
+- docs/coordination/ORDERS/next*.md (as ordens vivas são do coordenador)
+- packages/offerman/** (a frente ARQUIVAR acabou de mexer lá)
+
+## Modo econômico (obrigatório: token é caro)
+
+1. **Duas leituras e dois comandos** antes de agir: este arquivo, o diff da sua worktree,
+   git log --oneline -5 origin/main e gh pr list --state open. Mais nada de exploração.
+2. **Não rode a suíte inteira.** Teste só o que o seu diff toca; o CI roda o resto.
+3. **Não escreva relatório longo.** PR com 5 a 10 linhas de corpo, BOARD em uma linha, ROUNDS em
+   tópicos. Sem transcrição de raciocínio.
+4. **Uma frente por sessão.** Se a sua lista tem mais itens, eles esperam a próxima ordem.
+5. Se faltar decisão de negócio, **não invente**: PR draft com a pergunta e pare.

@@ -250,9 +250,10 @@ test.describe("gate global", () => {
     // O fato que este teste protege é que a tela NÃO manda entrar de novo, e diz a
     // quem pedir. A frase mudou no 21adc94c8 e a asserção ficou para trás; o fato, não.
     await expect(page.getByText("Entrar de novo não resolve")).toBeVisible();
-    await expect(
-      page.getByText("Peça a um responsável o acesso ao Marketing"),
-    ).toBeVisible();
+    await expect(page.getByText("peça o acesso a um gerente")).toBeVisible();
+    // E a tela tem saída (beta 05/11, CEN-04): trocar operador e voltar à Central.
+    await expect(page.getByRole("button", { name: "Trocar operador" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Voltar à Central" })).toBeVisible();
     await expectStableScreenshot(page, "login__forbidden", V1280);
   });
 
@@ -313,9 +314,11 @@ test.describe("painel", () => {
   ] as const) {
     test(`${state} em ${viewport.label}`, async ({ page }) => {
       await openScenario(page, scenario, "/__visual_board", viewport);
+      // Com o trocador, abaixo do lg o lugar está no selo e o <h1> fica só para o
+      // leitor de tela: confere-se a presença dele, não a vista.
       await expect(
         page.getByRole("heading", { level: 1, name: "Painel" }),
-      ).toBeVisible();
+      ).toBeAttached();
       if (scenario === "board-pending") {
         await expect(
           page.getByRole("group", { name: "Disparado via" }),
@@ -394,7 +397,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/campaigns", V390);
     await expect(
       page.getByRole("heading", { level: 1, name: "Campanhas" }),
-    ).toBeVisible();
+    ).toBeAttached();
     const prepareButton = page
       .getByRole("button", {
         name: /Campanha Fornada artesanal 01/,
@@ -422,7 +425,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/platforms", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Plataformas" }),
-    ).toBeVisible();
+    ).toBeAttached();
     await expectStableScreenshot(page, "settings__platforms", V1280);
   });
 
@@ -430,7 +433,7 @@ test.describe("Ajustes, uma rota por lugar", () => {
     await openScenario(page, "board-normal", "/settings/offers", V1280);
     await expect(
       page.getByRole("heading", { level: 1, name: "Ofertas e cupons" }),
-    ).toBeVisible();
+    ).toBeAttached();
     await expect(page.getByText("Hibisco Primavera")).toBeVisible();
     await expectStableScreenshot(page, "settings__offers", V1280);
   });
@@ -522,7 +525,7 @@ test.describe("cartão de anúncio", () => {
     // A prévia da v4 fica recolhida. O estado assentado visível é o rascunho salvo;
     // abri-la aqui faria o retrato voltar à anatomia anterior.
     await expect(
-      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      page.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
     await expect(page.getByTestId("preview-status")).toHaveCount(0);
     await expectStableScreenshot(page, "announcement-card__long-edit", V320);
@@ -710,15 +713,19 @@ test.describe("listas operacionais", () => {
     );
     // Os recortes da tela primeiro: no celular a lupa abre a busca da suíte em tela
     // cheia (modal), e o que fica atrás dela sai da árvore de acessibilidade.
-    // Abaixo de `sm` os recortes moram no painel de filtros da suíte (o ícone com o
-    // número, na linha) e os chips do cabeçalho dizem quais estão ligados.
+    // Abaixo de `sm` os recortes moram no painel de filtros da suíte (o ícone na linha,
+    // com o número no canto superior direito, como o do sino) e os chips do cabeçalho
+    // dizem quais estão ligados.
     const line = page.locator("[data-page-header-filter-line]");
-    await expect(line.locator("[data-operator-filter-panel-count]")).toContainText("2");
+    const trigger = line.locator("[data-operator-filter-panel-open]");
+    await expect(trigger).toHaveAttribute("aria-label", "Filtros: 2 recortes ativos");
+    await expect(trigger.locator("xpath=..").locator("[data-slot='base']")).toHaveText("2");
+    await expect(line.locator("[data-operator-filter-panel-count]")).toHaveCount(0);
     await expect(page.locator("[data-page-header-active-filter]")).toHaveText([
       "Situação: Desligadas",
       "Plataforma: Facebook",
     ]);
-    await line.locator("[data-operator-filter-panel-open]").click();
+    await trigger.click();
     const filters = page.getByRole("dialog", { name: "Filtros" });
     await expect(filters.getByRole("option", { name: /Plataforma/ })).toContainText("1 escolhido");
     await filters.getByRole("button", { name: "Pronto" }).click();
@@ -804,7 +811,7 @@ test.describe("listas operacionais", () => {
     // ⚠️ O aviso do rascunho entra depois do nome digitado e empurra o grupo; sem
     // esperá-lo o retrato saía com e sem ele (CI 37979530461).
     await expect(
-      dialog.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      dialog.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
     await group.evaluate((element) => element.scrollIntoView({ block: "start" }));
     await expectStableScreenshot(
@@ -845,7 +852,7 @@ test.describe("listas operacionais", () => {
     await expect(period.getByRole("spinbutton")).toHaveCount(6);
     await expect(page.locator("input[type='date']:not([aria-hidden='true'])")).toHaveCount(0);
     await expect(
-      page.getByText("Rascunho salvo neste dispositivo às 10:30."),
+      page.getByText("Rascunho salvo neste dispositivo às 10h30."),
     ).toBeVisible();
   });
 
@@ -1363,7 +1370,8 @@ test.describe("modos transversais", () => {
   });
 
   test("foco visível com cores forçadas", async ({ page }) => {
-    await openScenario(page, "board-normal", "/__visual_board", V390);
+    // A barra de baixo de uma tela do chão (Decisões): Decisões, Agendados e Enviados.
+    await openScenario(page, "board-normal", "/", V390);
     await page.emulateMedia({
       forcedColors: "active",
       reducedMotion: "reduce",

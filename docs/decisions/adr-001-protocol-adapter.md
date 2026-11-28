@@ -51,21 +51,21 @@ Concretamente:
   coberto por um teste de invariante que varre essas pastas.
 - **`adapters/`** é onde vive o código de um core `<A>` que **implementa** um
   protocol definido por outro core `<B>`, ou que **consome** serviços de `<B>`
-  diretamente quando ele está presente. Exemplo: `offerman/adapters/product_info.py`
-  implementa `ProductInfoBackend` definido em `craftsman.protocols.catalog`.
+  diretamente quando ele está presente. Exemplo: `offerman/adapters/sku_validator.py`
+  implementa `SkuValidator` definido em `stockman.protocols.sku`.
 - **`contrib/<B>/`** é reservado para integrações cross-cutting opt-in: signal
   handlers, admin registrations, management commands que só fazem sentido quando
   os dois cores estão instalados juntos. Segue a convenção de contrib do Django —
   precisa ser explicitamente adicionado ao `INSTALLED_APPS` da instância.
 
 ```python
-# packages/offerman/shopman/offerman/adapters/product_info.py
-class ProductInfoBackend:
-    def get_product_info(self, sku: str):
-        # Import lazy: o adapter inteiro carrega mesmo sem Craftsman,
-        # e só toca Craftsman quando for realmente chamado.
-        from shopman.craftsman.protocols.catalog import ProductInfo
+# packages/offerman/shopman/offerman/adapters/sku_validator.py
+class SkuValidator:
+    def validate_sku(self, sku: str):
+        # Import lazy: o adapter inteiro carrega mesmo sem Stockman,
+        # e só toca Stockman quando for realmente chamado.
         from shopman.offerman.models import Product
+        from shopman.stockman.protocols.sku import SkuValidationResult
         ...
 ```
 
@@ -216,5 +216,5 @@ SHOPMAN_PAYMENT_BACKEND = "shopman.shop.adapters.payment_efi.EfiPixBackend"
 ## Referências
 
 - ADR-005: por que o framework é intencionalmente um ponto de coordenação
-- `docs/constitution.md` §3.4: definições canônicas de core/plugin/adapter/framework
+- [Constituição v1 §3.4 (histórica)](../_archive/constitution-v1.md#34-core-plugin-adapter-e-framework): definições de core/plugin/adapter/framework vigentes à época da decisão
 - `docs/reference/protocols.md`: inventário atualizado de Protocols e Adapters

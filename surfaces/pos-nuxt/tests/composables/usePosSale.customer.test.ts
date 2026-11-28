@@ -59,7 +59,9 @@ describe("usePosSale — cliente por ref e o flag de cadastro novo", () => {
     expect(dollarFetch).toHaveBeenCalledTimes(1);
     const url = String(dollarFetch.mock.calls[0]?.[0]);
     expect(url).toContain("/pos/customer/lookup/");
-    expect(url).toContain("ref=CUST-9");
+    // PDV2-07: nada de dado do cliente na URL; vai no corpo do POST.
+    expect(url).not.toContain("?");
+    expect(dollarFetch.mock.calls[0]?.[1]).toMatchObject({ method: "POST", body: { ref: "CUST-9" } });
     expect(sale.customerLookup.value?.ref).toBe("CUST-9");
     expect(sale.customerResolvedNew.value).toBe(false);
   });
@@ -239,5 +241,93 @@ describe("usePosSale — cadastro de comanda reaberta", () => {
     expect(sale.customerLookup.value).toBeNull();
     const offers = receiptSaveOffers({ customerRef: sale.cart.customerRef, customer: null, receiptEmail: "", customerEmail: "", invoiceTaxId: "52998224725", wantsCpfOnInvoice: true, customerTaxId: "" });
     expect(offers.taxId.kind).toBe("none");
+  });
+});
+
+describe("usePosSale — a busca de cliente só aceita a resposta do termo atual", () => {
+  it("resposta atrasada de um termo velho não pinta a lista", async () => {
+    // Beta test de 05/11/2026: "maria" mostrou "Café Parisiense" (do termo
+    // anterior) com o Enter pronto.
+    const { sale, handles } = makeSale();
+    let slow: (value: unknown) => void = () => {};
+    dollarFetch
+      .mockReset()
+      .mockImplementationOnce(() => new Promise((resolve) => { slow = resolve; }))
+      .mockResolvedValueOnce({ results: [{ ref: "CUST-M", name: "Maria Santos", phone: "", document: "", email: "" }] });
+    const old = sale.searchCustomers("99444");
+    await sale.searchCustomers("maria");
+    slow({ results: [{ ref: "CUST-C", name: "Café Parisiense", phone: "", document: "", email: "" }] });
+    await old;
+    expect(sale.customerSearchResults.value.map((r) => r.ref)).toEqual(["CUST-M"]);
+    expect(sale.customerSearchBusy.value).toBe(false);
+    handles.dispose();
+  });
+});
+
+describe("usePosSale — a busca vai no corpo e falha dizendo que falhou", () => {
+  it("POST com o termo no corpo, nunca na URL (#2335)", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({ results: [] });
+    await sale.searchCustomers("Maria 43999");
+    const [url, options] = dollarFetch.mock.calls[0]!;
+    expect(String(url)).not.toContain("Maria");
+    expect(String(url)).not.toContain("?");
+    expect(options).toMatchObject({ method: "POST", body: { q: "Maria 43999" } });
+    expect(sale.customerSearchError.value).toBe("");
+    handles.dispose();
+  });
+
+  it("erro não vira lista vazia calada: diz 'não consegui buscar' e o limite diz quando tentar", async () => {
+    // P1-8: a lista vazia de antes era um falso "não existe".
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockRejectedValueOnce(new Error("offline"));
+    await sale.searchCustomers("Maria");
+    expect(sale.customerSearchResults.value).toEqual([]);
+    expect(sale.customerSearchError.value).toBe("Não consegui buscar agora. Tente de novo.");
+
+    dollarFetch.mockRejectedValueOnce(Object.assign(new Error("429"), { status: 429 }));
+    await sale.searchCustomers("Marta");
+    expect(sale.customerSearchError.value).toMatch(/^Não consegui buscar: foram muitas buscas seguidas/);
+
+    dollarFetch.mockResolvedValueOnce({ results: [] });
+    await sale.searchCustomers("Marta");
+    expect(sale.customerSearchError.value).toBe("");
+    handles.dispose();
+  });
+});
+
+/**
+ * Beta 07/11: a lista de clientes expunha telefone, CPF e e-mail inteiros a partir
+ * de 2 dígitos. Agora o servidor manda os contatos mascarados e a busca por número
+ * pede 4 dígitos; a tela não pode gravar a máscara na venda, nem herdar o CPF do
+ * cliente anterior.
+ */
+describe("usePosSale — a lista de clientes é para reconhecer, não para ler", () => {
+  it("número com menos de 4 dígitos nem vai ao servidor; nome curto vai", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({ results: [] });
+    await sale.searchCustomers("11");
+    await sale.searchCustomers("(43)");
+    expect(dollarFetch).not.toHaveBeenCalled();
+    await sale.searchCustomers("1111");
+    await sale.searchCustomers("Ma");
+    expect(dollarFetch).toHaveBeenCalledTimes(2);
+    handles.dispose();
+  });
+
+  it("escolher da lista não grava os contatos mascarados; o lookup traz os completos", async () => {
+    const { sale, handles } = makeSale();
+    dollarFetch.mockReset().mockResolvedValue({
+      customer: lookupProjection({ ref: "CUST-M", name: "Maria Santos", phone: "+5543991111111", tax_id: "" }),
+    });
+    sale.cart.customerTaxId = "52998224725"; // do cliente anterior
+    await sale.selectCustomerResult({
+      ref: "CUST-M", name: "Maria Santos", phone: "(43) •••••-1111", document: "•••.•••.•••-44", email: "m•••@example.com",
+    });
+    expect(sale.cart.customerPhone).toBe("+5543991111111");
+    expect(sale.cart.customerTaxId).toBe("");
+    expect(sale.cart.customerEmail).toBe("");
+    expect(JSON.stringify(sale.cart)).not.toContain("•");
+    handles.dispose();
   });
 });

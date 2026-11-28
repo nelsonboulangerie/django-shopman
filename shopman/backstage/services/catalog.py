@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import asdict
 from math import isfinite
 
 from django.db import transaction
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.backstage.services.exceptions import CatalogError
-from shopman.shop.services import attributes
+from shopman.shop.services import attributes, running_low
 
 logger = logging.getLogger(__name__)
 
@@ -99,13 +101,18 @@ def _realign_mirrors(refs) -> None:
         listing_mirror.realign(ref)
 
 
+#: O que uma célula de exibição aceita: pausar (``paused_skus``) e ocultar (``hidden_skus``).
+_DISPLAY_FLAGS = frozenset({"is_published", "is_sellable"})
+
+
 def _is_display_surface(surface_ref: str) -> bool:
     """A superfície EXIBE sem transacionar (TV, feed) e não vende?
 
     A pergunta é sobre POLÍTICA COMERCIAL, não sobre qual tabela guarda a linha —
     é o que a ADR-018 conseguiu ao absorver o `Feed`: a mesma tabela, e o que
     distingue é `commerce_policy`. Uma célula de exibição não tem preço para
-    escrever, então pausar ali grava em `display.paused_skus`, não num ListingItem.
+    escrever, então pausar ali grava em `display.paused_skus` e ocultar em
+    `display.hidden_skus`, não num ListingItem.
     """
     from shopman.shop.models import Channel
 
@@ -114,20 +121,24 @@ def _is_display_surface(surface_ref: str) -> bool:
     ).exists()
 
 
-def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None) -> dict[str, str]:
+def cell_field_revisions(sku: str, surface_ref: str, *, item=None, display=None, missing=False, unit="") -> dict[str, str]:
     """A cell's relevant canonical target and independent field values."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     if display is not None:
         config = (display.config or {}).get("display") or {}
         context = {"display_id": display.pk, "collections": config.get("collections") or []}
-        values = {"is_sellable": sku not in (config.get("paused_skus") or [])}
+        values = {"is_published": sku not in (config.get("hidden_skus") or []),
+            "is_sellable": sku not in (config.get("paused_skus") or [])}
     elif item is not None:
-        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty)}
-        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q")}
+        context = {"item_id": item.pk, "product_id": item.product_id, "listing_id": item.listing_id, "tier": str(item.min_qty), "unit": item.product.unit}
+        values = {field: getattr(item, field) for field in ("is_published", "is_sellable", "price_q", "min_qty")}
+    elif missing:
+        context = {"membership": "absent", "unit": unit}
+        values = dict.fromkeys(("is_published", "is_sellable", "price_q", "min_qty"))
     else:
         return {}
-    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": value})
+    return {field: mutation_fingerprint({"version": 1, "sku": sku, "surface": surface_ref, "target": context, "field": field, "value": str(value) if field == "min_qty" else value})
         for field, value in values.items()}
 
 
@@ -152,6 +163,7 @@ def set_cell(
     is_published: bool | None = None,
     is_sellable: bool | None = None,
     price_q: int | None = None,
+    min_qty: str | None = None,
     actor: str = "",
     expected_revisions: dict | None = None,
 ):
@@ -167,8 +179,20 @@ def set_cell(
         patch["is_sellable"] = _as_flag(is_sellable, "is_sellable")
     if price_q is not None:
         patch["price_q"] = _as_nullable_int(price_q, "price_q")
-        if patch["price_q"] is None or patch["price_q"] < 0:
-            raise CatalogError("Preço não pode ser negativo.")
+        if patch["price_q"] is None or patch["price_q"] <= 0:
+            # Zero não é "grátis": o PDV trata preço zero como "Sem preço" e não
+            # vende (beta 05/11, GES-05). Mesma régua do "Permitir revenda".
+            raise _field_error("O preço precisa ser maior que zero.", "price_q")
+    if min_qty is not None:
+        from decimal import Decimal, InvalidOperation
+
+        try:
+            quantity = Decimal(str(min_qty))
+            if not quantity.is_finite() or quantity <= 0 or quantity >= Decimal("10000000") or quantity.as_tuple().exponent < -3:
+                raise ValueError
+        except (InvalidOperation, ValueError, TypeError):
+            raise CatalogError("A quantidade mínima deve ser positiva, com até três casas decimais.") from None
+        patch["min_qty"] = quantity
     if not patch:
         raise CatalogError("Informe o campo que deseja alterar na célula.")
     channel = Channel.objects.select_for_update().filter(ref=surface_ref).first()
@@ -184,28 +208,55 @@ def set_cell(
 
         from shopman.backstage.services import feeds as display_service
 
-        if set(patch) != {"is_sellable"}:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        if not patch or not set(patch) <= _DISPLAY_FLAGS:
+            raise CatalogError("Feed aceita apenas pausar/ativar e ocultar/exibir.")
         if expected_revisions is not None and not any(group.product_queryset().filter(pk=product.pk).exists() for group in groups):
             from shopman.backstage.services.exceptions import CatalogConflict
 
             raise CatalogConflict("O produto não pertence mais ao recorte desta superfície. Atualize o catálogo.")
-        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, display=channel), expected_revisions,
-            {"is_sellable": sku not in (((channel.config or {}).get("display") or {}).get("paused_skus") or [])})
-        display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
-        return SimpleNamespace(is_published=True, is_sellable=patch["is_sellable"], price_q=None)
+        current = cell_field_revisions(sku, surface_ref, display=channel)
+        display_config = (channel.config or {}).get("display") or {}
+        _check_cell_revisions(patch, current, expected_revisions,
+            {"is_published": sku not in (display_config.get("hidden_skus") or []),
+             "is_sellable": sku not in (display_config.get("paused_skus") or [])})
+        if "is_sellable" in patch:
+            display_service.set_item_paused(surface_ref, sku, paused=not patch["is_sellable"])
+        if "is_published" in patch:
+            display_service.set_item_hidden(surface_ref, sku, hidden=not patch["is_published"])
+        display_config = (Channel.objects.get(pk=channel.pk).config or {}).get("display") or {}
+        return SimpleNamespace(is_published=sku not in (display_config.get("hidden_skus") or []),
+            is_sellable=sku not in (display_config.get("paused_skus") or []), price_q=None)
     _refuse_mirror_surface(surface_ref)
     listing = Listing.objects.select_for_update().filter(ref=surface_ref).first()
     item = ListingItem.objects.select_for_update().filter(listing=listing, product=product).order_by("min_qty", "pk").first()
-    if item is None:
-        raise CatalogError(f"Produto '{sku}' não está na superfície '{surface_ref}'.")
+    creating = item is None
+    if creating:
+        if expected_revisions is None:
+            raise CatalogError("Atualize o canal antes de incluir o produto.")
+        _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit), expected_revisions, {})
+        if listing is None:
+            listing = Listing.objects.create(ref=surface_ref, name=channel.name)
+        item = ListingItem(listing=listing, product=product, price_q=product.base_price_q,
+            is_published=False, is_sellable=False)
     item.product, item.listing = product, listing
-    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
-        {field: getattr(item, field) for field in ("price_q", "is_published", "is_sellable")})
+    _check_cell_revisions(patch, cell_field_revisions(sku, surface_ref, missing=True, unit=product.unit) if creating else cell_field_revisions(sku, surface_ref, item=item), expected_revisions,
+        {field: str(getattr(item, field)) if field == "min_qty" else getattr(item, field) for field in ("price_q", "is_published", "is_sellable", "min_qty")})
+    if "min_qty" in patch and ListingItem.objects.filter(listing=listing, product=product, min_qty=patch["min_qty"]).exclude(pk=item.pk).exists():
+        raise CatalogError("Já existe um preço para esta quantidade mínima no canal.")
+    old_min_qty = item.min_qty
     for field, value in patch.items():
         setattr(item, field, value)
     # Preserve the canonical save/history/signals, limiting the write to the patch.
-    item.save(update_fields=list(patch))
+    item.save(**({} if creating else {"update_fields": list(patch)}))
+    if creating or item.min_qty != old_min_qty:
+        from shopman.offerman.conf import get_projection_backend
+
+        from shopman.shop.handlers.catalog_projection import enqueue_project
+
+        _realign_mirrors([surface_ref])
+
+        if get_projection_backend(surface_ref) is not None:
+            enqueue_project(sku, surface_ref, trigger="manual_resync")
     return item
 
 
@@ -237,7 +288,7 @@ def set_cells(cells: list[dict], *, actor: str = "") -> dict:
             continue
         sku = str(cell.get("sku") or "")
         surface_ref = str(cell.get("surface_ref") or "")
-        patch = {field: cell[field] for field in ("is_published", "is_sellable", "price_q") if field in cell}
+        patch = {field: cell[field] for field in ("is_published", "is_sellable", "price_q", "min_qty") if field in cell}
         revisions = cell.get("base_revisions") if isinstance(cell.get("base_revisions"), dict) else None
         try:
             item = set_cell(sku, surface_ref, actor=actor, expected_revisions=revisions, **patch)
@@ -252,6 +303,118 @@ def set_cells(cells: list[dict], *, actor: str = "") -> dict:
     if not applied and not conflicts:
         raise CatalogError(errors[0]["detail"] if errors else "Nenhuma célula foi aplicada.")
     return {"applied": applied, "conflicts": conflicts, "errors": errors}
+
+
+@transaction.atomic
+def set_products_active(products: list[dict], *, is_active: bool, actor) -> dict:
+    """Arquiva/desarquiva produtos numa escrita, com recibo e auditoria por linha.
+
+    ``base_is_active`` protege o gesto contra uma tela velha. O lote inteiro é
+    travado e escrito em massa; falha ou conflito de uma linha aparece no recibo
+    sem esconder o resultado das demais. A reconciliação continua no sinal
+    canônico ``product_updated`` e só começa depois do commit local.
+    """
+    from datetime import timedelta
+
+    from django.contrib.admin.models import CHANGE, LogEntry
+    from django.utils import timezone
+    from shopman.offerman.models import Product
+    from shopman.offerman.signals import product_updated
+    from simple_history.utils import bulk_update_with_history
+
+    if not isinstance(products, list) or not products:
+        raise CatalogError("Informe os produtos do lote.")
+    if len(products) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Envie no máximo {MAX_CATALOG_BATCH} produtos por lote.")
+    if not isinstance(is_active, bool):
+        raise CatalogError("Diga se os produtos ficam arquivados ou ativos.")
+
+    requested: list[tuple[int, str, bool | None]] = []
+    seen: set[str] = set()
+    errors: list[dict] = []
+    for index, row in enumerate(products):
+        sku = str(row.get("sku") or "").strip() if isinstance(row, dict) else ""
+        base = row.get("base_is_active") if isinstance(row, dict) else None
+        if not sku or not isinstance(base, bool):
+            errors.append({"index": index, "sku": sku, "detail": "Atualize a linha antes de confirmar."})
+            continue
+        if sku in seen:
+            errors.append({"index": index, "sku": sku, "detail": "Produto repetido no lote."})
+            continue
+        seen.add(sku)
+        requested.append((index, sku, base))
+
+    locked = list(
+        Product.objects.select_for_update()
+        .filter(sku__in=[sku for _index, sku, _base in requested])
+        .order_by("pk")
+    )
+    by_sku = {product.sku: product for product in locked}
+    changed = []
+    applied: list[dict] = []
+    conflicts: list[dict] = []
+    for index, sku, base in requested:
+        product = by_sku.get(sku)
+        if product is None:
+            errors.append({"index": index, "sku": sku, "detail": "Produto não encontrado."})
+            continue
+        if product.is_active is not base:
+            conflicts.append({
+                "index": index,
+                "sku": sku,
+                "detail": "O estado do produto mudou. Atualize o catálogo antes de repetir.",
+                "is_active": product.is_active,
+            })
+            continue
+        before = product.is_active
+        product.is_active = is_active
+        did_change = before != is_active
+        if did_change:
+            changed.append(product)
+        applied.append({
+            "index": index,
+            "sku": sku,
+            "name": product.name,
+            "before_is_active": before,
+            "is_active": is_active,
+            "changed": did_change,
+        })
+
+    if changed:
+        verb = "unarchive" if is_active else "archive"
+        reason = f"catalog.{verb}:{getattr(actor, 'username', '') or 'operator'}"[:100]
+        bulk_update_with_history(
+            changed,
+            Product,
+            ["is_active"],
+            default_user=actor if getattr(actor, "pk", None) else None,
+            default_change_reason=reason,
+        )
+        if getattr(actor, "pk", None):
+            LogEntry.objects.log_actions(
+                user_id=actor.pk,
+                queryset=changed,
+                action_flag=CHANGE,
+                change_message=json.dumps({
+                    "action": f"catalog.{verb}",
+                    "skus": [product.sku for product in changed],
+                }),
+            )
+        transaction.on_commit(
+            lambda rows=tuple(changed): [
+                product_updated.send(sender=Product, instance=product, sku=product.sku)
+                for product in rows
+            ]
+        )
+
+    now = timezone.now()
+    return {
+        "applied": sorted(applied, key=lambda row: row["index"]),
+        "conflicts": sorted(conflicts, key=lambda row: row["index"]),
+        "errors": sorted(errors, key=lambda row: row["index"]),
+        "server_now": now.isoformat(),
+        "undo_until": (now + timedelta(seconds=10)).isoformat(),
+    }
 
 def set_product(sku: str, *, is_published: bool | None = None, is_sellable: bool | None = None, actor: str = ""):
     """Compatibility facade; global flags use the canonical partial product writer."""
@@ -288,9 +451,9 @@ def bulk_set(
     if not skus:
         return 0
     if _is_display_surface(surface_ref):
-        # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
-        if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
+        # Feed: bulk pausa/ativa e oculta/exibe. Sem preço.
+        if is_sellable is None and is_published is None:
+            raise CatalogError("Feed aceita apenas pausar/ativar e ocultar/exibir.")
         from django.contrib.admin.models import CHANGE, LogEntry
         from django.contrib.auth import get_user_model
         from django.utils import timezone
@@ -299,21 +462,34 @@ def bulk_set(
 
         with transaction.atomic():
             channel = Channel.objects.select_for_update().get(ref=surface_ref)
-            before = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
-            count = display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+
+            def _lists() -> dict[str, list[str]]:
+                display = (channel.config or {}).get("display") or {}
+                return {key: sorted(display.get(key) or []) for key in ("paused_skus", "hidden_skus")}
+
+            before = _lists()
+            count = 0
+            if is_sellable is not None:
+                count += display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
+            if is_published is not None:
+                count += display_service.set_items_hidden(surface_ref, skus, hidden=not is_published)
             if count:
                 channel.refresh_from_db()
-                after = sorted(((channel.config or {}).get("display") or {}).get("paused_skus") or [])
+                after = _lists()
                 audit_user = get_user_model().objects.filter(username=actor).first() if actor else None
                 if audit_user:
+                    message = {"action": "catalog.bulk_set", "surface_ref": surface_ref, "skus": sorted(skus),
+                        "before": before["paused_skus"], "after": after["paused_skus"]}
+                    if is_published is not None:
+                        message |= {"hidden_before": before["hidden_skus"], "hidden_after": after["hidden_skus"]}
                     LogEntry.objects.log_actions(user_id=audit_user.pk, queryset=[channel], action_flag=CHANGE,
-                        change_message=json.dumps({"action": "catalog.bulk_set", "surface_ref": surface_ref,
-                            "skus": sorted(skus), "before": before, "after": after}))
+                        change_message=json.dumps(message))
                 display = dict((channel.config or {}).get("display") or {})
                 provenance = dict(display.get("pause_audit") or {})
-                for sku in set(before) ^ set(after):
-                    if sku in after:
-                        provenance[sku] = f"Pausado por {actor or 'sistema'} em {timezone.localtime():%d/%m/%Y %H:%M}"
+                paused_before, paused_after = set(before["paused_skus"]), set(after["paused_skus"])
+                for sku in paused_before ^ paused_after:
+                    if sku in paused_after:
+                        provenance[sku] = f"Pausado por {actor or 'sistema'} em {format_local(timezone.localtime(), '%d/%m/%Y {clock}')}"
                     else:
                         provenance.pop(sku, None)
                 display["pause_audit"] = provenance
@@ -419,6 +595,17 @@ def _apply_price_op(old_q: int, op: str, value: int) -> int:
     return max(new_q, 0)
 
 
+def _refuse_zeroed_prices(count: int) -> None:
+    """O ajuste em lote que zera um preço tira o item de venda calado (o PDV
+    chama de "Sem preço"): recusa o lote inteiro e diz quantos zerariam (GES-05)."""
+    if count:
+        raise _field_error(
+            f"O ajuste deixaria {count} {'preço' if count == 1 else 'preços'} em zero. "
+            "O preço precisa ser maior que zero.",
+            "value",
+        )
+
+
 def bulk_price(
     skus: list[str],
     surface_ref: str,
@@ -440,8 +627,8 @@ def bulk_price(
 
     if op not in _PRICE_OPS:
         raise CatalogError(f"Operação de preço inválida: {op!r}.")
-    if op == "set" and value < 0:
-        raise CatalogError("Preço não pode ser negativo.")
+    if op == "set" and value <= 0:
+        raise _field_error("O preço precisa ser maior que zero.", "value")
     if not skus:
         return 0
     if surface_ref == ALL_SURFACES:
@@ -465,6 +652,7 @@ def bulk_price(
         if new_q != item.price_q:
             item.price_q = new_q
             changed.append(item)
+    _refuse_zeroed_prices(sum(1 for item in changed if item.price_q <= 0))
 
     if changed:
         ListingItem.objects.bulk_update(changed, ["price_q"])
@@ -497,8 +685,8 @@ def bulk_price_collection(
 # campos escalares, tabela nutricional, rotulagem (alérgenos/restrições), atributos
 # sociais e classificação fiscal. Escreve com ``save()`` (nunca ``update()``) para
 # preservar o gatilho de re-projeção (``Product._PROJECTABLE_FIELDS``) e valida com
-# ``full_clean()``. Fora do escopo: componentes de bundle, pertencimento a coleções
-# e listings — seguem no Admin.
+# ``full_clean()``. Coleções e listings têm editores no bloco Vínculos;
+# componentes de combo são tratados pelo detalhe do produto.
 #
 # Os três blocos que moram em JSONField têm dono de schema próprio, e é o dono que
 # valida e serializa (nunca escrevemos as sub-chaves na mão):
@@ -519,7 +707,7 @@ _DETAIL_TEXT_FIELDS = (
 )
 _DETAIL_INT_FIELDS = ("base_price_q",)
 _DETAIL_NULLABLE_INT_FIELDS = ("unit_weight_g", "shelf_life_days", "production_cycle_hours")
-_DETAIL_BOOL_FIELDS = ("is_published", "is_sellable", "is_batch_produced")
+_DETAIL_BOOL_FIELDS = ("is_published", "is_sellable")
 
 # Rotulagem de compra remota: o cliente não pega o produto na mão, então alérgenos,
 # restrições, porção e medidas precisam estar escritos. Vivem em ``metadata``.
@@ -551,7 +739,9 @@ _DETAIL_EDITABLE_FIELDS = frozenset({
     "allows_next_day_sale",
     "made_to_order",
     "ready_from",
+    "running_low_percent",
     "vocation",
+    "collections",
 })
 
 
@@ -633,7 +823,10 @@ def _gtin_rejected_payload(metadata: dict) -> dict | None:
 
 def _detail_payload(product) -> dict:
     """Projection do detalhe: campos editáveis + contexto somente-leitura."""
-    primary = next((ci for ci in product.collection_items.all() if ci.is_primary), None)
+    from shopman.offerman.models import Collection
+
+    memberships = list(product.collection_items.select_related("collection").order_by("sort_order", "pk"))
+    primary = next((ci for ci in memberships if ci.is_primary), None)
     metadata = product.metadata or {}
     return {
         "sku": product.sku,
@@ -648,7 +841,7 @@ def _detail_payload(product) -> dict:
         "shelf_life_days": product.shelf_life_days,
         "storage_tip": product.storage_tip,
         "production_cycle_hours": product.production_cycle_hours,
-        "is_batch_produced": product.is_batch_produced,
+        "is_active": product.is_active,
         "is_published": product.is_published,
         "is_sellable": product.is_sellable,
         "ingredients_text": product.ingredients_text,
@@ -662,9 +855,24 @@ def _detail_payload(product) -> dict:
         # Promessa da casa sobre o produto ("Preparado na hora"), não política de
         # estoque. Ver docs/reference/data-schemas.md → Product.metadata.
         "made_to_order": bool(metadata.get("made_to_order", False)),
+        # Somente leitura (ADR-040): o modo de produção da ficha vigente do SKU
+        # ("Em lote" ou "Na hora") e, no feito na hora, a estação de preparo que o
+        # recebe. A fonte é a FICHA, na Produção; ``None`` sem ficha (revenda).
+        "production": _production_payload(product.sku),
         # Hora declarada de prontidão ("HH:MM", "" = deduzir do histórico). É o
         # que impede prometer a baguete de tradição para as 9h.
         "ready_from": str(metadata.get("ready_from") or ""),
+        # Preparo da encomenda na Cozinha (#2304): o tempo PRÓPRIO do SKU em
+        # ``Shop.defaults["preorder_kitchen"]["prep_minutes_by_sku"]``, a mesma
+        # fonte do Admin; ``None`` = usa o preparo padrão da loja, que vai ao lado
+        # (somente leitura) para a tela dizer quanto é.
+        **_preorder_prep_payload(product.sku),
+        # Quando o item está ACABANDO (DEV-2026-077): a porcentagem PRÓPRIA do SKU
+        # (``None`` = usa o padrão da loja, que vai ao lado, somente leitura). A
+        # régua é a de ``shop/services/running_low.py``: o PDV mostra o saldo à
+        # vista e a Cozinha diz "Últimas N un." a partir daí.
+        "running_low_percent": running_low.product_percent(metadata),
+        "running_low_default_percent": running_low.shop_default_percent(),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
@@ -672,6 +880,11 @@ def _detail_payload(product) -> dict:
         # Só ``confirmed`` é editável (o gesto "Manter sem GTIN na nota"); o
         # resto é o registro da recusa. Corrigir ``social.gtin`` apaga a marca.
         "gtin_rejected": _gtin_rejected_payload(metadata),
+        "components": [{"sku": row.component.sku, "name": row.component.name,
+            "unit": row.component.unit, "qty": str(row.qty)}
+            for row in product.components.select_related("component").order_by("component__name", "component__sku")],
+        "collections": [{"ref": ci.collection.ref, "is_primary": ci.is_primary, "sort_order": ci.sort_order} for ci in memberships],
+        "collection_choices": list(Collection.objects.filter(rule={}).order_by("sort_order", "name").values("ref", "name", "is_active")),
         "primary_collection": primary.collection.ref if primary else "",
         "primary_collection_name": primary.collection.name if primary else "",
         # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
@@ -751,7 +964,7 @@ def _admin_history_path(product) -> str:
 
 def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
     """A segunda linha do canal indisponível (v4): o que o cliente vê ali agora."""
-    if state == "available":
+    if state in ("available", "not_listed"):
         return ""
     ref = channel.ref
     if ref == "web":
@@ -768,12 +981,18 @@ def _channel_note(channel, *, state: str, sale: bool, waiting: int) -> str:
 def _channel_availability_payload(sku: str) -> list[dict]:
     """Em que canal dá para comprar o produto agora, e desde quando não dá.
 
-    ``state``: ``available`` · ``sold_out`` · ``paused``. Canal de exibição
-    (Meta, Google) não vende: segue o estoque do canal para onde manda o
+    ``state``: ``available`` · ``sold_out`` · ``paused`` · ``not_listed``. Canal de
+    exibição (Meta, Google) não vende: segue o estoque do canal para onde manda o
     cliente (``external_availability.stock_channel_ref``) e é ``automatic``.
     Leitura que falha some (lista vazia): ausência de resposta não é resposta.
+
+    A linha de cada canal sai da MESMA fonte da aba Vínculos e do Tabelão (beta
+    05/11, GES-03): canal de venda sem ``ListingItem`` é ``not_listed``, e com o
+    item despublicado ou pausado é ``paused``; canal de exibição fora das coleções
+    dele é ``not_listed``, e pausado ou oculto ali é ``paused``. Sem isso a aba
+    Geral dizia "À venda" onde a Loja respondia 404.
     """
-    from django.utils import timezone
+    from shopman.offerman.models import Collection, ListingItem
 
     from shopman.backstage.models import ShelfOutage
     from shopman.shop.models import Channel
@@ -785,18 +1004,42 @@ def _channel_availability_payload(sku: str) -> list[dict]:
         open_rows = {row.channel_ref: row for row in ShelfOutage.objects.filter(sku=sku, ended_at__isnull=True)}
         waiting = demand_count(sku) if open_rows else 0
         batch = _next_batch(sku) if open_rows else None
+        # O vínculo por canal de venda: o tier base (menor quantidade mínima), como a matriz.
+        listing_by_ref: dict[str, object] = {}
+        for item in ListingItem.objects.filter(product__sku=sku).select_related("listing").order_by("min_qty", "pk"):
+            listing_by_ref.setdefault(item.listing.ref, item)
         rows = []
         for channel in Channel.objects.filter(is_active=True).order_by("display_order", "name"):
             sale = channel.commerce_policy == Channel.CommercePolicy.ORDER
             source = channel.ref if sale else external_availability.stock_channel_ref(channel.ref)
             outage = open_rows.get(source)
-            state = outage.reason if outage else "available"
+            if sale:
+                item = listing_by_ref.get(channel.ref)
+                link = "missing" if item is None else ("off" if not (item.is_published and item.is_sellable) else "on")
+            else:
+                display = (channel.config or {}).get("display") or {}
+                refs = display.get("collections") or []
+                member = any(
+                    collection.product_queryset().filter(sku=sku).exists()
+                    for collection in Collection.objects.filter(ref__in=refs)
+                )
+                off = sku in {str(value) for value in (display.get("paused_skus") or [])} | {
+                    str(value) for value in (display.get("hidden_skus") or [])
+                }
+                link = "missing" if not member else ("off" if off else "on")
+            if link == "missing":
+                state = "not_listed"
+            elif link == "off":
+                state = "paused"
+            else:
+                state = outage.reason if outage else "available"
+            outage = outage if state in ("sold_out", "paused") and link == "on" else None
             rows.append({
                 "ref": channel.ref,
                 "name": channel.name or channel.ref,
                 "kind": "sale" if sale else "display",
                 "state": state,
-                "since": timezone.localtime(outage.started_at).strftime("%H:%M") if outage else "",
+                "since": format_clock(outage.started_at) if outage else "",
                 "automatic": (not sale) or channel.ref in _AUTOMATIC_CHANNELS,
                 # "volta ~10:40 (lote no forno)": só o esgotado volta com o lote; a
                 # pausa é decisão de alguém e não volta sozinha.
@@ -863,6 +1106,43 @@ def _apply_vocation(sku: str, raw) -> None:
     tag.save(update_fields=["role", "eat_in_weight", "reviewed", "updated_at"])
 
 
+def _production_payload(sku: str) -> dict | None:
+    """O modo de produção do SKU, a estação dele e o endereço da ficha na Produção."""
+    from urllib.parse import quote
+
+    from shopman.craftsman.models import ProductionMode, Recipe
+
+    from shopman.backstage.projections.hub import surface_link
+
+    recipe = Recipe.objects.filter(output_sku=sku, is_active=True).values("ref", "name", "production_mode").first()
+    if recipe is None:
+        return None
+    mode = recipe["production_mode"]
+    station = ""
+    if mode == ProductionMode.MADE_TO_ORDER:
+        from shopman.shop.services.kds import kitchen_routes_for_skus
+
+        station = str((kitchen_routes_for_skus([sku]).get(sku) or {}).get("station") or "")
+        if station:
+            summary = f"Feito na hora na estação {station}: os insumos baixam a cada venda."
+        else:
+            summary = (
+                "Feito na hora, mas nenhuma estação de preparo recebe a coleção dele: "
+                "a cozinha não vê este item."
+            )
+    else:
+        summary = "Produzido em lote: planejado e estocado pela Produção."
+    return {
+        "mode": str(mode),
+        "mode_label": str(ProductionMode(mode).label),
+        "station": station,
+        "summary": summary,
+        "recipe_ref": recipe["ref"],
+        "recipe_name": recipe["name"],
+        "url": surface_link("production", f"recipes/sheets?open={quote(recipe['ref'], safe='')}"),
+    }
+
+
 def _roles_payload(sku: str) -> dict[str, bool]:
     from shopman.shop.services.sku_records import sku_roles
 
@@ -906,7 +1186,7 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
     """Tokens for editable leaf fields, derived from the canonical read payload."""
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    readonly = {"sku", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
+    readonly = {"collection_choices", "listing_links", "sku", "production", "preorder_prep_default_minutes", "primary_collection", "primary_collection_name", "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles", "fiscal_origins", "fiscal_warnings", "field_sources", "roles", "vocation_choices", "channel_availability", "back_at", "back_reason", "admin_history_path"}
     values = _patch_leaves({key: value for key, value in detail.items() if key not in readonly})
     revisions = {}
     for path, value in values.items():
@@ -914,12 +1194,22 @@ def product_field_revisions(detail: dict) -> dict[str, str]:
             continue
         if path.startswith("gtin_rejected.") and path != "gtin_rejected.confirmed":
             continue
-        state = {"version": 1, "sku": detail["sku"], "field": path, "value": value}
+        if path == "components":
+            # O rótulo vem do componente; a unidade faz parte da quantidade.
+            value = sorted(({"sku": row["sku"], "qty": row["qty"], "unit": row["unit"]} for row in value), key=lambda row: row["sku"])
+        state = _field_state(detail["sku"], path, value)
+        if path == "components":
+            state["parent_unit"] = detail["unit"]
         root = path.split(".", 1)[0]
         if root in {"nutrition_facts", *_DETAIL_ATTR_LIST_FIELDS, *_DETAIL_ATTR_TEXT_FIELDS}:
             state["source"] = (detail.get("field_sources") or {}).get(root, "")
         revisions[path] = mutation_fingerprint(state)
     return revisions
+
+
+def _field_state(sku: str, path: str, value) -> dict:
+    """A base da revisão de um campo: o tabelão e o painel assinam igual."""
+    return {"version": 1, "sku": sku, "field": path, "value": value}
 
 
 def _patch_leaves(data: dict, prefix: str = "") -> dict:
@@ -946,6 +1236,141 @@ def _check_product_revisions(product, patch: dict, expected: dict) -> None:
         error = CatalogConflict("O produto mudou nos campos editados. Confira os valores atuais; seu rascunho foi preservado.")
         error.fields = changed
         raise error
+
+@transaction.atomic
+def _apply_product_collections(product, rows, *, expected_revision=None):
+    """Curadoria manual com revisão do conjunto, sem publicar em nenhum canal."""
+    from shopman.offerman.models import Collection, CollectionItem
+
+    if not isinstance(rows, list) or len(rows) > 200 or any(not isinstance(row, dict) for row in rows):
+        raise CatalogError("Informe até 200 coleções.")
+    refs = [row.get("ref") for row in rows]
+    if any(not isinstance(ref, str) or not ref for ref in refs) or len(set(refs)) != len(refs):
+        raise CatalogError("Escolha cada coleção uma única vez.")
+    from django.db.models import Q
+
+    previous_groups = CollectionItem.objects.filter(product=product).values("collection_id")
+    groups = {group.ref: group for group in Collection.objects.select_for_update().filter(
+        Q(ref__in=refs) | Q(pk__in=previous_groups)).order_by("pk")}
+    if not set(refs).issubset(groups) or any(groups[ref].is_smart for ref in refs):
+        raise CatalogError("Escolha coleções manuais existentes. Coleções automáticas seguem suas regras.")
+    flags = [_as_flag(row.get("is_primary", False), "Coleção primária") for row in rows]
+    if sum(flags) > 1:
+        raise CatalogError("Escolha uma única coleção primária.")
+    orders = [_as_nullable_int(row.get("sort_order", index), "Ordem") for index, row in enumerate(rows)]
+    if any(value is None or value < 0 or value > 2147483647 for value in orders):
+        raise CatalogError("A ordem deve ser um inteiro a partir de zero.")
+    current = {item.collection.ref: item for item in CollectionItem.objects.select_for_update(of=("self",)).filter(product=product).select_related("collection").order_by("sort_order", "pk")}
+    if expected_revision is not None:
+        observed = [{"ref": item.collection.ref, "is_primary": item.is_primary, "sort_order": item.sort_order} for item in current.values()]
+        revision = product_field_revisions({"sku": product.sku, "collections": observed})["collections"]
+        if expected_revision != revision:
+            from shopman.backstage.services.exceptions import CatalogConflict
+
+            error = CatalogConflict("As coleções mudaram durante a edição. Confira os valores atuais.")
+            error.fields = ["collections"]
+            raise error
+    # Limpa a primária antes da troca para respeitar a constraint condicional.
+    CollectionItem.objects.filter(product=product, is_primary=True).update(is_primary=False)
+    CollectionItem.objects.filter(product=product).exclude(collection__ref__in=refs).delete()
+    for row, primary, order in zip(rows, flags, orders, strict=True):
+        item = current.get(row["ref"]) or CollectionItem(product=product, collection=groups[row["ref"]])
+        item.is_primary, item.sort_order = primary, order
+        item.save()
+
+
+
+def _apply_product_components(product, rows):
+    """Composição atômica; a validação de ciclo e profundidade é do Core."""
+    from decimal import Decimal, InvalidOperation
+
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product, ProductComponent
+    from shopman.offerman.signals import product_updated
+
+    if not isinstance(rows, list) or len(rows) > 200 or any(not isinstance(row, dict) for row in rows):
+        raise CatalogError("Informe até 200 componentes.")
+    skus = [row.get("sku") for row in rows]
+    if any(not isinstance(sku, str) or not sku for sku in skus) or len(set(skus)) != len(skus):
+        raise CatalogError("Escolha cada produto componente uma única vez.")
+    products = {p.sku: p for p in Product.objects.filter(sku__in=skus)}
+    if set(products) != set(skus):
+        raise CatalogError("Um dos produtos componentes não existe mais. Escolha outro produto.")
+    parsed = []
+    for row in rows:
+        raw = row.get("qty")
+        try:
+            if isinstance(raw, bool) or not isinstance(raw, (str, int)):
+                raise ValueError
+            qty = Decimal(raw)
+            if not qty.is_finite() or qty <= 0 or qty > Decimal("9999999.999") or qty != qty.quantize(Decimal("0.001")):
+                raise ValueError
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise CatalogError("Informe uma quantidade positiva com até três casas decimais por componente.") from exc
+        parsed.append((products[row["sku"]], qty))
+    ProductComponent.objects.filter(parent=product).delete()
+    for component, qty in parsed:
+        try:
+            ProductComponent.objects.create(parent=product, component=component, qty=qty)
+        except ValidationError as exc:
+            messages = " ".join(exc.messages)
+            if component.pk == product.pk:
+                detail = "O produto não pode compor a si mesmo."
+            elif "Circular" in messages:
+                detail = "A composição criaria um ciclo entre produtos. Escolha outro componente."
+            elif "Max bundle depth" in messages:
+                detail = "A composição ultrapassa o limite de níveis de combos. Escolha um produto com menos níveis."
+            else:
+                detail = "Não foi possível incluir o componente. Confira o produto e a quantidade."
+            raise CatalogError(detail) from exc
+    from shopman.shop.handlers._sse_emitters import emit_catalog_changed
+
+    # O sinal grava a outbox na mesma transação; o emissor SSE agenda o push
+    # para depois do commit. Falha de outbox não pode confirmar a composição.
+    product_updated.send(sender=Product, instance=product, sku=product.sku)
+    emit_catalog_changed()
+
+
+def _preorder_prep_payload(sku: str) -> dict:
+    from shopman.shop.policies.preorder_kitchen_policy import resolve_preorder_kitchen_policy
+
+    policy = resolve_preorder_kitchen_policy()
+    return {
+        "preorder_prep_minutes": policy.prep_minutes_by_sku.get(sku),
+        "preorder_prep_default_minutes": policy.default_prep_minutes,
+    }
+
+
+def _apply_preorder_prep(sku: str, raw) -> None:
+    """Grava (ou apaga, com vazio) o preparo da encomenda do SKU na loja (#2304).
+
+    Escreve no MESMO ``Shop.defaults["preorder_kitchen"]["prep_minutes_by_sku"]``
+    que o Admin edita: não há segunda fonte. Vazio devolve o SKU ao preparo padrão.
+    """
+    from shopman.shop.models import Shop
+    from shopman.shop.policies.preorder_kitchen_policy import BLOCK, MAX_MINUTES
+
+    minutes = _as_nullable_int(raw, "Preparo da encomenda")
+    if minutes is not None and not 0 <= minutes <= MAX_MINUTES:
+        raise _field_error(
+            f"Preparo da encomenda: use de 0 a {MAX_MINUTES} minutos, ou deixe em branco para o preparo padrão.",
+            "preorder_prep_minutes",
+        )
+    shop = Shop.objects.select_for_update().order_by("pk").first()
+    if shop is None:
+        raise CatalogError("A loja ainda não foi configurada: não há onde gravar o preparo.")
+    defaults = dict(shop.defaults or {})
+    kitchen = dict(defaults.get(BLOCK) if isinstance(defaults.get(BLOCK), dict) else {})
+    by_sku = dict(kitchen.get("prep_minutes_by_sku") if isinstance(kitchen.get("prep_minutes_by_sku"), dict) else {})
+    if minutes is None:
+        by_sku.pop(sku, None)
+    else:
+        by_sku[sku] = minutes
+    kitchen["prep_minutes_by_sku"] = by_sku
+    defaults[BLOCK] = kitchen
+    shop.defaults = defaults
+    shop.save(update_fields=["defaults"])
+
 
 def get_product_detail(sku: str) -> dict:
     """Todos os campos editáveis de um produto (para o painel do Gestor)."""
@@ -1061,18 +1486,32 @@ def _apply_labelling(product, data: dict) -> None:
         metadata["allows_next_day_sale"] = _as_flag(data.get("allows_next_day_sale"), "allows_next_day_sale")
     if "made_to_order" in data:
         metadata["made_to_order"] = _as_flag(data.get("made_to_order"), "made_to_order")
+    if "running_low_percent" in data:
+        # Vazio devolve o SKU ao padrão da loja; fora de 0 a 100 é recusado, nunca
+        # guardado (um 150% diria "sempre", um -5 diria "nunca", calados).
+        raw = data.get("running_low_percent")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            metadata.pop(running_low.METADATA_KEY, None)
+        else:
+            percent = running_low.coerce_percent(raw)
+            if percent is None:
+                raise _field_error(
+                    "Avisar que está acabando: use de 0 a 100%, ou deixe em branco para o padrão da loja.",
+                    "running_low_percent",
+                )
+            metadata[running_low.METADATA_KEY] = percent
     if "ready_from" in data:
         # Vazio APAGA a declaração; hora ilegível é recusada em vez de virar
         # ausência silenciosa (o cadastro diria que a casa respondeu, e o sistema
         # agiria como se ninguém tivesse respondido).
         raw = str(data.get("ready_from") or "").strip()
         if raw:
-            from shopman.shop.services.product_readiness import format_clock, parse_clock
+            from shopman.shop.services.product_readiness import clock_hhmm, parse_clock
 
             parsed = parse_clock(raw)
             if parsed is None:
                 raise CatalogError("Pronto a partir de: use o formato HH:MM. Ex.: 12:00.")
-            metadata["ready_from"] = format_clock(parsed)
+            metadata["ready_from"] = clock_hhmm(parsed)
         else:
             metadata.pop("ready_from", None)
 
@@ -1182,11 +1621,32 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
     from django.core.exceptions import ValidationError
     from shopman.offerman.models import Product
 
+    if "components" in data:
+        # Serializa alterações cruzadas do grafo antes do lock do produto atual.
+        # Ordem única evita A→B e B→A bloquearem uma à outra em ordem inversa.
+        list(Product.objects.select_for_update().order_by("pk").values_list("pk", flat=True))
     product = Product.objects.select_for_update().filter(sku=sku).first()
     if product is None:
         raise CatalogError(f"Produto '{sku}' não encontrado.")
     if expected_revisions is not None:
         _check_product_revisions(product, data, expected_revisions)
+    if "components" in data:
+        _apply_product_components(product, data["components"])
+        data = {key: value for key, value in data.items() if key != "components"}
+        if not data:
+            return _detail_payload(product)
+    if "collections" in data:
+        _apply_product_collections(product, data["collections"], expected_revision=(expected_revisions or {}).get("collections"))
+        data = {key: value for key, value in data.items() if key != "collections"}
+        if not data:
+            return _detail_payload(product)
+    # O preparo da encomenda mora na loja (``Shop.defaults``), não no produto:
+    # grava à parte, na mesma transação, e sozinho não regrava o produto.
+    if "preorder_prep_minutes" in data:
+        _apply_preorder_prep(product.sku, data["preorder_prep_minutes"])
+        data = {key: value for key, value in data.items() if key != "preorder_prep_minutes"}
+        if not data:
+            return _detail_payload(product)
     # A vocação mora fora do produto (``ProductConsumptionTag``): grava à parte,
     # na mesma transação, e sozinha não regrava nem revalida o produto.
     if "vocation" in data:
@@ -1251,12 +1711,15 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
 
     if "unit" in data:
         # Vendido por peso é só no balcão: o preço final nasce na balança, e o
-        # cliente de longe não vê a peça (``sku_records.sells_remotely``).
-        from shopman.shop.services.sku_records import withdraw_from_remote_channels
+        # cliente de longe não vê a peça (``sku_records.sells_remotely``). A ida
+        # PAUSA os canais remotos; a volta os religa (GES-02).
+        from shopman.shop.services.sku_records import restore_remote_channels, withdraw_from_remote_channels
         from shopman.shop.services.weighed_sale import is_sold_by_weight
 
         if is_sold_by_weight(product.unit):
             withdraw_from_remote_channels(product)
+        else:
+            restore_remote_channels(product)
 
     if keywords is not None:
         product.keywords.set(keywords)
@@ -1284,16 +1747,28 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "", expected_rev
 # marca de recusa do original, que é história daquele SKU).
 
 
+#: O SKU vira URL (``/produto/<sku>``), código de barras e linha da nota: só
+#: letras, números e hífen, começando por letra ou número. Maiúsculas, como os
+#: SKUs da casa e da revenda (GES-11).
+_SKU_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9-]*$")
+
+
+def _field_error(message: str, field: str) -> CatalogError:
+    error = CatalogError(message)
+    error.field = field
+    return error
+
+
 def _new_product_sku(raw) -> str:
     if not isinstance(raw, str):
-        raise CatalogError("Informe o SKU do produto.")
-    sku = raw.strip()
+        raise _field_error("Informe o SKU do produto.", "sku")
+    sku = raw.strip().upper()
     if not sku:
-        raise CatalogError("Informe o SKU do produto.")
+        raise _field_error("Informe o SKU do produto.", "sku")
     if len(sku) > 100:
-        raise CatalogError("O SKU deve ter no máximo 100 caracteres.")
-    if "/" in sku:
-        raise CatalogError("O SKU não pode ter barra (/).")
+        raise _field_error("O SKU deve ter no máximo 100 caracteres.", "sku")
+    if not _SKU_PATTERN.match(sku):
+        raise _field_error("Use só letras, números e hífen no SKU, sem espaço nem acento.", "sku")
     return sku
 
 
@@ -1422,7 +1897,6 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
             shelf_life_days=source.shelf_life_days,
             production_cycle_hours=source.production_cycle_hours,
             image_url=source.image_url,
-            is_batch_produced=source.is_batch_produced,
             metadata=_duplicate_metadata(source),
             is_published=False,
             is_sellable=False,
@@ -1445,6 +1919,122 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
         raise CatalogError(_first_validation_message(exc)) from exc
     return _detail_payload(copy)
 
+# ── tabelão de produtos ──────────────────────────────────────────────────────
+# O tabelão por canal edita listing (preço e flags por canal); este edita o
+# PRODUTO, linha a linha, com os campos que se preenchem em série: nome, descrição
+# curta, preço base, vendido por peso e a classificação fiscal. Cada linha passa
+# pelo MESMO ``update_product_detail`` do painel (validação, ``full_clean`` e o
+# ``save()`` que re-projeta), dentro de um savepoint próprio: a linha que falha não
+# derruba as outras e volta no recibo com o motivo. CFOP e CSOSN não são colunas:
+# saem do perfil fiscal, que é a parametrização do contador.
+
+_SHEET_TEXT_FIELDS = ("name", "short_description", "base_price_q", "unit")
+_SHEET_FISCAL_FIELDS = ("profile", "ncm", "cest", "origin")
+
+
+def _sheet_row(product) -> dict:
+    from shopman.fiscalman.classification import from_metadata
+
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    fiscal = asdict(from_metadata(product.metadata))
+    row = {field: getattr(product, field) for field in _SHEET_TEXT_FIELDS}
+    row["fiscal"] = {field: fiscal.get(field, "") for field in _SHEET_FISCAL_FIELDS}
+    leaves = _patch_leaves(row)
+    return {
+        "sku": product.sku,
+        "is_active": product.is_active,
+        **row,
+        "fiscal_warnings": from_metadata(product.metadata).warnings(),
+        "revisions": {path: mutation_fingerprint(_field_state(product.sku, path, value)) for path, value in leaves.items()},
+    }
+
+
+def product_sheet() -> dict:
+    """Leitura do tabelão de produtos: os valores editáveis e a revisão de cada um."""
+    from shopman.offerman.models import Product
+
+    return {
+        "rows": [_sheet_row(product) for product in Product.objects.order_by("name", "sku")],
+        "fiscal_profiles": _fiscal_profile_choices(),
+        "fiscal_origins": _fiscal_origin_choices(),
+    }
+
+
+def _sheet_patch_problem(patch) -> str:
+    if not isinstance(patch, dict) or not patch:
+        return "Linha sem alteração."
+    if set(patch) - {*_SHEET_TEXT_FIELDS, "fiscal"}:
+        return "A linha tem campos que o tabelão não edita."
+    fiscal = patch.get("fiscal")
+    if "fiscal" in patch and (not isinstance(fiscal, dict) or not fiscal or set(fiscal) - set(_SHEET_FISCAL_FIELDS)):
+        return "A classificação fiscal da linha está incompleta."
+    return ""
+
+
+def set_product_rows(rows: list[dict], *, actor: str = "") -> dict:
+    """Aplica várias linhas do tabelão de produtos, com recibo POR LINHA."""
+    from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+
+    if not isinstance(rows, list) or not rows:
+        raise CatalogError("Informe as linhas do lote.")
+    if len(rows) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Envie no máximo {MAX_CATALOG_BATCH} linhas por lote.")
+    applied, conflicts, errors = [], [], []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            errors.append({"index": index, "sku": "", "detail": "Linha inválida."})
+            continue
+        sku = str(row.get("sku") or "")
+        patch = row.get("patch")
+        revisions = row.get("base_revisions")
+        problem = _sheet_patch_problem(patch) or ("" if isinstance(revisions, dict) else "A linha chegou sem revisão. Atualize o tabelão.")
+        if problem:
+            errors.append({"index": index, "sku": sku, "detail": problem})
+            continue
+        try:
+            update_product_detail(sku, patch, actor=actor, expected_revisions=revisions)
+        except CatalogConflict as exc:
+            conflicts.append({"index": index, "sku": sku, "detail": str(exc), "conflicting_fields": getattr(exc, "fields", [])})
+        except (CatalogError, ValidationError) as exc:
+            errors.append({"index": index, "sku": sku, "detail": _first_validation_message(exc) if isinstance(exc, ValidationError) else str(exc)})
+        else:
+            applied.append({"index": index, "sku": sku, "row": _sheet_row(Product.objects.get(sku=sku))})
+    if not applied and not conflicts:
+        raise CatalogError(errors[0]["detail"] if errors else "Nenhuma linha foi aplicada.")
+    return {"applied": applied, "conflicts": conflicts, "errors": errors}
+
+
+def duplicate_products(products: list[dict], *, actor: str = "") -> dict:
+    """Duplica vários produtos de uma vez, com o SKU e o nome sugeridos.
+
+    Cada cópia passa pelo MESMO ``duplicate_product`` (oculta, fora de venda, sem
+    GTIN, listing nem coleção), num savepoint próprio. A seleção é a intenção:
+    não há formulário por linha, então não há revisão de formulário a conferir.
+    """
+    from django.core.exceptions import ValidationError
+
+    if not isinstance(products, list) or not products:
+        raise CatalogError("Selecione os produtos que vão ser duplicados.")
+    if len(products) > MAX_CATALOG_BATCH:
+        raise CatalogError(f"Duplique no máximo {MAX_CATALOG_BATCH} produtos por vez.")
+    applied, errors = [], []
+    for index, entry in enumerate(products):
+        sku = str(entry.get("sku") or "") if isinstance(entry, dict) else ""
+        try:
+            detail = duplicate_product(sku, {"sku": suggested_duplicate_sku(sku)}, actor=actor)
+        except (CatalogError, ValidationError) as exc:
+            errors.append({"index": index, "sku": sku, "detail": str(exc)})
+        else:
+            applied.append({"index": index, "sku": sku, "copy_sku": detail["sku"], "name": detail["name"]})
+    if not applied:
+        raise CatalogError(errors[0]["detail"] if errors else "Nenhum produto foi duplicado.")
+    return {"applied": applied, "conflicts": [], "errors": errors}
+
+
 # ── GTIN: rascunho, correlação e foto ────────────────────────────────────────
 # O rascunho NÃO escreve: consulta as fontes que já existem
 # (``shop.services.product_enrichment``: NF-e de compra -> Cosmos -> Open Food
@@ -1452,7 +2042,7 @@ def duplicate_product(sku: str, data: dict, *, actor: str = "", expected_revisio
 # aceite campo a campo (``product_enrichment.accept_fields``), o MESMO caminho do
 # Admin; esta camada não reimplementa prioridade, fusão nem licença de foto.
 
-_CORRELATE_CONFIG_FIELDS = ("unit", "availability_policy", "is_batch_produced", "shelf_life_days")
+_CORRELATE_CONFIG_FIELDS = ("unit", "availability_policy", "shelf_life_days")
 _PHOTO_MAX_BYTES = 8 * 1024 * 1024
 
 
@@ -1506,7 +2096,7 @@ def correlate_suggestions(draft: dict, *, limit: int = 5) -> dict:
     """O que reaproveitar de produtos parecidos (NCM, marca, nome).
 
     A sugestão é a CONFIGURAÇÃO do cadastro (unidade, disponibilidade,
-    produzido em lote, validade) e o PERFIL fiscal da casa. CFOP/CSOSN não se
+    validade) e o PERFIL fiscal da casa. CFOP/CSOSN não se
     inventam por produto: saem do perfil. Nada aqui escreve.
     """
     from collections import Counter
@@ -1516,7 +2106,7 @@ def correlate_suggestions(draft: dict, *, limit: int = 5) -> dict:
     ncm, brand, words = _draft_hints(draft or {})
     scored = []
     products = Product.objects.only(
-        "id", "sku", "name", "unit", "availability_policy", "is_batch_produced", "shelf_life_days", "metadata",
+        "id", "sku", "name", "unit", "availability_policy", "shelf_life_days", "metadata",
     ).order_by("name")
     for product in products:
         meta = product.metadata or {}
@@ -1607,6 +2197,17 @@ def _decode_photo(raw) -> tuple[object, bytes]:
         image.load()
     except (UnidentifiedImageError, OSError) as exc:
         raise CatalogError("Não consegui ler esta foto. Envie JPEG, PNG ou WebP.") from exc
+    # O Google reprova produto com foto menor que 500 × 500 px (a partir de
+    # 31/01/2027), e foto ampliada também: a pequena se recusa aqui, antes de
+    # padronizar (o quadrado de 1200 px esticaria a foto) e antes de guardar.
+    from shopman.shop.services.product_photo_size import GOOGLE_MIN_SIDE_PX
+
+    width, height = image.size
+    if min(width, height) < GOOGLE_MIN_SIDE_PX:
+        raise CatalogError(
+            f"Esta foto tem {width} × {height} px, e o Google recusa foto de produto com "
+            f"menos de {GOOGLE_MIN_SIDE_PX} px de lado. Envie uma foto maior."
+        )
     return image, payload
 
 
@@ -1640,6 +2241,10 @@ def store_product_photo(raw, *, filename: str = "") -> dict:
         raise AiAssistNotConfigured(
             "O storage de fotos não está disponível neste ambiente. Avise o responsável."
         ) from exc
+    # O arquivo é imutável: o tamanho lido aqui serve ao envio ao Google sem rede.
+    from shopman.shop.services import product_photo_size
+
+    product_photo_size.remember(url, *image.size)
     return {"name": saved, "url": url, "size": len(payload), "media_type": f"image/{fmt or 'jpeg'}"}
 
 
@@ -1925,7 +2530,7 @@ def ai_assist_field(sku: str, field: str, current_value: str = "") -> str:
     """Sugestão de IA para UM campo de UM produto. Devolve o texto limpo.
 
     Levanta ``CatalogError`` (campo inválido / produto inexistente),
-    ``AiAssistNotConfigured`` (sem ``AI_ASSIST_API_KEY`` → 503 na camada HTTP) ou
+    ``AiAssistNotConfigured`` (sem conexão de IA → 503 na camada HTTP) ou
     ``AiAssistError`` (falha do provedor). ``hashtags`` volta como string separada
     por espaço — a superfície já normaliza texto livre em lista.
     """
@@ -2098,8 +2703,8 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
     op, value = data.get("op"), data.get("value")
     if op not in _PRICE_OPS or not isinstance(value, int) or isinstance(value, bool):
         raise CatalogError("Informe operação de preço e valor inteiro válidos.")
-    if op == "set" and value < 0:
-        raise CatalogError("Preço não pode ser negativo.")
+    if op == "set" and value <= 0:
+        raise _field_error("O preço precisa ser maior que zero.", "value")
     refs, channels, collection, skus, products, listings, all_items, _groups = _bulk_selection(data, lock=lock)
     by_product = {product.pk: product for product in products}
     by_listing = {listing.pk: listing for listing in listings}
@@ -2117,6 +2722,7 @@ def _price_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> tuple[d
         items.append(item)
     if len(cells) > MAX_BULK_PRICE_CELLS:
         raise CatalogError(f"Selecione no máximo {MAX_BULK_PRICE_CELLS} células somando os canais.")
+    _refuse_zeroed_prices(sum(1 for cell in cells if cell["after_q"] <= 0 < cell["before_q"]))
     state = {
         "actor": actor_id, "operation": "bulk-price", "op": op, "value": value,
         "skus": skus, "refs": refs, "cells": cells,
@@ -2189,15 +2795,15 @@ def _publication_snapshot(data: dict, *, actor_id: int, lock: bool = False) -> d
     display = channels[0] if len(channels) == 1 and channels[0].commerce_policy == Channel.CommercePolicy.DISPLAY else None
     cells, skipped = [], []
     if display is not None:
-        if set(patch) != {"is_sellable"}:
-            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         membership = {sku for group in groups for sku in group.product_queryset().filter(sku__in=skus).values_list("sku", flat=True)}
-        paused = ((display.config or {}).get("display") or {}).get("paused_skus") or []
+        display_config = (display.config or {}).get("display") or {}
+        paused = display_config.get("paused_skus") or []
+        hidden = display_config.get("hidden_skus") or []
         for sku in skus:
             if sku not in membership:
                 skipped.append({"sku": sku, "surface_ref": display.ref, "reason": "Produto fora do recorte do feed."})
                 continue
-            before = {"is_sellable": sku not in paused}
+            before = {"is_published": sku not in hidden, "is_sellable": sku not in paused}
             cells.append(CatalogPublicationCell(sku=sku, surface_ref=display.ref, tier="", before=before, after={**before, **patch}))
     else:
         by_product = {product.pk: product for product in products}
@@ -2305,6 +2911,12 @@ def apply_resync_intention(data: dict) -> dict:
 # roda em ``dry_run`` — o erro é POR LINHA e nada é gravado antes de confirmar.
 
 _IMPORT_FLAGS = ("is_published", "is_sellable")
+_PRODUCT_IMPORT_SALT = "catalog.product-import.v1"
+_IMPORT_HEADERS = {
+    "SKU": "sku", "Produto": "name", "Preço (R$)": "base_price_q",
+    "Publicado": "is_published", "À venda": "is_sellable",
+}
+_IMPORT_INFORMATIONAL_HEADERS = {"Coleção (informativa)"}
 _IMPORT_BOOL_TOKENS = {
     "sim": "1", "s": "1", "verdadeiro": "1", "true": "1",
     "não": "0", "nao": "0", "n": "0", "falso": "0", "false": "0",
@@ -2342,16 +2954,24 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     first = text.splitlines()[0]
     delimiter = ";" if first.count(";") >= first.count(",") and ";" in first else ","
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    headers = [str(field).strip() for field in (reader.fieldnames or [])]
-    if "sku" not in headers:
-        raise CatalogError("O CSV precisa da coluna sku (o mesmo modelo do export).")
+    source_headers = [str(field).strip() for field in (reader.fieldnames or [])]
+    if len(source_headers) != len(set(source_headers)):
+        raise CatalogError("O cabeçalho do CSV tem colunas repetidas.")
+    unknown = [header for header in source_headers if header not in _IMPORT_HEADERS
+               and header not in _IMPORT_INFORMATIONAL_HEADERS and not header.startswith("Canal: ")]
+    if unknown:
+        raise CatalogError(f"O CSV tem colunas desconhecidas: {', '.join(unknown)}. Use o arquivo exportado pelo Catálogo.")
+    if "SKU" not in source_headers:
+        raise CatalogError("O CSV precisa da coluna SKU. Use o arquivo exportado pelo Catálogo.")
+    headers = [_IMPORT_HEADERS[header] for header in source_headers if header in _IMPORT_HEADERS]
     dataset = tablib.Dataset()
     dataset.headers = headers
     parsed = []
     for raw in reader:
-        row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
-        if not any(str(value).strip() for value in row.values()):
+        source_row = {str(key).strip(): (value if value is not None else "") for key, value in raw.items() if key}
+        if not any(str(value).strip() for value in source_row.values()):
             continue
+        row = {_IMPORT_HEADERS[source]: source_row.get(source, "") for source in source_headers if source in _IMPORT_HEADERS}
         if "base_price_q" in row:
             row["base_price_q"] = _import_price_q(row["base_price_q"])
         for flag in _IMPORT_FLAGS:
@@ -2362,6 +2982,19 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
         parsed.append(row)
     if not parsed:
         raise CatalogError("O CSV não tem nenhuma linha para importar.")
+    # Produto NOVO pelo CSV segue a mesma régua de SKU do criar e do duplicar
+    # (GES-11); o que já existe é casado pelo SKU que tem.
+    from shopman.offerman.models import Product
+
+    new_skus = {str(row.get("sku") or "").strip() for row in parsed} - set(
+        Product.objects.filter(sku__in=[str(row.get("sku") or "").strip() for row in parsed]).values_list("sku", flat=True)
+    )
+    invalid = sorted(sku for sku in new_skus if sku and not _SKU_PATTERN.match(sku))
+    if invalid:
+        raise _field_error(
+            f"SKU fora do padrão no CSV: {', '.join(invalid[:5])}. Use só letras maiúsculas, números e hífen.",
+            "sku",
+        )
 
     result = ProductResource().import_data(
         dataset, dry_run=dry_run, raise_errors=False, use_transactions=True,
@@ -2386,6 +3019,20 @@ def _run_product_import(csv_text, *, dry_run: bool) -> dict:
     if dry_run:
         payload["changes"] = _import_changes(parsed)
     return payload
+
+
+def _product_import_state(csv_text, *, lock: bool = False) -> list[list]:
+    """Estado importável dos produtos-alvo, incluindo a ausência do SKU."""
+    from shopman.offerman.models import Product
+
+    preview = _run_product_import(csv_text, dry_run=True)
+    skus = sorted({change["sku"] for change in preview["changes"] if change["sku"]})
+    queryset = Product.objects.filter(sku__in=skus).order_by("sku")
+    if lock:
+        queryset = queryset.select_for_update()
+    existing = {product.sku: product for product in queryset}
+    fields = ("name", "base_price_q", "unit", "availability_policy", "is_published", "is_sellable", "shelf_life_days")
+    return [[sku, *([getattr(existing[sku], field) for field in fields] if sku in existing else [None])] for sku in skus]
 
 
 def _import_changes(parsed: list[dict]) -> list[dict]:
@@ -2413,19 +3060,44 @@ def _import_changes(parsed: list[dict]) -> list[dict]:
 
 def preview_product_import(data: dict, *, actor_id: int) -> dict:
     """Prévia do CSV: valida linha a linha e mostra o que muda. Não grava nada."""
+    from django.core import signing
+
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
     csv_text = data.get("csv") if isinstance(data, dict) else None
     result = _run_product_import(csv_text, dry_run=True)
-    # A revisão da prévia é o que a confirmação carrega: o apply não inventa uma.
-    result["base_revision"] = mutation_fingerprint(
-        {"operation": "catalog.product-import", "csv": str(csv_text or "")}
+    result["base_revision"] = signing.dumps(
+        {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text)},
+        salt=_PRODUCT_IMPORT_SALT,
+        compress=True,
     )
     return result
 
 
 @transaction.atomic
 def apply_product_import(data: dict, *, actor_id: int) -> dict:
-    """Aplica o CSV pelo MESMO recurso do Admin; o erro é por linha."""
-    result = _run_product_import(data.get("csv") if isinstance(data, dict) else None, dry_run=False)
+    """Aplica o CSV validado sem sobrescrever uma prévia obsoleta."""
+    from django.core import signing
+
+    from shopman.backstage.services.exceptions import CatalogConflict
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    csv_text = data.get("csv") if isinstance(data, dict) else None
+    try:
+        receipt = signing.loads(data.get("base_revision", ""), salt=_PRODUCT_IMPORT_SALT, max_age=1800)
+    except (signing.BadSignature, TypeError):
+        raise CatalogConflict("Refaça a prévia antes de importar.") from None
+    expected = {"actor": actor_id, "csv": mutation_fingerprint(str(csv_text or "")), "state": _product_import_state(csv_text, lock=True)}
+    if receipt != expected:
+        raise CatalogConflict("O catálogo mudou desde a prévia. Refaça a prévia antes de importar.")
+    validation = _run_product_import(csv_text, dry_run=True)
+    if validation["errors"]:
+        first = validation["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **validation}
+    result = _run_product_import(csv_text, dry_run=False)
+    if result["errors"]:
+        first = result["errors"][0]
+        detail = f"Nenhum produto foi importado. Confira a linha {first['row']}: {first['detail']}"
+        return {"ok": False, "outcome": "not_applied", "detail": detail, **result}
     return {"ok": True, "outcome": "applied", **result}

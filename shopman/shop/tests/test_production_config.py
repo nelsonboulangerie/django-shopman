@@ -67,13 +67,27 @@ class TestCascade:
         assert config.alerts.default_max_started_minutes == 240
         assert config.order_match == "earliest_target"
 
-    def test_unknown_keys_are_ignored(self):
+    def test_unknown_key_inside_a_block_is_refused_by_name(self):
+        """`low_yeld_threshold` era descartada e o bloco seguia com o default, calado."""
         Shop.objects.create(
             name="Nelson",
-            defaults={"production": {"suggestion": {"typo_key": 1}, "another": True}},
+            defaults={"production": {"alerts": {"low_yeld_threshold": "0.70"}}},
         )
-        config = ProductionConfig.load()
-        assert config.to_dict() == ProductionConfig.defaults()
+        with pytest.raises(ValueError, match=r"production\.alerts: chave desconhecida low_yeld_threshold"):
+            ProductionConfig.load()
+
+    def test_unknown_top_level_key_is_refused_by_name(self):
+        with pytest.raises(ValueError, match=r"production: chave desconhecida order_matc\b"):
+            ProductionConfig.from_dict({"order_matc": "manual"})
+
+    def test_deploy_check_says_the_key(self):
+        """O check de deploy (E019) repete a mensagem: o nome da chave chega ao gestor."""
+        from shopman.shop.checks import check_production_configuration
+
+        Shop.objects.create(name="Nelson", defaults={"production": {"panel": {"delay_tolerance": 5}}})
+        errors = check_production_configuration(None)
+        assert [error.id for error in errors] == ["SHOPMAN_E019"]
+        assert "delay_tolerance" in errors[0].msg
 
     def test_invalid_override_raises_on_load(self):
         Shop.objects.create(

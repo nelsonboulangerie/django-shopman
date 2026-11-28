@@ -1,7 +1,6 @@
 """Continuidade entre transportes exige identidade verificada e ato explícito."""
 
 from dataclasses import FrozenInstanceError
-from types import SimpleNamespace
 
 import pytest
 from django.db import transaction
@@ -9,6 +8,7 @@ from django.utils import timezone
 from shopman.guestman.models import Customer
 
 from shopman.shop.models import Conversation, ConversationBinding
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, transport
 from shopman.storefront.concierge.contracts import (
     IdentityResolution,
@@ -42,7 +42,7 @@ def identity_context(settings):
         last_name="Canônico",
         phone="+5543999990001",
     )
-    settings.AI_ASSIST_API_KEY = "test-only"
+    configure_ai("test-only")
     settings.SHOPMAN_CONCIERGE = {
         "enabled": True,
         "contract_version": 3,
@@ -183,7 +183,7 @@ def test_attach_binding_revalidates_phone_after_customer_lock(identity_context):
 
     with transaction.atomic():
         locked = account_service.lock_active_customer(customer_pk=customer.pk)
-        account_service._set_primary_phone(locked, "+5543999990003")
+        account_service._set_primary_phone(locked, "+5543999990003", proof="sms")
 
     with pytest.raises(service.BindingAttachmentRejected, match="identity_unverified"):
         service.attach_binding(ownerless.pk, scope, stale_resolution)
@@ -299,15 +299,17 @@ def test_manychat_adapter_translates_customer_resolver_to_typed_identity(
     monkeypatch,
 ):
     customer, _, _, _ = identity_context
-    from shopman.guestman.adapters.auth import CustomerResolver
+    from shopman.doorman.protocols.identity import IdentityHandle, IdentityView
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
 
     monkeypatch.setattr(
-        CustomerResolver,
-        "upsert_manychat_subscriber",
-        lambda _self, payload: SimpleNamespace(
-            uuid=customer.uuid,
-            phone=customer.phone,
+        ManychatIdentityBridge,
+        "upsert_subscriber",
+        lambda _self, payload: IdentityView(
+            subject_id=customer.uuid,
             name=customer.name,
+            handles=(IdentityHandle("whatsapp", customer.phone, True, True),),
+            is_active=True,
         )
         if payload == {"id": "wa-subject"}
         else None,

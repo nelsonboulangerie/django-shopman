@@ -82,6 +82,12 @@ export interface OperatorSection {
   quick?: boolean;
   /** Um traço acima desta seção no rail (v4 `salao-mesas4.html`: Caixa · traço · Ajustes). */
   divider?: boolean;
+  /**
+   * A forma da tela (modelo de navegação, 31/10/2026). Chão: o posto, sem barra de seções
+   * no celular; trocar é pelo selo. Escritório: barra de baixo com as seções do
+   * escritório. Parede: a tela exposta, com saída declarada. Ausente = escritório.
+   */
+  form?: "floor" | "office" | "wall";
 }
 
 /** `/pedidos/` e `/pedidos` são a mesma tela. Uma normalização só, com teste. */

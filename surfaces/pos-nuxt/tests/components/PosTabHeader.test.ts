@@ -68,3 +68,45 @@ it("a comanda que nasceu de uma transferência mostra o selo do rastro (dono, T1
   expect(plain.find("[data-pos-tab-transferred-from]").exists()).toBe(false);
   plain.unmount();
 });
+
+it("edição de encomenda: a barra não repete a ref e o cliente fica numa linha", async () => {
+  const w = await mountSuspended(PosTabHeader, { props: {
+    salesMode: "order", tabDisplay: "Encomenda PDV-261027-M63", tabNumber: "PDV-261027-M63",
+    hasOpenTab: true, canRename: true,
+    customerName: "Beatriz5326", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "delivery",
+    fulfillmentLabel: "Entrega · Palhano 1", scheduleLabel: "Hoje, o quanto antes", scheduled: true, loading: false,
+    hideTitle: true, hideSalesModes: true,
+  }, global: { stubs: { PosCustomerModal: true } } });
+  // A encomenda continua encomenda: o seletor Balcão/Encomenda some.
+  expect(w.find("[data-pos-sales-modes]").exists()).toBe(false);
+  // O cabeçalho da tela já diz "Editando a encomenda PDV-…".
+  expect(w.find("[data-pos-tab-title]").exists()).toBe(false);
+  expect(w.text()).not.toContain("PDV-261027-M63");
+  // Nome comprido corta com reticências; quebrar letra a letra empilhava o chip.
+  const name = w.find('[data-context-entry="customer"] span[title="Beatriz5326"]');
+  expect(name.classes()).toContain("truncate");
+  await w.setProps({ hideTitle: false, hideSalesModes: false });
+  expect(w.find("[data-pos-sales-modes]").exists()).toBe(true);
+  expect(w.find("[data-pos-tab-title] h1").classes()).toContain("truncate");
+  w.unmount();
+});
+
+it("PDV2-21: o nome da comanda diz no campo o que não leva, em vez de o servidor recusar depois", async () => {
+  const w = await mountSuspended(PosTabHeader, { props: {
+    salesMode: "counter", tabDisplay: "7", hasOpenTab: true, canRename: true,
+    customerName: "", customerPhone: "", customerTaxId: "", customerEmail: "", customerLookup: null,
+    lookupBusy: false, searchResults: [], searchBusy: false, fulfillmentType: "pickup",
+    fulfillmentLabel: "Retirada", scheduleLabel: "Para hoje", scheduled: false, loading: false,
+    tabMaxLength: 64, tabDisallowedChars: ["/", "\\", "?", "#", "%"],
+  }, global: { stubs: { PosCustomerModal: true } } });
+  await w.find('[aria-label="Renomear comanda"]').trigger("click");
+  const input = w.find("[data-pos-tab-rename] input");
+  expect(input.attributes("maxlength")).toBe("64");
+  await input.setValue("Mesa 7/8");
+  expect((input.element as HTMLInputElement).value).toBe("Mesa 78");
+  expect(w.find("[data-pos-tab-rename-hint]").text()).toBe("O nome da comanda não leva /.");
+  await input.setValue("Mesa 78");
+  expect(w.find("[data-pos-tab-rename-hint]").exists()).toBe(false);
+  w.unmount();
+});

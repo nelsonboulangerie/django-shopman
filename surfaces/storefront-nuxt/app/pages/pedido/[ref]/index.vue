@@ -1,32 +1,51 @@
 <script setup lang="ts">
 import type { Action, TrackingResponse } from '~/types/shopman'
 import {
+  EXPIRY_RECONCILE_INTERVAL_MS,
   hasLiveDeadline,
+  paymentDeadlineLapsed,
   pollIntervalMs,
   ratingThanksView,
+  shouldRetryExpiryReconcile,
+  showsTrackingSkeleton,
   timelineActiveStep,
-  timelineStepStateLabel,
+  timelineStepSrSuffix,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
   trackingPanelIconClass,
+  trackingSideActionsPrimary,
   trackingStatusPanelActions
 } from '~/presentation/orderTracking'
-import { countdownPct, deadlineCountdown, isCountdownUrgent, serverClockOffsetMs } from '~/presentation/deadline'
+import { countdownPct, deadlineCountdown, isCountdownUrgent, remainingPhrase, serverClockOffsetMs } from '~/presentation/deadline'
 import { orderAccessErrorView } from '~/presentation/orderAccess'
-import { showsPaymentBlock } from '~/presentation/payment'
+import { openOrderLink, splitOrderLinkParam } from '~/presentation/orderLink'
+import { isHostedCheckout, showsPaymentBlock } from '~/presentation/payment'
 import {
   canShareNatively,
-  orderShareUrl,
-  shareMessage,
   shareNatively,
   whatsAppShareHref
 } from '~/utils/share'
+import { takeCardHandoff } from '~/utils/cardHandoff'
+import { takeJustPlaced } from '~/utils/justPlaced'
+
+// A página é a mesma com ou sem o selo do link do aviso (`/pedido/<ref>~<selo>`):
+// trocar para a URL limpa não remonta a tela.
+definePageMeta({
+  key: route => `pedido-${String(route.params.ref || '').split('~')[0]}`
+})
 
 const route = useRoute()
+const router = useRouter()
 const apiPath = useShopmanApiPath()
 const csrfHeaders = useShopmanCsrfHeaders()
-const orderRef = computed(() => String(route.params.ref || ''))
+// O parâmetro pode trazer o selo do link do aviso (DEV-2026-093); o pedido é o ref.
+const orderRef = computed(() => splitOrderLinkParam(String(route.params.ref || '')).ref)
+// Chegou pelo link do aviso: a leitura espera a troca do selo, que só acontece no
+// navegador (o cookie da sessão nasce lá). Sem isso, o servidor leria o pedido sem
+// acesso e a tela piscaria "Não encontramos este pedido" antes de abrir.
+const arrivedWithCapability = Boolean(splitOrderLinkParam(String(route.params.ref || '')).capability)
+const capabilityExchanging = ref(arrivedWithCapability)
 // Ref esmaecido no prefixo (canal/data) + cauda em destaque (o que o cliente usa).
 const refParts = computed(() => orderRefParts(orderRef.value))
 // "Conversar com a loja" já abre com o contexto do pedido — o cliente não precisa
@@ -51,22 +70,59 @@ const { performAction: performReorderAction, conflict, pending: reorderPending }
 // who can actually see this order.
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 
-const { data, pending, error, refresh } = await useFetch<TrackingResponse>(
+const { data, pending, error, refresh, execute } = await useFetch<TrackingResponse>(
   () => apiPath(`/api/v1/tracking/${encodeURIComponent(orderRef.value)}/`),
-  { credentials: 'include', headers: requestHeaders, lazy: true }
+  {
+    credentials: 'include',
+    headers: requestHeaders,
+    lazy: true,
+    server: !arrivedWithCapability,
+    immediate: !arrivedWithCapability
+  }
 )
-usePageContentPending(pending)
+// Só a primeira carga avisa a espera: refresh em segundo plano (SSE, poll) não
+// é espera do cliente. A troca do selo do link do aviso também é espera.
+const firstLoadPending = computed(() => capabilityExchanging.value || showsTrackingSkeleton(pending.value, Boolean(data.value)))
+usePageContentPending(firstLoadPending)
 
 const tracking = computed(() => data.value || null)
 const errorView = computed(() => orderAccessErrorView((error.value as { statusCode?: number } | null)?.statusCode, 'tracking'))
 const loginHref = computed(() => `/entrar?next=${encodeURIComponent(`/pedido/${orderRef.value}`)}`)
-const cancelAction = computed(() => tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
-const cancellationRequestAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation' && action.enabled) || null)
-const cancellationReason = ref('')
+// Com o prazo de pagar vencido, cancelar à mão não tem mais o que fazer: o
+// pedido está sendo cancelado pelo prazo.
+// Aberto só pelo link do aviso: cancelar, avaliar e pedir de novo pedem a entrada.
+// O servidor já as tirou da lista e manda o convite que ocupa o lugar delas.
+const loginInvite = computed(() => tracking.value?.login_invite || null)
+const openedByOrderLink = computed(() => tracking.value?.access_mode === 'capability')
+const cancelAction = computed(() => paymentLapsed.value
+  ? null
+  : tracking.value?.actions.find(action => action.ref === 'cancel_order' && action.enabled) || null)
+// Depois que o preparo começou não há cancelar (dono, 06/11/2026): no lugar, o
+// convite para falar com o responsável, pela mesma ouvidoria da avaliação.
+const cancellationContactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_cancellation_contact' && action.enabled) || null)
+const cancellationContact = computed(() => tracking.value?.cancellation_contact || null)
+// O diálogo de cancelar diz o que acontece com o dinheiro (o valor que volta, a
+// reserva do cartão desfeita, ou nada cobrado) na mesma frase do aviso à loja.
+const cancelDialogDescription = computed(() => [
+  tracking.value?.copy.cancel_dialog_message,
+  tracking.value?.cancel_dialog_money_line
+].filter(Boolean).join(' '))
 const rateAction = computed(() => tracking.value?.actions.find(action => action.ref === 'rate_order' && action.enabled) || null)
 // Estado de agradecimento (título/mensagem + se cabe confete) montado a partir da
 // copy e da nota escolhida. A copy é omotenashi (configurável), nunca inventada aqui.
 const ratingThanks = computed(() => ratingThanksView(tracking.value?.copy, rating.value))
+// Depois de avaliar: a ouvidoria (nota até 3, o servidor decide) e o convite do
+// Google, que vale para TODA nota (a política do Google proíbe convidar só quem
+// gostou). Quem não gostou vê a ouvidoria primeiro; o convite continua abaixo.
+const ratingFollowup = computed(() => tracking.value?.rating_followup || null)
+const contactAction = computed(() => tracking.value?.actions.find(action => action.ref === 'request_contact' && action.enabled) || null)
+// Mesmo convite para toda nota (política do Google); só o tom muda: quem gostou
+// ouve "coisa boa é pra compartilhar", quem não gostou não ouve festa.
+const googleInviteTitle = computed(() => {
+  const copy = tracking.value?.copy
+  const lowRating = !!contactAction.value || !!ratingFollowup.value?.contact_requested
+  return (lowRating ? copy?.rating_google_title : copy?.rating_google_share_title) || ''
+})
 const reorderAction = computed(() => tracking.value?.actions.find(action => action.ref === 'reorder' && action.enabled) || null)
 // O bloco de pagamento inline (PAYMENT-TRACKING-MERGE) desenha o botão do cartão
 // e o copia-e-cola do Pix; não os repetimos no painel de status.
@@ -83,6 +139,7 @@ const statusPanelIcon = computed(() => trackingPanelIcon(promiseTone.value))
 const showPaymentBlock = computed(() => {
   const t = tracking.value
   if (!t?.promise) return false
+  if (paymentLapsed.value) return false
   return showsPaymentBlock({
     payment_method: t.promise.payment_method,
     pix_qr_code: t.promise.pix_qr_code,
@@ -107,18 +164,16 @@ const showReorderAction = computed(() => Boolean(
 const showSupportAction = computed(() => Boolean(
   tracking.value?.whatsapp_url && !showSupportInStatusPanel.value
 ))
-// Um (e só um) botão primary no card de Ações: o topo da pilha não-destrutiva.
-// Prioridade: Avaliar > Pedir de novo > Falar conosco. Cancelar fica destructive
-// à parte. Assim nunca sobra um card só com botões secundários (faubourg).
-const sideActionsPrimary = computed(() => {
-  if (rateAction.value) return 'rate'
-  if (showReorderAction.value) return 'reorder'
-  if (showSupportAction.value) return 'support'
-  return null
-})
+// Um (e só um) botão primary no card de Ações (regra em `trackingSideActionsPrimary`).
+const sideActionsPrimary = computed(() => trackingSideActionsPrimary({
+  cancellationContact: Boolean(cancellationContactAction.value && !cancellationContact.value?.requested),
+  rate: Boolean(rateAction.value),
+  reorder: showReorderAction.value,
+  support: showSupportAction.value
+}))
 const showSideActions = computed(() => Boolean(
   tracking.value &&
-  (cancelAction.value || cancellationRequestAction.value || tracking.value.cancellation_request || showReorderAction.value || showSupportAction.value ||
+  (cancelAction.value || loginInvite.value || cancellationContact.value || showReorderAction.value || showSupportAction.value ||
     shareHref.value || tracking.value?.pickup_info?.directions_url)
 ))
 const showDeliveryTab = computed(() => Boolean(tracking.value?.pickup_info || tracking.value?.fulfillments.length))
@@ -159,7 +214,29 @@ watch(deadlineCount, count => {
   }
 }, { immediate: true })
 const deadlinePct = computed(() => deadlineCount.value ? countdownPct(deadlineCount.value.totalSeconds, deadlineWindowSeconds.value) : 0)
+// Prazo de PAGAR zerado com o pedido ainda ativo no último fetch: o QR e o
+// "Cancelar pedido" saem da tela até o servidor trazer o cancelamento.
+const paymentLapsed = computed(() => mounted.value && paymentDeadlineLapsed(
+  tracking.value?.promise,
+  deadlineCount.value?.isExpired,
+  tracking.value?.is_active
+))
 const deadlineUrgent = computed(() => isCountdownUrgent(deadlinePct.value))
+// Cartão em um toque (P2-09): quem acabou de enviar o pedido com cartão já decidiu
+// pagar. Assim que o link do pagamento seguro chega, a tela leva até ele, uma vez só
+// (a marca é do checkout, fica na aba e vence em minutos). O botão "Pagar com cartão"
+// continua no bloco, para quem voltou sem pagar.
+// Fica DEPOIS de `paymentLapsed`: a observação roda na hora (`immediate`), e ler o
+// bloco de pagamento antes de o prazo existir derruba a página inteira no servidor.
+const cardHandoffUrl = computed(() => {
+  const promise = tracking.value?.promise
+  if (!showPaymentBlock.value || !promise || !isHostedCheckout(promise.payment_method)) return ''
+  return promise.checkout_url || ''
+})
+watch(cardHandoffUrl, (url) => {
+  if (!url || !import.meta.client || !tracking.value) return
+  if (takeCardHandoff(tracking.value.ref)) window.location.assign(url)
+}, { immediate: true })
 
 // Frescor do dado: idade viva "Atualizado há X", que vira aviso se um poll falhar
 // (idade > 2× a janela de frescor do servidor). Só em pedidos ativos — um pedido
@@ -173,7 +250,11 @@ const freshness = computed(() => trackingFreshness(
 // Reconexão / volta de foco → reconcilia NA HORA (não espera o próximo poll):
 // grande alívio do "esperei e nada" quando o operador muda o status.
 const { isOnline, watchConnectivity } = useConnectivity()
-watchConnectivity(() => { if (tracking.value?.is_active) void refresh() })
+watchConnectivity(() => {
+  if (!tracking.value?.is_active) return
+  if (tracking.value.payment_due) void checkPayment()
+  else void refresh()
+})
 // Banner de offline imediato no acompanhamento (paridade com a tela de pagamento):
 // o cliente vê "sem conexão" na hora, sem depender do limiar de frescor (~60s).
 const showOfflineBanner = computed(() => Boolean(tracking.value?.is_active && !isOnline.value))
@@ -183,6 +264,31 @@ const showOfflineBanner = computed(() => Boolean(tracking.value?.is_active && !i
 // esperar o poll. Convidado sem login cai no poll (o Django recusa o canal dele).
 useOrderTrackingStream(orderRef, () => { if (tracking.value?.is_active) void refresh() })
 
+// Conferir o pagamento é COMANDO, não efeito da leitura: o GET só lê. Enquanto o
+// pedido deve pagamento, a tela pede a conferência ao abrir, ao voltar para a aba
+// e quando o pedido passa a dever (o aceite chegou por SSE). É assim que a volta
+// do Stripe vê o pagamento na hora, mesmo com o webhook atrasado, e que o Pix que
+// não ganhou código no aceite ganha agora. O worker é a rede de quem fechou a aba.
+const paymentCheckPending = ref(false)
+async function checkPayment () {
+  if (!import.meta.client || paymentCheckPending.value || !tracking.value?.payment_due) return
+  paymentCheckPending.value = true
+  try {
+    const headers = await csrfHeaders()
+    data.value = await $fetch<TrackingResponse>(
+      apiPath(`/api/v1/orders/${encodeURIComponent(orderRef.value)}/payment/check/`),
+      { method: 'POST', headers, credentials: 'include' }
+    )
+  } catch {
+    // A conferência é um atalho; o acompanhamento segue no poll e no SSE.
+  } finally {
+    paymentCheckPending.value = false
+  }
+}
+watch(() => tracking.value?.payment_due, (due, wasDue) => {
+  if (due && !wasDue && mounted.value) void checkPayment()
+})
+
 // Linhas do resumo (ícone + valor) — mesma diagramação do overlay de revisão do
 // checkout (componente OrderSummaryRows), a partir da projeção do pedido.
 const summaryRows = computed(() => {
@@ -191,27 +297,44 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
-  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
-  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
-  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
-  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
-  // há previsão.
-  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.delivery_address) rows.push({ icon: 'lucide:map-pin', lines: [t.delivery_address] })
+  // O combinado que a pessoa escolheu no checkout ("hoje · 19:30 às 20:00") e o
+  // horário previsto vinham prontos do servidor e não apareciam em lugar
+  // nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `schedule_display` vem sempre que houve janela (a encomenda também
+  // conta); `eta_display`, quando há previsão.
+  const schedule = t.schedule_display || t.when_display
+  if (schedule) rows.push({ icon: 'lucide:calendar-clock', lines: [schedule] })
   if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
-  if (t.delivery_fee_display) {
-    rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
-  }
   const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
+  if (t.tax_id_display) rows.push({ icon: 'lucide:file-text', lines: [`CPF na nota ${t.tax_id_display}`] })
+  if (t.gift) {
+    rows.push({ icon: 'lucide:gift', lines: [t.gift.recipient_name ? `Presente para ${t.gift.recipient_name}` : 'Presente'] })
+  }
   return rows
 })
 
 let tick: ReturnType<typeof setInterval> | null = null
 let poll: ReturnType<typeof setInterval> | null = null
-onMounted(() => {
+onMounted(async () => {
   mounted.value = true
   clientNow.value = Date.now()
   tick = setInterval(() => { clientNow.value = Date.now() }, 1000)
+  if (arrivedWithCapability) {
+    await openOrderLink(String(route.params.ref || ''), {
+      exchange: async (ref, cap) => $fetch(apiPath(`/api/v1/tracking/${encodeURIComponent(ref)}/access/`), {
+        method: 'POST',
+        headers: await csrfHeaders(),
+        credentials: 'include',
+        body: { cap }
+      }),
+      replace: path => router.replace(path)
+    })
+    capabilityExchanging.value = false
+    await execute()
+  }
+  void checkPayment()
   poll = setInterval(() => {
     if (tracking.value?.is_active) void refresh()
   }, pollIntervalMs(tracking.value?.stale_after_seconds))
@@ -221,12 +344,25 @@ onBeforeUnmount(() => {
   if (poll) clearInterval(poll)
 })
 
-// Ao zerar o prazo, o backend decide (deadline_action): a UI sincroniza uma vez.
-watch(() => deadlineCount.value?.isExpired, async expired => {
+// Ao zerar o prazo, o backend decide (deadline_action). Quem cancela é o worker,
+// segundos depois, então a UI insiste: refresh a cada 3 s enquanto o pedido
+// segue ativo com o MESMO prazo, até 10 vezes. O poll segue como rede.
+let expiryTimer: ReturnType<typeof setTimeout> | null = null
+async function reconcileExpiry (deadlineAt: string | null | undefined, attempts: number) {
+  await refresh()
+  const stillLapsed = Boolean(tracking.value?.is_active && tracking.value?.promise.deadline_at === deadlineAt)
+  if (shouldRetryExpiryReconcile(attempts + 1, stillLapsed)) {
+    expiryTimer = setTimeout(() => { void reconcileExpiry(deadlineAt, attempts + 1) }, EXPIRY_RECONCILE_INTERVAL_MS)
+  }
+}
+watch(() => deadlineCount.value?.isExpired, expired => {
   if (expired && !deadlineHandled && tracking.value?.is_active) {
     deadlineHandled = true
-    await refresh()
+    void reconcileExpiry(tracking.value?.promise.deadline_at, 0)
   }
+})
+onBeforeUnmount(() => {
+  if (expiryTimer) clearTimeout(expiryTimer)
 })
 
 // Mensagem de sucesso específica e mais quente por ação (um "Atualizado." seco não
@@ -234,22 +370,15 @@ watch(() => deadlineCount.value?.isExpired, async expired => {
 // tiver copy própria.
 function actionSuccessMessage (action: Action): string {
   if (action.ref === 'cancel_order') return tracking.value?.copy.cancel_success_title || 'Pedido cancelado.'
-  if (action.ref === 'request_cancellation') return 'Solicitação registrada. Guarde o protocolo.'
   if (action.ref === 'confirm_received') return 'Que bom que chegou. Bom apetite!'
   return 'Tudo certo, atualizamos seu pedido.'
 }
 
-async function requestCancellation () {
-  const action = cancellationRequestAction.value
+async function requestCancellationContact () {
+  const action = cancellationContactAction.value
   if (!action) return
-  if (await postAction(action, { reason: cancellationReason.value.trim() })) {
-    cancellationReason.value = ''
-  }
-}
-
-function cancellationConfirmation (key: string, fallback: string): string {
-  const value = cancellationRequestAction.value?.confirmation?.[key]
-  return typeof value === 'string' && value ? value : fallback
+  // Sem toast: o próprio bloco vira "Combinado", e o toast repetiria a frase.
+  await postAction(action, { origin: 'cancellation' }, { silent: true })
 }
 
 async function refreshAfterConfirmedAction () {
@@ -263,7 +392,7 @@ async function refreshAfterConfirmedAction () {
   if (import.meta.client) useSonner.info('Ação confirmada. A atualização do acompanhamento está pendente.')
 }
 
-async function postAction (action: Action, body: Record<string, unknown> = {}) {
+async function postAction (action: Action, body: Record<string, unknown> = {}, { silent = false } = {}) {
   actionPending.value = { ...actionPending.value, [action.ref]: true }
   try {
     const headers = await csrfHeaders()
@@ -276,11 +405,14 @@ async function postAction (action: Action, body: Record<string, unknown> = {}) {
       credentials: 'include',
       body
     })
-    if (import.meta.client) useSonner.success(actionSuccessMessage(action))
+    if (import.meta.client && !silent) useSonner.success(actionSuccessMessage(action))
     await refreshAfterConfirmedAction()
     return true
   } catch (e) {
     if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível concluir. Tente de novo ou fale conosco.'))
+    // O cancelar recusado (o preparo começou no mesmo instante) relê o pedido: a
+    // tela troca o botão pelo convite de falar com o responsável.
+    if (action.ref === 'cancel_order') await refresh().catch(() => {})
     return false
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
@@ -315,6 +447,22 @@ async function submitRating () {
   } finally {
     actionPending.value = omitKey(actionPending.value, action.ref)
   }
+}
+
+async function requestContact () {
+  const action = contactAction.value
+  if (!action) return
+  // Sem toast: o próprio bloco vira "Combinado", e o toast repetiria a frase.
+  await postAction(action, {}, { silent: true })
+}
+
+// O formulário do Google não aceita texto pronto: no mesmo toque que abre o
+// Google, o comentário vai para a área de transferência, e lá é só colar. O
+// cliente revê e publica (ou não) pela própria mão.
+function copyCommentForGoogle () {
+  const text = ratingFollowup.value?.comment?.trim()
+  if (!text || !import.meta.client) return
+  navigator.clipboard?.writeText(text).catch(() => {})
 }
 
 function closeRatingSheet () {
@@ -392,10 +540,9 @@ const waitlistDeadlineLeft = computed(() => {
   if (!deadline || waitlistState.value !== 'confirming') return ''
   const ms = new Date(deadline).getTime() - nowMs.value
   if (!Number.isFinite(ms) || ms <= 0) return ''
-  const totalSeconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
+  // Por extenso ("Faltam 14 min 45 s"): a frase principal, logo acima, diz o
+  // horário do prazo ("até 13h27"), e "14:45" ao lado dele se leria como hora.
+  return remainingPhrase(Math.floor(ms / 1000))
 })
 
 async function confirmWaitlistSlot () {
@@ -426,25 +573,25 @@ function dismissReorderConflict () {
   conflict.value = null
 }
 
-// Momento yoin: o backend devolve `just_placed` UMA vez, no primeiro acesso
-// depois do checkout. A celebração é o confete — efêmera, sem ocupar layout.
-// O banner fixo saiu: repetia notícia velha (no fluxo Pix ele aterrissava
-// DEPOIS do pagamento, dizendo "Pedido recebido") e competia com o painel.
+// Momento yoin: o checkout marcou NESTE navegador que o pedido acabou de ser
+// fechado (`utils/justPlaced`), e a tela consome a marca UMA vez, quando o
+// backend diz que o pedido já pode ser comemorado (`placement_secured`). A
+// celebração é o confete: efêmera, sem ocupar layout. O banner fixo saiu: repetia
+// notícia velha (no fluxo Pix ele aterrissava DEPOIS do pagamento, dizendo
+// "Pedido recebido") e competia com o painel.
 const yoinCelebrado = ref(false)
 watchEffect(() => {
-  if (!import.meta.client || yoinCelebrado.value || !tracking.value?.just_placed) return
+  if (!import.meta.client || yoinCelebrado.value || !tracking.value?.placement_secured) return
+  if (!takeJustPlaced(tracking.value.ref)) return
   yoinCelebrado.value = true
   nextTick(() => dispararConfetti())
 })
-// Compartilhar: folha nativa do sistema quando existe (WhatsApp, Mensagens,
-// Instagram — a escolha é do cliente), com o link do WhatsApp como fallback no
-// desktop. As armadilhas que faziam chegar só a URL crua estão em `utils/share`.
-const shareText = computed(() => {
-  const texto = tracking.value?.share_text
-  if (!texto) return ''
-  const origin = import.meta.client ? window.location.origin : ''
-  return shareMessage(texto, orderShareUrl(origin, orderRef.value))
-})
+// Enviar resumo: folha nativa do sistema quando existe (WhatsApp, Mensagens,
+// a escolha é do cliente), com o link do WhatsApp como fallback no desktop.
+// Vai o TEXTO do pedido (itens, quando, onde), montado no servidor, e nenhum
+// link: o link do pedido só abre para quem o fez, e quem o recebia caía em
+// "Não encontramos este pedido" (beta 06/11).
+const shareText = computed(() => tracking.value?.share_text?.trim() || '')
 const shareHref = computed(() => whatsAppShareHref(shareText.value))
 async function compartilhar (event: MouseEvent) {
   if (!canShareNatively() || !shareText.value) return
@@ -491,7 +638,7 @@ useSeoMeta({
         <!-- Yoin: fechamento do pedido. Some assim que o cliente volta. -->
         <!-- Skeleton que espelha o layout real (painel de status + abas), não um
              bloco único que não conta o que está por vir. -->
-        <div v-if="pending" class="shop-stack-block">
+        <div v-if="firstLoadPending" class="shop-stack-block">
           <UiSkeleton class="h-40 rounded-lg" />
           <div class="flex gap-6">
             <UiSkeleton class="h-6 w-20 rounded" />
@@ -540,21 +687,20 @@ useSeoMeta({
                 <Icon :name="statusPanelIcon" :class="['relative size-4 shrink-0', statusPanelIconClass]" />
               </span>
             </template>
-            <UiAlertTitle class="text-foreground">
+            <!-- O título quebra linha em vez de terminar em reticências: "Maximiliano
+                 vem buscar seu pedido" continua inteiro no celular (L2, decisão 7 = B). -->
+            <UiAlertTitle class="line-clamp-none leading-snug text-foreground">
               {{ tracking.promise.title || tracking.status_label }}
             </UiAlertTitle>
             <UiAlertDescription class="w-full text-muted-foreground">
               <div class="w-full shop-stack-block">
                 <p>{{ tracking.promise.message || tracking.copy.promise_fallback_message }}</p>
 
-                <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
-                     secundário para não competir com o aviso principal. -->
-                <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
-
-                <!-- Cancelamento pelo estabelecimento: motivo + estorno visíveis —
-                     o cliente não depende da notificação para saber o porquê. -->
+                <!-- Cancelamento: o motivo e o destino do dinheiro, numa frase com o
+                     valor. Vem ANTES do convite para pedir de novo (a nota de
+                     rodapé): primeiro o cliente sabe do dinheiro. -->
                 <div
-                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.refund_status_label)"
+                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.cancellation_money_line)"
                   class="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
                   data-cancellation-info
                 >
@@ -562,11 +708,14 @@ useSeoMeta({
                     <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
                     {{ tracking.cancellation_note }}
                   </p>
-                  <p v-if="tracking.refund_status_label">
-                    <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
-                    {{ tracking.refund_status_label }}
+                  <p v-if="tracking.cancellation_money_line" data-cancellation-money>
+                    {{ tracking.cancellation_money_line }}
                   </p>
                 </div>
+
+                <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
+                     secundário para não competir com o aviso principal. -->
+                <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
 
                 <!-- Fila de espera: a promessa em duas fases, dita na tela que
                      sempre existe. Esperar não cobra nada; o chamado tem relógio;
@@ -588,12 +737,22 @@ useSeoMeta({
                   class="mt-2 space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm"
                   data-waitlist="confirming"
                 >
-                  <p class="font-semibold">{{ tracking.copy.waitlist_confirm_title }}</p>
-                  <p>{{ tracking.copy.waitlist_confirm_message }}</p>
+                  <!-- O chamado (a fornada ficou pronta, o que fazer e até quando) é a
+                       frase principal do painel, logo acima; aqui ficam só o relógio e
+                       o botão. Antes o cartão repetia o chamado com outras palavras. -->
                   <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
-                    Confirme em {{ waitlistDeadlineLeft }}
+                    {{ waitlistDeadlineLeft }}
                   </p>
+                  <!-- Aberto só pelo link do aviso, confirmar a vaga pede a entrada. -->
                   <UiButton
+                    v-if="openedByOrderLink && loginInvite"
+                    :to="loginInvite.href"
+                    icon="lucide:log-in"
+                  >
+                    {{ loginInvite.cta_label }}
+                  </UiButton>
+                  <UiButton
+                    v-else
                     :disabled="waitlistPending"
                     :loading="waitlistPending"
                     @click="confirmWaitlistSlot"
@@ -621,7 +780,7 @@ useSeoMeta({
 
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
-                <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">
+                <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm text-amber-800 dark:text-amber-300" role="status" data-decisive="state">
                   <Icon name="lucide:wifi-off" class="size-3.5 shrink-0" />
                   Sem conexão no momento. Reconectamos e atualizamos assim que a internet voltar.
                 </p>
@@ -632,7 +791,7 @@ useSeoMeta({
                   <div class="flex items-center gap-2 text-sm font-semibold">
                     <Icon name="lucide:timer" :size="18" :class="deadlineUrgent ? 'text-destructive' : statusPanelIconClass" />
                     <span class="text-muted-foreground">{{ tracking.promise_deadline_label || 'Tempo restante' }}</span>
-                    <span class="ml-auto tabular-nums" :class="deadlineUrgent ? 'text-destructive' : 'text-foreground'">{{ deadlineCount.mmss }}</span>
+                    <span class="ml-auto tabular-nums" :class="deadlineUrgent ? 'text-destructive' : 'text-foreground'" data-decisive="state">{{ deadlineCount.mmss }}</span>
                   </div>
                   <UiProgress :model-value="deadlinePct" :class="deadlineUrgent ? '[&>div]:bg-destructive' : ''" />
                 </div>
@@ -640,9 +799,14 @@ useSeoMeta({
                 <!-- Ponte de expiração: no instante em que o prazo zera, o timer some
                      e um refresh reconcilia. Enquanto a projeção nova não chega, um
                      estado explícito evita a tela piscar sem explicação. -->
-                <p v-else-if="mounted && deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite">
+                <p v-else-if="mounted && deadlineCount?.isExpired && tracking.is_active" class="flex items-center gap-2 shop-meta" role="status" aria-live="polite" data-expiry-bridge>
                   <Icon name="lucide:rotate-cw" class="size-3.5 shrink-0 animate-spin" />
-                  O prazo terminou. Estamos atualizando seu pedido…
+                  <template v-if="paymentLapsed && tracking.promise.payment_method === 'pix'">
+                    O Pix venceu. Não pague este código. Estamos atualizando seu pedido…
+                  </template>
+                  <template v-else>
+                    O prazo terminou. Estamos atualizando seu pedido…
+                  </template>
                 </p>
 
                 <div v-if="hasStatusPanelActions" class="w-full pt-1">
@@ -651,6 +815,7 @@ useSeoMeta({
                     <template v-for="action in statusPanelActions" :key="action.ref">
                       <UiButton
                         v-if="action.ref === 'reorder'"
+                        class="min-h-11"
                         :icon="actionIcon(action)"
                         :loading="!!reorderPending[orderRef]"
                         @click="handleStatusPanelAction(action)"
@@ -659,6 +824,7 @@ useSeoMeta({
                       </UiButton>
                       <UiButton
                         v-else-if="action.kind === 'link' && action.href"
+                        class="min-h-11"
                         :to="actionRoute(action)"
                         :icon="actionIcon(action)"
                       >
@@ -668,6 +834,7 @@ useSeoMeta({
                            abre em outra aba para o acompanhamento seguir aberto. -->
                       <UiButton
                         v-else-if="action.kind === 'external' && action.href"
+                        class="min-h-11"
                         :href="action.href"
                         target="_blank"
                         rel="noopener noreferrer"
@@ -678,6 +845,7 @@ useSeoMeta({
                       </UiButton>
                       <UiButton
                         v-else-if="canRunInlineAction(action)"
+                        class="min-h-11"
                         :icon="actionIcon(action)"
                         :loading="!!actionPending[action.ref]"
                         @click="handleStatusPanelAction(action)"
@@ -694,7 +862,7 @@ useSeoMeta({
                         {{ action.label }}
                       </span>
                     </template>
-                    <UiButton v-if="showSupportInStatusPanel" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:message-circle">
+                    <UiButton v-if="showSupportInStatusPanel" class="min-h-11" :href="supportUrl" target="_blank" rel="noopener noreferrer" variant="secondary" icon="lucide:circle-help">
                       {{ tracking.copy.support_label }}
                     </UiButton>
                   </div>
@@ -766,7 +934,7 @@ useSeoMeta({
                         />
                         <UiTimelineDate v-if="step.timestamp_display">{{ step.timestamp_display }}</UiTimelineDate>
                         <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">
-                          {{ step.label }}<span class="sr-only">, {{ timelineStepStateLabel(step.state) }}</span>
+                          {{ step.label }}<span v-if="timelineStepSrSuffix(step)" class="sr-only">{{ timelineStepSrSuffix(step) }}</span>
                         </UiTimelineTitle>
                         <!-- Passo cancelado: indicador próprio (X destrutivo), nunca um
                              check verde de "concluído" — a timeline não pode contradizer
@@ -803,30 +971,67 @@ useSeoMeta({
                 </UiTabsContent>
 
                 <UiTabsContent value="summary">
-                  <!-- Mesma diagramação do overlay de revisão: itens (qty + nome),
-                       linhas ícone+valor e Total. Fonte = projeção do pedido. -->
-                  <div class="px-1">
+                  <!-- O Resumo conta o que a revisão do checkout contou: itens com
+                       preço, a conta inteira e o que o cliente informou. Fonte =
+                       projeção do pedido. -->
+                  <div class="px-1" data-tracking-summary>
                     <ul v-if="tracking.items.length" class="space-y-1">
-                      <li v-for="item in tracking.items" :key="item.sku" class="shop-body">
-                        <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
-                        {{ item.name }}
+                      <li v-for="item in tracking.items" :key="item.sku" class="flex items-baseline justify-between gap-3 shop-body">
+                        <span class="min-w-0">
+                          <span class="font-semibold tabular-nums">{{ item.qty }}×</span>
+                          {{ item.name }}
+                        </span>
+                        <span class="flex shrink-0 items-baseline gap-2 tabular-nums" data-tracking-item-price>
+                          <span v-if="item.full_total_display" class="shop-meta text-muted-foreground" data-tracking-item-full-price data-decisive="price"><span class="sr-only">antes </span><s>{{ item.full_total_display }}</s></span>
+                          <span data-decisive="price">{{ item.total_display }}</span>
+                        </span>
                       </li>
                     </ul>
                     <p v-else class="shop-muted">Os itens deste pedido aparecem aqui.</p>
+
+                    <dl class="mt-3 space-y-1 border-t pt-3 text-sm" data-tracking-summary-bill>
+                      <div v-if="tracking.subtotal_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Subtotal</dt>
+                        <dd class="tabular-nums" data-decisive="price">{{ tracking.subtotal_display }}</dd>
+                      </div>
+                      <div v-for="discount in tracking.discount_lines || []" :key="discount.label" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">{{ discount.label }}</dt>
+                        <dd class="tabular-nums text-promotion" data-decisive="price">- {{ discount.amount_display }}</dd>
+                      </div>
+                      <div v-if="tracking.delivery_fee_display" class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-muted">Entrega<span v-if="tracking.delivery_distance_display"> · {{ tracking.delivery_distance_display }}</span></dt>
+                        <dd class="tabular-nums" data-decisive="price">{{ tracking.delivery_fee_display }}</dd>
+                      </div>
+                      <div class="flex items-baseline justify-between gap-3">
+                        <dt class="shop-body font-semibold">{{ tracking.copy.total_label }}</dt>
+                        <dd class="font-semibold tabular-nums" data-decisive="total">{{ tracking.total_display }}</dd>
+                      </div>
+                    </dl>
 
                     <UiSeparator class="my-3" />
 
                     <OrderSummaryRows :rows="summaryRows" />
 
-                    <div class="mt-3 flex items-baseline justify-between border-t pt-3">
-                      <span class="shop-body font-semibold">{{ tracking.copy.total_label }}</span>
-                      <span class="font-semibold tabular-nums">{{ tracking.total_display }}</span>
-                    </div>
+                    <!-- Bilhete do presente e observação: a mesma superfície da revisão. -->
+                    <p v-if="tracking.gift?.message" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-gift>
+                      <span class="mb-0.5 block shop-kicker">Cartão do presente</span>
+                      <span class="shop-body italic">“{{ tracking.gift.message }}”</span>
+                    </p>
+                    <p v-if="tracking.customer_notes" class="mt-3 rounded-lg bg-muted/50 p-3" data-tracking-summary-notes>
+                      <span class="mb-0.5 block shop-kicker">Observação</span>
+                      <span class="shop-body">{{ tracking.customer_notes }}</span>
+                    </p>
                   </div>
                 </UiTabsContent>
 
                 <UiTabsContent v-if="showDeliveryTab" value="delivery">
                   <div class="shop-stack-block">
+                    <!-- A retirada responde "quando" antes de "onde": o horário
+                         escolhido no finalizar é o compromisso do pedido. -->
+                    <UiAlert v-if="tracking.pickup_info?.when_display" data-tracking-pickup-when>
+                      <UiAlertTitle>Horário</UiAlertTitle>
+                      <UiAlertDescription>{{ tracking.pickup_info.when_display }}</UiAlertDescription>
+                    </UiAlert>
                     <UiAlert v-if="tracking.pickup_info">
                       <UiAlertTitle>Endereço</UiAlertTitle>
                       <UiAlertDescription>
@@ -838,7 +1043,7 @@ useSeoMeta({
                     </UiAlert>
                     <UiItem v-for="fulfillment in tracking.fulfillments" :key="`${fulfillment.status}-${fulfillment.tracking_code}`" class="rounded-lg border p-3">
                       <UiItemContent>
-                        <UiItemTitle>{{ fulfillment.status_label }}</UiItemTitle>
+                        <UiItemTitle data-decisive="state">{{ fulfillment.status_label }}</UiItemTitle>
                         <UiItemDescription v-if="fulfillment.tracking_label">{{ fulfillment.tracking_label }}</UiItemDescription>
                       </UiItemContent>
                       <UiItemActions>
@@ -853,6 +1058,9 @@ useSeoMeta({
 
           <!-- A nota fiscal chega digital: aqui, quando autorizada. -->
           <OrderFiscalNote v-if="tracking.fiscal_note" :note="tracking.fiscal_note" />
+
+          <!-- Encomenda não retirada: o recibo do que ficou com a loja (#3538). -->
+          <OrderRetentionReceipt v-if="tracking.retention_receipt" :receipt="tracking.retention_receipt" />
         </template>
       </section>
 
@@ -862,20 +1070,32 @@ useSeoMeta({
             <UiCardTitle>Ações</UiCardTitle>
           </UiCardHeader>
           <UiCardContent class="space-y-2">
-            <UiAlert
-              v-if="tracking.cancellation_request"
-              variant="warning"
-              icon="lucide:clipboard-check"
-              role="status"
-              data-cancellation-request
+            <div
+              v-if="cancellationContact"
+              class="space-y-2 rounded-lg border border-border p-4"
+              data-cancellation-contact
             >
-              <UiAlertTitle>{{ tracking.cancellation_request.title }}</UiAlertTitle>
-              <UiAlertDescription class="space-y-1">
-                <p>{{ tracking.cancellation_request.message }}</p>
-                <p class="font-semibold">Protocolo {{ tracking.cancellation_request.protocol }}</p>
-                <p class="text-xs">Recebida em {{ tracking.cancellation_request.requested_at_display }}</p>
-              </UiAlertDescription>
-            </UiAlert>
+              <!-- Pedido de contato já feito: "Quer cancelar?" é pergunta e mente ali.
+                   O título vira a confirmação do que aconteceu. -->
+              <p class="font-semibold">
+                {{ cancellationContact.requested ? tracking.copy.cancellation_contact_done_title : tracking.copy.cancellation_contact_title }}
+              </p>
+              <p v-if="cancellationContact.requested" class="text-sm text-muted-foreground" role="status">
+                {{ tracking.copy.rating_contact_done }}
+              </p>
+              <template v-else-if="cancellationContactAction">
+                <p class="text-sm text-muted-foreground">{{ tracking.copy.cancellation_contact_message }}</p>
+                <UiButton
+                  class="h-auto min-h-9 w-full whitespace-normal py-2 text-center"
+                  :variant="sideActionsPrimary === 'cancellation_contact' ? 'default' : 'secondary'"
+                  icon="lucide:message-circle"
+                  :loading="!!actionPending[cancellationContactAction.ref]"
+                  @click="requestCancellationContact"
+                >
+                  {{ cancellationContactAction.label }}
+                </UiButton>
+              </template>
+            </div>
             <!-- Avaliar em destaque (primary); as demais ficam secundárias. -->
             <UiButton v-if="rateAction" class="w-full" icon="lucide:star" @click="ratingOpen = true">
               Avaliar pedido
@@ -890,7 +1110,7 @@ useSeoMeta({
             >
               {{ reorderAction!.label }}
             </UiButton>
-            <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:message-circle" class="w-full">
+            <UiButton v-if="showSupportAction" :href="supportUrl" target="_blank" rel="noopener noreferrer" :variant="sideActionsPrimary === 'support' ? 'default' : 'secondary'" icon="lucide:circle-help" class="w-full">
               {{ tracking.copy.support_label }}
             </UiButton>
             <!-- "Como chegar" também aqui: na retirada é a ação mais útil, e
@@ -907,11 +1127,23 @@ useSeoMeta({
             >
               {{ tracking.pickup_info.directions_label }}
             </UiButton>
-            <!-- Compartilhar é permanente: serve mais com o pedido pronto do que
+            <!-- Enviar resumo é permanente: serve mais com o pedido pronto do que
                  logo depois do checkout, onde vivia preso ao banner do yoin. -->
             <UiButton v-if="mounted && shareHref" :href="shareHref" target="_blank" rel="noopener" variant="secondary" icon="lucide:share-2" class="w-full" @click="compartilhar">
               {{ tracking.share_cta }}
             </UiButton>
+            <!-- Aberto só pelo link do aviso: no lugar de cancelar (e de avaliar e
+                 pedir de novo), o convite para entrar, que volta a este pedido. -->
+            <div
+              v-if="loginInvite"
+              class="space-y-2 rounded-lg border border-border p-4"
+              data-login-invite
+            >
+              <p class="text-sm text-muted-foreground">{{ loginInvite.message }}</p>
+              <UiButton :to="loginInvite.href" variant="secondary" icon="lucide:log-in" class="w-full">
+                {{ loginInvite.cta_label }}
+              </UiButton>
+            </div>
             <UiAlertDialog v-if="cancelAction">
               <UiAlertDialogTrigger as-child>
                 <UiButton variant="destructive" class="w-full">{{ tracking.copy.cancel_cta }}</UiButton>
@@ -919,38 +1151,11 @@ useSeoMeta({
               <UiAlertDialogContent>
                 <UiAlertDialogHeader>
                   <UiAlertDialogTitle>{{ tracking.copy.cancel_dialog_title }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ tracking.copy.cancel_dialog_message }}</UiAlertDialogDescription>
+                  <UiAlertDialogDescription>{{ cancelDialogDescription }}</UiAlertDialogDescription>
                 </UiAlertDialogHeader>
                 <UiAlertDialogFooter>
                   <UiAlertDialogCancel>{{ tracking.copy.cancel_dialog_back }}</UiAlertDialogCancel>
                   <UiAlertDialogAction @click="postAction(cancelAction)">{{ tracking.copy.cancel_dialog_confirm }}</UiAlertDialogAction>
-                </UiAlertDialogFooter>
-              </UiAlertDialogContent>
-            </UiAlertDialog>
-            <UiAlertDialog v-else-if="cancellationRequestAction">
-              <UiAlertDialogTrigger as-child>
-                <UiButton variant="destructive" class="w-full">{{ cancellationRequestAction.label }}</UiButton>
-              </UiAlertDialogTrigger>
-              <UiAlertDialogContent>
-                <UiAlertDialogHeader>
-                  <UiAlertDialogTitle>{{ cancellationConfirmation('title', 'Solicitar cancelamento') }}</UiAlertDialogTitle>
-                  <UiAlertDialogDescription>{{ cancellationConfirmation('message', 'A equipe vai analisar o cancelamento e um possível estorno. Você recebe um protocolo agora.') }}</UiAlertDialogDescription>
-                </UiAlertDialogHeader>
-                <UiTextarea
-                  v-model="cancellationReason"
-                  :rows="3"
-                  :maxlength="500"
-                  placeholder="Motivo (opcional)"
-                  aria-label="Motivo da solicitação de cancelamento"
-                />
-                <UiAlertDialogFooter>
-                  <UiAlertDialogCancel>{{ cancellationConfirmation('cancel_label', 'Manter pedido') }}</UiAlertDialogCancel>
-                  <UiAlertDialogAction
-                    :disabled="!!actionPending.request_cancellation"
-                    @click="requestCancellation"
-                  >
-                    {{ cancellationConfirmation('confirm_label', 'Enviar solicitação') }}
-                  </UiAlertDialogAction>
                 </UiAlertDialogFooter>
               </UiAlertDialogContent>
             </UiAlertDialog>
@@ -977,6 +1182,51 @@ useSeoMeta({
               <Icon name="lucide:circle-check" class="size-9" />
             </span>
             <UiStarRating :model-value="rating" :max="5" size="lg" readonly class="justify-center" />
+            <div v-if="ratingFollowup" class="flex w-full flex-col gap-3 text-left">
+              <div
+                v-if="contactAction || ratingFollowup.contact_requested"
+                class="space-y-2 rounded-lg border border-border p-4"
+                data-rating-contact
+              >
+                <p class="font-semibold">{{ tracking.copy.rating_contact_title }}</p>
+                <p v-if="ratingFollowup.contact_requested" class="text-sm text-muted-foreground" role="status">
+                  {{ tracking.copy.rating_contact_done }}
+                </p>
+                <template v-else-if="contactAction">
+                  <p class="text-sm text-muted-foreground">{{ tracking.copy.rating_contact_message }}</p>
+                  <UiButton
+                    class="w-full"
+                    icon="lucide:message-circle"
+                    :loading="!!actionPending[contactAction.ref]"
+                    @click="requestContact"
+                  >
+                    {{ contactAction.label }}
+                  </UiButton>
+                </template>
+              </div>
+              <div
+                v-if="ratingFollowup.google_review_url"
+                class="space-y-2 rounded-lg border border-border p-4"
+                data-rating-google
+              >
+                <p class="font-semibold">{{ googleInviteTitle }}</p>
+                <p class="text-sm text-muted-foreground">{{ tracking.copy.rating_google_message }}</p>
+                <UiButton
+                  :href="ratingFollowup.google_review_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="w-full"
+                  variant="secondary"
+                  icon="lucide:star"
+                  @click="copyCommentForGoogle"
+                >
+                  {{ tracking.copy.rating_google_cta }}
+                </UiButton>
+                <p v-if="ratingFollowup.comment" class="text-xs text-muted-foreground">
+                  {{ tracking.copy.rating_google_copied }}
+                </p>
+              </div>
+            </div>
           </div>
           <div v-else class="shop-stack-block px-4 py-4">
             <UiStarRating v-model="rating" :max="5" size="lg" class="justify-center" />

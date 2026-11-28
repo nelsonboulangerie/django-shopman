@@ -36,6 +36,13 @@ const props = withDefaults(
      * (a troca de PIN); a identificação já captura no documento e decide crachá.
      */
     keyboard?: boolean;
+    /**
+     * O PIN tem tamanho fixo (4, #3223): o campo mostra exatamente essas casas e o
+     * leitor de tela diz "de 4". O PIN se envia sozinho no último dígito (quem
+     * envia é a captura de quem chama); a tecla de confirmar fica, girando
+     * enquanto o servidor confere. `null` = a regra antiga, de 4 a 8.
+     */
+    fixedDigits?: number | null;
   }>(),
   {
     label: "",
@@ -45,6 +52,7 @@ const props = withDefaults(
     submitIcon: "i-lucide-check",
     submitLabel: "Confirmar",
     keyboard: false,
+    fixedDigits: null,
   },
 );
 
@@ -54,18 +62,23 @@ const emit = defineEmits<{
   submit: [];
 }>();
 
-const slots = computed(() => pinSlots(props.pin.length));
+const slots = computed(() => (props.fixedDigits ? props.fixedDigits : pinSlots(props.pin.length)));
 // O campo recebe bolinhas, não os dígitos: o PIN não fica no DOM (nem como
 // `value` de um campo de senha), e a bolinha tem o tamanho do texto, não o do
 // disco minúsculo que o navegador desenha num campo de senha.
 const dots = computed(() => Array.from(props.pin, () => "●"));
 const fieldName = computed(() => props.label || "PIN");
 // O que o leitor de tela ouve a cada dígito: quantos já foram, e o mínimo.
-const spoken = computed(() =>
-  props.pin.length
+const spoken = computed(() => {
+  if (props.fixedDigits) {
+    return props.pin.length
+      ? `${props.pin.length} de ${props.fixedDigits} dígitos`
+      : `PIN de ${props.fixedDigits} dígitos`;
+  }
+  return props.pin.length
     ? `${props.pin.length} de no mínimo ${PIN_MIN_DIGITS} dígitos`
-    : `PIN de no mínimo ${PIN_MIN_DIGITS} dígitos`,
-);
+    : `PIN de no mínimo ${PIN_MIN_DIGITS} dígitos`;
+});
 
 // A recusa (PIN errado) se dispensa: no X, ou voltando a digitar.
 const errorDismissed = ref(false);
@@ -121,6 +134,16 @@ onMounted(() => {
   if (!props.keyboard || !root.value) return;
   frame = root.value.closest<HTMLElement>("[data-operator-lock], [role='dialog']") ?? root.value;
   frame.addEventListener("keydown", onKeydown);
+  // Cada passo da troca de PIN remonta esta peça, e o botão que levou até ele
+  // ("Continuar", "Trocar meu PIN") sai do DOM com o foco junto: o foco caía no
+  // `body`, fora da moldura, e o teclado físico não chegava aqui até alguém
+  // tocar num dígito (beta 05/11, PDV-25). Foco perdido volta para a moldura;
+  // foco que o operador pôs DENTRO dela é dele.
+  const active = document.activeElement as HTMLElement | null;
+  if (!active || active === document.body || !frame.contains(active)) {
+    if (!frame.hasAttribute("tabindex")) frame.setAttribute("tabindex", "-1");
+    frame.focus({ preventScroll: true });
+  }
 });
 onBeforeUnmount(() => {
   frame?.removeEventListener("keydown", onKeydown);
@@ -163,14 +186,20 @@ onBeforeUnmount(() => {
         data-operator-pin-field
       />
       <span class="sr-only" aria-live="polite">{{ spoken }}</span>
-      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar. -->
+      <!-- A recusa se dispensa no X, e some sozinha quando se volta a digitar.
+           Some sem devolver a altura (`invisible`): se o aviso saísse do fluxo,
+           o teclado subia no meio da digitação e o dedo seguinte caía na tecla
+           de cima (beta test de 05/11/2026: digitava 4 e saía 7). -->
       <NuxtAlert
-        v-if="showError"
+        v-if="error"
         color="error"
         variant="subtle"
         icon="i-lucide-circle-alert"
         :title="error"
+        :class="showError ? undefined : 'invisible'"
+        :aria-hidden="showError ? undefined : 'true'"
         close
+        data-operator-pin-error
         @update:open="errorDismissed = true"
       />
     </div>

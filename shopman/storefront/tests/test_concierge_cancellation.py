@@ -1,7 +1,8 @@
 """Cancelamento pela Concierge, conforme a etapa (dono, 03/10/2026).
 
 A Concierge cancela sozinha exatamente quando o próprio cliente poderia cancelar
-pelo site (``customer_orders.can_cancel``), pelo mesmo serviço, depois de um "sim".
+pelo site (``customer_orders.can_cancel``: antes do preparo, pago ou não), pelo
+mesmo serviço, depois de um "sim".
 Fora disso, a regra da casa R4: a equipe. O pedido registra quem cancelou e por quê.
 """
 
@@ -17,6 +18,7 @@ from shopman.orderman.models import Order
 from shopman.shop.models import Conversation, ConversationMessage
 from shopman.storefront.concierge import cancellation, service, tools
 from shopman.storefront.tests.test_concierge_engine import (  # noqa: F401  (fixtures)
+    CONCIERGE_SETTINGS,
     ScriptedClient,
     _accept_review,
     _binding,
@@ -52,7 +54,7 @@ def _turn(conversation, text: str, django_capture_on_commit_callbacks):  # noqa:
     _receive(conversation, text, f"cancel-{ConversationMessage.objects.count()}-{timezone.now().timestamp()}")
     with django_capture_on_commit_callbacks(execute=True):
         # Roteiro vazio: nenhum destes turnos pode chegar ao modelo.
-        return service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+        return service.run_turn(conversation.pk, _binding(conversation).pk)
 
 
 def test_within_the_window_she_asks_and_cancels_on_yes(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
@@ -131,20 +133,25 @@ def test_out_of_the_window_goes_to_the_team(placed, conversation, outbox, django
     assert cancellation.PENDING_FLAG not in (conversation.flags or {})
 
 
-def test_paid_order_is_not_self_cancellable_and_goes_to_the_team(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
-    # Pago: o site também não deixa o cliente cancelar (o estorno é decisão da equipe).
+def test_paid_order_before_preparation_is_cancelled_and_refunded(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
+    # Regra do dono (06/11/2026): antes do preparo, pago ou não, cancela e devolve.
+    # A Concierge segue a mesma régua do site.
     from shopman.shop.services import payment
 
     with django_capture_on_commit_callbacks(execute=True):
         assert payment.mock_confirm(placed)
     placed.refresh_from_db()
+    assert placed.status in {"new", "accepted"}
 
-    result = _turn(conversation, "Quero cancelar meu pedido", django_capture_on_commit_callbacks)
+    asked = _turn(conversation, "Quero cancelar meu pedido", django_capture_on_commit_callbacks)
+    assert not asked.handoff and asked.triage.answered_by == "self_cancel"
 
-    assert result.handoff and result.triage.escalated_by == "cancel_order"
+    done = _turn(conversation, "sim", django_capture_on_commit_callbacks)
+
+    assert not done.handoff
     placed.refresh_from_db()
-    assert placed.status != "cancelled"
-    assert not placed.events.filter(type="concierge_cancelled").exists()
+    assert placed.status == "cancelled"
+    assert "estorn" in outbox.sent[-1]
 
 
 def test_it_changed_stage_between_question_and_yes_so_the_team_takes_it(placed, conversation, outbox, django_capture_on_commit_callbacks):  # noqa: F811
@@ -208,12 +215,11 @@ def test_payment_line_says_only_what_the_system_did():
 def _plural_turn(conversation, text, reader, django_capture_on_commit_callbacks):  # noqa: F811
     from django.test import override_settings
 
-    from shopman.storefront.tests.test_concierge_intents import PLURAL_SETTINGS
 
     _receive(conversation, text, f"cancel-plural-{ConversationMessage.objects.count()}-{timezone.now().timestamp()}")
-    with override_settings(SHOPMAN_CONCIERGE=PLURAL_SETTINGS), django_capture_on_commit_callbacks(execute=True):
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS), django_capture_on_commit_callbacks(execute=True):
         return service.run_turn(
-            conversation.pk, _binding(conversation).pk, client=ScriptedClient(), intents_client=reader
+            conversation.pk, _binding(conversation).pk, intents_client=reader
         )
 
 

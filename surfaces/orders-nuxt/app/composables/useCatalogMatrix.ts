@@ -18,6 +18,10 @@ import type {
   AssistableField,
   BulkCell,
   BulkCellsResponse,
+  ProductSheet,
+  ProductSheetReceipt,
+  ProductSheetRowPatch,
+  ProductsDuplicateReceipt,
   CatalogMatrixProjection,
   CatalogMatrixResponse,
   CreateProductPayload,
@@ -25,8 +29,10 @@ import type {
   DuplicatePayload,
   DuplicateSnapshot,
   ImportPreview,
+  ImportReceipt,
   PhotoEnhanceResponse,
   ProductDetailPatch,
+  ProductArchiveReceipt,
   ProductDetailProjection,
   ProductDetailResponse,
   ProductDraft,
@@ -35,6 +41,7 @@ import type {
 } from "~/types/catalog";
 
 export interface CellPatch {
+  min_qty?: string;
   is_published?: boolean;
   is_sellable?: boolean;
   price_q?: number;
@@ -46,6 +53,7 @@ export type SocialPatch = Partial<Omit<ProductSocial, "has_data">>;
 export interface CatalogListOptions {
   /** Busca textual (nome/SKU) — filtrada no BANCO. */
   search?: Ref<string>;
+  period?: Readonly<Ref<{ date_from: string; date_to: string }>>;
   /** Página corrente (1-based). */
   page?: Ref<number>;
   /** Linhas por página (o servidor tem teto). */
@@ -61,17 +69,43 @@ export function useCatalogMatrix(
   list: CatalogListOptions = {},
 ) {
   const intentions = useOrderIntention();
-  const { data: operatorSession } =
-    useNuxtData<{ operator?: { id: number } }>("operator-session");
+  const { data: operatorSession } = useNuxtData<{ operator?: { id: number } }>(
+    "operator-session",
+  );
   const detailActions = new Map<string, Action>();
   const productConflicts = ref<Record<string, ProductEditConflict>>({});
   const productConflict = (sku: string) => productConflicts.value[sku] ?? null;
   function acknowledgeProductConflict(
     sku: string,
+    keepDraft = false,
   ): ProductDetailProjection | null {
     const conflict = productConflicts.value[sku];
     if (!conflict?.action) return null;
-    detailActions.set(sku, conflict.action);
+    const previous = detailActions.get(sku);
+    if (keepDraft && previous) {
+      const fresh = conflict.action.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      const prior = previous.payload_schema.base_revisions as Record<
+        string,
+        string
+      >;
+      detailActions.set(sku, {
+        ...previous,
+        payload_schema: {
+          ...previous.payload_schema,
+          base_revisions: {
+            ...prior,
+            ...Object.fromEntries(
+              conflict.conflicting_fields
+                .filter((field) => field in fresh)
+                .map((field) => [field, fresh[field]]),
+            ),
+          },
+        },
+      });
+    } else detailActions.set(sku, conflict.action);
     Reflect.deleteProperty(productConflicts.value, sku);
     clearError();
     return conflict.product;
@@ -85,16 +119,27 @@ export function useCatalogMatrix(
   const pageSize = list.pageSize ?? ref(50);
   const order = list.order ?? ref("name");
   const activeFilters = list.filters ?? ref<Record<string, string[]>>({});
+  const anyDate = computed(() => activeFilters.value.validity?.includes("any") ?? false);
+  const dateFrom = computed(() => anyDate.value ? undefined : list.period?.value.date_from || undefined);
+  const dateTo = computed(() => anyDate.value ? undefined : list.period?.value.date_to || undefined);
   // TODAS as facetas da FilterBar viram parâmetro do servidor. As listas vão
   // separadas por vírgula ou vazias (vazio = sem recorte, o servidor ignora).
-  const facet = (id: string) => computed(() => activeFilters.value[id]?.[0] ?? "");
+  const facet = (id: string) =>
+    computed(() => activeFilters.value[id]?.[0] ?? "");
+  const archived = facet("archived");
   const isPublished = facet("is_published");
   const isSellable = facet("is_sellable");
   const hasVocation = facet("has_vocation");
   const pimComplete = facet("pim_complete");
-  const surfaceFilter = computed(() => (activeFilters.value["surface"] ?? []).join(","));
-  const stockFilter = computed(() => (activeFilters.value["stock"] ?? []).join(","));
-  const syncFilter = computed(() => (activeFilters.value["sync_status"] ?? []).join(","));
+  const surfaceFilter = computed(() =>
+    (activeFilters.value["surface"] ?? []).join(","),
+  );
+  const stockFilter = computed(() =>
+    (activeFilters.value["stock"] ?? []).join(","),
+  );
+  const syncFilter = computed(() =>
+    (activeFilters.value["sync_status"] ?? []).join(","),
+  );
   const resourceKey = useOperatorResourceKey("catalog-matrix");
   const {
     data,
@@ -108,8 +153,12 @@ export function useCatalogMatrix(
         collection.value,
         search.value,
         order.value,
+        dateFrom.value,
+        dateTo.value,
+        anyDate.value,
         page.value,
         pageSize.value,
+        archived.value,
         isPublished.value,
         isSellable.value,
         hasVocation.value,
@@ -124,8 +173,11 @@ export function useCatalogMatrix(
       collection,
       q: search,
       order,
+      date_from: dateFrom,
+      date_to: dateTo,
       page,
       page_size: pageSize,
+      archived,
       is_published: isPublished,
       is_sellable: isSellable,
       has_vocation: hasVocation,
@@ -143,7 +195,9 @@ export function useCatalogMatrix(
     (value?.collection_ref ?? "") === collection.value &&
     (value?.matrix?.query ?? "") === search.value &&
     (value?.matrix?.page ?? 1) === page.value &&
-    (value?.matrix?.order ?? "name") === order.value;
+    (value?.matrix?.order ?? "name") === order.value &&
+    (!dateFrom.value || value?.matrix?.date_from === dateFrom.value) &&
+    (!dateTo.value || value?.matrix?.date_to === dateTo.value);
   const readMetadata = useReadMetadata(
     computed(() => (matchesScope(data.value) ? data.value : null)),
     error,
@@ -327,7 +381,10 @@ export function useCatalogMatrix(
       useSonner.success(`${count} item(ns) atualizado(s).`);
       return count;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(error, "Não deu para publicar as mudanças. Tente de novo.");
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não deu para publicar as mudanças. Tente de novo.",
+      );
       useSonner.error(errorMsg.value);
       return null;
     } finally {
@@ -514,14 +571,41 @@ export function useCatalogMatrix(
 
   async function fetchProductDetail(
     sku: string,
+    revisionFields?: string[],
   ): Promise<ProductDetailProjection | null> {
     clearError();
     try {
       const res = await $fetch<ProductDetailResponse>(
         `/api/v1/backstage/catalog/product/${encodeURIComponent(sku)}/`,
       );
-      if (res?.action) detailActions.set(sku, res.action);
-      Reflect.deleteProperty(productConflicts.value, sku);
+      if (res?.action) {
+        const previous = detailActions.get(sku);
+        if (revisionFields && previous) {
+          const fresh = res.action.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          const prior = previous.payload_schema.base_revisions as Record<
+            string,
+            string
+          >;
+          detailActions.set(sku, {
+            ...previous,
+            payload_schema: {
+              ...previous.payload_schema,
+              base_revisions: {
+                ...prior,
+                ...Object.fromEntries(
+                  revisionFields
+                    .filter((field) => field in fresh)
+                    .map((field) => [field, fresh[field]]),
+                ),
+              },
+            },
+          });
+        } else detailActions.set(sku, res.action);
+      }
+      if (!revisionFields) Reflect.deleteProperty(productConflicts.value, sku);
       return res?.product ?? null;
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao carregar o produto.");
@@ -722,7 +806,7 @@ export function useCatalogMatrix(
       );
       if (result.outcome !== "applied") {
         errorMsg.value =
-          "Resultado ainda desconhecido. O arraste foi mantido; consulte novamente.";
+          "Ainda não deu para confirmar se a nova ordem foi gravada. O arraste foi mantido; consulte de novo em instantes.";
         return false;
       }
       await refreshAfterCommit();
@@ -858,7 +942,9 @@ export function useCatalogMatrix(
   // responde 503 e o painel avisa: a capability é degradável.
   // ── tabelão: salvar o lote numa ida (fatia C) ──────────────────────────────
   // A intenção é a mesma das outras escritas; o lote inteiro vai num POST só.
-  async function saveCells(cells: BulkCell[]): Promise<BulkCellsResponse | null> {
+  async function saveCells(
+    cells: BulkCell[],
+  ): Promise<BulkCellsResponse | null> {
     const key = "catalog:cells";
     if (!cells.length || busy.value.has(key) || !canWrite()) return null;
     clearError();
@@ -872,7 +958,7 @@ export function useCatalogMatrix(
       method: "POST",
       idempotency: "required",
       payload_schema: {
-        base_revision: `catalog-batch-${Date.now()}` ,
+        base_revision: `catalog-batch-${Date.now()}`,
         expected_actor_id: operatorSession.value?.operator?.id ?? null,
       },
     } as unknown as Action;
@@ -886,17 +972,190 @@ export function useCatalogMatrix(
       await refreshAfterCommit();
       const body = result as unknown as BulkCellsResponse;
       const changed = body.applied?.length ?? 0;
-      if (body.conflicts?.length || body.errors?.length) {
-        errorMsg.value =
-          "Lote aplicado em parte. Confira as linhas marcadas antes de repetir.";
+      const failed =
+        (body.conflicts?.length ?? 0) + (body.errors?.length ?? 0);
+      if (failed) {
+        errorMsg.value = `${changed} ${changed === 1 ? "célula foi salva" : "células foram salvas"}. ${failed} ${failed === 1 ? "célula não foi salva" : "células não foram salvas"}; corrija as marcações no tabelão e salve novamente.`;
       } else {
-        useSonner.success(`${changed} célula(s) atualizada(s).`);
+        useSonner.success(
+          `${changed} ${changed === 1 ? "célula atualizada" : "células atualizadas"}.`,
+        );
       }
       return body;
     } catch (error) {
       errorMsg.value = httpErrorMessage(
         error,
         "Não foi possível salvar o lote. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  // ── tabelão de produtos: leitura própria, lote linha a linha e duplicar vários
+  function batchAction(ref: string, label: string) {
+    return {
+      ref,
+      kind: "mutation",
+      label,
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: `catalog-batch-${Date.now()}`,
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+  }
+
+  async function loadProductSheet(): Promise<ProductSheet | null> {
+    try {
+      return await $fetch<ProductSheet>(
+        "/api/v1/backstage/catalog/products/sheet/",
+      );
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível abrir o tabelão de produtos.",
+      );
+      return null;
+    }
+  }
+
+  async function saveProductRows(
+    rows: ProductSheetRowPatch[],
+  ): Promise<ProductSheetReceipt | null> {
+    const key = "catalog:product-sheet";
+    if (!rows.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/sheet/",
+        batchAction("edit-product-rows", "Salvar produtos"),
+        { rows } as unknown as Record<string, unknown>,
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as ProductSheetReceipt;
+      const changed = body.applied?.length ?? 0;
+      const failed = (body.conflicts?.length ?? 0) + (body.errors?.length ?? 0);
+      if (failed) {
+        errorMsg.value = `${changed} ${changed === 1 ? "produto foi salvo" : "produtos foram salvos"}. ${failed} ${failed === 1 ? "produto não foi salvo" : "produtos não foram salvos"}; corrija as linhas marcadas e salve novamente.`;
+      } else {
+        useSonner.success(
+          `${changed} ${changed === 1 ? "produto atualizado" : "produtos atualizados"}.`,
+        );
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível salvar os produtos. Tente de novo.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  async function duplicateProducts(
+    skus: string[],
+  ): Promise<ProductsDuplicateReceipt | null> {
+    const key = "catalog:products-duplicate";
+    if (!skus.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/duplicate/",
+        batchAction("duplicate-products", "Duplicar"),
+        { products: skus.map((sku) => ({ sku })) },
+      );
+      await refreshAfterCommit();
+      const body = result as unknown as ProductsDuplicateReceipt;
+      const made = body.applied?.length ?? 0;
+      if (body.errors?.length) {
+        errorMsg.value = `${made} ${made === 1 ? "cópia criada" : "cópias criadas"}. Não foi possível duplicar: ${body.errors.map((row) => `${row.sku} (${row.detail})`).join("; ")}.`;
+      } else {
+        useSonner.success(
+          `${made} ${made === 1 ? "cópia criada" : "cópias criadas"}. Elas nascem ocultas e fora de venda.`,
+        );
+      }
+      return body;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        "Não foi possível duplicar os produtos.",
+      );
+      useSonner.error(errorMsg.value);
+      return null;
+    } finally {
+      const next = new Set(busy.value);
+      next.delete(key);
+      busy.value = next;
+    }
+  }
+
+  async function setProductsActive(
+    products: { sku: string; base_is_active: boolean }[],
+    isActive: boolean,
+  ): Promise<ProductArchiveReceipt | null> {
+    const key = "catalog:products-active";
+    if (!products.length || busy.value.has(key) || !canWrite()) return null;
+    clearError();
+    busy.value = new Set(busy.value).add(key);
+    const action = {
+      ref: isActive ? "unarchive-products" : "archive-products",
+      kind: "mutation",
+      label: isActive ? "Desarquivar" : "Arquivar",
+      enabled: true,
+      reason: "",
+      method: "POST",
+      idempotency: "required",
+      payload_schema: {
+        base_revision: products
+          .map((product) => `${product.sku}:${Number(product.base_is_active)}`)
+          .join("|"),
+        expected_actor_id: operatorSession.value?.operator?.id ?? null,
+      },
+    } as unknown as Action;
+    try {
+      const result = await intentions.executePath(
+        key,
+        "/api/v1/backstage/catalog/products/archive/",
+        action,
+        { products, is_active: isActive },
+      );
+      await refreshAfterCommit();
+      const receipt = result as unknown as ProductArchiveReceipt;
+      if (receipt.conflicts.length || receipt.errors.length) {
+        errorMsg.value =
+          "Gesto aplicado em parte. Confira as linhas do recibo antes de repetir.";
+      } else {
+        const count = receipt.applied.filter((row) => row.changed).length;
+        useSonner.success(
+          isActive
+            ? `${count} produto(s) desarquivado(s).`
+            : `${count} produto(s) arquivado(s).`,
+        );
+      }
+      return receipt;
+    } catch (error) {
+      errorMsg.value = httpErrorMessage(
+        error,
+        isActive
+          ? "Não foi possível desarquivar os produtos."
+          : "Não foi possível arquivar os produtos.",
       );
       useSonner.error(errorMsg.value);
       return null;
@@ -925,7 +1184,7 @@ export function useCatalogMatrix(
   async function applyImport(
     csv: string,
     preview: ImportPreview,
-  ): Promise<ImportPreview | null> {
+  ): Promise<ImportReceipt | null> {
     const key = "catalog:product-import";
     if (busy.value.has(key) || !canWrite()) return null;
     clearError();
@@ -944,20 +1203,36 @@ export function useCatalogMatrix(
       },
     } as unknown as Action;
     try {
-      await intentions.executePath(
+      const receipt = (await intentions.executePath(
         key,
         "/api/v1/backstage/catalog/product/import/",
         action,
         { csv } as unknown as Record<string, unknown>,
-      );
+      )) as unknown as ImportReceipt;
+      if (
+        receipt.ok !== true ||
+        receipt.outcome !== "applied" ||
+        receipt.errors.length > 0
+      ) {
+        const first = receipt.errors[0];
+        errorMsg.value = first
+          ? `Nenhum produto foi importado. Confira a linha ${first.row}: ${first.detail}`
+          : "Nenhum produto foi importado. Revise a prévia e tente novamente.";
+        useSonner.error(errorMsg.value);
+        return null;
+      }
       await refreshAfterCommit();
       useSonner.success("Importação aplicada.");
-      return preview;
+      return receipt;
     } catch (error) {
-      errorMsg.value = httpErrorMessage(
-        error,
-        "Não foi possível aplicar o CSV.",
-      );
+      const refusedDetail =
+        error instanceof Error &&
+        error.message.startsWith("Nenhum produto foi importado.")
+          ? error.message
+          : "";
+      errorMsg.value =
+        refusedDetail ||
+        httpErrorMessage(error, "Não foi possível aplicar o CSV.");
       useSonner.error(errorMsg.value);
       return null;
     } finally {
@@ -1022,6 +1297,10 @@ export function useCatalogMatrix(
     enhancePhoto,
     uploadPhoto,
     saveCells,
+    loadProductSheet,
+    saveProductRows,
+    duplicateProducts,
+    setProductsActive,
     previewImport,
     applyImport,
   };

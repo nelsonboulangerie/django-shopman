@@ -13,7 +13,9 @@
 // - quem, a situação e o SALDO (quanto falta receber);
 // - os gestos (ENCOMENDAS-PDV-PLAN, WP-E3/E4/E6), em três alturas: o principal,
 //   **Receber e entregar** (ou só **Entregar**, quando já está paga), na largura
-//   inteira; os de uso médio (**Editar**, **Reagendar**, **Imprimir Via Pedido**)
+//   inteira. Receber abre a MESMA tela de Pagamento da venda, com o saldo como
+//   total (`PosPreorderBalancePayment`, EXCELENCIA-PDV WP-E5): gesto de dinheiro
+//   tem uma tela só (dono, 16/11/2026); os de uso médio (**Editar**, **Reagendar**, **Imprimir Via Pedido**)
 //   lado a lado; **Cancelar** separado, no pé. Cada um só quando o servidor diz
 //   que pode (`hand_over`, `edit`, `reschedule`, `cancel`). Quando não pode
 //   entregar, a tela diz por quê em vez de mostrar botão apagado. **Editar** abre
@@ -24,20 +26,39 @@
 // - o atalho **Comentar no histórico**, que leva ao campo do kit;
 // - uma etiqueta de estado só, a do balcão (P5 do dono, 02/10): o resumo do kit
 //   vem sem a etiqueta de status do pedido (`show-status`), que o Gestor mantém;
-// - os diálogos de cada gesto.
+// - os diálogos de cada gesto;
+// - a TROCA do item que falta (#2765): o "Trocar por <produto>" do diálogo
+//   "Resolver" do Gestor abre aqui com `?swap=<sku>`. O endereço leva só a
+//   intenção; as alternativas vêm do servidor, na hora (`usePosPreorderSwap`), e
+//   o foco vai para o item a trocar. Sem `swap`, ou com SKU fora do pedido, a
+//   página abre como sempre.
 import { toast } from "vue-sonner";
 
 import type { ManagerApproval } from "~/composables/usePosCashSession";
-import type { HandOverBody } from "~/presentation/preorderActions";
+import type { BalancePixStatus, HandOverBody } from "~/presentation/balanceCharge";
+import type { POSPaymentResultProjection } from "~/types/pos";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
-import { PREORDERS_HOME, preorderBackTarget } from "~/presentation/preorderDetail";
+import { orderUrl } from "~/presentation/crossAppLinks";
+import { PREORDERS_HOME, preorderBackTarget, promiseAlert } from "~/presentation/preorderDetail";
 import { handOverCta, redoNotice } from "~/presentation/preorderActions";
 import { customerLine, moneyLine, rowShowsSituation, situationTone } from "~/presentation/preorders";
 import { courierPanelVisible, showsDeliveryExitNotice } from "~/presentation/courier";
+import {
+  SWAP_LOAD_FAILED,
+  SWAP_RETRY,
+  queryWithoutSwap,
+  swapFocus,
+  swapSkusFromQuery,
+  swapUnsearchedTitle,
+} from "~/presentation/preorderSwap";
+import type { PreorderSwapItem, PreorderSwapOption } from "~/types/preorders";
+import type { OperatorScreenAlert } from "../../../../operator-kit/app/presentation/screenState";
 import { canComment, detailAction, toneBadge } from "../../../../operator-kit/app/presentation/orderDetail";
 import type { OperatorActionBarAction } from "../../../../operator-kit/app/presentation/actionBar";
+import type { OperatorHeaderAction } from "../../../../operator-kit/app/presentation/pageHeader";
 
 const route = useRoute();
+const router = useRouter();
 const ref_ = computed(() => String(route.params.ref || ""));
 
 useHead({ title: () => `Encomenda ${ref_.value}` });
@@ -47,6 +68,8 @@ const { pos, pending: posPending, refresh: refreshPos } = await usePosTerminal()
 const { detail, pending, error, refresh } = usePosPreorderDetail(ref_);
 const counter = computed(() => detail.value?.counter ?? null);
 const card = computed(() => counter.value?.card ?? null);
+const runtimeConfig = useRuntimeConfig();
+const ordersUrl = computed(() => orderUrl(String(runtimeConfig.public.ordersUrl || ""), ref_.value));
 const notFound = computed(() => !!error.value && httpError(error.value).status === 404);
 
 const tickets = usePosOrderTickets(pos);
@@ -58,7 +81,14 @@ async function printTicket() {
 // ── Os gestos ──
 const { operator: activeOperator } = useOperatorLock("cashman.operate_pos");
 const actions = usePosPreorderActions({ detail, pos, refresh });
-const handOverOpen = ref(false);
+// Recebendo o saldo: a tela de Pagamento toma o lugar do detalhe (Esc ou Voltar
+// devolvem o detalhe; entregue, o PDV volta à lista).
+const receiving = ref(false);
+const confirmDelivery = useConfirm();
+// O saldo em Pix no balcão (#2897): o QR da cobrança (formato da venda) e onde a
+// espera está. O Pix do balcão ainda pagável volta da leitura (`counter_pix`).
+const pixProof = ref<POSPaymentResultProjection | null>(null);
+const pixStatus = ref<BalancePixStatus>("idle");
 const cancelOpen = ref(false);
 const rescheduleOpen = ref(false);
 
@@ -67,7 +97,77 @@ const comment = ref("");
 const commentAllowed = computed(() => !!detail.value && canComment(detail.value));
 // O atalho do painel leva ao campo do histórico, que mora no fim do detalhe.
 const layout = useTemplateRef<HTMLElement>("layout");
-const { reveal } = useNextFocus();
+
+// ── A troca do item que falta (#2765) ──
+const swapSkus = computed(() => swapSkusFromQuery(route.query.swap));
+const swapper = usePosPreorderSwap({ ref: ref_, skus: swapSkus, refresh });
+const swapRead = computed(() => (swapSkus.value.length ? swapper.swap.value : null));
+const swapItems = computed<PreorderSwapItem[]>(() => swapRead.value?.items ?? []);
+const swapPick = ref<{ item: PreorderSwapItem; option: PreorderSwapOption } | null>(null);
+const swapDialogOpen = computed({
+  get: () => swapPick.value !== null,
+  set: (open: boolean) => { if (!open) swapPick.value = null; },
+});
+// O foco do momento: o primeiro item a trocar, quando a encomenda e a troca chegaram.
+const { reveal } = useNextFocus(() => (detail.value ? swapFocus(swapRead.value) : null));
+
+function pickSwap(item: PreorderSwapItem, option: PreorderSwapOption) {
+  swapPick.value = { item, option };
+}
+
+async function confirmSwap(managerApproval: ManagerApproval | null = null) {
+  const pick = swapPick.value;
+  if (!pick) return;
+  if (!(await swapper.confirm(pick.item, pick.option, managerApproval))) {
+    // Recusou (a alternativa deixou de caber, a encomenda mudou): a lista foi relida.
+    if (!swapper.managerChallenge.value) swapPick.value = null;
+    return;
+  }
+  swapPick.value = null;
+  // O item trocado sai do endereço: o bloco dele some, e recarregar não oferece de novo.
+  await router.replace({ query: queryWithoutSwap(route.query, pick.item.sku) as typeof route.query });
+}
+
+// Aviso na tela traz o botão que resolve a causa (padrão `alerts`).
+const swapAlerts = computed<OperatorScreenAlert[]>(() => {
+  if (!swapSkus.value.length) return [];
+  if (swapper.failed.value) {
+    return [{
+      id: "preorder-swap-failed", title: SWAP_LOAD_FAILED, color: "warning", icon: "i-lucide-wifi-off",
+      action: { label: SWAP_RETRY, onSelect: () => void swapper.load() },
+    }];
+  }
+  const read = swapRead.value;
+  if (!read) return [];
+  if (read.refusal) {
+    const c = counter.value;
+    const redo = !!c && !c.edit.allowed && c.edit.cancel_and_redo && c.cancel.allowed;
+    return [{
+      id: "preorder-swap-refused", title: read.refusal, color: "info", icon: "i-lucide-info",
+      ...(redo ? { action: { label: "Cancelar e refazer", onSelect: () => cancelAndRedo() } } : {}),
+    }];
+  }
+  if (read.items.some((item) => !item.searched)) {
+    return [{
+      id: "preorder-swap-unsearched", title: swapUnsearchedTitle(read.items), color: "warning", icon: "i-lucide-search-x",
+      action: { label: SWAP_RETRY, onSelect: () => void swapper.load() },
+    }];
+  }
+  return [];
+});
+// A promessa em risco (#2721 item 3): o mesmo fato do Gestor, no topo, com o botão
+// que resolve ("Resolver no Gestor"). O Gestor abre na janela certa: instalado, ele
+// tem janela própria; na aba, a mesma (quem decide é o kit).
+const { attrsFor: crossAppAttrs } = useOperatorAppLink();
+function openInOrders(href: string) {
+  const attrs = crossAppAttrs(href);
+  window.open(href, attrs.target, attrs.rel);
+}
+const promiseAlerts = computed<OperatorScreenAlert[]>(() => {
+  const alert = promiseAlert(detail.value?.promise, openInOrders);
+  return alert ? [alert] : [];
+});
+
 function goToComment() {
   reveal(() => layout.value?.querySelector<HTMLElement>("[data-order-comment] textarea"), { align: "center" });
 }
@@ -86,7 +186,10 @@ const redoAfterCancel = ref(false);
 
 function editOrder() {
   if (!detail.value) return;
-  void navigateTo({ path: "/", query: { edit: detail.value.ref } });
+  // A edição TROCA a página do detalhe no histórico (e a volta dela troca de novo):
+  // a ida e volta não empilha um segundo detalhe, e o "voltar" depois de entregar
+  // continua levando à lista de onde o operador veio.
+  void navigateTo({ path: "/", query: { edit: detail.value.ref } }, { replace: true });
 }
 
 function cancelAndRedo() {
@@ -102,15 +205,86 @@ const handOverBar = computed<OperatorActionBarAction | null>(() => {
     label: handOverCta(handOver),
     icon: handOver.needs_payment ? "i-lucide-hand-coins" : "i-lucide-package-check",
     disabled: actions.busy.value,
-    onSelect: () => { handOverOpen.value = true; },
+    onSelect: () => void startHandOver(),
   };
 });
 
-async function confirmHandOver(body: HandOverBody) {
-  const done = await actions.handOver(body);
-  // Entregou, ou o cliente acabou de pagar online (o aviso fica na página).
-  if (done || actions.paidOnline.value) handOverOpen.value = false;
+/**
+ * O gesto principal. Com saldo, a tela de Pagamento da venda, com o saldo como
+ * total. Já paga, não há dinheiro: uma pergunta, com o que entregar faz com a
+ * Cozinha quando ela ainda não deu o pronto.
+ */
+async function startHandOver() {
+  const handOver = counter.value?.hand_over;
+  if (!handOver?.allowed || actions.busy.value) return;
+  if (handOver.needs_payment) {
+    pixProof.value = handOver.counter_pix ?? null;
+    receiving.value = true;
+    return;
+  }
+  const customer = card.value ? customerLine(card.value) : "";
+  const confirmed = await confirmDelivery({
+    tone: "primary",
+    title: customer ? `Entregar a encomenda de ${customer}?` : "Entregar a encomenda?",
+    description: ["A encomenda já está paga.", handOver.kitchen_notice || ""].filter(Boolean).join(" "),
+    confirmLabel: "Entregar",
+    cancelLabel: "Voltar",
+  });
+  if (confirmed) await deliver({});
 }
+
+async function deliver(body: HandOverBody, changeQ = 0, pixQ = 0) {
+  if (await actions.handOver(body, changeQ, pixQ)) {
+    pixProof.value = null;
+    receiving.value = false;
+    // Entregue: a encomenda sai do balcão, e o PDV volta para o recorte de onde veio.
+    goBack();
+    return;
+  }
+  // O cliente acabou de pagar online: o detalhe avisa e oferece só Entregar.
+  if (actions.paidOnline.value) receiving.value = false;
+}
+
+// A leitura nova diz que não há mais o que receber aqui (outro balcão entregou, a
+// encomenda mudou de estado): a tela de Pagamento sai de cena. Com o Pix na tela,
+// o saldo zerar é o Pix entrando, e quem conduz é a espera dele.
+watch(() => [counter.value?.hand_over.allowed, counter.value?.hand_over.needs_payment] as const, ([allowed, needsPayment]) => {
+  if (receiving.value && !pixProof.value && !(allowed && needsPayment)) receiving.value = false;
+});
+
+/** O saldo vai em Pix: a cobrança Pix do pedido (ou outra, depois da que venceu). */
+async function requestPix() {
+  const proof = await actions.startPix();
+  if (proof) {
+    pixProof.value = proof;
+    return;
+  }
+  // O cliente acabou de pagar online: o detalhe avisa e oferece só Entregar.
+  if (actions.paidOnline.value) {
+    pixProof.value = null;
+    receiving.value = false;
+  }
+}
+
+/** O Pix entrou: a encomenda está paga, e a entrega é o "Entregar" de sempre. */
+async function deliverAfterPix(amountQ: number) {
+  await refresh();
+  await deliver({}, 0, amountQ);
+}
+
+// O Pix que não confirmou: o aviso no topo traz o botão que resolve.
+const pixAlerts = computed<OperatorScreenAlert[]>(() => (
+  receiving.value && pixProof.value && pixStatus.value === "expired"
+    ? [{
+      id: "preorder-pix-expired",
+      title: "O Pix não foi confirmado.",
+      description: "Gere outro Pix, ou receba em dinheiro ou cartão: receber cancela este Pix antes.",
+      color: "warning",
+      icon: "i-lucide-clock-alert",
+      action: { label: "Gerar outro Pix", onSelect: () => void requestPix() },
+    }]
+    : []
+));
 
 async function confirmCancel(
   choice: { reasonKey: string; internalNote: string },
@@ -132,7 +306,10 @@ async function confirmCancel(
       && !pos.value?.has_open_cash_session;
     toast.info(redoNotice(redo.redo, { needsOpenShift }));
     await navigateTo({ path: "/", query: { redo: ref_.value } });
+    return;
   }
+  // Cancelada, a encomenda sai do detalhe: volta para o recorte da lista.
+  goBack();
 }
 
 // O PIN do gerente sobe por cima do diálogo de cancelar; assinado, o mesmo
@@ -144,10 +321,54 @@ function signWithBadge(badge: string) {
   void confirmCancel(cancelChoice.value, { badge });
 }
 
+// No celular, a encomenda vem primeiro (cliente, recebimento, quando, produtos: a
+// ordem da casa) e os gestos de uso médio moram no ⋮ da linha do chão, com o
+// Cancelar separado no fim. O gesto principal é a ação na base. Na mesa e no tablet
+// o painel do Balcão segue com todos eles à vista.
+const compactOptions = computed<OperatorHeaderAction[]>(() => {
+  const c = counter.value;
+  if (!c || receiving.value) return [];
+  const busy = actions.busy.value;
+  const list: OperatorHeaderAction[] = [];
+  if (c.reschedule.allowed) {
+    list.push({ label: "Reagendar", icon: "i-lucide-calendar-clock", disabled: busy, onSelect: () => { rescheduleOpen.value = true; } });
+  }
+  list.push({
+    label: c.ticket_printed ? "Imprimir 2ª via" : "Imprimir Via Pedido",
+    icon: "i-lucide-printer",
+    disabled: !!tickets.printingRef.value || !tickets.hasPrinter.value,
+    reason: tickets.hasPrinter.value ? undefined : `${tickets.printerUnavailableReason.value} A Via Pedido sai no balcão que tem impressora.`,
+    onSelect: () => void printTicket(),
+  });
+  if (c.edit.allowed) {
+    list.push({ label: "Editar encomenda", icon: "i-lucide-pencil", disabled: busy, onSelect: () => void editOrder() });
+  } else if (c.edit.cancel_and_redo && c.cancel.allowed) {
+    list.push({ label: "Cancelar e refazer", icon: "i-lucide-rotate-ccw", disabled: busy, reason: c.edit.block_reason || undefined, onSelect: () => void cancelAndRedo() });
+  }
+  if (commentAllowed.value) {
+    list.push({ label: "Comentar no histórico", icon: "i-lucide-message-square-plus", onSelect: () => goToComment() });
+  }
+  if (c.cancel.allowed) {
+    list.push({
+      label: "Cancelar encomenda",
+      icon: "i-lucide-x",
+      color: "error",
+      disabled: busy,
+      onSelect: () => { redoAfterCancel.value = false; cancelOpen.value = true; },
+    });
+  }
+  return list;
+});
+
 // A volta respeita de onde o operador veio: o recorte da lista (modo, data,
 // filtros) mora na URL dela — `?back=` ou o histórico —, e só sem nenhum dos
 // dois a volta é a casa da seção.
 function goBack() {
+  if (receiving.value) {
+    pixProof.value = null;
+    receiving.value = false;
+    return;
+  }
   const target = preorderBackTarget(route.query.back);
   if (target) void navigateTo(target);
   else if (import.meta.client && window.history.length > 1) window.history.back();
@@ -156,9 +377,66 @@ function goBack() {
 </script>
 
 <template>
-  <PosPreordersShell :pos="pos" :pending="posPending || pending" wide @refresh="refreshPos(); refresh()">
-    <div class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
-      <div>
+  <PosPreordersShell
+    :pos="pos"
+    :pending="posPending || pending"
+    :title="`Encomenda ${ref_}`"
+    wide
+    :fill="receiving"
+    :compact-options="compactOptions"
+    :alerts="receiving ? pixAlerts : [...swapAlerts, ...promiseAlerts]"
+    @refresh="refreshPos(); refresh(); swapper.load()"
+  >
+    <!-- Celular: o voltar e a encomenda aberta na linha do chão (a identidade do
+         registro nunca some). -->
+    <template #compact-lead>
+      <NuxtButton
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-arrow-left"
+        square
+        class="size-11 shrink-0 justify-center"
+        :aria-label="receiving ? 'Voltar à encomenda' : 'Voltar às encomendas'"
+        data-compact-back
+        @click="goBack"
+      />
+    </template>
+    <template #compact-identity>
+      <p class="min-w-0 leading-tight" data-compact-identity-preorder>
+        <span class="block text-xs text-muted">Encomenda</span>
+        <span class="block break-all font-semibold">{{ ref_ }}</span>
+      </p>
+    </template>
+    <!-- RECEBENDO O SALDO: a tela de Pagamento da venda, inteira, no lugar do
+         detalhe. O voltar devolve o detalhe; Esc também. -->
+    <template v-if="receiving && detail && counter && card">
+      <div class="max-md:hidden">
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          label="Voltar à encomenda"
+          data-preorder-balance-back
+          @click="goBack"
+        />
+      </div>
+      <PosPreorderBalancePayment
+        class="md:min-h-0 md:flex-1"
+        :detail="detail"
+        :pos="pos"
+        :busy="actions.busy.value"
+        :operator-name="activeOperator?.name || ''"
+        :pix-proof="pixProof"
+        @back="goBack"
+        @submit="deliver"
+        @pix="requestPix"
+        @pix-paid="deliverAfterPix"
+        @pix-leave="pixProof = null"
+        @pix-status="(status: BalancePixStatus) => { pixStatus = status; }"
+      />
+    </template>
+    <div v-else class="mx-auto grid w-full max-w-3xl gap-4 lg:max-w-6xl">
+      <div class="max-md:hidden">
         <NuxtButton
           color="neutral"
           variant="ghost"
@@ -187,7 +465,7 @@ function goBack() {
         v-else-if="error"
         state="error"
         what="a encomenda"
-        :description="`${httpErrorMessage(error, '')} Confira a conexão e tente de novo.`.trim()"
+        :description="httpErrorRetryMessage(error)"
         @retry="refresh()"
       />
 
@@ -202,9 +480,9 @@ function goBack() {
             data-preorder-counter-panel
           >
             <!-- QUEM e QUANTO: o que o balcão lê primeiro ("vim buscar a encomenda
-                 da Ana"). O número e o canal já estão no resumo do pedido. -->
+                 da Ana"). O número da encomenda é o título da tela. -->
             <header class="grid min-w-0 gap-1" data-preorder-detail>
-              <h1 class="break-words text-lg font-semibold">{{ customerLine(card) }}</h1>
+              <h2 class="break-words text-lg font-semibold">{{ customerLine(card) }}</h2>
               <p class="flex flex-wrap items-center gap-2">
                 <!-- A mesma régua da linha da lista: a etiqueta só quando diz o que o
                      saldo não diz (Pronto, Saiu para entrega, Entregue). "A pagar",
@@ -241,7 +519,7 @@ function goBack() {
               :label="handOverCta(counter.hand_over)"
               :disabled="actions.busy.value"
               data-preorder-hand-over
-              @click="handOverOpen = true"
+              @click="startHandOver"
             />
             <NuxtAlert
               v-else-if="card.situation !== 'delivered' && showsDeliveryExitNotice(card, detail.courier)"
@@ -250,6 +528,16 @@ function goBack() {
               icon="i-lucide-info"
               :title="counter.hand_over.block_reason"
               data-preorder-hand-over-blocked
+            />
+
+            <NuxtButton
+              v-if="card.fulfillment_type === 'delivery' && card.payment_state === 'to_receive' && ordersUrl"
+              :to="ordersUrl"
+              external
+              variant="outline"
+              icon="i-lucide-arrow-up-right"
+              label="Conferir recebimento no Gestor"
+              data-preorder-payment-manager
             />
 
             <!-- O ENTREGADOR (TaOn), na encomenda de entrega da casa: o estado da
@@ -274,7 +562,7 @@ function goBack() {
 
             <!-- Os gestos de uso médio, lado a lado e menores que o principal: cada um
                  na largura do próprio rótulo, e o que não cabe desce de linha. -->
-            <div class="flex flex-wrap gap-2" data-preorder-actions>
+            <div class="flex flex-wrap gap-2 max-md:hidden" data-preorder-actions>
               <NuxtButton
                 v-if="counter.reschedule.allowed"
                 color="neutral"
@@ -325,10 +613,10 @@ function goBack() {
             </div>
             <p
               v-if="!counter.edit.allowed && counter.edit.cancel_and_redo && counter.cancel.allowed"
-              class="text-sm text-muted"
+              class="text-sm text-muted max-md:hidden"
               data-preorder-edit-blocked
             >{{ counter.edit.block_reason }}</p>
-            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted">
+            <p v-if="!tickets.hasPrinter.value" class="text-sm text-muted max-md:hidden">
               {{ tickets.printerUnavailableReason.value }} A Via Pedido sai no balcão que tem impressora.
             </p>
 
@@ -339,7 +627,7 @@ function goBack() {
               color="neutral"
               variant="ghost"
               block
-              class="min-h-11 justify-start"
+              class="min-h-11 justify-start max-md:hidden"
               icon="i-lucide-message-square-plus"
               label="Comentar no histórico"
               data-preorder-comment-shortcut
@@ -347,7 +635,7 @@ function goBack() {
             />
 
             <!-- CANCELAR fica separado, no pé, e sem destaque maior que o gesto seguro. -->
-            <div v-if="counter.cancel.allowed" class="border-t border-default pt-3" data-preorder-cancel-zone>
+            <div v-if="counter.cancel.allowed" class="border-t border-default pt-3 max-md:hidden" data-preorder-cancel-zone>
               <NuxtButton
                 color="error"
                 variant="ghost"
@@ -362,23 +650,26 @@ function goBack() {
             </div>
           </aside>
 
-          <OperatorOrderDetail
-            v-model:comment="comment"
-            class="min-w-0 lg:col-start-1 lg:row-start-1"
-            :order="detail"
-            :busy="actions.busy.value"
-            :show-status="false"
-            @comment="submitComment"
-          />
+          <div class="grid min-w-0 gap-4 lg:col-start-1 lg:row-start-1" data-preorder-main>
+            <PosPreorderSwap
+              v-if="swapItems.length"
+              :items="swapItems"
+              :busy="swapper.busy.value || actions.busy.value"
+              :can-reschedule="counter.reschedule.allowed"
+              @pick="pickSwap"
+              @reschedule="rescheduleOpen = true"
+            />
+            <OperatorOrderDetail
+              v-model:comment="comment"
+              class="min-w-0"
+              :order="detail"
+              :busy="actions.busy.value"
+              :show-status="false"
+              @comment="submitComment"
+            />
+          </div>
         </div>
 
-        <PosPreorderHandOverDialog
-          v-model:open="handOverOpen"
-          :hand-over="counter.hand_over"
-          :customer-name="customerLine(card)"
-          :busy="actions.busy.value"
-          @confirm="confirmHandOver"
-        />
         <PosPreorderRescheduleDialog
           v-model:open="rescheduleOpen"
           :customer-name="customerLine(card)"
@@ -392,13 +683,18 @@ function goBack() {
           v-model:open="cancelOpen"
           :customer-name="customerLine(card)"
           :requires-approval="counter.cancel.requires_approval"
+          :money-effect="detail.cancel_money_effect || ''"
           :cancel-reasons="detail.cancel_reasons"
           :busy="actions.busy.value"
           @confirm="(choice: { reasonKey: string; internalNote: string }) => confirmCancel(choice)"
         />
+        <!-- P1-6: o gerente assina VENDO O VALOR. A frase do dinheiro é a do
+             servidor (`cancel_money_effect`, a mesma do Gestor): quanto volta e por
+             onde ("R$ 93,00 em dinheiro ficam a devolver no caixa."). -->
         <OperatorManagerAuth
           :open="!!actions.managerChallenge.value"
-          action="cancel_sale"
+          action="cancel_order"
+          :detail="detail.cancel_money_effect || ''"
           :operator-name="activeOperator?.name || ''"
           :managers="detail.managers"
           :busy="actions.busy.value"
@@ -407,12 +703,31 @@ function goBack() {
           @authorize="signWithPin"
           @authorize-badge="signWithBadge"
         />
+        <PosPreorderSwapDialog
+          v-model:open="swapDialogOpen"
+          :item="swapPick?.item ?? null"
+          :option="swapPick?.option ?? null"
+          :busy="swapper.busy.value"
+          @confirm="confirmSwap()"
+        />
+        <OperatorManagerAuth
+          :open="!!swapper.managerChallenge.value"
+          action="order_edit_refund"
+          :amount-q="swapPick?.option.refund_q || null"
+          :operator-name="activeOperator?.name || ''"
+          :managers="detail.managers"
+          :busy="swapper.busy.value"
+          :error="swapper.managerChallenge.value?.code === 'manager_approval_invalid' ? swapper.managerChallenge.value.message : ''"
+          @update:open="(isOpen: boolean) => { if (!isOpen) swapper.dismissManagerChallenge(); }"
+          @authorize="(username: string, pin: string) => confirmSwap({ username, pin })"
+          @authorize-badge="(badge: string) => confirmSwap({ badge })"
+        />
       </template>
     </div>
 
     <!-- CELULAR: o gesto principal na base, ao alcance do polegar (a mesa o tem no
          painel do Balcão). -->
-    <template v-if="handOverBar" #footer>
+    <template v-if="handOverBar && !receiving" #footer>
       <OperatorActionBar
         :action="handOverBar"
         :context-label="card ? customerLine(card) : ''"

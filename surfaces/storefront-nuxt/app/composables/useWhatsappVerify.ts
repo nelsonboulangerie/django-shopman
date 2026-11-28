@@ -7,7 +7,14 @@ interface StartResponse {
   wa_number: string
   has_context?: boolean
   has_cart_context?: boolean
+  /** Onde a entrada acontece: no navegador que o botão da resposta abrir (celular), ou
+   *  nesta aba, depois do toque em "Liberar o Chrome no Windows" (computador). */
+  return_mode?: WhatsappReturnMode
+  /** O rótulo do botão da resposta, igual ao da mensagem. */
+  return_button?: string
 }
+
+export type WhatsappReturnMode = 'message_button' | 'release_this_tab'
 
 interface StoredStart extends StartResponse {
   saved_at: number
@@ -40,8 +47,9 @@ export type WhatsappStartStatus = 'idle' | 'loading' | 'ready' | 'unavailable' |
 /**
  * Login por WhatsApp (fluxo access-link): o `start` leve guarda o contexto do site
  * (sacola + destino) sob um código NB-XxXx e devolve o deep link pré-preenchido. Sem
- * SSE/bind — a identidade é o número que envia a mensagem. Ela libera a aba original,
- * consultada separadamente por `useWhatsappReturn`; o access link fica como reserva.
+ * SSE/bind — a identidade é o número que envia a mensagem. No celular, a entrada é
+ * pelo botão "Voltar à loja" da resposta; no computador, o botão da resposta libera a
+ * aba original, consultada separadamente por `useWhatsappReturn`.
  */
 export function useWhatsappVerify () {
   const apiPath = useShopmanApiPath()
@@ -53,6 +61,8 @@ export function useWhatsappVerify () {
   const deepLink = ref('')
   const waNumber = ref('')
   const hasCartContext = ref(false)
+  const returnMode = ref<WhatsappReturnMode>('message_button')
+  const returnButton = ref('')
   const status = ref<WhatsappStartStatus>('idle')
 
   // Se o Safari descartou a aba durante a ida ao WhatsApp, restaura exatamente a
@@ -66,6 +76,8 @@ export function useWhatsappVerify () {
       deepLink.value = stored.deep_link
       waNumber.value = stored.wa_number
       hasCartContext.value = Boolean(stored.has_cart_context || stored.has_context)
+      returnMode.value = stored.return_mode || 'message_button'
+      returnButton.value = stored.return_button || ''
       status.value = 'ready'
     }
   }
@@ -76,6 +88,8 @@ export function useWhatsappVerify () {
     deepLink.value = ''
     waNumber.value = ''
     hasCartContext.value = false
+    returnMode.value = 'message_button'
+    returnButton.value = ''
     status.value = 'idle'
     if (import.meta.client) writeStoredStart(null)
   }
@@ -105,6 +119,8 @@ export function useWhatsappVerify () {
       message.value = res.message || (res.code ? `#menu ${res.code}` : '')
       deepLink.value = res.deep_link
       waNumber.value = res.wa_number
+      returnMode.value = res.return_mode || 'message_button'
+      returnButton.value = res.return_button || ''
       status.value = 'ready'
       if (import.meta.client) {
         writeStoredStart({ ...res, message: message.value, saved_at: Date.now() })
@@ -115,5 +131,5 @@ export function useWhatsappVerify () {
     }
   }
 
-  return { code, message, deepLink, waNumber, hasCartContext, status, start, clear }
+  return { code, message, deepLink, waNumber, hasCartContext, returnMode, returnButton, status, start, clear }
 }

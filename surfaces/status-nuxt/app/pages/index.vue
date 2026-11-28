@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PublicIncident } from "~/types/status";
+import { formatDateClock } from "~/utils/clock";
 import { STATUS_COPY } from "~/utils/statusPresentation";
 
 const { snapshot, loading, refreshing, refresh } = usePublicStatus();
@@ -8,11 +9,7 @@ const { data: incidents } = await useFetch<PublicIncident[]>("/incidents.json", 
 const overall = computed(() => STATUS_COPY[snapshot.value.overall]);
 const checkedAt = computed(() => {
   if (!snapshot.value.observedAt) return "sem confirmação recente";
-  return new Intl.DateTimeFormat("pt-BR", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "America/Sao_Paulo",
-  }).format(new Date(snapshot.value.observedAt));
+  return formatDateClock(snapshot.value.observedAt, { dateStyle: "medium" }, { timeZone: "America/Sao_Paulo" });
 });
 
 useHead({
@@ -104,7 +101,7 @@ useHead({
       </section>
 
       <div class="mt-10 border-t border-border pt-6 text-base leading-7 text-muted-foreground">
-        <p>Esta página opera de forma independente do Shopman.</p>
+        <p>Esta página continua no ar mesmo quando a loja online está fora.</p>
         <a class="mt-2 inline-flex min-h-11 items-center font-medium text-primary underline underline-offset-4" href="mailto:ti@boulangerie.com.br">Falar com a equipe</a>
       </div>
     </main>

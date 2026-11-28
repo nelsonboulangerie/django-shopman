@@ -56,9 +56,15 @@ def create_operator_alert(
     debounce_minutes: int = 15,
     dedupe_key: str = "",
     respond_by=None,
+    stamp_dedupe: bool = True,
     **fields: Any,
 ):
-    """Create a debounced OperatorAlert and log the decision."""
+    """Create a debounced OperatorAlert and log the decision.
+
+    ``stamp_dedupe=False``: quem chama já garante um aviso por causa (guarda o ``pk``),
+    e a mensagem é só o que o operador lê. Nem o marcador "Dedupe:" vai para o texto, nem
+    o debounce por texto, que calaria a segunda pessoa com a mesma pergunta.
+    """
     message = str(message or "").strip()
     if not message:
         return None
@@ -69,7 +75,7 @@ def create_operator_alert(
     try:
         from shopman.shop.adapters import alert as alert_adapter
 
-        if alert_adapter.recent_exists(
+        if stamp_dedupe and alert_adapter.recent_exists(
             type,
             cutoff,
             message_contains=dedupe_text or None,
@@ -89,7 +95,7 @@ def create_operator_alert(
         alert = alert_adapter.create(
             type,
             severity,
-            _alert_message(message, dedupe_text=dedupe_text),
+            _alert_message(message, dedupe_text=dedupe_text) if stamp_dedupe else message,
             order_ref=order_ref,
             respond_by=respond_by,
         )
@@ -168,6 +174,26 @@ def record_webhook_failure(
     )
 
 
+def record_webhook_success(provider: str) -> int:
+    """Uma entrega do provedor deu certo: o ``webhook_failed`` dele deixa de ser verdade.
+
+    Fato do domínio, não relógio (#3096): o aviso de falha fica aberto até o mesmo
+    provedor voltar a entregar, e fecha aí, com o sistema como quem fechou. Nunca
+    levanta: a entrega que deu certo não pode cair por causa do aviso.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    try:
+        return alert_adapter.resolve_matching(
+            "webhook_failed",
+            message_contains=f"Webhook {provider} falhou (",
+            actor=f"sistema: webhook {provider} voltou a entregar",
+        )
+    except Exception:
+        logger.exception("observability.webhook_success_resolve_failed", extra={"provider": provider})
+        return 0
+
+
 #: Nome legível de cada integração externa nos alertas/notificações. Fallback é
 #: o próprio ``provider`` — um slug cru ainda é melhor que aviso nenhum.
 _INTEGRATION_PROVIDER_LABELS = {
@@ -218,6 +244,28 @@ def record_integration_failure(
             provider_label=label, operation=operation, detail=detail
         )
     return alert
+
+
+def record_integration_success(provider: str, operation: str = "") -> int:
+    """A integração respondeu: o ``integration_failed`` dela deixa de ser verdade (#3097).
+
+    Fecha os avisos abertos cujo marcador começa por ``<provider>:`` (ou
+    ``<provider>:<operation>:``). Fato do domínio, não relógio. Nunca levanta e só
+    escreve quando há aviso aberto: roda no caminho feliz de cada chamada.
+    """
+    from shopman.shop.adapters import alert as alert_adapter
+
+    marker = f"Dedupe: {provider}:" + (f"{operation}:" if operation else "")
+    try:
+        if alert_adapter.open_pk("integration_failed") is None:
+            return 0
+        label = _INTEGRATION_PROVIDER_LABELS.get(provider, provider)
+        return alert_adapter.resolve_matching(
+            "integration_failed", message_contains=marker, actor=f"sistema: {label} voltou a responder"
+        )
+    except Exception:
+        logger.exception("observability.integration_success_resolve_failed", extra={"provider": provider})
+        return 0
 
 
 def _notify_integration_failure_admins(*, provider_label: str, operation: str, detail: str) -> None:

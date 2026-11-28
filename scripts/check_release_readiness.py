@@ -363,8 +363,6 @@ def _alpha_profile_check() -> ReadinessCheck:
         warnings.append("SHOPMAN_EXPOSE_MOCK_CAPTURE=true")
     if mock_pix_auto_confirm:
         warnings.append("SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true")
-    if bool(getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False)):
-        warnings.append("SHOPMAN_EXPOSE_DEBUG_OTP=true")
     if bool(getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False)):
         warnings.append("SHOPMAN_STAGING_AUTOPILOT=true")
 
@@ -415,8 +413,6 @@ def _production_profile_check() -> ReadinessCheck:
         failures.append("remove_SHOPMAN_EXPOSE_MOCK_CAPTURE")
     if bool(getattr(settings, "SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False)):
         failures.append("remove_SHOPMAN_MOCK_PIX_AUTO_CONFIRM")
-    if bool(getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False)):
-        failures.append("remove_SHOPMAN_EXPOSE_DEBUG_OTP")
     if bool(getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False)):
         failures.append("remove_SHOPMAN_STAGING_AUTOPILOT")
 
@@ -955,7 +951,7 @@ def _alpha_waives_gateway_blocker(profile: ReadinessProfile, check) -> bool:
         return allow_mock and "payment_mock" in str(adapters.get("card") or "")
     if check.provider == "manychat":
         sender = str((getattr(settings, "DOORMAN", {}) or {}).get("MESSAGE_SENDER_CLASS") or "")
-        return bool(getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False)) or sender.endswith("LogSender")
+        return sender.endswith(("LogSender", "ConsoleSender"))
     return False
 
 

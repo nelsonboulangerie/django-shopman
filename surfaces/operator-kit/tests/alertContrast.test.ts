@@ -87,7 +87,14 @@ function alertColors(theme: Theme): Record<string, { text: string; background: s
 
 describe("aviso: a descrição é AA", () => {
   it("o tema leva a descrição à cor plena em todo aviso", () => {
-    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{\s*description:\s*"opacity-100"\s*\}/);
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*description:\s*"opacity-100"/);
+  });
+
+  it("botões que empilham ocupam a largura do aviso (dono, 27/10/2026)", () => {
+    // A régua é a tela: `@container` no aviso o encolhe a zero dentro de um popover.
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*root:\s*"max-sm:flex-wrap max-sm:items-start"/);
+    expect(appConfig).toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*actions:\s*"max-sm:basis-full max-sm:flex-col max-sm:items-stretch"/);
+    expect(appConfig).not.toMatch(/alert:\s*\{\s*slots:\s*\{[^}]*@container/);
   });
 
   it("o primary subtle escreve com a tinta do tema", () => {

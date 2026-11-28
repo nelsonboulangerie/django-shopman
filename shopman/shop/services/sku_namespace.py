@@ -93,7 +93,9 @@ def refuse_incoherent_unit(instance, *, other_model, this_label: str, other_labe
         if previous is not None and _normalize_sku(previous[0]) == sku and units_agree(previous[1], unit):
             return
 
-    other_unit = other_model.objects.filter(sku=sku).values_list("unit", flat=True).first()
+    # Sem diferenciar caixa: 'bich' e 'BICH' são o mesmo SKU para quem lê a
+    # etiqueta, e o cadastro em caixa trocada não pode escapar da trava (CMP-05).
+    other_unit = other_model.objects.filter(sku__iexact=sku).values_list("unit", flat=True).first()
     if other_unit is None or units_agree(unit, other_unit):
         return
 

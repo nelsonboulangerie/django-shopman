@@ -113,7 +113,7 @@ class TestMiseEnPlaceAggregation:
             mixer_loss_g_for,
         )
 
-        from shopman.backstage.projections.production import _preparation_measure
+        from shopman.backstage.projections.production import _preparation_measure, _scale_rounded
 
         massa = Recipe.objects.create(
             ref="massa",
@@ -158,8 +158,10 @@ class TestMiseEnPlaceAggregation:
 
         assert margin is not None
         assert projection.yield_margin_applied
-        assert line.quantity_display == _preparation_measure(Decimal("1") + margin.total, "kg")
-        assert line.margin_display == f"+ {_preparation_measure(margin.total, 'kg')} de margem"
+        # O alvo sobe à divisão da balança, como no ticket "Por preparo".
+        target = _scale_rounded(Decimal("1") + margin.total, "kg")
+        assert line.quantity_display == _preparation_measure(target, "kg")
+        assert line.margin_display == f"+ {_preparation_measure(target - Decimal('1'), 'kg')} de margem"
         assert "5 peças" in line.margin_reason
 
 
@@ -217,6 +219,7 @@ class TestMiseEnPlaceAvailability:
         assert massa_line.is_subrecipe
         assert massa_line.available_display == ""
         assert not massa_line.is_short
+        assert massa_line.missing_display == ""
 
     def test_with_stock_reading_annotates_and_flags_shortage(self, pao):
         from shopman.stockman import Position
@@ -232,6 +235,8 @@ class TestMiseEnPlaceAvailability:
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
         assert farinha.available_display == "3000 g"
         assert farinha.is_short
+        # A falta diz quanto (WP-F09b): precisa 10 kg, tem 3 kg.
+        assert farinha.missing_display == "7000 g"
         sal = next(line for line in projection.lines if line.sku == "SAL-REFINADO")
         assert not sal.available_display or sal.available_display == "0 g"
 
@@ -432,6 +437,8 @@ class TestMiseEnPlaceAPI:
         payload = resp.json()["mise_en_place"]
         assert payload["has_lines"]
         assert payload["lines"][0]["sku"] == "FARINHA"
+        # Quem não opera o Compras não recebe o atalho "Pedir no Compras".
+        assert payload["purchase_url"] == ""
 
     def test_endpoint_requires_permission(self):
         user = get_user_model().objects.create_user(username="nobody", password="x")

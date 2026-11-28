@@ -1,5 +1,7 @@
 import { fileURLToPath } from "node:url";
 
+import { OPERATOR_APPS } from "./appIdentity";
+
 // Nuxt layer compartilhado das superfícies de operador.
 //
 // Os apps (pos/orders/kds/production-nuxt + Central) fazem
@@ -80,6 +82,15 @@ export default defineNuxtConfig({
       );
       if (duplicate >= 0) imports.splice(duplicate, 1);
     },
+    // O trocador mostra o símbolo de cada app quando o PNG dele não carrega. O nome sai
+    // de `app-identity.json` em tempo de execução, então a varredura não o acha: entra no
+    // pacote do cliente aqui (fora dele, o ícone vinha vazio, medido em 02/11/2026).
+    "icon:clientBundleIcons": (bundle: Set<string>) => {
+      for (const app of Object.values(OPERATOR_APPS)) bundle.add(`lucide:${app.fallbackIcon}`);
+      // Os ícones dos motivos de cancelar a corrida moram como DADO em
+      // `presentation/courierCancel.ts` (Gestor e PDV, #2494): a varredura não os acha.
+      for (const name of ["ban", "user-x", "timer-off", "phone-off"]) bundle.add(`lucide:${name}`);
+    },
     // Catálogo vivo somente no harness explícito. Nenhum consumer publica esta
     // rota em produção, mesmo que estenda a layer inteira.
     ...(process.env.OPERATOR_KIT_CATALOG === "1"
@@ -129,6 +140,15 @@ export default defineNuxtConfig({
     transpile: ["vaul-vue"],
   },
 
+  // O artefato Nitro precisa carregar as dependências usadas pelo layer. Se elas
+  // ficam externas, o build aponta para o node_modules do operator-kit no runner
+  // ou produz uma cópia incompleta dentro de .output/server/node_modules.
+  nitro: {
+    externals: {
+      inline: ["@iconify/utils", "tailwind-variants"],
+    },
+  },
+
   runtimeConfig: {
     // Segredo que prova ao Django que a chamada veio deste BFF, para ele ler o IP
     // do operador um salto mais fundo no X-Forwarded-For (server/utils/djangoProxy.ts).
@@ -142,6 +162,11 @@ export default defineNuxtConfig({
     // Vazio = a identidade do app (`operatorPwa.app`), certo com um app por contêiner.
     operatorServiceName: "",
     public: {
+      // Faixa de homologação do iFood (DEV-2026-044, `IFoodHomologationBand`): o
+      // iFood exige data, hora e client_id do app de TESTE visíveis em todo vídeo
+      // de evidência. Vazia em qualquer ambiente de verdade; só o runtime local de
+      // teste a preenche (NUXT_PUBLIC_IFOOD_HOMOLOGATION_CLIENT_ID).
+      ifoodHomologationClientId: "",
       // URL da Central (a home) — o ícone do app no topo do OperatorRail leva
       // pra cá (padrão Odoo). Dev: hub-nuxt em :3001; prod: central.<zona> via env.
       operatorHubUrl: process.env.NUXT_PUBLIC_OPERATOR_HUB_URL || "http://127.0.0.1:3001/",

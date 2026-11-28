@@ -9,11 +9,14 @@
 // PRÉVIA (`KDS_MOCK_FIXTURE=preview`): toda requisição entra autenticada (sem cookie) e as
 // estação `bancada` (preparo) serve os quadros de previewFixtures.mjs, com
 // iniciar e Pronto mudando o quadro. Serve para VER os cards sem Django.
+// O cookie `e2e_kds=preview` liga os mesmos quadros só para aquela requisição (estado
+// próprio, à parte): a trava de sobreposição mede telas cheias sem trocar o modo do mock.
 import { createServer } from "node:http";
 import { createPreviewState } from "./previewFixtures.mjs";
 
 const port = Number(process.env.MOCK_PORT || 8798);
-const preview = process.env.KDS_MOCK_FIXTURE === "preview" ? createPreviewState() : null;
+const globalPreview = process.env.KDS_MOCK_FIXTURE === "preview" ? createPreviewState() : null;
+const cookiePreview = createPreviewState();
 
 // Uma identidade: `locked` é literalmente "não há operador". O mock dizia
 // `operator: null, locked: false` — combinação que o servidor não produz, e que
@@ -74,7 +77,9 @@ const server = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   res.setHeader("set-cookie", "csrftoken=e2e-mock; Path=/");
   const url = req.url || "";
-  const authed = Boolean(preview) || (req.headers.cookie || "").includes("e2e_session=authed");
+  const cookie = req.headers.cookie || "";
+  const preview = globalPreview || (cookie.includes("e2e_kds=preview") ? cookiePreview : null);
+  const authed = Boolean(preview) || cookie.includes("e2e_session=authed");
 
   // Público — sempre 200, com ou sem sessão de operador.
   if (req.method === "POST" && url.startsWith("/__mock/pickup-ready")) {

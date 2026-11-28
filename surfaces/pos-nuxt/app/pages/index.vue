@@ -8,16 +8,21 @@ import type { OperatorScreenAlert } from "../../../operator-kit/app/presentation
 import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { resolveAffordance } from "~/presentation/actions";
 import { openShiftGate, requiresOpenShiftForSale } from "~/presentation/cash";
+import { stationReadinessAlert } from "~/presentation/stationReadiness";
 import { ORDER_EDIT_CUSTOMER_LOCKED, ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED, orderEditTitle } from "~/presentation/orderEdit";
+import { addressDisplayLine, draftFromDeliveryState } from "~/presentation/address";
 import { wantsNewOrder } from "~/presentation/orderSetup";
+import { chosenSavedAddressValue } from "~/presentation/savedAddress";
 import { redoTabLabel } from "~/presentation/preorderActions";
 import type { PreorderRedoResponse } from "~/types/preorders";
 import type { PosSettingsResponse } from "~/types/settings";
 import { rollStyle } from "~/presentation/printGeometry";
-import { scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
-import { enterAdvances, paymentFailed, pixAwaiting } from "~/presentation/saleResult";
+import { firstFittingWindow, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import { enterAdvances, pendingPixBadge, saleResultBarTitle } from "~/presentation/saleResult";
 import { POS_SHORTCUT_GROUPS, POS_SHORTCUTS_DESCRIPTION } from "~/presentation/shortcuts";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
+import { kitchenBoundSkus, kitchenRoutedSkus } from "~/presentation/kitchen";
+import { overPlanSummary } from "~/presentation/payment";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
 // PosPaymentWorkspace). O chrome comum (login, lock, offline) vive no shell
@@ -45,14 +50,17 @@ const runtimeConfig = useRuntimeConfig();
 // subdomain from the POS — so the DANFE link must be ABSOLUTE to that host, not
 // relative to the POS origin.
 const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
-// Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
+// Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir o pedido no Gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 // Link de um app de operador para OUTRO: instalado, o destino tem janela
 // própria. Quem decide `target`/`rel` é o kit — nunca um `_blank` escrito à mão.
 const { attrsFor: crossAppAttrs } = useOperatorAppLink();
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
 
-const { pos, tabs, actions, pending, refresh, refreshTabs } = await usePosTerminal();
+const { pos, tabs, actions, station, pending, refresh, refreshTabs } = await usePosTerminal();
+// Sem caixa vinculado a este dispositivo, o total e a cobrança param no servidor: a
+// tela diz na chegada, com a porta para vincular (o mesmo assistente do primeiro uso).
+const stationSetupRequest = useStationSetupRequest();
 
 // MODO EDIÇÃO (WP-E6): `/?edit=<ref>` abre esta mesma tela como o editor da
 // encomenda — carrinho, grade, F7 e F8 —, com "Salvar alterações" no lugar do
@@ -100,6 +108,9 @@ const {
   completeOrderSetup,
   setSalesMode,
   openNewOrder,
+  releaseAbandonedTab,
+  openNextSale,
+  openNextFreeTab,
   itemCount,
   tabInput,
   busy,
@@ -114,12 +125,25 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  managerApproved,
+  managerApprovedBy,
+  managerCheckBusy,
+  checkManagerApproval,
+  gridProducts,
   customerFocusNonce,
   result,
   closeGuardNotice,
   restoreUncertainClose,
   acknowledgeUncertainClose,
-  pendingPixOrderRef,
+  recheckUncertainClose,
+  closeRecheckBusy,
+  closeRecheckApproval,
+  closeRecheckApprovalError,
+  dismissCloseRecheckApproval,
+  pendingPixOrderRefs,
+  reopenablePixOrderRefs,
+  reopenPendingPix,
+  restorePendingPix,
   pixStatus,
   checkoutMode,
   moveDialogOpen,
@@ -159,6 +183,7 @@ const {
   deliveryWindowLabel,
   deliveryDateEffective,
   scheduleToday,
+  planBySku,
   scheduleAvailableDates,
   scheduleBottleneckName,
   scheduleReadyAt,
@@ -199,10 +224,16 @@ const {
   restoreItem,
   setLineNotes,
   setLineDiscount,
+  discountPreview,
+  previewLineDiscount,
   requestTabAssociation,
   openTab,
   openTabFromDialog,
   applySavedAddress,
+  clearDeliveryAddress,
+  restoreDeliveryAddress,
+  canRestoreDeliveryAddress,
+  chooseFulfillment,
   lookupCustomer,
   resolveCustomer,
   customerDecision,
@@ -215,6 +246,7 @@ const {
   customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
+  customerSearchError,
   customerResolvedNew,
   pendingCustomerPrefs,
   applyCustomerPreference,
@@ -229,6 +261,7 @@ const {
   reviewFailureReason,
   saleReview,
   saleTotal,
+  saleBlockedReason,
   saleTotalPaused,
   submitSale,
   dismissResult,
@@ -277,7 +310,7 @@ async function startOrderEdit(ref: string) {
   const tab = await orderEdit.start(ref);
   if (!tab) {
     toast.error(editError.value);
-    await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+    await navigateTo(`/preorders/${encodeURIComponent(ref)}`, { replace: true });
     return;
   }
   await loadPreparedTab(tab);
@@ -301,10 +334,12 @@ async function openRedoTab(ref: string) {
   }
 }
 
-/** Abre a encomenda nova e limpa a URL (recarregar não abre outra comanda). */
+/** Abre a encomenda nova e limpa a URL (recarregar não abre outra comanda). Aberta,
+ *  o foco vai à etapa da vez do assistente ("Identificar cliente"), sem F6 nem Tab
+ *  (#2824): a confirmação não devolve o foco ao quadro, que sai da tela. */
 async function startNewOrder() {
   try {
-    await openNewOrder();
+    if (await openNewOrder()) focusOrderEntry();
   } finally {
     void router.replace({ path: "/", query: {} });
   }
@@ -338,7 +373,8 @@ async function leaveOrderEdit(ref: string) {
   // estava, no descarte).
   await clearCurrentTab();
   orderEdit.reset();
-  await navigateTo(`/preorders/${encodeURIComponent(ref)}`);
+  // Troca a edição pelo detalhe no histórico (a ida também trocou): ver `editOrder`.
+  await navigateTo(`/preorders/${encodeURIComponent(ref)}`, { replace: true });
 }
 
 function discardOrderEdit() {
@@ -369,6 +405,24 @@ function checkRecentSalesFromGuard() {
 watch(closeGuardNotice, (notice) => {
   if (!notice) uncertainCloseRecoveryOpen.value = false;
 });
+// "Conferir agora": reenvia a mesma venda com a mesma chave. Resolveu, o aviso some
+// sozinho; não resolveu, abre a caixa com a conferência manual.
+async function recheckFromGuard() {
+  const outcome = await recheckUncertainClose();
+  if (outcome === "unknown") openUncertainCloseRecovery();
+  // "approval": a venda pedia gerente e o PIN não ficou guardado (WP-E1). O
+  // diálogo dele abre sozinho (`closeRecheckApproval`), com o valor da venda.
+  if (outcome === "approval") uncertainCloseRecoveryOpen.value = false;
+}
+// PIN ou crachá (#2691): o mesmo carimbo, pela porta que o gerente usar.
+async function recheckWithManager(approval: ManagerApproval) {
+  const outcome = await recheckUncertainClose(approval);
+  if (outcome === "resolved") dismissCloseRecheckApproval();
+  if (outcome === "unknown") {
+    dismissCloseRecheckApproval();
+    openUncertainCloseRecovery();
+  }
+}
 async function confirmUncertainCloseRecovery() {
   if (!uncertainCloseReviewed.value || uncertainCloseRecoveryBusy.value) return;
   uncertainCloseRecoveryBusy.value = true;
@@ -402,11 +456,14 @@ const displaySources = { pos: () => pos.value, items: () => cart.items, review: 
 // de ociosidade enquanto o checkout está aberto ou um PIX segue aguardando —
 // travar no meio do pagamento derrubava o operador com o cliente na frente.
 const paymentHold = useState("pos-payment-hold", () => false);
+const pixBadge = computed(() => pendingPixBadge(pendingPixOrderRefs.value));
 watchEffect(() => {
   paymentHold.value = checkoutMode.value || pixStatus.value === "polling";
 });
 onBeforeUnmount(() => {
   paymentHold.value = false;
+  // A comanda nova que ficou sem item libera ao sair (PDV2-13).
+  void releaseAbandonedTab();
 });
 
 // RECARREGAR SOZINHO para entrar na versão nova é uma pergunta mais larga do que
@@ -439,15 +496,10 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 // Top context bar title (unified layout language, Arc 5): one band names the
 // current work-area screen across Board / Sale / Payment.
 const screenTitle = computed(() => {
-  // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
-  // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
-  // abaixo — e é a barra que fica na periferia da visão do operador. Mesma
-  // razão para o Pix pendente: o dinheiro ainda não entrou.
-  if (result.value) {
-    if (paymentFailed(result.value.payment)) return "Cobrança não criada";
-    if (result.value.salesMode === "order") return "Encomenda registrada";
-    return pixAwaiting(result.value.payment, pixStatus.value) ? "Aguardando Pix" : "Venda concluída";
-  }
+  // A barra do topo não pode discordar da tela (cobrança recusada, Pix
+  // pendente ou vencido): ela é a periferia da visão do operador, e deriva do
+  // mesmo título da tela de resultado (`saleResultBarTitle`).
+  if (result.value) return saleResultBarTitle(result.value.salesMode, result.value.payment, pixStatus.value);
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (editing.value) return orderEditTitle(editOrderRef.value);
   if (inSaleView.value) return cart.tabDisplay || "Venda";
@@ -470,7 +522,8 @@ const { printOne: printOrderTicket, printingRef: printingOrderRef } = usePosOrde
 async function fetchPrintable(orderRef: string, endpoint: "receipt-escpos") {
   return await $fetch<{ payload_b64: string; title: string }>(
     apiPath(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/${endpoint}/`),
-    { credentials: "include" },
+    // POST: compor é emitir a via, e o servidor carimba a primeira.
+    { method: "POST", credentials: "include" },
   );
 }
 
@@ -564,7 +617,7 @@ useHead({ htmlAttrs: { style: computed(() => rollStyle(pos.value)) } });
 // checkout, "/" focuses product search when not editing, "?" opens the help).
 const tabBoardRef = ref<{ focus: () => void } | null>(null);
 const productGridRef = ref<{ focusSearch: (seed?: string) => void } | null>(null);
-const orderEntryRef = ref<{ focusCurrent: () => void } | null>(null);
+const orderEntryRef = ref<{ focusCurrent: () => void; scheduleConfirmed: () => void } | null>(null);
 function focusOrderEntry() {
   if (orderSetupPending.value) void nextTick(() => orderEntryRef.value?.focusCurrent());
 }
@@ -572,39 +625,52 @@ const tabHeaderRef = ref<{ openCustomer: (seed?: string) => void; askRelease: ()
 
 // O Recebimento agora é perguntado na TELA DE VENDA (chip da barra e abertura da
 // comanda), não só no checkout. O estado mora aqui porque as duas superfícies
-// abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
+// abrem a MESMA caixa — o checkout tem o seu próprio, para o F8 continuar
 // funcionando lá dentro sem passar por cima desta.
 const fulfillmentSheetOpen = ref(false);
-// QUANDO — terceira caixa da barra, irmã de Cliente e Recebimento. Vive na tela
+// QUANDO — segunda caixa da barra, irmã de Cliente e Recebimento. Vive na tela
 // de venda porque agendar acontece na ABERTURA do atendimento (o operador está no
 // telefone), não no fim. O checkout abre a MESMA caixa.
 const scheduleSheetOpen = ref(false);
+// O "Quando" tem o seu próprio Confirmar: fechado, o assistente não pede outro
+// Continuar na etapa da data (`scheduleConfirmed`). Ele pode ter sido aberto de
+// dentro do Recebimento, e por isso a lembrança dura até os dois fecharem.
+let scheduleSheetWasUsed = false;
 watch([fulfillmentSheetOpen, scheduleSheetOpen], ([fulfillment, schedule]) => {
-  if (!fulfillment && !schedule) focusOrderEntry();
+  if (schedule) scheduleSheetWasUsed = true;
+  if (fulfillment || schedule) return;
+  if (scheduleSheetWasUsed) orderEntryRef.value?.scheduleConfirmed();
+  scheduleSheetWasUsed = false;
+  focusOrderEntry();
 });
 
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
-// da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
+// da tela de pagamento (mesmo componente, outro estado) — assim F8 e o chip
 // nunca abrem duas caixas diferentes.
-// NO BALCÃO os dois chips existem (v4: "Consumir aqui F7", "Agora F8") e são a
-// porta para a encomenda: entregar ou agendar É encomenda, então o gesto troca o
-// modo e abre a mesma pergunta já no modo certo. Se a troca for recusada (edição
-// de encomenda), nada abre.
+// NO BALCÃO o "Agora F7" é a porta para a encomenda: agendar É encomenda, então o
+// gesto troca o modo e abre a mesma pergunta já no modo certo. Se a troca for
+// recusada (edição de encomenda), nada abre. O recebimento do balcão são dois chips,
+// "Consumir aqui" e "Para levar" (#3193, opção A do dono), e o F8 troca entre eles:
+// a encomenda fica no seletor de modo.
 // "vai à cozinha" na linha nova (v4): para onde o roteamento real mandaria cada
 // produto (`kitchen_station` do catálogo, `services/kds.kitchen_routes_for_skus`).
-const kitchenStations = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {};
-  for (const product of pos.value?.products || []) {
-    if (product.kitchen_station) map[product.sku] = product.kitchen_station;
-  }
-  return map;
-});
-// PIX e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
+// Na comanda, o "Enviar" manda TUDO que tem estação (`fire_lines` sem `prep_only`),
+// então a linha e o Envio Auto/Manual leem o mapa inteiro.
+const kitchenStations = computed<Record<string, string>>(() => kitchenRoutedSkus(pos.value?.products || []));
+// Ao FINALIZAR é outra conta: na venda de balcão que o cliente leva agora, só o feito
+// na hora vai; o pão de vitrine já está na mão dele (beta 05/11, PDV-09). É a régua
+// de `order_helpers.is_counter_takeaway` (balcão e retirada).
+const checkoutKitchenStations = computed<Record<string, string>>(() =>
+  kitchenBoundSkus(pos.value?.products || [], {
+    counter: (cart.salesMode || "counter") === "counter" && cart.fulfillmentType !== "delivery",
+  }),
+);
+// Pix e Maquininha direto na folha (v4 tablet b): os meios que o PDV já tem,
 // lidos da projeção; um meio que o canal não oferece não aparece.
 const quickPayments = computed(() => {
   const methods = pos.value?.payment_methods || [];
   const out: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }> = [];
-  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "PIX", icon: "lucide:qr-code" });
+  if (methods.some((m) => m.ref === "pix")) out.push({ ref: "pix", label: "Pix", icon: "lucide:qr-code" });
   const card = methods.find((m) => m.ref === "credit") || methods.find((m) => m.ref === "card") || methods.find((m) => m.ref === "debit");
   if (card) out.push({ ref: card.ref, label: "Maquininha", icon: "lucide:credit-card" });
   // V6-CAIXA: o dinheiro recebido na mesa. A venda fecha aqui e vira o cartão
@@ -688,10 +754,20 @@ function leaveCounterThen(next: () => void) {
   requestSalesMode("order");
   if (cart.salesMode === "order") next();
 }
+// NA ENCOMENDA AINDA POR COMBINAR, o chip respeita o funil (cliente, para quando,
+// recebimento): quem pede o Recebimento sem cliente cai no cliente, e sem data
+// cai no "Quando", que vem antes (decisão do dono, 19/11/2026, #2754).
+function toggleCounterService() {
+  cart.counterService = cart.counterService === "to_go" ? "here" : "to_go";
+}
 function openFulfillmentHere() {
-  if (cart.salesMode === "counter") { leaveCounterThen(openFulfillmentHere); return; }
+  if (cart.salesMode === "counter") { toggleCounterService(); return; }
   if (orderSetupPending.value && orderSetupIssue.value === "customer") {
     tabHeaderRef.value?.openCustomer();
+    return;
+  }
+  if (orderSetupPending.value && orderSetupIssue.value === "schedule") {
+    openScheduleHere();
     return;
   }
   if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
@@ -734,8 +810,8 @@ watch(customerFocusNonce, () => {
 // `openFulfillmentHere`).
 function openScheduleHere() {
   if (cart.salesMode === "counter") { leaveCounterThen(openScheduleHere); return; }
-  if (orderSetupPending.value && ["customer", "fulfillment", "address"].includes(orderSetupIssue.value)) {
-    openFulfillmentHere();
+  if (orderSetupPending.value && orderSetupIssue.value === "customer") {
+    tabHeaderRef.value?.openCustomer();
     return;
   }
   // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
@@ -744,6 +820,45 @@ function openScheduleHere() {
   if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
   else scheduleSheetOpen.value = true;
 }
+// O ASSISTENTE DA ENCOMENDA pergunta no próprio cartão (P2-8): o dia e o horário
+// são o mesmo `PosSchedulePicker` do diálogo "Quando", com a mesma resposta da
+// agenda, e retirada ou entrega é um toque na etapa (`chooseFulfillment`). Na
+// entrega, o endereço padrão do cliente já vem marcado na lista da etapa do
+// endereço; só o endereço novo abre o formulário de entrega.
+const deliveryAddressState = computed(() => ({
+  route: cart.deliveryAddress,
+  streetNumber: cart.deliveryStreetNumber,
+  neighborhood: cart.deliveryNeighborhood,
+  complement: cart.deliveryComplement,
+  instructions: cart.deliveryInstructions,
+  structured: cart.deliveryAddressStructured,
+}));
+const savedAddresses = computed(() => customerLookup.value?.saved_addresses || []);
+/** Qual endereço do cadastro é o desta entrega ("" quando nenhum). */
+const chosenSavedAddress = computed(() => chosenSavedAddressValue(savedAddresses.value, deliveryAddressState.value));
+/** O endereço desta entrega numa linha ("" enquanto não há). */
+const deliveryAddressSummary = computed(() =>
+  (cart.deliveryAddress.trim() ? addressDisplayLine(draftFromDeliveryState(deliveryAddressState.value)) : ""));
+// Tirar e devolver o endereço NO ASSISTENTE: o botão tocado some com o gesto, e o
+// foco segue para a etapa (a lista de endereços, ou "Informar endereço").
+function clearAddressInOrderEntry() {
+  clearDeliveryAddress();
+  focusOrderEntry();
+}
+function restoreAddressInOrderEntry() {
+  restoreDeliveryAddress();
+  focusOrderEntry();
+}
+const orderEntrySchedule = computed(() => ({
+  today: scheduleToday.value,
+  availableDates: scheduleAvailableDates.value,
+  maxDate: scheduleMaxDate.value,
+  windows: deliverySlots.value,
+  bottleneckName: scheduleBottleneckName.value,
+  readyAt: scheduleReadyAt.value,
+  pending: deliverySlotsPending.value,
+  failed: scheduleFailed.value,
+}));
 // O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
 // campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
 // parecer que falta preencher alguma coisa.
@@ -790,7 +905,7 @@ const fulfillmentChipLabel = computed(() => {
 // A BARRA DO TOPO da venda é a da suíte (`OperatorPageHeader`, fase 2): o título da
 // tela, o ao vivo e os estados da venda na segunda linha, e as ações como dados no ⋯
 // "Mais ações" (no celular, Últimas vendas ganha a vaga de ícone). A barra da venda
-// (cliente F6, recebimento F7, quando F8) é a carta branca do PDV: ocupa o lugar da
+// (cliente F6, quando F7, recebimento F8) é a carta branca do PDV: ocupa o lugar da
 // toolbar enquanto a comanda está aberta (`#below`).
 const saleHeaderTitle = computed(() => (inSaleView.value && !checkoutMode.value && !editing.value && !result.value ? "Venda" : screenTitle.value));
 const saleOpen = computed(() => inSaleView.value && !checkoutMode.value && !result.value);
@@ -806,19 +921,28 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
         onSelect: () => requestSalesMode(toOrder ? "order" : "counter"),
       });
     }
+    // Na ordem da barra e das teclas: quando (F7), depois recebimento (F8).
     list.push(
-      {
-        label: cart.salesMode === "order" ? `Recebimento: ${fulfillmentChipLabel.value}` : "Consumir aqui (entregar vira encomenda)",
-        icon: cart.salesMode === "order" ? "i-lucide-store" : "i-lucide-utensils",
-        kbds: ["F7"],
-        onSelect: () => openFulfillmentHere(),
-      },
       {
         label: cart.salesMode === "order" ? `Quando: ${scheduleChipLabel.value}` : "Agendar (vira encomenda)",
         icon: "i-lucide-clock",
-        kbds: ["F8"],
+        kbds: ["F7"],
         onSelect: () => openScheduleHere(),
       },
+      cart.salesMode === "order"
+        ? {
+            label: `Recebimento: ${fulfillmentChipLabel.value}`,
+            icon: "i-lucide-store",
+            kbds: ["F8"],
+            onSelect: () => openFulfillmentHere(),
+          }
+        : {
+            // O balcão troca entre os dois (#3193): o item diz para onde vai.
+            label: cart.counterService === "to_go" ? "Cliente vai consumir aqui" : "Cliente vai levar",
+            icon: cart.counterService === "to_go" ? "i-lucide-utensils" : "i-lucide-shopping-bag",
+            kbds: ["F8"],
+            onSelect: () => toggleCounterService(),
+          },
     );
   }
   list.push({ label: "Últimas vendas", icon: "i-lucide-history", priority: 1, onSelect: () => { recentSalesOpen.value = true; } });
@@ -826,8 +950,10 @@ const headerActions = computed<OperatorHeaderAction[]>(() => {
   // "Liberar comanda" mora no "Comanda ⋯" do cabeçalho da coluna (uma porta por gesto).
   return list;
 });
+// A linha do chão no celular: as MESMAS ações do ⋯ do cabeçalho, no ⋮ dela.
+const compactOptions = computed(() => headerActions.value.map(({ priority: _p, ...action }) => action));
 // A VENDA SEM CONEXÃO: a fila de vendas guardadas e a lista que o aviso abre.
-const offlineSales = usePosOfflineSales();
+const offlineSales = usePosOfflineSales({ saleEnabled: () => pos.value?.offline_sale_enabled === true });
 const offlineSalesOpen = ref(false);
 
 // Avisos da tela no lugar da suíte (`alerts` do cabeçalho), cada um com a saída.
@@ -841,11 +967,16 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       color: "error",
       title: guard.title,
       description: guard.body,
-      action: hasExits
-        ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
-        : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
+      action: guard.canRecheck
+        ? { label: closeRecheckBusy.value ? "Conferindo…" : "Conferir agora", onSelect: () => void recheckFromGuard() }
+        : hasExits
+          ? { label: "Conferir a venda", onSelect: () => openUncertainCloseRecovery() }
+          : { label: "Conferir últimas vendas", onSelect: () => { recentSalesOpen.value = true; } },
     });
   }
+  // `station?`: as telas de teste que simulam o terminal não trazem a leitura nova.
+  const stationAlert = stationReadinessAlert(station?.value, stationSetupRequest.request);
+  if (stationAlert) list.push(stationAlert);
   // Depois da trava contra cobrança dupla, que é a mais grave.
   const offline = offlineSales.alert.value;
   if (offline) {
@@ -855,7 +986,9 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       icon: offline.color === "warning" ? "i-lucide-wifi-off" : undefined,
       title: offline.title,
       description: offline.description,
-      action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } },
+      ...(offline.actionLabel
+        ? { action: { label: offline.actionLabel, onSelect: () => { offlineSalesOpen.value = true; } } }
+        : {}),
     });
   }
   if (inSaleView.value && tabConflict.value) {
@@ -865,6 +998,20 @@ const screenAlerts = computed<OperatorScreenAlert[]>(() => {
       title: "A comanda mudou em outro dispositivo.",
       description: "Confira antes de salvar. Atualizar descarta as suas alterações.",
       action: { label: "Descartar minhas alterações e atualizar", onSelect: () => { if (!busy.value) void reloadConflictingTab(); } },
+    });
+  }
+  // O horário escolhido deixou de caber quando um item entrou (PDV2-09): o aviso
+  // diz na hora, com o primeiro horário que cabe a um toque. Antes, só o chip
+  // ficava vermelho e o motivo aparecia no Pagamento.
+  if (inSaleView.value && !checkoutMode.value && scheduleConflictReason.value) {
+    const fit = firstFittingWindow(deliverySlots.value, cart.deliveryTimeSlot);
+    list.push({
+      id: "schedule-conflict",
+      color: "warning",
+      title: scheduleConflictReason.value,
+      action: fit
+        ? { label: `Mudar para ${fit.label}`, onSelect: () => { cart.deliveryTimeSlot = fit.ref; } }
+        : { label: "Escolher outro dia", onSelect: () => openScheduleHere() },
     });
   }
   if (inSaleView.value && editing.value) {
@@ -922,9 +1069,23 @@ async function gotoTabInput() {
   tabBoardRef.value?.focus();
 }
 
-// Sai da tela de resultado para o quadro de comandas — o CTA "Nova venda", o
-// F2 e o Enter passam todos por aqui (PIX pendente vira chip no composable).
+// Sai da tela de resultado direto para a GRADE da próxima comanda livre, com o
+// foco na busca de produto (WP-E8, D5): o CTA "Nova venda", o F2 e o Enter da
+// venda passam todos por aqui (PIX pendente vira chip no composable). Sem comanda
+// livre, ou com a gaveta pedindo conferência, cai no quadro, como antes.
 async function startNextSale() {
+  if (await openNextSale()) {
+    await nextTick();
+    productGridRef.value?.focusSearch();
+    return;
+  }
+  await nextTick();
+  tabBoardRef.value?.focus();
+}
+
+// Sai da tela de resultado para o QUADRO: o "Voltar às comandas" da encomenda (e o
+// F2 dela) e o fim da contagem. Nenhum dos dois abre comanda.
+async function leaveResultToTabs() {
   dismissResult();
   await nextTick();
   tabBoardRef.value?.focus();
@@ -934,7 +1095,7 @@ async function startNextSale() {
 // comanda livre já no modo Encomendas, o mesmo gesto da seção Encomendas.
 async function startNextOrder() {
   dismissResult();
-  await openNewOrder();
+  if (await openNewOrder()) focusOrderEntry();
 }
 
 // "Ver a nota" na tela de resultado: só para quem o servidor deixa.
@@ -970,7 +1131,9 @@ function onGlobalKeydown(event: KeyboardEvent) {
   if (result.value) {
     if (event.key === "F2") {
       event.preventDefault();
-      startNextSale();
+      // Na encomenda o F2 é o "Voltar às comandas" da tela; na venda, "Nova venda".
+      if (result.value.salesMode === "order") leaveResultToTabs();
+      else startNextSale();
       return;
     }
     if (
@@ -1102,12 +1265,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     // ── F6·F7·F8 — OS TRÊS FATOS DO PEDIDO, na ordem dos chips da barra ──
     //
-    // Quem compra · como recebe · quando quer. É a ordem da conversa do balcão,
-    // é a ordem em que os três aparecem no topo da tela, e agora é a ordem das
-    // teclas. O "Quando" era o único dos três sem tecla — nasceu depois dos
-    // outros dois e ficou órfão —, então ele entra no F8 e as duas ações do
-    // checkout (desconto, CPF) andam uma casa. Pré-go-live, ninguém decorou
-    // nada, e o dicionário (tecla `?`) é quem ensina.
+    // Quem compra · quando quer · como recebe. É a ordem do funil da encomenda
+    // (decisão do dono, 19/11/2026, #2754: "pra quando" vem em segundo, porque
+    // diz respeito à disponibilidade), é a ordem em que os três aparecem no topo
+    // da tela, e a tecla acompanha a POSIÇÃO: F6 cliente, F7 quando, F8
+    // recebimento. Pré-go-live, ninguém decorou nada, e o dicionário (tecla `?`)
+    // é quem ensina.
     //
     // Os três valem na VENDA também: são fatos decididos na abertura do
     // atendimento, revistos de relance daí em diante — não são assunto do
@@ -1115,12 +1278,12 @@ function onGlobalKeydown(event: KeyboardEvent) {
     case "F7":
       if (!inSaleView.value) return;
       event.preventDefault();
-      openFulfillmentHere();
+      openScheduleHere();
       return;
     case "F8":
       if (!inSaleView.value) return;
       event.preventDefault();
-      openScheduleHere();
+      openFulfillmentHere();
       return;
     // ── F9·F10 — AS DUAS AÇÕES DA TELA EM QUE SE ESTÁ ───────────────────
     //
@@ -1174,6 +1337,7 @@ onMounted(() => {
   else if (redoRef) void openRedoTab(redoRef);
   else if (newOrder) void startNewOrder();
   void restoreUncertainClose();
+  restorePendingPix();
   window.addEventListener("storage", restoreUncertainCloseFromStorage);
   window.addEventListener("keydown", onGlobalKeydown);
 });
@@ -1184,7 +1348,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen>
+  <main class="flex min-h-0 flex-1 flex-col" data-pos-sale-screen data-compact-page>
     <!-- A COMANDA OCUPA A ALTURA INTEIRA (dono, 10/10, exceção do PDV): na mesa, a
          coluna da direita vai de cima a baixo como a barra lateral, e o cabeçalho, a
          barra da venda e os filtros moram só na largura entre as duas. Abaixo do `lg`
@@ -1204,6 +1368,53 @@ onBeforeUnmount(() => {
       data-pos-sale-layout
     >
     <div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-pos-work-column>
+      <!-- No celular, a linha do chão (modelo de navegação): o selo troca de seção, e na
+           venda o voltar toma o lugar dele. "Não salvo" e o Pix seguem à vista na linha,
+           nunca dentro do ⋮. A barra da venda e os avisos são os do cabeçalho abaixo. -->
+      <PosCompactBar
+        v-if="pos"
+        :title="saleHeaderTitle"
+        search-button-label="Buscar pedido, cliente, produto ou tela"
+        :options="compactOptions"
+      >
+        <template v-if="inSaleView && !editing && !result" #lead>
+          <NuxtButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-arrow-left"
+            square
+            class="size-11 shrink-0 justify-center"
+            :aria-label="checkoutMode ? 'Voltar à comanda' : 'Voltar para comandas'"
+            data-compact-back
+            @click="checkoutMode ? (checkoutMode = false) : goToTabs()"
+          />
+        </template>
+        <template v-if="inSaleView || editing || result || pixBadge" #identity>
+          <div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 leading-tight" data-compact-identity-sale>
+            <span
+              v-if="inSaleView || editing || result"
+              class="min-w-0 truncate font-semibold"
+              :class="(inSaleView && !checkoutMode && unsaved) || pixBadge ? 'sr-only' : ''"
+            >{{ checkoutMode ? "Pagamento" : saleHeaderTitle }}</span>
+            <NuxtBadge
+              v-if="inSaleView && !checkoutMode && unsaved"
+              color="warning"
+              icon="i-lucide-cloud-off"
+              label="Não salvo"
+              role="status"
+              :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
+              data-compact-unsaved
+            />
+            <PosPendingPixBadge
+              v-if="pixBadge"
+              :badge="pixBadge"
+              :reopenable="reopenablePixOrderRefs"
+              data-compact-pix
+              @reopen="reopenPendingPix"
+            />
+          </div>
+        </template>
+      </PosCompactBar>
       <OperatorPageHeader
         v-if="pos"
         :title="saleHeaderTitle"
@@ -1247,16 +1458,16 @@ onBeforeUnmount(() => {
             :title="tabConflict ? 'A comanda mudou em outro dispositivo. Confira antes de salvar.' : 'A comanda não foi salva. Tentando de novo.'"
             data-pos-unsaved
           />
-          <!-- PIX pendente que saiu da tela de resultado: o selo segue, com o polling por
-               baixo até resolver ou expirar (aí vira aviso passageiro). -->
-          <NuxtBadge
-            v-if="pendingPixOrderRef"
-            color="info"
-            icon="i-lucide-loader-circle"
-            role="status"
-            :title="`Pix do pedido ${pendingPixOrderRef} aguardando confirmação`"
+          <!-- PIX abertos fora da tela de resultado (um ou vários, e também depois de
+               recarregar): o selo segue, com o acompanhamento por baixo até cada um
+               resolver ou expirar (aí vira aviso passageiro). -->
+          <PosPendingPixBadge
+            v-if="pixBadge"
+            :badge="pixBadge"
+            :reopenable="reopenablePixOrderRefs"
             data-pos-pix-pending
-          >Pix aguardando · {{ pendingPixOrderRef }}</NuxtBadge>
+            @reopen="reopenPendingPix"
+          />
         </template>
         <!-- A BARRA DA VENDA (carta branca do PDV, WP-FASE2 §7): cliente, recebimento e
              quando, os fatos do PEDIDO, no lugar da toolbar enquanto a comanda está aberta,
@@ -1287,19 +1498,25 @@ onBeforeUnmount(() => {
               :lookup-busy="lookupBusy"
               :search-results="customerSearchResults"
               :search-busy="customerSearchBusy"
+              :search-error="customerSearchError"
               :customer-resolved-new="customerResolvedNew"
               :new-customer-prefs="pendingCustomerPrefs"
               :customer-decision="customerDecision"
               :customer-merge-busy="customerMergeBusy"
               :customer-release-busy="customerReleaseBusy"
               :read-only="checkoutMode"
+              :tab-max-length="tabMaxLength"
+              :tab-disallowed-chars="tabDisallowedChars"
               :fulfillment-type="cart.fulfillmentType"
+              :counter-service="cart.counterService"
               :fulfillment-label="fulfillmentChipLabel"
               :schedule-label="scheduleChipLabel"
               :scheduled="scheduleChipActive"
               :has-fired-items="cart.items.some((item) => item.fired)"
               :customer-required="customerRequiredForSchedule"
               :customer-locked-reason="editing ? ORDER_EDIT_CUSTOMER_LOCKED : undefined"
+              :hide-title="editing"
+              :hide-sales-modes="editing"
               :schedule-conflict="scheduleChipConflict"
               :schedule-conflict-reason="scheduleConflictReason"
               :loading="busy"
@@ -1322,6 +1539,7 @@ onBeforeUnmount(() => {
               @apply-preference="applyCustomerPreference"
               @repeat-customer-last-order="repeatCustomerLastOrder"
               @open-fulfillment="openFulfillmentHere"
+              @counter-service-change="cart.counterService = $event"
               @open-schedule="openScheduleHere"
               @open-customer="paymentWorkspaceRef?.openCustomer()"
             />
@@ -1362,6 +1580,7 @@ onBeforeUnmount(() => {
           :resending-link="resendingLink"
           :printing-ticket="Boolean(printingOrderRef)"
           @new-sale="startNextSale"
+          @to-tabs="leaveResultToTabs"
           @new-order="startNextOrder"
           @print-ticket="printOrderTicket(result.orderRef)"
           @print-receipt="printReceipt"
@@ -1388,14 +1607,20 @@ onBeforeUnmount(() => {
       <div v-else-if="checkoutMode" class="h-full md:overflow-y-auto">
       <PosPaymentWorkspace
         ref="paymentWorkspaceRef"
+        :kitchen-stations="checkoutKitchenStations"
+        :can-fire-now="hasOpenTab && fireAction.present && fireAction.enabled"
+        @fire-now="fireTab()"
         :sales-mode="cart.salesMode"
         v-model:discount-type="cart.discountType"
         v-model:discount-value="cart.discountValue"
         v-model:discount-reason="cart.discountReason"
-        v-model:manager-username="cart.managerUsername"
-        v-model:manager-pin="cart.managerPin"
+        :manager-approved="managerApproved"
+        :manager-approved-by="managerApprovedBy"
         :manager-approval-error="managerApprovalError"
-        v-model:fulfillment-type="cart.fulfillmentType"
+        :manager-check-busy="managerCheckBusy"
+        @check-manager="(approval, done) => { void checkManagerApproval(approval).then(done) }"
+        @manager-auth-dismissed="managerApprovalError = ''"
+        :fulfillment-type="cart.fulfillmentType"
         v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
         v-model:payment-collection="cart.paymentCollection"
         v-model:customer-name="cart.customerName"
@@ -1417,6 +1642,7 @@ onBeforeUnmount(() => {
         :delivery-fee-q="deliveryFeeQ"
         :delivery-fee-source="deliveryFeeSource"
         :delivery-distance-km="deliveryDistanceKm"
+        :can-restore-address="canRestoreDeliveryAddress"
         :delivery-slots="deliverySlots"
         :canonical-delivery-slots="canonicalDeliverySlots"
         :delivery-slots-pending="deliverySlotsPending"
@@ -1452,6 +1678,7 @@ onBeforeUnmount(() => {
         :customer-lookup="customerLookup"
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
+        :search-error="customerSearchError"
         :customer-resolved-new="customerResolvedNew"
         :new-customer-prefs="pendingCustomerPrefs"
         :customer-decision="customerDecision"
@@ -1470,6 +1697,7 @@ onBeforeUnmount(() => {
         :loading="busy"
         :lookup-busy="lookupBusy"
         :review-failed="reviewFailed"
+        :sale-blocked-reason="saleBlockedReason"
         :review-failure-reason="reviewFailureReason"
         @back="checkoutMode = false"
         @submit="submitSale"
@@ -1497,7 +1725,10 @@ onBeforeUnmount(() => {
         @apply-customer-favorite="applyCustomerFavorite"
         @apply-preference="applyCustomerPreference"
         @repeat-customer-last-order="repeatCustomerLastOrder"
+        @update:fulfillment-type="chooseFulfillment"
         @pick-saved-address="applySavedAddress"
+        @clear-address="clearDeliveryAddress"
+        @restore-address="restoreDeliveryAddress"
       />
       </div>
 
@@ -1521,6 +1752,7 @@ onBeforeUnmount(() => {
           :disallowed-chars="tabDisallowedChars"
           :zero-pad-to="tabZeroPadTo"
           @open="openTab"
+          @open-next-free="openNextFreeTab"
           @request-association="requestTabAssociation('start')"
         />
         <!-- Leitura ainda sem resposta: um aviso calmo, nunca um quadro vazio que
@@ -1547,19 +1779,31 @@ onBeforeUnmount(() => {
           :delivery="cart.fulfillmentConfirmed && cart.fulfillmentType === 'delivery'"
           :item-count="itemCount"
           :customer-name="cart.customerName"
-          :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :schedule-window="deliveryWindowLabel"
           :loading="busy"
+          :fulfillment-options="pos?.fulfillment_options || []"
+          :chosen-fulfillment="cart.fulfillmentConfirmed ? cart.fulfillmentType : ''"
+          v-model:schedule-date="cart.deliveryDate"
+          v-model:schedule-time-slot="cart.deliveryTimeSlot"
+          :schedule="orderEntrySchedule"
+          :saved-addresses="savedAddresses"
+          :chosen-address="chosenSavedAddress"
+          :address-summary="deliveryAddressSummary"
+          :can-restore-address="canRestoreDeliveryAddress"
           @customer="tabHeaderRef?.openCustomer()"
           @fulfillment="openFulfillmentHere"
-          @schedule="openScheduleHere"
+          @pick-fulfillment="chooseFulfillment"
+          @pick-address="applySavedAddress"
+          @clear-address="clearAddressInOrderEntry"
+          @restore-address="restoreAddressInOrderEntry"
+          @schedule="refreshSchedule"
           @complete="completeOrderSetup"
         />
         <PosProductGrid
           v-else
           ref="productGridRef"
-          :products="pos?.products || []"
+          :products="gridProducts"
           :collections="pos?.collections || []"
           :favorite-refs="pos?.favorite_collection_refs || []"
           :cart-items="cart.items"
@@ -1590,7 +1834,10 @@ onBeforeUnmount(() => {
               :auto-fire="autoFireOn"
               :auto-fire-skus="autoFireSkuList"
               :auto-fire-busy="autoFireBusy"
+              :plan-by-sku="planBySku"
+              :plan-date="cart.deliveryDate"
               :offline="offlineSales.isOnline.value === false"
+              :sale-blocked-reason="saleBlockedReason"
               :items="cart.items"
               :total="saleTotal"
               :requires-tab="tabRequiredForCart"
@@ -1601,6 +1848,7 @@ onBeforeUnmount(() => {
               :unfire-action="unfireAction"
               :firing="firing"
               :discount-reasons="checkoutContract?.discount_reasons || []"
+              :discount-preview="discountPreview"
               :line-adjustments-blocked-reason="editing ? ORDER_EDIT_LINE_ADJUSTMENTS_BLOCKED : undefined"
               :primary-label="editing ? 'Salvar alterações' : undefined"
               :primary-icon="editing ? 'lucide:save' : undefined"
@@ -1612,6 +1860,7 @@ onBeforeUnmount(() => {
               @set-qty="(lineId, qty) => setQty(lineId, qty)"
               @set-notes="setLineNotes"
               @set-discount="setLineDiscount"
+              @preview-discount="previewLineDiscount"
               @prepare="editing ? saveOrderEdit() : prepareCheckout()"
               @move="openMoveWith"
               @add-like="(lineId, qty, done) => done(addLineLike(lineId, qty))"
@@ -1638,7 +1887,6 @@ onBeforeUnmount(() => {
          checkout abre — o operador não reaprende nada. -->
     <PosFulfillmentModal
       v-model:open="fulfillmentSheetOpen"
-      v-model:fulfillment-type="cart.fulfillmentType"
       v-model:fulfillment-confirmed="cart.fulfillmentConfirmed"
       v-model:delivery-address="cart.deliveryAddress"
       v-model:delivery-address-structured="cart.deliveryAddressStructured"
@@ -1649,8 +1897,9 @@ onBeforeUnmount(() => {
       v-model:delivery-fee-override="cart.deliveryFeeOverride"
       v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
       v-model:order-notes="cart.orderNotes"
+      :fulfillment-type="cart.fulfillmentType"
       :fulfillment-options="pos?.fulfillment_options || []"
-      :saved-addresses="customerLookup?.saved_addresses || []"
+      :saved-addresses="savedAddresses"
       :address-autocomplete="addressAutocomplete"
       :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
@@ -1658,7 +1907,11 @@ onBeforeUnmount(() => {
       :delivery-fee-waiver="deliveryFeeWaiver"
       :delivery-fee-status="deliveryFeeStatus"
       :delivery-distance-km="deliveryDistanceKm"
+      :can-restore-address="canRestoreDeliveryAddress"
+      @update:fulfillment-type="chooseFulfillment"
       @pick-saved-address="applySavedAddress"
+      @clear-address="clearDeliveryAddress"
+      @restore-address="restoreDeliveryAddress"
       @open-schedule="openScheduleHere"
     />
 
@@ -1709,6 +1962,16 @@ onBeforeUnmount(() => {
       <template #body>
         <div class="grid gap-3">
           <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <NuxtButton
+              v-if="closeGuardNotice?.canRecheck"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-refresh-cw"
+              :label="closeRecheckBusy ? 'Conferindo…' : 'Conferir agora'"
+              :disabled="closeRecheckBusy"
+              data-close-guard-recheck
+              @click="recheckFromGuard"
+            />
             <NuxtButton
               color="neutral"
               variant="outline"
@@ -1791,12 +2054,42 @@ onBeforeUnmount(() => {
       @authorize-badge="drawerLock.unlockWithBadge"
     />
 
+    <!-- A conferência da venda sem resposta que pedia gerente: o PIN não ficou
+         guardado (WP-E1), e o reenvio sai com o gerente assinando de novo. -->
+    <OperatorManagerAuth
+      :open="closeRecheckApproval !== null"
+      action="sale_approval"
+      :threshold-q="closeRecheckApproval?.threshold_q || 0"
+      :discount-q="closeRecheckApproval?.discount_q || 0"
+      :reasons="closeRecheckApproval?.reasons || []"
+      :house-account-limit="closeRecheckApproval?.house_account_limit"
+      :operator-name="activeOperator?.name || ''"
+      :managers="pos?.managers || []"
+      :busy="closeRecheckBusy"
+      :error="closeRecheckApprovalError"
+      data-close-guard-manager
+      @update:open="(value) => { if (!value) dismissCloseRecheckApproval(); }"
+      @authorize="(username: string, pin: string) => recheckWithManager({ username, pin })"
+      @authorize-badge="(badge: string) => recheckWithManager({ badge })"
+    >
+      <!-- Encomenda acima do plano: os dois números, como no Pagamento (WP-E2). -->
+      <template v-if="closeRecheckApproval?.over_plan?.length" #context>
+        <div class="grid gap-1 rounded-md border border-warning/50 bg-warning/10 px-3 py-2" data-over-plan-context>
+          <p class="text-sm font-semibold text-foreground">A encomenda passa do plano</p>
+          <p v-for="line in closeRecheckApproval.over_plan" :key="line.sku" class="text-sm text-foreground tabular-nums">
+            {{ overPlanSummary([line]) }}
+          </p>
+        </div>
+      </template>
+    </OperatorManagerAuth>
+
     <PosOfflineSalesDialog
       v-model:open="offlineSalesOpen"
       :online="offlineSales.isOnline.value !== false"
       :sales="offlineSales.sales.value"
       :sending="offlineSales.sending.value"
       :durable="offlineSales.durable.value"
+      :sale-enabled="pos?.offline_sale_enabled === true"
       @send-now="offlineSales.flush()"
       @retry="(id: string) => offlineSales.retry(id)"
       @send-with-server-total="(id: string) => offlineSales.sendWithServerTotal(id)"
@@ -1806,6 +2099,8 @@ onBeforeUnmount(() => {
       v-model:open="cancelSaleDialogOpen"
       v-model:reason="cancelSaleReason"
       :order-ref="result?.orderRef || ''"
+      :noun="result?.salesMode === 'order' ? 'encomenda' : 'venda'"
+      :total-display="result?.receipt?.totalDisplay || ''"
       :max-age-minutes="saleCorrection?.max_age_minutes || 0"
       :busy="cancellingSale"
       :error="cancelSaleError"
@@ -1860,7 +2155,7 @@ onBeforeUnmount(() => {
         />
       </div>
     </Teleport>
-    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" @cancelled="onExternalSaleCancelled" />
+    <PosRecentSales v-model:open="recentSalesOpen" :pos="pos" :operator-name="activeOperator?.name || ''" @cancelled="onExternalSaleCancelled" />
     <!-- EDIÇÃO DA ENCOMENDA: a prévia do servidor antes de gravar, e o PIN do
          gerente quando a encomenda paga fica mais barata. -->
     <PosOrderEditReview
@@ -1882,6 +2177,7 @@ onBeforeUnmount(() => {
       v-if="editing"
       :open="editManagerOpen"
       action="order_edit_refund"
+      :amount-q="editPreview?.settlement?.amount_q ?? null"
       :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="editBusy"

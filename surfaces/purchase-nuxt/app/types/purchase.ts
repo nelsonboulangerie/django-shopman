@@ -1,5 +1,5 @@
-export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base"] as const;
-export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs", "count"] as const;
+export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base", "count"] as const;
+export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs"] as const;
 
 export type PurchaseView = (typeof PURCHASE_VIEWS)[number];
 export type PurchaseBaseView = (typeof PURCHASE_BASE_VIEWS)[number];
@@ -66,6 +66,23 @@ export interface Material {
   /** Códigos de barras conferidos deste insumo: o "Ler EAN" acha o item da caixa. */
   eans?: string[];
   revision?: string;
+  /**
+   * Solicitações abertas da Produção: o insumo faltou num lote e quem não opera
+   * o Compras deixou o pedido aqui. Fecham quando o pedido sai ao fornecedor.
+   */
+  internalRequests?: InternalRequest[];
+}
+
+export interface InternalRequest {
+  workOrderRef: string;
+  product: string;
+  quantity: number;
+  unit: string;
+  quantityDisplay: string;
+  requestedByName: string;
+  requestedAt: string;
+  /** A frase pronta: "Diofer pediu às 14h05: falta 300 g para o lote de Brioche." */
+  line: string;
 }
 
 export interface OpensInto {
@@ -145,7 +162,11 @@ export interface Supplier {
   isActive: boolean;
   lastDeliveryAt: string;
   paymentTerm: string;
+  /** Fornecedor de confiança pode pular a revisão humana do pedido. */
+  sendDirectly: boolean;
   revision?: string;
+  /** O pedido tem por onde sair (e-mail ou telefone). Ausente = sim. */
+  canReceiveOrder?: boolean;
 }
 
 export interface MaterialConversion {
@@ -168,6 +189,25 @@ export interface SupplierMaterialCost {
   updatedAt: string;
 }
 
+/** Um item cuja entrada trocaria o custo preferencial do insumo (CMP-06). */
+export interface ReceiptPreferredCostChange {
+  lineId: string;
+  materialName: string;
+  /** A unidade de compra do custo preferencial: os dois valores falam nela. */
+  unitLabel: string;
+  currentQ: number;
+  incomingQ: number;
+  decision: "update" | "keep" | "";
+}
+
+/** O preço da entrada conferido contra o custo preferencial do fornecedor. */
+export interface ReceiptPriceCheck {
+  /** Itens que têm custo preferencial deste fornecedor para comparar. */
+  compared: number;
+  /** Desses, quantos chegaram pelo mesmo preço. */
+  same: number;
+}
+
 export interface ReceiptHistoryEntry {
   sourceRef: string;
   mode: string;
@@ -182,8 +222,8 @@ export interface ReceiptHistoryEntry {
 }
 
 export interface PurchaseProjection {
-  materials: Material[];
-  suppliers: Supplier[];
+  materials: Material[] | PurchaseList<Material>;
+  suppliers: Supplier[] | PurchaseList<Supplier>;
   conversions: MaterialConversion[];
   costs: SupplierMaterialCost[];
   purchaseRequestStatuses: Record<string, PurchaseRequestStatus>;
@@ -200,6 +240,20 @@ export interface PurchaseProjection {
   };
   /** Entradas já registradas, a mais recente primeiro ("essa nota já entrou?"). */
   receiptHistory?: ReceiptHistoryEntry[];
+  /** Na leitura paginada: TODOS os insumos ativos (a base de trabalho, fora da página). */
+  activeMaterials?: Material[] | null;
+  /** Na leitura paginada: TODOS os fornecedores ativos. */
+  activeSuppliers?: Supplier[] | null;
+}
+
+export interface PurchaseList<T> {
+  items: T[];
+  total: number;
+  has_next: boolean;
+  page: number;
+  page_size: number;
+  query: string;
+  order: string;
 }
 
 export interface PurchaseResponse {
@@ -221,7 +275,8 @@ export interface MaterialIssue {
 export interface EnrichedMaterial extends Material {
   coverageDays: number;
   preferredCost: SupplierMaterialCost | null;
-  preferredBaseCostQ: number | null;
+  /** Custo preferencial na unidade de leitura (R$/kg do insumo em g). */
+  preferredReadingCostQ: number | null;
   supplierCount: number;
   conversionCount: number;
   tone: MaterialTone;
@@ -260,8 +315,8 @@ export interface SupplierCostRow {
   cost: SupplierMaterialCost;
   supplier: Supplier;
   conversion: MaterialConversion | null;
-  purchaseUnitLabel: string;
-  baseCostQ: number;
+  pricedUnitLabel: string;
+  readingCostQ: number;
   approximate: boolean;
   deltaQ: number;
   deltaPercent: number;
@@ -269,9 +324,11 @@ export interface SupplierCostRow {
 
 export interface QuotePreview {
   costQ: number;
-  purchaseUnitLabel: string;
-  baseFactor: number;
-  baseCostQ: number;
+  /** A unidade que o valor digitado paga: a embalagem, ou o kg/l/un sem embalagem. */
+  pricedUnitLabel: string;
+  readingUnitLabel: string;
+  /** Custo na unidade de leitura (R$/kg do insumo em g), arredondado só aqui. */
+  readingCostQ: number;
   approximate: boolean;
 }
 
@@ -309,6 +366,12 @@ export interface ReceiptLine {
   // A OCORRENCIA do operador (avaria, falta, ressalva). Nasce vazia: o que a
   // nota diz mora nos campos `invoice*` abaixo.
   lineNote: string;
+  /**
+   * O que o operador decidiu quando o preço desta entrada difere do custo
+   * preferencial do insumo neste fornecedor: "update" troca, "keep" mantém.
+   * Sem diferença, fica vazio. Sem resposta, o servidor recusa a entrada.
+   */
+  preferredCost?: "update" | "keep" | "";
   invoiceDescription?: string;
   invoiceQty?: number;
   invoiceUnit?: string;
@@ -365,7 +428,9 @@ export interface ReceiptLinePreview {
   // justamente o numero errado do QA ("10 unidades" lidas como "10 kg"). A tela
   // le esta flag para nao imprimir um total que ninguem apurou ainda.
   baseQtyKnown: boolean;
-  baseCostQ: number;
+  /** Custo na unidade de leitura: R$ 110 por 1200 g = R$ 91,67/kg, nunca R$ 0,09/g. */
+  readingUnitLabel: string;
+  readingCostQ: number;
   totalCostQ: number;
   approximate: boolean;
   suggestion: ReceiptLineSuggestion | null;
@@ -544,6 +609,11 @@ export type PurchaseReceiptRejectPayload = PurchaseReceiptConfirmPayload & {
 
 export interface PurchaseRequestActionPayload {
   materialSku: string;
+}
+
+export interface PurchaseRequestSendPayload extends PurchaseRequestActionPayload {
+  /** Confirma que uma pessoa reviu este pedido antes do envio. */
+  reviewed: boolean;
 }
 
 export interface PurchaseConversionDeclarePayload {
@@ -768,6 +838,7 @@ export interface PurchaseSupplierUpsertPayload {
   isActive: boolean;
   leadTimeDays: number;
   paymentTerm: string;
+  sendDirectly: boolean;
 }
 
 /** Editar não muda a referência: renomear identificador é gesto do Admin. */

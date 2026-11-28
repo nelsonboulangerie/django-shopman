@@ -17,6 +17,7 @@ const props = defineProps<{
 }>();
 
 const push = useWebPush();
+const dismissed = ref(false);
 
 const runtimeIdentity = (
   useRuntimeConfig().public?.operatorPwa as
@@ -44,6 +45,11 @@ const scope = computed(() => {
 
 const actions = computed(() => [
   {
+    label: "Agora não",
+    secondary: true,
+    onClick: () => { dismissed.value = true; },
+  },
+  {
     label: push.loading.value ? "Ativando…" : "Ativar avisos",
     loading: push.loading.value,
     onClick: push.activate,
@@ -54,6 +60,7 @@ const actions = computed(() => [
 <template>
   <NuxtAlert
     v-if="
+      !dismissed &&
       push.supported.value &&
       !push.active.value &&
       push.permission.value !== 'denied'
@@ -61,7 +68,6 @@ const actions = computed(() => [
     data-operator-push-invite
     color="info"
     variant="subtle"
-    orientation="horizontal"
     icon="i-lucide-bell-ring"
     title="Avisos mesmo com o app fechado"
     :description="`Ative neste dispositivo para receber só os avisos ${scope}.`"

@@ -8,6 +8,7 @@ pausa continua vencendo, e produto sem rastreio de estoque segue disponível.
 from __future__ import annotations
 
 from decimal import Decimal
+from io import BytesIO
 from unittest.mock import MagicMock, patch
 from xml.etree import ElementTree as ET
 
@@ -49,7 +50,7 @@ def loja(db, settings):
     Channel.objects.create(ref="ifood", name="iFood", commerce_policy="order", is_active=True, shop=shop)
     display_channel("google", "Google", collections=["vitrine"], fmt="google_merchant", prices_from="web")
     display_channel("meta", "Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
-    display_channel("meta-catalog", "Catálogo Meta", collections=["vitrine"], prices_from="web")
+    display_channel("meta-catalog", "Catálogo Meta", collections=["vitrine"], fmt="meta_catalog", prices_from="web")
     return shop
 
 
@@ -126,15 +127,29 @@ class TestRule:
 
 @pytest.fixture
 def ifood_push(settings):
+    from PIL import Image
+
     settings.SHOPMAN_IFOOD_CATALOG_WRITE_POLICY = {"environment": "test", "merchant_allowlist": [MERCHANT]}
     settings.SHOPMAN_IFOOD = {
         "merchant_id": MERCHANT, "api_base": "https://mock-ifood.test",
         "catalog_default_category": "cat-default-uuid",
     }
+    image = BytesIO()
+    Image.new("RGB", (2, 2), color="red").save(image, format="PNG")
     response = MagicMock(status_code=200)
+    upload = MagicMock(status_code=200)
+    upload.json.return_value = {"imagePath": "merchant/pao.png"}
     with (
         patch("shopman.shop.services.ifood_auth.token_with_reason", return_value=("tok", "")),
+        patch(
+            "shopman.shop.adapters.catalog_projection_ifood._download_image",
+            return_value=image.getvalue(),
+        ),
+        patch("shopman.shop.adapters.catalog_projection_ifood.requests.post", return_value=upload),
         patch("shopman.shop.adapters.catalog_projection_ifood.requests.put", return_value=response) as put,
+        # Item pausado recebe PATCH /items/status depois do PUT (o PUT deixa o
+        # contexto DEFAULT disponível).
+        patch("shopman.shop.adapters.catalog_projection_ifood.requests.patch", return_value=response),
     ):
         yield put
 
@@ -187,59 +202,58 @@ class TestIFood:
 
 class TestMetaCatalog:
     def test_sold_out_goes_out_of_stock_and_pause_still_wins(self, pao, vitrine_pos):
-        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests, stock_for
+        from shopman.backstage.services import feeds
+        from shopman.shop.adapters.catalog_projection_meta import build_batch_requests
+        from shopman.shop.handlers.catalog_projection import display_projected_item
 
-        def availability(item):
-            stock = stock_for([item], channel="meta-catalog")
-            return build_batch_requests([item], {}, stock=stock)[0]["data"]["availability"]
+        def availability():
+            item = display_projected_item("meta-catalog", "PAO")
+            return build_batch_requests([item], {})[0]["data"]["availability"]
 
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 2)
-        assert availability(_ifood_item()) == "in stock"
+        assert availability() == "in stock"
         _move(quant, -2, kind=Move.Kind.SELL)
-        assert availability(_ifood_item()) == "out of stock"
+        assert availability() == "out of stock"
         _move(quant, 1)
-        assert availability(_ifood_item()) == "in stock"
-        assert availability(_ifood_item(is_sellable=False)) == "out of stock"
+        assert availability() == "in stock"
+        feeds.set_item_paused("meta-catalog", "PAO", paused=True)
+        assert availability() == "out of stock"
 
 
-# ── Feed Google/Meta ──────────────────────────────────────────────────────────
+# ── Feed da Meta ──────────────────────────────────────────────────────────
 
 
 class TestFeed:
-    @pytest.mark.parametrize(("ref", "yes", "no"), [
-        ("google", "in_stock", "out_of_stock"),
-        ("meta", "in stock", "out of stock"),
-    ])
-    def test_sold_out_is_out_of_stock_at_read_time(self, client, pao, vitrine_pos, ref, yes, no):
+    def test_sold_out_is_out_of_stock_at_read_time(self, client, pao, vitrine_pos):
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 2)
-        assert _feed_availability(client, ref) == yes
+        assert _feed_availability(client, "meta") == "in stock"
 
         _move(quant, -2, kind=Move.Kind.SELL)
-        assert _feed_availability(client, ref) == no
+        assert _feed_availability(client, "meta") == "out of stock"
 
         _move(quant, 1)
-        assert _feed_availability(client, ref) == yes
+        assert _feed_availability(client, "meta") == "in stock"
 
     def test_untracked_stays_in_stock(self, client, pao):
-        assert _feed_availability(client, "google") == "in_stock"
+        assert _feed_availability(client, "meta") == "in stock"
 
     def test_paused_with_stock_stays_out_of_stock(self, client, pao, vitrine_pos):
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 10)
         Product.objects.filter(sku="PAO").update(is_sellable=False)
-        assert _feed_availability(client, "google") == "out_of_stock"
+        assert _feed_availability(client, "meta") == "out of stock"
 
     def test_local_feed_pause_still_wins(self, client, pao, vitrine_pos):
         from shopman.shop.models import Channel
 
         quant = Quant.objects.create(sku="PAO", position=vitrine_pos)
         _move(quant, 10)
-        channel = Channel.objects.get(ref="google")
+        channel = Channel.objects.get(ref="meta")
         channel.config["display"]["paused_skus"] = ["PAO"]
         channel.save()
-        assert _feed_availability(client, "google") == "out_of_stock"
+        assert _feed_availability(client, "meta") == "out of stock"
 
     def test_follows_the_web_listing_stock_scope_not_absence(self, client, pao, vitrine_pos):
         """Fora da listagem da loja não é falta: só o estoque muda o feed."""
@@ -247,7 +261,7 @@ class TestFeed:
 
         Listing.objects.create(ref="web", name="Loja", is_active=True)
         assert not ListingItem.objects.filter(product=pao).exists()
-        assert _feed_availability(client, "google") == "in_stock"
+        assert _feed_availability(client, "meta") == "in stock"
 
 
 # ── Gatilho: a passagem por zero reenvia aos canais empurrados ────────────────
@@ -281,7 +295,11 @@ class TestTrigger:
         shelf_outages.observe("PAO")
         queued = _queued("ifood")
         assert len(queued) == 1
-        assert queued[0].payload == {"sku": "PAO", "listing_ref": "ifood"}
+        assert queued[0].payload == {
+            "sku": "PAO",
+            "listing_ref": "ifood",
+            "trigger": "stock_changed",
+        }
 
         # Idempotente: observar de novo sem mudança não enfileira nada.
         shelf_outages.observe("PAO")

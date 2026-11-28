@@ -422,6 +422,7 @@ class DiscountStackingAuditTests(TestCase):
                 ops=[{"op": "set_data", "path": "note", "value": "x"}],
                 idempotency_key="audit-h3",
                 expected_total_q=1000,
+                expected_revision=Session.objects.get(session_key=key).rev,
             )
         self.assertEqual(caught.exception.code, "total_changed")
         self.assertEqual(caught.exception.context.get("new_total_q"), 500)
@@ -440,8 +441,12 @@ class DiscountStackingAuditTests(TestCase):
         )
         backend = PromotionPricingBackend()
         priced = backend.get_price(
-            sku="AUDIT-SKU", qty=Decimal("1"), listing="web",
-            list_unit_price_q=1000, list_total_price_q=1000, context={},
+            sku="AUDIT-SKU",
+            qty=Decimal("1"),
+            listing="web",
+            list_unit_price_q=1000,
+            list_line_total_q=1000,
+            context={},
         )
         # Fixed promo is order-level → NO per-card discount (menu == list price).
         self.assertEqual(priced.final_unit_price_q, 1000)
@@ -455,10 +460,32 @@ class DiscountStackingAuditTests(TestCase):
         )
         cache.clear()
         priced2 = backend.get_price(
-            sku="AUDIT-SKU", qty=Decimal("1"), listing="web",
-            list_unit_price_q=1000, list_total_price_q=1000, context={},
+            sku="AUDIT-SKU",
+            qty=Decimal("1"),
+            listing="web",
+            list_unit_price_q=1000,
+            list_line_total_q=1000,
+            context={},
         )
         self.assertEqual(priced2.final_unit_price_q, 800)
+
+        for qty, list_total_q, discount_total_q in (
+            (Decimal("0.312"), 312, 62),
+            (Decimal("2.5"), 2500, 500),
+        ):
+            fractional = backend.get_price(
+                sku="AUDIT-SKU",
+                qty=qty,
+                listing="web",
+                list_unit_price_q=1000,
+                list_line_total_q=list_total_q,
+                context={},
+            )
+            self.assertEqual(fractional.adjustments[0].amount_q, discount_total_q)
+            self.assertEqual(
+                fractional.list_line_total_q - fractional.adjustments[0].amount_q,
+                fractional.final_line_total_q,
+            )
 
     def test_total_changed_maps_to_structured_api_error(self) -> None:
         # Contrato que o modal do checkout consome: total_changed NÃO vira erro de

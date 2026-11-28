@@ -30,6 +30,20 @@ afterEach(() => {
 });
 
 describe("OperatorPinPad", () => {
+  // F6 do plano de excelência do PDV (#2563): toda tecla tem nome para o leitor de
+  // tela. O dígito pelo próprio texto; apagar e confirmar, que são só ícone, pelo
+  // `aria-label`. É o nome que as jornadas ao vivo usam para digitar o PIN.
+  it("toda tecla do teclado tem nome acessível, e o nome diz o que ela faz", async () => {
+    const wrapper = await mount({ pin: "12" });
+    const names = wrapper
+      .findAll("button")
+      .filter((button) => button.element.closest("[data-operator-pin-field]") === null)
+      .filter((button) => !button.element.closest("[data-operator-pin-error]"))
+      .map((button) => (button.attributes("aria-label") || button.text()).trim());
+    expect(names).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", "Apagar o último dígito", "0", "Confirmar"]);
+    expect(names.every(Boolean)).toBe(true);
+  });
+
   it("o campo nasce com 4 casas, o mínimo do PIN", async () => {
     const wrapper = await mount({ pin: "" });
     expect(boxes(wrapper)).toHaveLength(4);
@@ -108,5 +122,25 @@ describe("OperatorPinPad dentro da moldura da trava", () => {
     frame.dispatchEvent(inside);
     expect(mounted.emitted("digit")).toEqual([["3"]]);
     expect(inside.defaultPrevented).toBe(true);
+  });
+});
+
+describe("OperatorPinPad — a recusa some sem mexer no teclado", () => {
+  // Beta test de 05/11/2026: o aviso de PIN errado saía do fluxo no primeiro
+  // dígito, o teclado subia uns 30 px e o toque seguinte caía na tecla de cima.
+  it("voltar a digitar esconde o aviso, mas ele continua ocupando o lugar", async () => {
+    const wrapper = await mount({ pin: "", error: "Aprovação gerencial inválida." });
+    const alert = () => wrapper.find("[data-operator-pin-error]");
+    expect(alert().exists()).toBe(true);
+    expect(alert().classes()).not.toContain("invisible");
+    await wrapper.setProps({ pin: "4" });
+    expect(alert().exists()).toBe(true);
+    expect(alert().classes()).toContain("invisible");
+    expect(alert().attributes("aria-hidden")).toBe("true");
+  });
+
+  it("sem recusa, o lugar não existe", async () => {
+    const wrapper = await mount({ pin: "" });
+    expect(wrapper.find("[data-operator-pin-error]").exists()).toBe(false);
   });
 });

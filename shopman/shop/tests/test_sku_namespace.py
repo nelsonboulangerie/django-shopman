@@ -54,6 +54,20 @@ class TestPorteiroDeCoerencia:
         product = Product.objects.create(sku="AZEITE-GALAO", name="Azeite a granel", unit="lt", base_price_q=9000)
         assert product.pk is not None
 
+    def test_caixa_trocada_nao_escapa_da_trava(self):
+        """Beta 05/11, CMP-05: a trava comparava o SKU exato; 'bich' passava ao lado de BICH."""
+        Product.objects.create(sku="BICH", name="Bichon", unit="un", base_price_q=1200)
+        with pytest.raises(ValidationError):
+            Material.objects.create(sku="bich", name="Bichon", unit="g")
+
+    def test_produzido_aqui_nao_diferencia_caixa(self):
+        from shopman.craftsman.models import Recipe
+
+        from shopman.shop.services.sku_records import is_produced_here
+
+        Recipe.objects.create(ref="ficha-bich", name="Bichon", output_sku="BICH", batch_size=10, is_active=True)
+        assert is_produced_here("bich") is True
+
     def test_cadastro_de_compra_recusa_unidade_divergente_da_venda(self):
         Product.objects.create(sku="CANELA-PO", name="Canela em pó (pote)", unit="un", base_price_q=1200)
         with pytest.raises(ValidationError) as exc:

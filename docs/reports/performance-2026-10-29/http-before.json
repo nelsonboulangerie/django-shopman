@@ -1,0 +1,149 @@
+{
+  "captured_utc": "2026-10-29T17:59:11.715830+00:00",
+  "reads": {
+    "catalog": {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/catalog/",
+      "samples": [
+        {
+          "status": 200,
+          "ms": 1400.64,
+          "bytes": 56731,
+          "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=580.94, availability;dur=165.68, personalization;dur=12.02, shadow;dur=0.00, db;dur=140.05, connect;dur=3.15;desc=\"1\", cache;dur=26.83;desc=\"3\", gc;dur=4.77;desc=\"10\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 1365.43,
+          "bytes": 56731,
+          "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=951.42, availability;dur=284.36, personalization;dur=12.86, shadow;dur=0.00, db;dur=206.96, connect;dur=2.98;desc=\"1\", cache;dur=20.06;desc=\"3\", gc;dur=5.90;desc=\"10\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 827.72,
+          "bytes": 56731,
+          "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=461.17, availability;dur=147.57, personalization;dur=12.75, shadow;dur=0.00, db;dur=136.01, connect;dur=2.71;desc=\"1\", cache;dur=16.08;desc=\"3\", gc;dur=4.27;desc=\"10\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 920.67,
+          "bytes": 56731,
+          "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=555.14, availability;dur=150.29, personalization;dur=10.37, shadow;dur=0.00, db;dur=139.83, connect;dur=2.93;desc=\"1\", cache;dur=36.69;desc=\"3\", gc;dur=3.91;desc=\"10\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 1129.8,
+          "bytes": 56731,
+          "sha256": "1ae0155488fb803c4994d4d46a2b2e524aeddca1ae59970209a37e7a47f403e1",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=506.39, availability;dur=147.07, personalization;dur=16.25, shadow;dur=0.00, db;dur=131.51, connect;dur=3.36;desc=\"1\", cache;dur=18.87;desc=\"3\", gc;dur=2.13;desc=\"10\"",
+            "X-API-Version": "1"
+          }
+        }
+      ],
+      "p50_ms": 1129.8,
+      "maximum_ms": 1400.64
+    },
+    "pdp": {
+      "url": "https://api.boulangerie.com.br/api/v1/storefront/products/FENDU/",
+      "samples": [
+        {
+          "status": 200,
+          "ms": 1187.92,
+          "bytes": 4555,
+          "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=423.08, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=83.74, connect;dur=9.01;desc=\"1\", cache;dur=35.21;desc=\"4\", gc;dur=2.23;desc=\"1\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 910.34,
+          "bytes": 4555,
+          "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=469.97, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=92.30, connect;dur=3.37;desc=\"1\", cache;dur=43.25;desc=\"4\", gc;dur=2.11;desc=\"1\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 729.05,
+          "bytes": 4555,
+          "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=414.24, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=85.98, connect;dur=4.26;desc=\"1\", cache;dur=36.56;desc=\"4\", gc;dur=0.47;desc=\"1\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 671.04,
+          "bytes": 4555,
+          "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=391.43, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=94.17, connect;dur=3.67;desc=\"1\", cache;dur=36.84;desc=\"4\", gc;dur=0.66;desc=\"1\"",
+            "X-API-Version": "1"
+          }
+        },
+        {
+          "status": 200,
+          "ms": 892.38,
+          "bytes": 4555,
+          "sha256": "7e0d27f82004ba7ac2a029e8dd0d992fc63eb1c717a5066c85018d7438b12ae8",
+          "headers": {
+            "CF-Cache-Status": "BYPASS",
+            "Cache-Control": "private",
+            "Age": null,
+            "Server-Timing": "projection;dur=429.26, availability;dur=0.00, personalization;dur=0.00, shadow;dur=0.00, db;dur=84.48, connect;dur=4.27;desc=\"1\", cache;dur=42.57;desc=\"4\", gc;dur=0.45;desc=\"1\"",
+            "X-API-Version": "1"
+          }
+        }
+      ],
+      "p50_ms": 892.38,
+      "maximum_ms": 1187.92
+    }
+  }
+}

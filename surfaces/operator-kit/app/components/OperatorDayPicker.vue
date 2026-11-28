@@ -54,7 +54,15 @@ const otherCaption = computed(() => otherDayCaption(props.modelValue, options.va
 
 const showOther = ref(false);
 const otherError = ref("");
-const buttons = ref<HTMLButtonElement[]>([]);
+// Os quatro botões, pela posição. Um `ref="buttons"` repetido no v-for e no
+// "Outra data" fazia o segundo sobrescrever o primeiro: a lista virava um botão
+// só, e as setas não levavam o foco a lugar nenhum (achado do #2778, que monta a
+// encomenda sem mouse; o grupo tem uma parada de Tab só, então a seta é o único
+// caminho até outro dia).
+const buttons: (HTMLButtonElement | null)[] = [];
+const buttonRef = (index: number) => (el: unknown) => {
+  buttons[index] = (el as HTMLButtonElement | null) ?? null;
+};
 
 function pick(iso: string, reason: string) {
   if (props.disabled || reason) return;
@@ -96,7 +104,7 @@ function move(from: number, delta: number) {
     index = (index + delta + total) % total;
     if (index === 3 || !options.value[index]!.reason) break;
   }
-  buttons.value[index]?.focus();
+  buttons[index]?.focus();
 }
 
 function onKey(event: KeyboardEvent, index: number) {
@@ -108,6 +116,11 @@ function onKey(event: KeyboardEvent, index: number) {
     move(index, -1);
   }
 }
+
+// O nome do dia escolhido escreve com a tinta do latão (`--primary-ink`), não com o
+// latão puro: sobre o tingido da escolha (`bg-primary/5`) o puro dava 4,35:1 e reprovava
+// o AA para texto de 16 px (#2826). A borda e o tingido seguem o padrão da casa.
+const chosenTitleClass = "text-(--primary-ink)";
 
 const tileClass = (selected: boolean, blocked: boolean) => [
   "flex min-h-control flex-col items-start justify-center rounded-md border px-3 py-2 text-left transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
@@ -133,7 +146,7 @@ const tileClass = (selected: boolean, blocked: boolean) => [
       <button
         v-for="(option, index) in options"
         :key="option.key"
-        ref="buttons"
+        :ref="buttonRef(index)"
         type="button"
         role="radio"
         :aria-checked="modelValue === option.iso"
@@ -146,13 +159,13 @@ const tileClass = (selected: boolean, blocked: boolean) => [
         @click="pick(option.iso, option.reason)"
         @keydown="onKey($event, index)"
       >
-        <span class="text-base font-semibold leading-tight" :class="modelValue === option.iso ? 'text-primary' : ''">
+        <span class="text-base font-semibold leading-tight" :class="modelValue === option.iso ? chosenTitleClass : ''">
           {{ option.title }}
         </span>
         <span class="text-xs tabular-nums text-muted-foreground">{{ option.caption }}</span>
       </button>
       <button
-        ref="buttons"
+        :ref="buttonRef(3)"
         type="button"
         role="radio"
         :aria-checked="otherSelected"
@@ -165,7 +178,7 @@ const tileClass = (selected: boolean, blocked: boolean) => [
         @click="openOther"
         @keydown="onKey($event, 3)"
       >
-        <span class="text-base font-semibold leading-tight" :class="otherSelected ? 'text-primary' : ''">Outra data</span>
+        <span class="text-base font-semibold leading-tight" :class="otherSelected ? chosenTitleClass : ''">Outra data</span>
         <span class="text-xs tabular-nums text-muted-foreground">{{ otherCaption }}</span>
       </button>
     </div>

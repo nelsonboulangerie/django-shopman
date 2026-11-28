@@ -36,7 +36,6 @@ ALPHA_LIVE_ONLY_APP_ENVS = {
     "CONCIERGE_OBSERVATION_NOTICE_VERSION",
     "CONCIERGE_OBSERVATION_PRIVACY_APPROVED",
     "CONCIERGE_OPERATION_MODE",
-    "DOORMAN_MESSAGE_SENDER_CLASS",
     "SHOPMAN_MARKETING_WHATSAPP_DELIVERY_ENABLED",
     "SHOPMAN_MARKETING_WHATSAPP_MODE",
 }
@@ -193,19 +192,13 @@ def test_deploy_templates_never_prearm_publication_canary():
         )
 
 
-def test_alpha_never_exposes_debug_otp():
-    spec = _load_spec(ALPHA_SPEC)
-    entry = next(item for item in spec["envs"] if item["key"] == "SHOPMAN_EXPOSE_DEBUG_OTP")
-    assert entry["scope"] == "RUN_TIME"
-    assert entry["type"] == "GENERAL"
-    assert str(entry.get("value", "")).strip().lower() == "false"
-
-
 def test_alpha_declares_live_only_envs_and_privacy_receipt_secrets():
     spec = _load_spec(ALPHA_SPEC)
     app_envs = {entry["key"]: entry for entry in spec["envs"]}
     assert ALPHA_LIVE_ONLY_APP_ENVS <= app_envs.keys()
     assert all(app_envs[key]["scope"] == "RUN_TIME" for key in ALPHA_LIVE_ONLY_APP_ENVS)
+    # O laço do agente e a troca de classificador saíram (WP-08): nada de chave morta.
+    assert not {"CONCIERGE_TRIAGE_CLASSIFIER", "CONCIERGE_INTENTS_PLURAL", "CONCIERGE_MAX_ITERATIONS"} & app_envs.keys()
 
     # Os dois services do Django (mesma imagem) declaram as chaves do recibo: a loja
     # emite o recibo, o operador o confere.
@@ -224,8 +217,6 @@ MACHINE_GENERAL_ENVS = (
     "MACHINE_API_BASE",
     "MACHINE_DETAILS_BASE",
     "MACHINE_FORMA_PAGAMENTO",
-    "MACHINE_CANCEL_REASON_ID",
-    "MACHINE_RETORNO",
     "MACHINE_TIMEOUT",
 )
 MACHINE_SECRET_ENVS = ("MACHINE_API_USER", "MACHINE_API_PASSWORD", "MACHINE_API_KEY", "MACHINE_WEBHOOK_TOKEN")
@@ -253,7 +244,7 @@ def _shopman_machine_from_settings_py(environ: dict) -> dict:
 
 
 def test_alpha_machine_envs_repeat_the_code_defaults_and_arm_the_adapter_with_credentials():
-    """As seis GENERAL da Machine no spec do alpha são o padrão do código; o interruptor
+    """As GENERAL da Machine no spec do alpha são o padrão do código; o interruptor
     está ligado, como no vivo (D-020), e só existe junto das quatro credenciais SECRET.
 
     ``SHOPMAN_COURIER_ADAPTER`` sem as credenciais faria o ``check --deploy`` do release

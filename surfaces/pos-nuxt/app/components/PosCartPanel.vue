@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { POSCartItem } from "~/types/pos";
+import type { POSCartItem, POSPlanBacking } from "~/types/pos";
+import { planLineFact } from "~/presentation/payment";
 import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
@@ -22,13 +23,15 @@ import {
 } from "~/presentation/selection";
 import {
   discountReachText,
-  draftDiscountReach,
+  draftDiscountOutcome,
   lineDiscountBadge,
+  lineDiscountCompact,
   lineDiscountDetail,
-  lineDiscountFact,
   lineListTotalDisplay,
   lineTotalQ,
+  manualDiscountLabel,
   unitChargedQ,
+  type DiscountPreview,
 } from "~/presentation/lineDiscounts";
 import { saleTotalText, type SaleTotalView } from "~/presentation/saleTotal";
 import { isWeighedLine, lineQtyLabel } from "~/presentation/weighed";
@@ -46,9 +49,12 @@ import {
 
 import type { OperatorActionBarAction } from "../../../operator-kit/app/presentation/actionBar";
 import OperatorFitGroup from "../../../operator-kit/app/components/OperatorFitGroup.vue";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 const props = defineProps<{
   items: POSCartItem[];
+  /** A prévia do desconto digitado, respondida pela revisão do servidor. */
+  discountPreview?: DiscountPreview | null;
   /** O total da revisão do servidor, ou o estado sem número (`saleTotalView`). */
   total: SaleTotalView;
   requiresTab: boolean;
@@ -102,13 +108,33 @@ const props = defineProps<{
    */
   offline?: boolean;
   /**
+   * A venda não segue AGORA (sem rede, com a venda sem conexão desligada na loja):
+   * o Pagamento e o pagar direto ficam apagados, com esta razão escrita abaixo.
+   */
+  saleBlockedReason?: string;
+  /**
    * Os meios eletrônicos que a folha oferece direto (v4 tablet, `pos-tablet.jpg`
    * b): PIX e Maquininha. Vazio, a folha mostra só o Pagamento de sempre.
    */
   quickPayments?: Array<{ ref: string; label: string; icon: string; hint?: string; secondary?: boolean }>;
   /** O Envio (Auto · Manual) está sendo gravado nas estações. */
   autoFireBusy?: boolean;
+  /**
+   * Encomenda de outro dia (WP-E2): o lastro de cada SKU na data, do servidor
+   * (`/pos/schedule/`). A linha diz "22 planejadas para 17/11"; acima do livre,
+   * em âmbar, porque o Validar vai pedir o gerente.
+   */
+  planBySku?: Record<string, POSPlanBacking>;
+  /** A data da encomenda (AAAA-MM-DD) a que `planBySku` responde. */
+  planDate?: string;
 }>();
+/** O fato do plano da data na linha da encomenda; o mesmo SKU em duas linhas soma. */
+function planFact(item: POSCartItem) {
+  const backing = props.planBySku?.[item.sku];
+  if (!backing || !props.planDate) return null;
+  const total = props.items.filter((line) => line.sku === item.sku).reduce((sum, line) => sum + (Number(line.qty) || 0), 0);
+  return planLineFact(total, backing, props.planDate);
+}
 // Folha aberta: PIX e Maquininha são o gesto principal; o dinheiro (V6-CAIXA)
 // vem embaixo, secundário.
 const primaryQuickPayments = computed(() => (props.quickPayments || []).filter((m) => !m.secondary));
@@ -134,6 +160,9 @@ const emit = defineEmits<{
   setNotes: [string, string];
   /** line_id, valor (% ou reais, conforme o formato), motivo, formato. */
   setDiscount: [string, number, string, "percent" | "fixed"];
+  /** O desconto que o operador está digitando (antes do Aplicar), para a prévia
+   *  perguntar ao servidor o que ele faz na linha. Valor 0 limpa a prévia. */
+  previewDiscount: [lineId: string, kind: "percent" | "fixed", value: number];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
   /** Transferir: com linhas marcadas (ou "Transferir esta linha") o diálogo nasce com
@@ -380,6 +409,11 @@ const totalShown = computed(() => props.total.status !== "hidden");
 /** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
  *  lista do servidor e cai nos motivos padrão: o selo diz "Cortesia", não o ref. */
 function discountBadge(item: POSCartItem) {
+  // Com o preço da linha ainda a caminho, o selo diz o desconto PEDIDO: o
+  // vencedor anterior (e a etiqueta riscada) são da linha de antes do toque.
+  if (item.price_pending) {
+    return manualDiscountLabel(item, reasonOptions.value) || lineDiscountBadge(item, reasonOptions.value);
+  }
   return (
     lineDiscountBadge(item, reasonOptions.value) ||
     (lineListTotalDisplay(item) ? "Desconto aplicado" : "")
@@ -389,7 +423,7 @@ function discountBadge(item: POSCartItem) {
  *  −R$ 3,00 na linha" quando a linha tem mais de uma unidade (o desconto em R$ é
  *  por unidade, regra do kernel); em %, o percentual e o valor na linha. */
 function compactDiscount(item: POSCartItem) {
-  return lineDiscountFact(item) || discountBadge(item);
+  return lineDiscountCompact(item, reasonOptions.value) || discountBadge(item);
 }
 /** O detalhe da linha aberta: o motivo e o alcance. */
 function discountDetail(item: POSCartItem) {
@@ -652,13 +686,17 @@ const sheetAction = computed<OperatorActionBarAction>(() => {
     label: primaryText.value,
     icon: primaryIconName.value,
     loading: props.loading,
-    disabled: !props.items.length || props.loading || props.saving,
-    reason: props.items.length ? undefined : "Escolha um produto para começar.",
+    disabled: !props.items.length || props.loading || props.saving || Boolean(props.saleBlockedReason),
+    reason: props.items.length ? props.saleBlockedReason || undefined : "Escolha um produto para começar.",
     onSelect: () => emit("prepare"),
   };
 });
+// O curto "Comanda" deixa a ação principal com o rótulo no celular: as duas trocam de
+// degrau juntas (o rótulo que cabe, kit), e sem curto o par pulava de "Ver a comanda ·
+// Enviar à cozinha" direto para dois ícones, com o gesto do momento sem nome.
 const sheetSecondary: OperatorActionBarAction = {
   label: "Ver a comanda",
+  shortLabel: "Comanda",
   icon: "i-lucide-receipt-text",
   onSelect: () => {
     sheetOpen.value = true;
@@ -717,17 +755,39 @@ function cancelDiscount() {
   setMode("qty");
 }
 // Na célula estreita o desconto vigente diz só o valor ("10%"), com o ícone.
-/** O alcance do que está sendo digitado, na linha aberta: "R$ 1,00 por unidade ·
- *  R$ 3,00 na linha" (só com mais de uma unidade) ou "10% · R$ 2,07 na linha".
- *  No lote (várias marcadas) cada linha tem a sua conta, e o painel não soma. */
-const discountDraftReach = computed(() => {
+/** O valor que o teclado tem agora, no formato do modo. */
+const draftDiscountValue = computed(() =>
+  discountKind.value === "fixed" ? moneyEntryToReais(numpadBuffer.value) : clampPercent(numpadBuffer.value),
+);
+// A prévia pergunta ao SERVIDOR (a revisão, com o desconto digitado na linha):
+// a tela não faz a conta do motor. Só na linha aberta; no lote cada linha tem a
+// sua conta, e o painel não soma.
+watch(
+  () => [discountOpen.value, selectMode.value, activeLineId.value, discountKind.value, draftDiscountValue.value] as const,
+  ([open, batch, lineId, kind, value]) => {
+    if (!open || batch || !lineId) return;
+    emit("previewDiscount", lineId, kind, value);
+  },
+);
+/** O alcance do que está sendo digitado, na linha aberta, dito pelo servidor:
+ *  "R$ 1,00 por unidade · R$ 3,00 na linha" (só com mais de uma unidade) ou
+ *  "10% · R$ 2,07 na linha". Se o automático da linha é maior, diz que não vale.
+ *  Enquanto a revisão corre, "Calculando…", no mesmo lugar e na mesma linha. */
+const discountDraftReach = computed<{ text: string; tone: "value" | "pending" | "warning" } | null>(() => {
   const item = activeItem.value;
-  if (selectMode.value || !item || !discountOpen.value) return "";
-  const value =
-    discountKind.value === "fixed" ? moneyEntryToReais(numpadBuffer.value) : clampPercent(numpadBuffer.value);
-  const reach = draftDiscountReach(item, discountKind.value, value);
-  if (!reach || (reach.percent === null && !reach.multiUnit)) return "";
-  return discountReachText(reach);
+  if (selectMode.value || !item || !discountOpen.value) return null;
+  const value = draftDiscountValue.value;
+  if (!(value > 0)) return null;
+  const preview = props.discountPreview;
+  const answered = preview && preview.lineId === item.line_id && preview.kind === discountKind.value && preview.value === value;
+  if (!answered || preview.status === "pending") return { text: "Calculando…", tone: "pending" };
+  if (preview.status !== "ready" || !preview.price) return null;
+  const outcome = draftDiscountOutcome(item, discountKind.value, value, preview.price);
+  if (!outcome) return null;
+  if (outcome.kind === "discarded") return { text: `Não vale: "${outcome.winner}" é maior`, tone: "warning" };
+  const reach = outcome.reach;
+  if (reach.percent === null && !reach.multiUnit) return null;
+  return { text: discountReachText(reach), tone: "value" };
 });
 const discountShortLabel = computed(() => {
   const discount = activeItem.value?.discount;
@@ -784,6 +844,15 @@ function kitchenFact(item: POSCartItem): string {
 
 function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
+}
+/** O botão da quantidade TOMA o teclado: com a busca de produto ainda focada
+ *  (o Enter que lançou o item mantém o foco nela), o "5" digitado depois caía na
+ *  busca e a quantidade não mudava (beta test de 05/11/2026, PDV2-10). Sem campo
+ *  focado, os dígitos chegam ao numpad da linha (`onWindowKeydown`). */
+function takeKeyboardForQty() {
+  if (!import.meta.client) return;
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) active.blur();
 }
 
 // Observação da linha (Odoo Note): o texto da linha ativa, escrito NO EDITOR (o mesmo
@@ -1588,6 +1657,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 @click="
                   selectLine(activeItem.line_id);
                   setMode('qty');
+                  takeKeyboardForQty();
                 "
               />
               <NuxtButton
@@ -1776,7 +1846,18 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <!-- Com o valor digitado, o rótulo vira o alcance: "R$ 1,00 por unidade ·
              R$ 3,00 na linha" (o R$ é por unidade, regra do kernel) ou "10% · R$ 2,07
              na linha". -->
-        <span v-if="discountDraftReach" class="font-semibold text-foreground tnum" data-pos-discount-reach>{{ discountDraftReach }}</span>
+        <span
+          v-if="discountDraftReach"
+          class="tnum"
+          :class="{
+            'font-semibold text-foreground': discountDraftReach.tone === 'value',
+            'text-muted-foreground': discountDraftReach.tone === 'pending',
+            'font-semibold text-warning': discountDraftReach.tone === 'warning',
+          }"
+          :aria-busy="discountDraftReach.tone === 'pending' || undefined"
+          data-pos-discount-reach
+          >{{ discountDraftReach.text }}</span
+        >
         <span v-else>{{
           selectMode
             ? `Desconto em ${selection.units} ${selection.units === 1 ? "item" : "itens"}`
@@ -1955,7 +2036,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
         <ul>
           <!-- A CAIXA DE MARCAR mora na margem esquerda da linha (w-7, o lugar que antes era
                o recuo de 14 px), em posição ABSOLUTA: aparecer ou sumir nunca empurra a
-               quantidade, o nome ou o preço. No mouse ela aparece no hover e no foco da
+               quantidade, o nome ou o preço. A margem é dela: o botão da linha começa depois
+               (ml-7, não pl-7), e os dois alvos de toque nunca se empilham. No mouse ela aparece no hover e no foco da
                linha; com marcadas, fica em todas. No toque, com a linha aberta (sem hover)
                ou pelo toque longo. -->
           <li
@@ -1987,7 +2069,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <NuxtButton
               color="neutral"
               variant="ghost"
-              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 pl-7 text-left font-normal hover:bg-transparent focus-visible:outline-none"
+              class="grid min-h-12 min-w-0 flex-1 grid-cols-[2.25rem_minmax(0,1fr)_auto] items-center gap-x-2.5 rounded-none py-1.5 pr-3.5 ml-7 pl-0 text-left font-normal hover:bg-transparent focus-visible:outline-none"
               :data-item-select="item.line_id"
               :aria-label="`Editar ${item.name}`"
               :aria-pressed="isSelected(item.line_id)"
@@ -2017,9 +2099,20 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                 <!-- O fato da linha, numa linha só (v4): observação, desconto (preço
                      unitário só aqui ou no peso) e o estado na cozinha. -->
                 <span
-                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item) || cancelledUnits[item.line_id]"
+                  v-if="item.notes || discountBadge(item) || isWeighedLine(item) || lineKitchenState(item) !== 'unfired' || goesToKitchen(item) || cancelledUnits[item.line_id] || planFact(item)"
                   class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-2 op-micro text-muted-foreground tnum"
                 >
+                  <!-- O lastro da encomenda: a fornada da data. Acima do livre, âmbar
+                       e escrito (a cor nunca anda sozinha): o Validar vai pedir o gerente.
+                       Sem lote planejado na data, a linha diz que vira pedido à
+                       Produção (WP-E3), sem âmbar: nada trava. -->
+                  <span
+                    v-if="planFact(item)"
+                    class="inline-flex min-w-0 items-center gap-1"
+                    :class="planFact(item)!.over ? 'rounded-sm bg-warning/10 px-1 font-semibold text-warning' : ''"
+                    :data-pos-line-plan="planFact(item)!.over ? 'over' : planFact(item)!.unplanned ? 'unplanned' : 'within'"
+                    ><Icon :name="planFact(item)!.over ? 'lucide:triangle-alert' : planFact(item)!.unplanned ? 'lucide:calendar-plus' : 'lucide:calendar-check'" class="size-3.5 shrink-0" aria-hidden="true" /><span class="[overflow-wrap:anywhere]">{{ planFact(item)!.over ? `Passa do plano: ${planFact(item)!.text}` : planFact(item)!.text }}</span></span
+                  >
                   <span v-if="item.notes" class="min-w-0 text-foreground/80 [overflow-wrap:anywhere]">Obs.: {{ item.notes }}</span>
                   <span v-if="isWeighedLine(item)" class="shrink-0">{{ formatBRL(unitChargedQ(item)) }}/kg</span>
                   <span
@@ -2061,9 +2154,18 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   >
                 </span>
               </span>
-              <strong class="op-title tnum">{{
-                formatBRL(lineTotalQ(item))
-              }}</strong>
+              <!-- Desconto recém-aplicado: o total da linha espera o servidor
+                   ("calculando"), no lugar e na largura do número de antes. -->
+              <strong class="relative op-title tnum" :aria-busy="item.price_pending || undefined">
+                <span :class="{ invisible: item.price_pending }">{{ formatBRL(lineTotalQ(item)) }}</span>
+                <span
+                  v-if="item.price_pending"
+                  class="absolute inset-0 flex items-center justify-end text-muted-foreground"
+                  title="Calculando"
+                  data-pos-line-total-pending
+                  ><Icon name="lucide:loader-circle" class="size-4 animate-spin" aria-hidden="true" /><span class="sr-only">Calculando</span></span
+                >
+              </strong>
             </NuxtButton>
             <div
               v-if="expandedLineId === item.line_id"
@@ -2075,7 +2177,8 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
               <p v-if="discountBadge(item)" class="mt-1">
                 {{ discountDetail(item) }}
               </p>
-              <p v-if="lineListTotalDisplay(item)" class="text-muted-foreground">
+              <p v-if="item.price_pending" class="text-muted-foreground">Calculando o desconto…</p>
+              <p v-else-if="lineListTotalDisplay(item)" class="text-muted-foreground">
                 De
                 <span class="line-through" :title="discountDetail(item)">{{
                   lineListTotalDisplay(item)
@@ -2102,11 +2205,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
                   class="text-muted-foreground"
                 >
                   {{
-                    new Date(item.authorship.updated_at).toLocaleString("pt-BR", {
+                    formatDateClock(item.authorship.updated_at, {
                       day: "2-digit",
                       month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
                     })
                   }}
                 </p></ClientOnly
@@ -2261,7 +2362,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             size="xl"
             color="primary"
             variant="ghost"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             label="Outras formas"
             data-pos-sheet-other-payment
             @click="$emit('prepare')"
@@ -2274,7 +2375,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             size="xl"
             color="primary"
             class="h-14 justify-center gap-2.5 text-lg font-semibold"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
           >
@@ -2290,7 +2391,7 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             color="neutral"
             variant="outline"
             class="col-span-full h-12 justify-center gap-2.5 font-semibold"
-            :disabled="!items.length || loading || saving"
+            :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
             :data-pos-sheet-pay-method="method.ref"
             @click="$emit('pay', method.ref)"
           >
@@ -2299,6 +2400,10 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <span v-if="method.hint" class="font-normal text-muted-foreground">· {{ method.hint }}</span>
           </NuxtButton>
         </div>
+        <p v-if="saleBlockedReason" class="mt-2 flex items-start gap-1.5 op-micro text-muted-foreground" data-pos-sale-blocked-reason>
+          <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ saleBlockedReason }}</span>
+        </p>
       </div>
       <div
         v-else
@@ -2327,8 +2432,9 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
           color="primary"
           block
           class="h-14 justify-between gap-3 px-4"
-          :disabled="!items.length || loading || saving"
+          :disabled="!items.length || loading || saving || Boolean(saleBlockedReason)"
           :aria-busy="loading || undefined"
+          :aria-describedby="saleBlockedReason ? 'pos-sale-blocked-reason' : undefined"
           aria-keyshortcuts="F4"
           :title="`${primaryText} (F4)`"
           data-pos-primary
@@ -2359,6 +2465,15 @@ defineExpose({ focusItem, onDigit, onBackspace, fireSelection, moveSelection });
             <span v-else class="op-body font-medium whitespace-nowrap opacity-90">{{ totalText }}</span>
           </span>
         </NuxtButton>
+        <p
+          v-if="saleBlockedReason"
+          id="pos-sale-blocked-reason"
+          class="-mt-1 flex items-start gap-1.5 op-micro text-muted-foreground"
+          data-pos-sale-blocked-reason
+        >
+          <Icon name="lucide:wifi-off" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ saleBlockedReason }}</span>
+        </p>
       </div>
   </DefineTicketBody>
 

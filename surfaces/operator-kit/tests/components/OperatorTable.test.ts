@@ -124,6 +124,7 @@ describe("OperatorTable", () => {
       },
     });
     expect(table().getAttribute("data-density")).toBe("compact");
+    expect(bodyRows()[0]!.className).not.toContain("cursor-pointer");
     expect(table().querySelector("td")!.className).toContain("py-1.5");
     const channelTh = [...table().querySelectorAll("th")].find((th) => th.textContent?.includes("Canal"))!;
     expect(channelTh.className).toContain("max-sm:hidden");
@@ -134,6 +135,9 @@ describe("OperatorTable", () => {
     sortTotal.click();
     await nextTick();
     expect(firstCells()).toEqual(["H59", "H58", "H60"]);
+    // O botão da suíte trava durante o clique (DEV-2026-094) e solta na volta seguinte;
+    // um segundo toque humano nunca chega na mesma volta de microtarefas.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     sortTotal.click();
     await nextTick();
     expect(firstCells()).toEqual(["H60", "H58", "H59"]);
@@ -157,6 +161,7 @@ describe("OperatorTable", () => {
         }),
     });
     mounted = await mountSuspended(Host, { attachTo: document.body });
+    expect(bodyRows()[0]!.className).toContain("cursor-pointer");
     const box = document.querySelector<HTMLElement>("[data-operator-table-select][aria-label='Selecionar o pedido H59']")!;
     expect(box).not.toBeNull();
     box.click();
@@ -194,6 +199,31 @@ describe("OperatorTable", () => {
     expect(open.textContent).toContain("Itens de H58");
     expect(open.className).toContain("px-2");
     expect(open.className).toContain("py-1.5");
+  });
+
+  it("expand-at=end põe a seta no fim da linha, presa à direita", async () => {
+    mounted = await mountSuspended(OperatorTable as never, {
+      attachTo: document.body,
+      props: {
+        data: orders,
+        columns,
+        rowKey: (row: Order) => row.ref,
+        rowLabel: (row: Order) => `o pedido ${row.ref}`,
+        caption: "Pedidos",
+        pinned: "ref",
+        expandAt: "end",
+      },
+      slots: { expanded: ({ row }: { row: { original: Order } }) => h("p", `Itens de ${row.original.ref}`) },
+    });
+    const cells = [...table().querySelectorAll<HTMLElement>("tbody tr:first-child td")];
+    expect(cells[0]!.textContent).toContain("H58");
+    expect(cells[0]!.getAttribute("data-pinned")).toBe("left");
+    const last = cells.at(-1)!;
+    expect(last.querySelector("[data-operator-table-expand]")).not.toBeNull();
+    expect(last.getAttribute("data-pinned")).toBe("right");
+    last.querySelector<HTMLElement>("[data-operator-table-expand]")!.click();
+    await nextTick();
+    expect(document.querySelector("[data-operator-table-expanded]")?.textContent).toContain("Itens de H58");
   });
 
   it("a coluna fixada cabe no celular e a tela não escreve :ui", async () => {

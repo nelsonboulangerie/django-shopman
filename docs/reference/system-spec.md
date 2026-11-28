@@ -85,7 +85,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 **Escopo**: catálogo de produtos **vendáveis**. Nunca insumos.
 
 **Modelos**
-- `Product(uuid, sku[unique], name, short_description, long_description, keywords[taggit], unit, unit_weight_g, storage_tip, ingredients_text, nutrition_facts[JSON|NutritionFacts], base_price_q, availability_policy∈{stock_only, planned_ok, demand_ok}, shelf_life_days, production_cycle_hours, is_published, is_sellable, image_url, is_batch_produced, metadata, history[simple-history])`.
+- `Product(uuid, sku[unique], name, short_description, long_description, keywords[taggit], unit, unit_weight_g, storage_tip, ingredients_text, nutrition_facts[JSON|NutritionFacts], base_price_q, availability_policy∈{stock_only, planned_ok, demand_ok}, shelf_life_days, production_cycle_hours, is_published, is_sellable, image_url, metadata, history[simple-history])`.
 - `ProductComponent(parent FK Product, component FK Product, qty ≥ 0.001)` — UniqueConstraint(parent,component); cycles/self-reference proibidos; `BUNDLE_MAX_DEPTH=5`.
 - `Listing(ref[unique], name, valid_from, valid_until, priority, is_active)`.
 - `ListingItem(listing FK, product FK, price_q, min_qty, is_published, is_sellable, history)` — UniqueConstraint(listing, product, min_qty).
@@ -146,10 +146,11 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `find_by_reference/find_active_by_reference/retag_reference`.
 - `plan(quantity, product, target_date, position, reason, user, **meta)→Quant`.
 - `replan`, `realize(product, target_date, actual_quantity, to_position, from_position, from_batch)` — materializa holds; holds sem TTL ganham `DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES=30`; emite signal `holds_materialized`.
+- `settle_holds(quants)` — reassenta as reservas ativas entre saldos PLANEJADOS irmãos (mesmo SKU e data), na ordem de atendimento do `realize`, reserva inteira no primeiro saldo em que cabe; a que não cabe fica onde está. Chamado pela ponte `craftsman/contrib/stockman` quando a quantidade muda de saldo (lote iniciado, ajustado ou cancelado): a reserva acompanha o lote aberto e chega à vitrine no `realize` (#2709).
 - `availability_for_sku/for_skus` — retornam `{sku, availability_policy, total_available, total_promisable, total_reserved, available, expected, planned, ready_physical, held_ready, breakdown{ready,in_production,planned}, is_planned, is_paused, positions[]}`.
-- `promise_decision_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
+- `promise_for_sku(sku, qty, ...)→PromiseDecision(approved, requested_qty, available_qty, reason_code)`.
 
-**Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry.
+**Scope gate canônico**: `quants_eligible_for(sku, channel_ref, target_date, allowed_positions, excluded_positions)` — aplicado por availability reads E hold finding; filtros na ordem: (1) sku+`_quantity>0`, (2) `filter_valid_quants()` shelflife, (3) allowed/excluded positions, (4) batch expiry. `expiry_margin_days` vale nos passos (2) e (4): lote datado pelo `Batch.expiry_date`, saldo sem lote pela validade implícita (produção + `shelf_life_days`); a fornada planejada para a própria data-alvo sempre conta, e o saldo físico de lote é julgado pela data de produção que o lote declara (`Batch.production_date`), não pelo `created_at` (o lote de amanhã fechado hoje conta para amanhã). O orquestrador soma um dia à margem quando a data é futura (`shop/policies/promise_expiry_margin.py`, #2693): sobra de hoje não lastreia encomenda.
 
 **Signal**: `holds_materialized(hold_ids, sku, target_date, to_position)`.
 
@@ -162,6 +163,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - **Policy-driven promise**: `stock_only` (só ready), `planned_ok` (default, ready+planned), `demand_ok` (sempre aprovado, cria demand hold quant=None).
 - **TTL de materialização**: `realize()` preserva TTL explícito; se hold era contra planejado sem TTL, aplica default ao materializar ("você queria; agora é real; mantenha sessão viva").
 - **`metadata.planned=True`** propaga de `plan()` → Quant → availability.breakdown.
+- **Entrega antes de o lote fechar abate do lote** (#2724): `fulfill` pode baixar de saldo de produção; `realize` (e `carry_deliveries(from_quant, to_quant, limit)`, no início do lote) leva a entrega para o saldo seguinte num par de `Move` soma-zero no `kind` da entrega. A conta é chaveada em `Move.metadata.delivery` (`{hold_id, entry}`), lida por reserva; o `reason` é frase, nunca chave. O lote recebe `+realizado` de produção e `-entregue` de venda; as pernas `MAKE` dizem o realizado inteiro.
 
 **Testes-contrato (PostgreSQL concurrency)**
 - `test_concurrency.TestConcurrentHoldSameSku`: dois threads disputam mesmo quant; apenas um vence — zero over-sell garantido.
@@ -219,14 +221,16 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `IdempotencyKey(scope, key, status, response_body)`.
 
 **Serviços**
-- `CommitService.commit(session_key, channel_ref, idempotency_key, ctx, channel_config) → dict`
-  1. Lock idempotency (fora da tx) → retorna cached se `done`.
-  2. Lock session (`select_for_update`); validar `open`.
+- `CommitService.commit(session_key, channel_ref, idempotency_key, *, seal, channel_config, ctx) → CommitResult`
+  1. Na mesma transação atômica do commit, lock da idempotência → retorna cached se `done`.
+  2. Lock session (`select_for_update`); validar `open`, `seal.expected_revision` e
+     `seal.expected_total_q`. `seal.authority` é auditoria e nunca reduz os fences.
   3. Validar `required_checks` frescos (rev match + holds não expirados).
   4. Validar `issues` sem blocking.
   5. Rodar validators `stage="commit"`.
   6. Copiar chaves específicas de `session.data → order.data` (lista explícita: customer, fulfillment_type, delivery_address, delivery_address_structured, delivery_date, delivery_time_slot, order_notes, origin_channel, payment, delivery_fee_q, is_preorder).
-  7. Criar Order + OrderItems; `snapshot` = estado da sessão; `commitment` = evidência de checks/issues.
+  7. Criar Order + OrderItems; `snapshot` = estado da sessão; `snapshot.commit` sela
+     autoridade/revisão/total e `commitment` sela a evidência de checks/issues.
   8. `snapshot.lifecycle` = transitions/terminais do `channel_config` (cartão em pedra — congelado).
   9. Emit `OrderEvent("created")` + signal `order_changed`.
   10. Mark session `committed`.
@@ -287,11 +291,11 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - `AccessLink(id UUID, token_hash[HMAC], customer_id UUID, audience∈{WEB_CHECKOUT,WEB_ACCOUNT,WEB_SUPPORT,WEB_GENERAL}, source∈{MANYCHAT,INTERNAL,API}, created_at, expires_at[default 5min], used_at, metadata, user FK|null)`.
 
 **Serviço AuthService**
-- `request_code(target, purpose, delivery_method, ip_address, sender) → CodeRequestResult` — normaliza, checa `is_login_allowed`, rate-limit (target+IP+cooldown), invalida PENDING/SENT anteriores do mesmo (target, purpose), gera 6 dígitos + HMAC, envia via `sender` ou adapter fallback chain, marca SENT, emit `verification_code_sent`.
-- `verify_for_login(target, code_input, request) → VerifyResult` — normaliza, acha código válido (PENDING|SENT, not expired), `verify()` (HMAC constant-time); em fail: `record_attempt()` (atomic F()); resolve customer via adapter (auto-create se setting); `_link_verified_identifier()` (ContactPoint + IdentifierService, best-effort logged); marca VERIFIED; Django login com `PRESERVE_SESSION_KEYS`; emit `verification_code_verified`.
+- `request_code(target, purpose, delivery_method, ip_address, sender) → CodeRequestResult` — normaliza o handle, checa `is_login_allowed`, resolve e bloqueia a identidade pelo porto tipado quando ela já existe, aplica rate-limit (target+IP+cooldown), invalida PENDING/SENT anteriores do mesmo `(target, purpose)`, persiste o HMAC em PENDING, realiza o transporte fora da transação e só então marca SENT; falhas e disputas invalidam o código. Ao concluir, emite `verification_code_sent`.
+- `verify_for_login(target, code_input, request) → VerifyResult` — normaliza o handle, aceita somente código SENT e não expirado, resolve e bloqueia a identidade pelo `IdentityResolver`, revalida a titularidade e executa `verify()` com comparação HMAC constant-time; em falha chama `record_attempt()` (atomic F()). Se não houver identidade, auto-cria apenas quando a política permite. O vínculo verificado é feito pelo porto/bridge `bind_verified_handle(..., proof=delivery_method)`, preservando a proveniência factual (`OTP_SMS`/`OTP_WHATSAPP`/`OTP_EMAIL`); `EMAIL_LINK` permanece exclusivo de links. `IdentityConflict` falha fechado, sem login ou terceira identidade. Só depois marca VERIFIED, efetua o login Django com `PRESERVE_SESSION_KEYS` e emite `verification_code_verified`.
 - `cleanup_expired_codes(days=7)`.
 
-**Adapter hooks**: `normalize_login_target`, `resolve_customer`, `create_customer`, `should_auto_create_customer`, `is_login_allowed`, `send_code_with_fallback`, `on_login_failed`, `on_customer_authenticated`, `on_device_trusted`, `get_login/logout_redirect_url`.
+**Adapter hooks**: `login_handle`, `resolve_identity`, `create_identity`, `should_auto_create_customer`, `is_login_allowed`, `send_code_with_fallback`, `on_login_failed`, `on_customer_authenticated`, `on_device_trusted`, `get_login/logout_redirect_url`.
 
 **Invariantes**
 - **HMAC hashing + constant-time compare** para código, token de device, token de magic link. Nunca plaintext.
@@ -340,7 +344,7 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 
 | # | Aspecto | Campos |
 |---|---------|--------|
-| 1 | **Confirmation** | `mode∈{immediate,auto_confirm,auto_cancel,manual}`, `timeout_minutes=5`, `stale_new_alert_minutes=0` |
+| 1 | **Confirmation** | `mode∈{immediate,auto_confirm,auto_cancel,manual}`, `timeout_minutes=5`, `preorder_timeout_minutes=None`, `stale_new_alert_minutes=0` |
 | 2 | **Payment** | `method∈{counter,pix,card,external}\|list`, `timing∈{post_commit,at_commit,external}`, `timeout_minutes=15` |
 | 3 | **Fulfillment** | `timing∈{at_commit,post_commit,external}`, `auto_sync=True` |
 | 4 | **Stock** | `hold_ttl_minutes`, `safety_margin=0`, `planned_hold_ttl_hours=48`, `allowed_positions`, `excluded_positions`, `check_on_commit=False`, `low_stock_threshold=5` |
@@ -357,7 +361,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 | Phase | Ações (em ordem) |
 |-------|------------------|
-| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
+| **on_commit** | `customer.ensure()` → availability check (se `check_on_commit`) → `stock.hold()` → `loyalty.redeem()` → `payment.initiate()` se `timing==at_commit` (salvo pedido em `fermata`: a fila da fornada de hoje cobra na confirmação da vaga, `policies/waitlist_charge.py`) → `fulfillment.create()` se `timing==at_commit` → `_handle_confirmation()` ("order_received" notif salvo `immediate`) |
 | **on_confirmed** | `payment.initiate()` se `timing==post_commit` → `stock.fulfill()` se `timing==external` e counter → notif "order_confirmed" |
 | **on_paid** | race guard (cancelled? ⇒ refund + alert) → `stock.fulfill()` → notif "payment_confirmed" |
 | **on_preparing** | `kds.dispatch()` se KDS ativo → notif |
@@ -379,7 +383,7 @@ Sinal `order_changed` (de orderman) → `dispatch(order, phase)` → resolve `Ch
 
 ### 2.3 Services (todos funções puras)
 
-**Sync**: `stock.hold/fulfill/release/revert`, `availability.check/reserve/reconcile/decide/bump_session_hold_expiry/classify_planned_hold_for_session_sku/own_holds_by_sku`, `payment.initiate/capture/refund/get_payment_status`, `customer.ensure`, `fulfillment.create/update`, `pricing.resolve`, `checkout.process(session_key, channel_ref, data, idempotency_key, ctx)`, `kds.dispatch/on_all_tickets_done`, `production.reserve_materials/emit_goods/notify`.
+**Sync**: `stock.hold/fulfill/release/revert`, `availability.check/reserve/reconcile/decide/bump_session_hold_expiry/classify_planned_hold_for_session_sku/own_holds_by_sku`, `payment.initiate/capture/refund/get_payment_status`, `customer.ensure`, `fulfillment.create/update`, `checkout.process(session_key, channel_ref, data, idempotency_key, ctx)`, `kds.dispatch/on_all_tickets_done`, `production.reserve_materials/emit_goods/notify`.
 
 **Async** (emitem Directives): `notification.send`, `loyalty.earn/redeem`, `fiscal.emit/cancel`.
 
@@ -644,7 +648,7 @@ Cada Core viável standalone (Offerman = e-commerce catálogo, Stockman = estoqu
 - 9 pacotes pip-installable criados.
 - admin_unfold standalone por pacote.
 - shopman.utils zero-dep.
-- `make test` deve passar localmente; `Runtime Gate` deve passar no PR com PostgreSQL/Redis e build Docker. Ver [`../status.md`](../status.md).
+- `make test` deve passar localmente; `Runtime Gate` deve passar na fila de merge com PostgreSQL/Redis e build Docker (no PR roda o leve; ver [`ci-escopo.md`](ci-escopo.md)). Ver [`../status.md`](../status.md).
 
 ### Gate 2 — Domínio vertical
 - Offerman: bundle recursivo + cycle detection; min_qty cascade; two-level AND.

@@ -20,7 +20,7 @@ from shopman.cashman.models import Terminal
 
 from shopman.backstage.projections.pos import build_pos
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 
 @pytest.fixture

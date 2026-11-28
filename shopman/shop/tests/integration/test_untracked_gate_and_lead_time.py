@@ -26,6 +26,9 @@ from decimal import Decimal
 
 from django.test import TestCase
 from django.utils import timezone
+from shopman.orderman.tests.commit_support import seal_for
+
+from shopman.shop.tests._payment import with_payment
 
 # ── Helpers (estilo do vizinho test_storefront_backstage_stress) ──
 
@@ -105,7 +108,7 @@ def _open_session(channel_ref: str, session_key: str, sku: str, qty: int, *, dat
                 "unit_price_q": 1000,
             }
         ],
-        data=data or {},
+        data=with_payment(channel_ref, data),
     )
 
 
@@ -116,6 +119,8 @@ def _commit(session_key: str, channel_ref: str, idem_key: str):
         session_key=session_key,
         channel_ref=channel_ref,
         idempotency_key=idem_key,
+        seal=seal_for(session_key, channel_ref),
+        channel_config={},
     )
 
 
@@ -175,7 +180,8 @@ class UnknownSkuGateTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         entries = order.data.get("hold_ids", [])
         self.assertEqual(len(entries), 1)
-        self.assertTrue(entries[0].get("untracked"))
+        self.assertIs(entries[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", entries[0])
         self.assertIsNone(entries[0].get("hold_id"))
         self.assertEqual(_active_holds().count(), 0)
 
@@ -193,7 +199,8 @@ class UnknownSkuGateTests(TestCase):
         order = Order.objects.get(ref=result.order_ref)
         entries = order.data.get("hold_ids", [])
         self.assertEqual(len(entries), 1)
-        self.assertTrue(entries[0].get("untracked"))
+        self.assertIs(entries[0].get("is_tracked"), False)
+        self.assertNotIn("untracked", entries[0])
 
     def test_known_sku_with_stock_sells_normally_on_gated_channel(self) -> None:
         from shopman.orderman.models import Order

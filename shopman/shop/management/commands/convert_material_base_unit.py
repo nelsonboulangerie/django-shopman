@@ -69,8 +69,10 @@ Multiplicam pelo fator (a mesma quantidade física, dita na unidade nova):
 Divide pelo fator:
 
 - ``buyman.SupplierMaterialCost.cost_q`` **quando a compra é na própria base**
-  (``conversion`` vazio). Aí o centavo é por unidade-base: se 1 L custava
-  R$ 5,00 e 1 L vale 1,03 kg, o quilo custa 5,00 ÷ 1,03. Quando a linha aponta
+  (``conversion`` vazio). Aí o centavo é da unidade de leitura da base (o kg de
+  quem é contado em g, o litro de quem é em ml; ``buyman.models.cost.reading_unit``):
+  se 1 L custava R$ 5,00 e 1 L vale 1,03 kg, o quilo custa 5,00 ÷ 1,03; de kg para
+  g o número não muda, porque o custo de quem é em g já se guarda por kg. Quando a linha aponta
   para uma conversão, o ``cost_q`` é o preço de UMA embalagem (o número da nota)
   e não muda — quem muda é o fator daquela conversão, já convertido acima.
 
@@ -511,14 +513,18 @@ class Command(BaseCommand):
     ) -> list[str]:
         """Divide o custo só quando ele é por unidade-base.
 
-        ``cost_q`` é o preço de UMA unidade de compra. Sem ``conversion``, a
-        unidade de compra **é** a base: o número tem de ser redividido, porque
-        um quilo de leite custa menos do que um litro. Com ``conversion``, o
+        ``cost_q`` é o preço de UMA unidade de compra. Sem ``conversion``, é o
+        preço da unidade de leitura da base (kg para g, l para ml, a própria nas
+        demais): o número tem de ser redividido, porque um quilo de leite custa
+        menos do que um litro, e reescalado entre as unidades de leitura. Com ``conversion``, o
         ``cost_q`` é o preço da embalagem (o número impresso na nota), que não
         mudou — quem mudou foi o fator daquela conversão.
         """
+        from shopman.buyman.models.cost import reading_unit
         from shopman.utils.monetary import format_money
 
+        escala_atual, leitura_atual = reading_unit(atual)
+        escala_alvo, leitura_alvo = reading_unit(alvo)
         Cost = apps.get_model("buyman", "SupplierMaterialCost")
         linhas: list[str] = []
         redivididos = intocados = 0
@@ -528,7 +534,9 @@ class Command(BaseCommand):
                 continue
             antes = custo.cost_q
             depois = int(
-                (Decimal(antes) / fator).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+                (Decimal(antes) / escala_atual / fator * escala_alvo).quantize(
+                    Decimal("1"), rounding=ROUND_HALF_UP
+                )
             )
             if depois < 1:
                 # ``CheckConstraint(cost_q > 0)``: preço que arredonda para zero
@@ -536,7 +544,7 @@ class Command(BaseCommand):
                 # anunciado, porque custo mudo é pior do que custo grosseiro.
                 linhas.append(
                     f"    ⚠️  custo de {custo.supplier.ref} arredondaria para zero "
-                    f"({format_money(antes)}/{atual} ÷ {fator}); gravado como "
+                    f"({format_money(antes)}/{leitura_atual} ÷ {fator}); gravado como "
                     "1 centavo. Recadastre o preço na unidade de compra real."
                 )
                 depois = 1
@@ -544,8 +552,8 @@ class Command(BaseCommand):
             custo.save(update_fields=["cost_q", "updated_at"])
             redivididos += 1
             linhas.append(
-                f"    {custo.supplier.ref}: {format_money(antes)}/{atual} → "
-                f"{format_money(depois)}/{alvo}"
+                f"    {custo.supplier.ref}: {format_money(antes)}/{leitura_atual} → "
+                f"{format_money(depois)}/{leitura_alvo}"
             )
 
         cabecalho = (

@@ -23,7 +23,8 @@ por query e cria inconsistência (API usa string, modelo usa par `(ct, id)`).
 ### 1. Identificadores textuais são strings planas indexadas
 
 Cada core guarda o identificador como `CharField` indexado. O nome do campo
-segue a taxonomia canônica (ver `docs/constitution.md` §3.1):
+segue a taxonomia então canônica (ver
+[Constituição v1 §3.1 (histórica)](../_archive/constitution-v1.md#31-identificadores)):
 
 - **`sku`** — identificador estável de produto vendável/estocável. Usado em
   `offerman.Product.sku`, `stockman.Quant.sku`, `stockman.Hold.sku`,
@@ -106,8 +107,8 @@ dependência invisível para kernels que continuam semanticamente standalone.
 - Services do framework validam `sku` contra o catálogo na borda de entrada.
 - Testes cruzados (`shopman/shop/tests/test_invariants.py`) garantem que
   os SKUs usados em fluxos reais existem no offerman.
-- Craftsman tem `CatalogProtocol.resolve()` para mapear `output_sku → Product`
-  quando o output **é** um vendável.
+- A ficha técnica do Craftsman consulta o `CRAFTSMAN["CATALOG_BACKEND"]`
+  (`get_product(sku)`) para saber nome e unidade do SKU.
 
 ## Atualização 2026-04-30: Receita ativa por SKU é determinística
 
@@ -141,4 +142,4 @@ Consequências práticas:
 ## Referências
 
 - ADR-001: independência dos cores
-- `docs/constitution.md` §3.1: taxonomia de identificadores (uuid/ref/sku/handle)
+- [Constituição v1 §3.1 (histórica)](../_archive/constitution-v1.md#31-identificadores): taxonomia de identificadores (uuid/ref/sku/handle)

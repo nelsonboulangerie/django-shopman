@@ -9,7 +9,7 @@ from shopman.orderman.models import Order
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def context(client, django_user_model):
     user = django_user_model.objects.create_user(username="confirm-lab", is_staff=True)
     user.user_permissions.add(Permission.objects.get(codename="manage_orders", content_type__app_label="shop"))
     client.force_login(user)
-    order = Order.objects.create(ref="CONFIRM-INTENTION", status="new", data={
+    order = Order.objects.create(channel_ref="web", ref="CONFIRM-INTENTION", status="new", data={
         "availability_decision": {"approved": True, "decisions": []}, "payment": {"method": "cash"},
     })
     return user, order, reverse("api-backstage-order-confirm", args=[order.ref])

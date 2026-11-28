@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 // re-gate de 401 é testado NA FONTE (kit), não via um app consumidor.
 
 describe("useOperatorSession — re-gate de 401", () => {
-  beforeEach(() => useOperatorSession().reset());
+  beforeEach(() => {
+    useOperatorSession().reset();
+    // Os casos abaixo são do turno em andamento: alguém já estava identificado.
+    useOperatorSession().markAuthenticated();
+  });
 
   it("flagIfUnauthenticated marca expired SÓ em 401 (auth perdida)", () => {
     const session = useOperatorSession();
@@ -37,5 +41,42 @@ describe("useOperatorSession — re-gate de 401", () => {
     expect(session.expired.value).toBe(true);
     session.reset();
     expect(session.expired.value).toBe(false);
+  });
+});
+
+// Beta 05/11 (CMP-11): o Compras aberto num dispositivo cru dizia "Sua sessão
+// terminou. Seu rascunho... foram preservados." para quem nunca tinha entrado.
+describe("useOperatorSession — primeira visita não é sessão que terminou", () => {
+  it("401 sem sessão nesta carga do app NÃO marca expired", () => {
+    useState("operator-session-had-session").value = false;
+    const session = useOperatorSession();
+    session.reset();
+
+    expect(session.flagIfUnauthenticated({ status: 401 })).toBe(true);
+    expect(session.expired.value).toBe(false);
+  });
+
+  it("a antessala lida com alguém (a Central, sem useOperatorLock) também é sessão", () => {
+    useState("operator-session-had-session").value = false;
+    const session = useOperatorSession();
+    session.reset();
+    const { data } = useNuxtData("operator-session");
+    data.value = { operator: { id: 7, username: "joyce" } };
+    try {
+      session.flagIfUnauthenticated({ status: 401 });
+      expect(session.expired.value).toBe(true);
+    } finally {
+      data.value = undefined;
+    }
+  });
+
+  it("depois que a antessala viu alguém identificado, 401 é sessão que terminou", () => {
+    useState("operator-session-had-session").value = false;
+    const session = useOperatorSession();
+    session.reset();
+    session.markAuthenticated();
+
+    session.flagIfUnauthenticated({ status: 401 });
+    expect(session.expired.value).toBe(true);
   });
 });

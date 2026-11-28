@@ -159,7 +159,7 @@ const itemCountLabel = computed(() => {
           <img
             v-if="snapshot.pix.qrCodeSrc"
             :src="snapshot.pix.qrCodeSrc"
-            alt="QR code do pagamento PIX"
+            alt="QR code do pagamento Pix"
             class="size-72 rounded-2xl border border-border bg-white p-4 md:size-80"
           >
           <p v-if="snapshot.pix.status === 'waiting'" class="flex items-center gap-2 text-xl text-muted-foreground">
@@ -171,6 +171,28 @@ const itemCountLabel = computed(() => {
             Confirme o pagamento com quem está atendendo, por favor.
           </p>
         </div>
+      </div>
+    </section>
+
+    <!-- COBRANÇA NÃO CRIADA: a venda existe e o dinheiro não entrou. Sem
+         obrigado: o total e quem resolve. Não expira sozinha (o atendente
+         resolve; a próxima publicação troca a tela). -->
+    <section v-else-if="phase === 'payment_failed'" class="grid flex-1 place-items-center p-10" data-display-payment-failed>
+      <!-- Mesma coluna do RESULTADO (sem largura máxima): o título cabe numa
+           linha só em 1920, e o ícone fica centrado ACIMA dele, num bloco só. -->
+      <div class="grid gap-8 text-center">
+        <div class="grid justify-items-center gap-4" data-display-payment-failed-title>
+          <Icon name="lucide:circle-alert" class="size-14 shrink-0 text-destructive md:size-20" aria-hidden="true" />
+          <!-- Escala e espaçamento propositais para leitura à distância no monitor do cliente. -->
+          <p class="text-balance text-5xl font-semibold tracking-tight md:text-7xl">
+            Pagamento não concluído
+          </p>
+        </div>
+        <div class="grid gap-2">
+          <p class="text-3xl text-muted-foreground">Total</p>
+          <p class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</p>
+        </div>
+        <p class="text-3xl text-muted-foreground md:text-4xl">Quem está atendendo vai confirmar com você.</p>
       </div>
     </section>
 

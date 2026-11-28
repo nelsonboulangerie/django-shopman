@@ -15,6 +15,8 @@ import pytest
 from shopman.shop.adapters import payment_stripe
 from shopman.shop.services import notification
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
+
 
 def _order(*, phone, handle_type="", handle_ref=""):
     # `channel_ref` não é enfeite: resolver destinatário passa a perguntar ao
@@ -165,7 +167,7 @@ class TestRotuloDoPagamentoEmPortugues:
 
         assert payment_status_label("pending") == "Aguardando pagamento"
         assert payment_status_label("captured") == "Pago"
-        assert payment_status_label("refunded") == "Reembolsado"
+        assert payment_status_label("refunded") == "Estornado"
         assert payment_status_label("") == ""
 
     def test_status_desconhecido_nao_some(self):

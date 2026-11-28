@@ -43,7 +43,6 @@ const alarmActions = computed(() => {
       :icon="state.alarm.tone === 'error' ? 'i-lucide-octagon-alert' : 'i-lucide-triangle-alert'"
       :title="state.alarm.message"
       :actions="alertActions(state.alarm.tone, alarmActions)"
-      orientation="horizontal"
       close
       :data-volume-alarm="state.alarm.tone"
       @update:open="(open: boolean) => { if (!open) emit('dismiss-alarm'); }"

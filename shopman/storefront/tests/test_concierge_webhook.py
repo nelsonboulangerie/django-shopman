@@ -14,6 +14,7 @@ from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import service, webhook
 from shopman.storefront.concierge.contracts import InboundEvent
 
@@ -56,7 +57,7 @@ CONFIG = {
 @pytest.fixture(autouse=True)
 def configured(settings, monkeypatch):
     settings.SHOPMAN_CONCIERGE = deepcopy(CONFIG)
-    settings.AI_ASSIST_API_KEY = "fake"
+    configure_ai("fake")
     monkeypatch.setattr(webhook.timezone, "now", lambda: NOW)
     cache.clear()
     yield
@@ -292,6 +293,17 @@ def test_disabled_still_authenticates_before_ack(url, intake, settings):
     assert intake == []
 
 
+def test_without_ai_connection_the_concierge_still_answers(url, intake, settings):
+    """WP-03: a conexão de IA deixou de ser motivo de ``disabled``; sem ela o turno vai
+    pelo caminho sem modelo."""
+    settings.SHOPMAN_CONCIERGE = CONFIG
+    configure_ai("")
+    assert service.disabled_reason() == ""
+    response = post(url, event())
+    assert response.json().get("status") != "disabled"
+    assert len(intake) == 1
+
+
 def _webhook_errors(url, caplog):
     """Posta uma mensagem e devolve os ERROR do logger do webhook (``shopman`` não propaga)."""
     webhook_logger = logging.getLogger(webhook.__name__)
@@ -335,12 +347,11 @@ def test_deliberate_standby_does_not_raise_an_error_per_message(url, intake, set
     [
         ({"contract_version": 2}, "fake", "contract_gate"),
         ({"operation_mode": "whatever"}, "fake", "operation_mode_gate"),
-        ({}, "", "ai_key_missing"),
     ],
 )
 def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, override, api_key, reason):
     settings.SHOPMAN_CONCIERGE = {**CONFIG, **override}
-    settings.AI_ASSIST_API_KEY = api_key
+    configure_ai(api_key)
     response, errors = _webhook_errors(url, caplog)
     assert response.json() == {"status": "disabled", "reason": reason}
     assert len(errors) == 1
@@ -348,10 +359,10 @@ def test_misconfiguration_still_raises_an_error(url, intake, settings, caplog, o
 
 
 def test_no_network_lookup_in_ack(url, intake, monkeypatch):
-    from shopman.guestman.adapters.auth import CustomerResolver
+    from shopman.guestman.adapters.auth import ManychatIdentityBridge
 
     network = Mock(side_effect=AssertionError("network in ACK"))
-    monkeypatch.setattr(CustomerResolver, "manychat_last_input_text", network)
+    monkeypatch.setattr(ManychatIdentityBridge, "last_input_text", network)
     assert post(url, event()).status_code == 200
     network.assert_not_called()
 

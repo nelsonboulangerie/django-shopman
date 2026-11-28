@@ -5,6 +5,7 @@ import {
   customPeriod,
   customPeriodError,
   dayLabel,
+  dayMonthIn,
   goToDate,
   isCurrentPeriod,
   isoDate,
@@ -308,5 +309,25 @@ describe("Tipo 2: o período universal (Período, Próximos, Últimos, Personali
         sel("custom", "2026-10-01", "2026-10-15"),
       );
     });
+  });
+});
+
+describe("o ano só aparece quando não é o de hoje (beta 05/11, ge:BI-14)", () => {
+  it("dd/mm no ano corrente; dd/mm/aaaa em outro ano", () => {
+    expect(dayMonthIn("2026-01-05", "2026-11-05")).toBe("05/01");
+    expect(dayMonthIn("2027-01-05", "2026-11-05")).toBe("05/01/2027");
+    expect(dayMonthIn("2025-11-05", "2026-11-05")).toBe("05/11/2025");
+  });
+
+  it("o rótulo do período leva o ano quando a janela é de outro ano", () => {
+    const today = "2026-11-05";
+    const custom = customPeriod("2027-01-01", "2027-01-31");
+    const range = resolvePeriod(custom, { today });
+    expect(periodLabel(custom, range, today)).toBe("Personalizado · 01/01/2027 a 31/01/2027");
+    expect(periodShortLabel(custom, range, today)).toBe("01/01/2027 a 31/01/2027");
+    expect(dayLabel("2025-11-05", today)).toBe("Qua 05/11/2025");
+    // Com teto, o personalizado do futuro cai no último dia possível.
+    expect(resolvePeriod(custom, { today, max: today })).toEqual({ date_from: today, date_to: today });
+    expect(dayLabel("2026-10-29", today)).toBe("Qui 29/10");
   });
 });

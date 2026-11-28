@@ -59,7 +59,7 @@ DISCOUNT_TYPE_CHOICES = [
 
 
 def _pos_channel_ref() -> str:
-    return getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
+    return settings.SHOPMAN_POS_CHANNEL_REF
 
 
 def _group_promotion(tier_ref: str) -> Promotion | None:
@@ -197,7 +197,7 @@ admin.site.unregister(PriceTier)
 
 @admin.register(PriceTier)
 class PriceTierAdmin(_GuestmanPriceTierAdmin):
-    """A faixa de preço do guestman, com o desconto automático do grupo."""
+    """O grupo de clientes do guestman (`PriceTier`), com o desconto automático do grupo."""
 
     form = PriceTierGroupDiscountForm
     inlines = [PriceTierAdvantageInline]

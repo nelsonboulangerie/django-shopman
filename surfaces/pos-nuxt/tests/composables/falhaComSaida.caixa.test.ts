@@ -99,16 +99,52 @@ const MUTACOES: Array<{ nome: string; executar: (s: Sessao) => Promise<unknown> 
 
 describe("§1 toda mutação de caixa que falha diz o que fazer agora", () => {
   for (const { nome, executar } of MUTACOES) {
-    it(`${nome}: o toast traz um gesto`, async () => {
+    it(`${nome}: o aviso traz um gesto`, async () => {
       vi.mocked(toast.error).mockClear();
       const recusa = vi.fn().mockRejectedValue(new Error("rede caiu"));
-      await executar(sessaoDeCaixa(recusa));
+      const sessao = sessaoDeCaixa(recusa);
+      await executar(sessao);
 
-      expect(toast.error).toHaveBeenCalledTimes(1);
-      const mensagem = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+      // Um aviso só: no diálogo do gesto (`cashFailure`, WP-E6) ou no toast, nunca
+      // os dois e nunca nenhum.
+      const noDialogo = sessao.cashFailure.value?.message ?? "";
+      const noToast = vi.mocked(toast.error).mock.calls.map((c) => String(c[0] ?? ""));
+      expect(noToast.length + (noDialogo ? 1 : 0)).toBe(1);
+      const mensagem = noDialogo || noToast[0]!;
       expect(mensagem, `"${mensagem}" não oferece saída nenhuma`).toMatch(GESTO);
     });
   }
+
+  // Os quatro diálogos da antessala que ficaram fora do WP-E6 (#2726): pedir troco,
+  // atender ou cancelar o pedido de troco, acertar a conta na casa e abrir a gaveta
+  // sem venda. O toast nascia atrás do véu do diálogo aberto; agora a falha é do
+  // gesto, e o diálogo mostra o aviso dele.
+  const GESTOS_COM_DIALOGO: Array<{ gesto: string; executar: (s: Sessao) => Promise<unknown> }> = [
+    { gesto: "request_change", executar: (s) => s.requestChange({ amount: "50", denominations: [10], note: "" }) },
+    { gesto: "serve_change", executar: (s) => s.serveChangeRequest({ ref: "TR-1" }) },
+    { gesto: "cancel_change", executar: (s) => s.cancelChangeRequest("TR-1") },
+    { gesto: "settle_account", executar: (s) => s.settleAccount({ customerRef: "CLI-1", amount: "30", method: "cash" }) },
+    { gesto: "open_drawer", executar: (s) => s.openDrawerWithoutSale("conferência") },
+  ];
+  for (const { gesto, executar } of GESTOS_COM_DIALOGO) {
+    it(`${gesto}: a falha mora no diálogo, sem toast atrás do véu`, async () => {
+      vi.mocked(toast.error).mockClear();
+      const sessao = sessaoDeCaixa(vi.fn().mockRejectedValue(new Error("rede caiu")));
+      await executar(sessao);
+      expect(sessao.cashFailure.value?.gesture).toBe(gesto);
+      expect(toast.error).not.toHaveBeenCalled();
+    });
+  }
+
+  it("a falha sai do diálogo quando a repetição confirma", async () => {
+    const serverCall = vi.fn().mockRejectedValueOnce(new Error("rede caiu")).mockResolvedValue({});
+    const sessao = sessaoDeCaixa(serverCall);
+    const pedido = { amount: "50", denominations: [10], note: "" };
+    await sessao.requestChange(pedido);
+    expect(sessao.cashFailure.value?.gesture).toBe("request_change");
+    await sessao.requestChange(pedido);
+    expect(sessao.cashFailure.value).toBeNull();
+  });
 
   it("a causa do SERVIDOR sobrevive, e a saída vem junto", async () => {
     // O ponto do padrão: `httpErrorMessage` troca o fallback pelo `detail`, e
@@ -118,9 +154,10 @@ describe("§1 toda mutação de caixa que falha diz o que fazer agora", () => {
       status: 400,
       data: { detail: "Caixa não aberto neste terminal." },
     });
-    await sessaoDeCaixa(recusa).registerCashMovement({ kind: "sangria", amount: "200", reason: "" });
+    const sessao = sessaoDeCaixa(recusa);
+    await sessao.registerCashMovement({ kind: "sangria", amount: "200", reason: "" });
 
-    const mensagem = String(vi.mocked(toast.error).mock.calls[0]?.[0] ?? "");
+    const mensagem = sessao.cashFailure.value?.message ?? "";
     expect(mensagem).toContain("Caixa não aberto neste terminal.");
     expect(mensagem).toMatch(GESTO);
   });

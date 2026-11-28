@@ -2,6 +2,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { isGeneratedDir } from "./support/generatedDirs";
 
 // Guardrail de CONVENÇÃO: identificador é em inglês (CLAUDE.md), com três
 // exceções que são regra e não julgamento — `cpf`/`cnpj`/`cep`, **prosa**
@@ -28,8 +29,8 @@ import { describe, expect, it } from "vitest";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-/** Dívida medida em 02/09/2026. Só desce. Ver WP-IDENT-PT-BR.md. */
-const BASELINE = 32;
+/** Dívida medida em 02/09/2026 (32), 28 desde o WP-E6 do PDV. Só desce. Ver WP-IDENT-PT-BR.md. */
+const BASELINE = 28;
 
 // Allowlist do que já se sabe existir — NÃO é detector. Nome novo em pt-br não
 // aparece aqui; contra isso vale a revisão e a varredura morfológica periódica
@@ -59,7 +60,7 @@ function stripNoise(text: string): string {
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
-    if (entry === "node_modules" || entry === ".nuxt" || entry === ".output") continue;
+    if (isGeneratedDir(entry)) continue;
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) sourceFiles(full, found);
     else if (full.endsWith(".ts") || full.endsWith(".vue")) found.push(full);

@@ -135,12 +135,57 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     assert "projection;dur=" in response["Server-Timing"]
     assert response._watchman_query_count > 0
     purchase = response.json()["purchase"]
-    assert purchase["materials"][0]["sku"] == "FARINHA-NOVARA-T55"
-    assert purchase["materials"][0]["stockOnHand"] == 12.0
-    assert purchase["materials"][0]["recipes"] == ["Baguete"]
-    assert purchase["suppliers"][0]["ref"] == "moinho-sp"
+    assert purchase["materials"]["items"][0]["sku"] == "FARINHA-NOVARA-T55"
+    assert purchase["materials"]["items"][0]["stockOnHand"] == 12.0
+    assert purchase["materials"]["items"][0]["recipes"] == ["Baguete"]
+    assert purchase["materials"]["total"] == 1
+    assert purchase["materials"]["page"] == 1
+    assert purchase["materials"]["has_next"] is False
+    assert purchase["suppliers"]["items"][0]["ref"] == "moinho-sp"
     assert purchase["conversions"][0]["label"] == "saco 25 kg"
     assert purchase["costs"][0]["costQ"] == 18000
+
+
+@pytest.mark.django_db
+def test_purchase_board_defaults_to_current_records_and_explicitly_lists_archived(
+    client,
+    purchase_operator,
+    material,
+    supplier,
+):
+    archived_material = Material.objects.create(
+        sku="FARINHA-ARQUIVADA",
+        name="Farinha arquivada",
+        unit="kg",
+        is_active=False,
+    )
+    archived_supplier = Supplier.objects.create(
+        ref="moinho-arquivado",
+        name="Moinho arquivado",
+        is_active=False,
+    )
+    client.force_login(purchase_operator)
+
+    current_response = client.get(reverse("api-backstage-purchase"))
+    current = current_response.json()["purchase"]
+    assert [row["sku"] for row in current["materials"]["items"]] == [material.sku]
+    assert current["materials"]["total"] == 1
+    assert [row["ref"] for row in current["suppliers"]["items"]] == [supplier.ref]
+    assert current["suppliers"]["total"] == 1
+
+    response = client.get(
+        reverse("api-backstage-purchase"),
+        {"material_archive": "archived", "supplier_archive": "archived"},
+    )
+
+    assert response.status_code == 200
+    assert "projection;dur=" in response["Server-Timing"]
+    assert response._watchman_query_count <= current_response._watchman_query_count
+    archived = response.json()["purchase"]
+    assert [row["sku"] for row in archived["materials"]["items"]] == [archived_material.sku]
+    assert archived["materials"]["total"] == 1
+    assert [row["ref"] for row in archived["suppliers"]["items"]] == [archived_supplier.ref]
+    assert archived["suppliers"]["total"] == 1
 
 
 @pytest.mark.django_db
@@ -619,7 +664,11 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert cost_response.status_code == 200
     assert SupplierMaterialCost.objects.get(material=material, supplier=supplier).is_preferred is True
 
-    sent = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
+    sent = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": True},
+        content_type="application/json",
+    )
     assert sent.status_code == 200
     assert sent.json()["purchase"]["purchaseRequestStatuses"][material.sku] == "sent"
     material.refresh_from_db()
@@ -631,6 +680,60 @@ def test_upsert_cost_and_request_status_actions(client, purchase_operator, mater
     assert directive.payload["context"]["material_sku"] == material.sku
     assert directive.payload["context"]["supplier_ref"] == supplier.ref
     assert directive.payload["context"]["operator_username"] == purchase_operator.username
+
+
+@pytest.mark.django_db
+def test_purchase_request_requires_explicit_review_by_default(
+    client, purchase_operator, material, supplier, conversion,
+):
+    client.force_login(purchase_operator)
+    supplier.email = "pedidos@moinho.example"
+    supplier.save(update_fields=["email", "updated_at"])
+    SupplierMaterialCost.objects.create(
+        material=material,
+        supplier=supplier,
+        conversion=conversion,
+        cost_q=18000,
+        is_preferred=True,
+    )
+
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": False},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "purchase_request_review_required"
+    assert not Directive.objects.filter(topic=NOTIFICATION_SEND, payload__event="purchase_request").exists()
+    material.refresh_from_db()
+    assert material.metadata["purchase"].get("request_status") != "sent"
+
+
+@pytest.mark.django_db
+def test_trusted_supplier_can_send_directly_without_review(
+    client, purchase_operator, material, supplier, conversion,
+):
+    client.force_login(purchase_operator)
+    supplier.email = "pedidos@moinho.example"
+    supplier.metadata = {"purchase": {"send_directly": True}}
+    supplier.save(update_fields=["email", "metadata", "updated_at"])
+    SupplierMaterialCost.objects.create(
+        material=material,
+        supplier=supplier,
+        conversion=conversion,
+        cost_q=18000,
+        is_preferred=True,
+    )
+
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": False},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert Directive.objects.filter(topic=NOTIFICATION_SEND, payload__event="purchase_request").count() == 1
 
 
 @pytest.mark.django_db
@@ -647,7 +750,11 @@ def test_send_purchase_request_requires_supplier_contact(client, purchase_operat
         is_preferred=True,
     )
 
-    response = client.post(reverse("api-backstage-purchase-request-send", args=[material.sku]))
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=[material.sku]),
+        data={"reviewed": True},
+        content_type="application/json",
+    )
 
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "supplier_contact_missing"
@@ -1074,7 +1181,7 @@ def test_stock_that_crossed_an_approximate_bridge_carries_the_tilde(
     }
 
     board = client.get(reverse("api-backstage-purchase"))
-    rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]}
+    rows = {row["sku"]: row for row in board.json()["purchase"]["materials"]["items"]}
     assert rows["OVOS"]["stockIsApproximate"] is True
     # O insumo que entrou na propria base nao ganha enfeite: numero exato e exato.
     assert rows["FARINHA-NOVARA-T55"]["stockIsApproximate"] is False
@@ -1243,7 +1350,7 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
 
     # Sem mínimo e sem consumo, não há o que pedir.
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
+    alecrim = next(row for row in board["materials"]["items"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 0
 
     assert (
@@ -1268,14 +1375,14 @@ def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
     )
 
     board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
-    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM-FRESCO")
+    alecrim = next(row for row in board["materials"]["items"] if row["sku"] == "ALECRIM-FRESCO")
     assert alecrim["suggestedQty"] == 500
 
     # E agora a solicitação sai, em vez de "Defina o custo padrão e o
     # fornecedor antes de enviar o pedido."
     response = client.post(
         reverse("api-backstage-purchase-request-send", args=["ALECRIM-FRESCO"]),
-        data={},
+        data={"reviewed": True},
         content_type="application/json",
     )
     assert response.status_code == 200, response.json()

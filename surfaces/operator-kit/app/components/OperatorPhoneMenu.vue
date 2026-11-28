@@ -102,7 +102,7 @@ function choose(section: OperatorSection) {
       class="shrink-0"
     >
       <NuxtButton
-        icon="i-lucide-ellipsis"
+        icon="i-lucide-ellipsis-vertical"
         label="Mais"
         class="suite-page:min-h-control"
         :color="activeInOverflow ? 'primary' : 'neutral'"
@@ -130,7 +130,8 @@ function choose(section: OperatorSection) {
               v-if="item.signal"
               :count="item.signal.count"
               :color="item.signal.color"
-              :dot="item.signal.count === undefined"
+              :unknown="item.signal.unknown"
+              :dot="item.signal.count === undefined && !item.signal.unknown"
             />
           </template>
         </NuxtNavigationMenu>

@@ -251,12 +251,15 @@ def build_danfe(order_ref: str) -> DanfeDocument | None:
 
     from dataclasses import replace
 
-    from shopman.shop.services.danfe_xml import DanfeSourceError, read_authorized_xml
+    from shopman.shop.services.danfe_xml import DanfeSourceError, backend_authorized_xml, read_authorized_xml
 
     if data.get("nfce_cancelled") or str(data.get("nfce_status") or "").lower() in {"cancelado", "cancelada"}:
         return replace(document, source_problem="NFC-e cancelada. Impressão fiscal indisponível.", status="cancelada")
     try:
-        root = read_authorized_xml(str(data.get("nfce_xml_url") or ""), key)
+        # A nota simulada da pilha guarda o XML no backend (#3124); a de verdade vem do provedor.
+        root = backend_authorized_xml(key)
+        if root is None:
+            root = read_authorized_xml(str(data.get("nfce_xml_url") or ""), key)
         return document_from_xml(document, root)
     except (DanfeSourceError, ValueError, ArithmeticError) as exc:
         logger.warning("danfe_source_unavailable order=%s reason=%s", order.ref, type(exc).__name__)
@@ -395,10 +398,19 @@ def document_from_xml(document: DanfeDocument, root) -> DanfeDocument:
 
 
 class DanfeView(LoginRequiredMixin, View):
-    """A nota de um pedido aberta na tela (staff). Consulta, não impressão."""
+    """A nota de um pedido aberta na tela (operador). Consulta, não impressão."""
 
     def get(self, request, ref: str):
-        if not request.user.is_staff:
+        # Quem abre a nota de um pedido: quem cuida dos pedidos (Gestor) ou quem
+        # opera o caixa (o PDV linka esta tela ao lado da via impressa), a mesma
+        # régua das rotas de DANFE em ESC/POS do backstage. Só ``is_staff`` não
+        # basta: deixava qualquer pessoa com acesso ao Admin ler nome, CPF e itens
+        # de qualquer pedido (laudo S7, 23/10).
+        user = request.user
+        if not (
+            user.is_staff
+            and (user.has_perm("shop.manage_orders") or user.has_perm("cashman.operate_pos"))
+        ):
             raise Http404()
 
         danfe = build_danfe(ref)

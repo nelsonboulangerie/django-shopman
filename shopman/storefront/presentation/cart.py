@@ -14,16 +14,26 @@ Never imports from ``shopman.storefront.views.*`` or ``shop.services``.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from django.utils import timezone
+from shopman.utils.formatting import format_clock, format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
+from shopman.shop.projections.ready_promise import PromiseFacts, read_promise_facts
 from shopman.shop.projections.types import Action, Availability
-from shopman.storefront.presentation.catalog import notify_subscribed_skus
+from shopman.storefront.presentation.catalog import build_ordering, notify_subscribed_skus
+from shopman.storefront.presentation.promise import (
+    ORDERING_NONE,
+    OrderingProjection,
+    PromiseProjection,
+    day_label,
+    promise_for,
+)
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
@@ -62,13 +72,26 @@ class CartItemProjection:
     qty: int
     unit_price_q: int
     total_price_q: int
-    price_display: str           # unit price, e.g. "R$ 0,90"
-    total_display: str           # line total, e.g. "R$ 2,70"
+    price_display: str           # preço CHEIO por unidade, e.g. "R$ 0,90"
     image_url: str | None
 
     # Pricing transparency — populated when a promo/coupon reduced the line.
-    original_price_display: str | None
     discount_label: str | None
+    # Preço por unidade da PROMOÇÃO da linha, o mesmo que o cardápio mostra.
+    # A linha exibe ``price_display`` riscado e este ao lado; ``None`` quando
+    # não há promoção na linha. Cupom não entra: é do pedido e mora no resumo.
+    promo_price_display: str | None
+    # O total da linha como a cliente paga, e o cheio para riscar ao lado
+    # (decisão do dono 1, 16/11/2026): com promoção do produto, a linha mostra
+    # o total com desconto e o cheio riscado; sem promoção, ``line_total_display``
+    # é o total cheio e ``line_total_struck_display`` é ``None``. Cupom não
+    # abate aqui: é do pedido e mora no resumo.
+    line_total_display: str
+    line_total_struck_display: str | None
+    # Preço de lista por unidade, em centavos: a tela refaz o total da linha
+    # enquanto a resposta da troca de quantidade não chega, sem ler número de
+    # dentro de ``price_display``.
+    list_price_q: int
 
     # Availability snapshot at render-time.
     is_available: bool
@@ -92,6 +115,7 @@ class CartItemProjection:
     confirmation_deadline_display: str | None   # pre-formatted HH:MM for badge copy / toast
     planned_for_date: str | None                # ISO date da fornada que a linha espera
     planned_for_notice: str | None              # "Previsto para amanhã" (copy omotenashi + data)
+    earlier_available_date: str | None          # ISO date anterior à fornada em que a linha já tem saldo
 
     # Preparado na hora: promessa declarada da casa
     # (``Product.metadata["made_to_order"]``) — café, Jambon-Beurre, croque,
@@ -109,6 +133,11 @@ class CartItemProjection:
     # traz) e se a linha tem escolha. Linha com escolha muda pela ``line_id``.
     options_summary: str = ""
     has_options: bool = False
+
+    # Quando fica pronto: a mesma promessa do card e do produto
+    # (``presentation/promise``). Na linha que espera uma fornada, o dia é o da
+    # reserva. ``None`` = nada a prometer (linha indisponível ou sem dado).
+    promise: PromiseProjection | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +184,56 @@ class UpsellSuggestionProjection:
 
 
 @dataclass(frozen=True)
+class OpenElsewhereProjection:
+    """A sacola aberta da mesma cliente em outro canal (OC-17, C06).
+
+    A loja AVISA que ela existe; não sincroniza nem mescla. Sai só para quem
+    entrou com o próprio dispositivo (força ``device``): link encaminhado não
+    entrega a conta (S1), nem o que está na sacola de outro canal. Sem chave de
+    sessão: a sacola do outro canal é identificada pelo canal.
+
+    ``bring`` é a ação de trazer a sacola para cá. Nasce DESLIGADA: quem a liga é
+    a passagem entre canais (``session_transfer``, OC-15/OC-16/OC-18). Enquanto
+    ``enabled`` é falso, a tela não oferece o gesto (X1).
+    """
+
+    channel: str
+    channel_label: str
+    items_count: int
+    items_phrase: str
+    subtotal_q: int
+    subtotal_display: str
+    bring: Action
+
+
+@dataclass(frozen=True)
+class CartTransferArrivalProjection:
+    """O que entrou na sacola vindo de outro canal (OC-16, #3517).
+
+    Uma linha ("Entraram 3 itens da sacola do WhatsApp.") e, só se houver, as
+    diferenças, cada uma numa frase curta. Sai enquanto a sacola estiver aberta.
+    """
+
+    channel: str
+    title: str
+    lines: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CartDayProjection:
+    """Para que dia é a sacola, quando é de OUTRO dia (OC-33 B1).
+
+    ``date`` (ISO) é o dia em que a sacola reserva: o escolhido no "Para
+    quando?" do cardápio, ou o da fornada que ela já reservou. ``label`` é o dia
+    como a loja o diz ("amanhã, quarta", "quinta, 26/11"), o mesmo do cardápio.
+    O checkout abre nele, sem perguntar de novo.
+    """
+
+    date: str
+    label: str
+
+
+@dataclass(frozen=True)
 class CartProjection:
     """Full projection for the storefront cart."""
 
@@ -172,11 +251,28 @@ class CartProjection:
     subtotal_q: int
     subtotal_display: str
     original_subtotal_q: int
-    original_subtotal_display: str
     discount_total_q: int
     discount_total_display: str
     has_discount: bool
+    # Todo desconto do pedido, um por origem (promoção de produto, cupom,
+    # pontos). É o dado; o que a tela SUBTRAI no resumo é
+    # ``order_discount_lines``.
     discount_lines: tuple[DiscountLineProjection, ...]
+
+    # O resumo como a cliente lê (decisão do dono 1, 16/11/2026). A promoção
+    # do produto já abateu na linha, então:
+    # - ``lines_subtotal_*`` é o Subtotal: a soma das linhas como a tela as
+    #   mostra (com a promoção do produto, sem cupom nem pontos);
+    # - ``promo_savings_*`` diz quanto as promoções de produto já abateram
+    #   (informa, não subtrai de novo; ``None`` sem promoção);
+    # - ``order_discount_lines`` são as linhas que o resumo subtrai: cupom,
+    #   pontos e desconto de pedido. Subtotal menos elas, mais a entrega, é o
+    #   Total.
+    lines_subtotal_q: int
+    lines_subtotal_display: str
+    promo_savings_q: int
+    promo_savings_display: str | None
+    order_discount_lines: tuple[DiscountLineProjection, ...]
 
     delivery_fee_q: int | None
     delivery_fee_display: str | None
@@ -193,6 +289,12 @@ class CartProjection:
     coupon_code: str | None
     coupon_discount_q: int | None
     coupon_discount_display: str | None
+    # Cupom na sacola com desconto zero: o motivo vem do servidor (beta 06/11).
+    # "" quando há desconto ou não há cupom. Ver ``CartCouponProjection``.
+    coupon_zero_reason: str
+    coupon_missing_q: int
+    coupon_missing_display: str | None
+    coupon_fulfillment_types: tuple[str, ...]
 
     # Warnings
     has_unavailable_items: bool
@@ -221,6 +323,41 @@ class CartProjection:
     draft_context: str = ""
     # Economia do grupo (texto por grupo, Admin). Vazia quando não houve.
     group_savings_message: str = ""
+    # Reserva com prazo à vista (WP-L11, decisão do dono 4 de 16/11/2026): até
+    # quando a sacola guarda os itens. É o menor prazo das reservas vivas da
+    # sessão; cada gesto na sacola renova, e a resposta já traz a hora nova.
+    # ``None`` quando nada tem prazo correndo (sacola vazia, só item de fornada
+    # futura): a tela não promete hora nenhuma. ``reserved_until_display`` é a
+    # hora no formato da casa ("19h18"). O relógio do servidor NÃO mora aqui: a
+    # projeção é o estado da sacola e sai igual em toda resposta do mesmo
+    # estado (o replay de uma oferta e o gêmeo público dependem disso). Ele vai
+    # no envelope da leitura da sacola (``GET /api/v1/storefront/cart/``).
+    reserved_until_iso: str | None = None
+    reserved_until_display: str | None = None
+    # A reserva que venceu e não foi renovada (#2767): a hora até quando ela valia,
+    # para quem abre a sacola depois do prazo ler o que houve ("A reserva valia até
+    # 19h18 e já venceu"). Prazo de outro dia leva a data ("18/11 às 19h18").
+    # ``None`` com reserva viva (a sacola diz até quando guarda) ou sem reserva
+    # vencida de item que está na sacola.
+    reservation_lapsed_display: str | None = None
+    # Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+    # sincronização. Vazio para visitante, para link encaminhado e sem outra sacola.
+    open_elsewhere: tuple[OpenElsewhereProjection, ...] = ()
+    # "Continuar pelo WhatsApp" (OC-16, C02): a sacola passa para a conversa com a
+    # Nice pela mensagem pronta com código NB. Só existe quando a passagem é
+    # possível agora (X1): ponte ligada, número da loja e sacola com itens.
+    continue_in_conversation: Action | None = None
+    # O que entrou vindo de outro canal, e as diferenças se houver (OC-16, #3517).
+    transfer_arrival: CartTransferArrivalProjection | None = None
+    # Dá para pedir agora, e para quando (OC-04), pela mesma leitura da home
+    # (``catalog.build_ordering``). Só na sacola VAZIA, que é onde a tela convida
+    # a pedir ("Você pode encomendar para o próximo dia"); com itens, cada linha
+    # já diz quando fica pronta, e reler o cardápio inteiro a cada gesto na
+    # sacola seria custo sem leitor. ``None`` com a sacola cheia.
+    ordering: OrderingProjection | None = None
+    # O dia da sacola quando ela é de outro dia (OC-33 B1). ``None`` para hoje:
+    # o padrão não se anuncia.
+    day: CartDayProjection | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -254,24 +391,46 @@ def build_cart(
     # Quem já pediu o aviso vê "Anotado" também na sacola — mesmo dono da
     # pergunta que o card e a PDP usam.
     subscribed_skus = notify_subscribed_skus(request)
+    promise_facts = read_promise_facts(
+        [line.sku for line in data.lines], channel_ref=channel_ref, day_known=True
+    )
     items = tuple(
         _present_line(
             line, image_by_sku, planned_notice_template, made_to_order_label,
             subscribed_skus=subscribed_skus,
+            promise_facts=promise_facts,
         )
         for line in data.lines
     )
 
+    summary = _summary(data)
     min_order = present_minimum_order(data.minimum_order)
     delivery_minimum = present_minimum_order(data.delivery_minimum)
     free_delivery = present_free_delivery(data.free_delivery)
     upsell = present_upsell(data.upsell)
-    actions = _cart_actions(data, min_order)
-    empty_title, empty_message = _empty_copy(request, is_empty=data.is_empty)
+    ordering = (
+        build_ordering(channel_ref=channel_ref, request=request).ordering if data.is_empty else None
+    )
+    nothing_to_order = ordering is not None and ordering.state == ORDERING_NONE
+    actions = _cart_actions(data, min_order, nothing_to_order=nothing_to_order)
+    empty_title, empty_message = _empty_copy(
+        request, is_empty=data.is_empty, nothing_to_order=nothing_to_order
+    )
 
     from shopman.storefront.identity import checkout_draft_context
     context = checkout_draft_context(request, session_key)
+    reserved_until = None if data.is_empty else cart_data.reserved_until(session_key)
+    lapsed_at = (
+        None if data.is_empty or reserved_until
+        else cart_data.reservation_lapsed_at(session_key, [line.sku for line in data.lines])
+    )
     return CartProjection(
+        reserved_until_iso=_iso(reserved_until),
+        reserved_until_display=(format_clock(reserved_until) or None) if reserved_until else None,
+        reservation_lapsed_display=_lapsed_display(lapsed_at),
+        open_elsewhere=_open_elsewhere(request, channel_ref),
+        continue_in_conversation=_continue_in_conversation(request, channel_ref, is_empty=data.is_empty),
+        transfer_arrival=None if data.is_empty else _transfer_arrival(session_key, data.transferred_from),
         revision=data.revision,
         draft_context=context,
         items=items,
@@ -282,11 +441,19 @@ def build_cart(
         subtotal_q=data.subtotal_q,
         subtotal_display=_money(data.subtotal_q),
         original_subtotal_q=data.original_subtotal_q,
-        original_subtotal_display=_money(data.original_subtotal_q),
         discount_total_q=data.discount_total_q,
         discount_total_display=_money(data.discount_total_q),
         has_discount=data.discount_total_q > 0,
         discount_lines=tuple(_present_discount_line(dl) for dl in data.discount_lines),
+        lines_subtotal_q=summary.lines_subtotal_q,
+        lines_subtotal_display=_money(summary.lines_subtotal_q),
+        promo_savings_q=summary.promo_savings_q,
+        promo_savings_display=(
+            _money(summary.promo_savings_q) if summary.promo_savings_q else None
+        ),
+        order_discount_lines=tuple(
+            _present_discount_line(dl) for dl in summary.order_discount_lines
+        ),
         delivery_fee_q=data.delivery_fee_q,
         delivery_fee_display=_delivery_fee_display(data),
         delivery_is_free=data.delivery_is_free,
@@ -303,6 +470,12 @@ def build_cart(
             if data.coupon and data.coupon.discount_q
             else None
         ),
+        coupon_zero_reason=data.coupon.zero_reason if data.coupon else "",
+        coupon_missing_q=data.coupon.missing_q if data.coupon else 0,
+        coupon_missing_display=(
+            _money(data.coupon.missing_q) if data.coupon and data.coupon.missing_q else None
+        ),
+        coupon_fulfillment_types=data.coupon.fulfillment_types if data.coupon else (),
         has_unavailable_items=data.has_unavailable,
         has_awaiting_confirmation_items=data.has_awaiting_confirmation,
         has_ready_for_confirmation_items=data.has_ready_for_confirmation,
@@ -318,6 +491,17 @@ def build_cart(
         upsell=upsell,
         actions=actions,
         group_savings_message=data.group_savings_message,
+        ordering=ordering,
+        day=_cart_day(data),
+    )
+
+
+def _cart_day(data: cart_data.CartProjection) -> CartDayProjection | None:
+    if data.cart_date is None:
+        return None
+    return CartDayProjection(
+        date=data.cart_date.isoformat(),
+        label=day_label(data.cart_date, today=timezone.localdate()),
     )
 
 
@@ -332,6 +516,7 @@ def _present_line(
     planned_notice_template: str = "",
     made_to_order_label: str = "",
     subscribed_skus: frozenset[str] | set[str] = frozenset(),
+    promise_facts: PromiseFacts | None = None,
 ) -> CartItemProjection:
     # ``is_available`` already reflects the own-hold correction. When false,
     # the stock really fell behind what this session reserved — surface the
@@ -350,6 +535,20 @@ def _present_line(
             f"Cupom {line.discount_name}" if line.discount_is_coupon else line.discount_name
         )
 
+    # O cardápio mostrou "antes R$ 6,00, R$ 5,10"; a linha da sacola repete a
+    # mesma dupla para o preço não mudar no caminho (beta 06/11). Decisão do
+    # dono 1 (16/11/2026): com promoção do produto, o unitário E o total da
+    # linha falam o preço com desconto, cada um com o cheio riscado ao lado.
+    # Sem promoção (inclusive com cupom ou oferta de valor fixo, que são do
+    # pedido), a linha fala o cheio e o desconto mora no resumo.
+    promo_price_display: str | None = None
+    line_total_display = _money(line.list_total_q)
+    line_total_struck_display: str | None = None
+    if _has_product_promo(line):
+        promo_price_display = _money(line.unit_price_q)
+        line_total_display = _money(line.line_total_q)
+        line_total_struck_display = _money(line.list_total_q)
+
     return CartItemProjection(
         line_id=line.line_id,
         sku=line.sku,
@@ -357,13 +556,16 @@ def _present_line(
         qty=line.qty,
         unit_price_q=line.unit_price_q,
         total_price_q=line.line_total_q,
-        price_display=_money(line.unit_price_q),
-        total_display=_money(line.line_total_q),
+        # O unitário cheio. Desconto de PEDIDO rateado na linha nunca vira preço
+        # exibido: "2 × R$ 8,00" num croissant de R$ 13 fazia as linhas somarem
+        # 16 sob um Subtotal de 26 (beta 05/11, MKT-05).
+        price_display=_money(line.list_price_q),
         image_url=image_by_sku.get(line.sku),
-        original_price_display=(
-            _money(line.original_price_q) if line.original_price_q is not None else None
-        ),
         discount_label=discount_label,
+        promo_price_display=promo_price_display,
+        line_total_display=line_total_display,
+        line_total_struck_display=line_total_struck_display,
+        list_price_q=line.list_price_q,
         is_available=line.is_available,
         availability_warning=warning,
         available_qty=line.available_qty,
@@ -378,10 +580,105 @@ def _present_line(
         confirmation_deadline_iso=line.confirmation_deadline_iso,
         confirmation_deadline_display=_deadline_display(line.confirmation_deadline_iso),
         planned_for_date=line.planned_for_date,
+        earlier_available_date=line.earlier_available_date,
         planned_for_notice=_planned_for_notice(line, planned_notice_template),
         notes=line.notes,
         options_summary=line.options_summary,
         has_options=line.has_options,
+        promise=_line_promise(line, promise_facts),
+    )
+
+
+def _has_product_promo(line: cart_data.CartLineProjection) -> bool:
+    """A linha tem promoção do PRODUTO: o desconto abate nela, não no resumo.
+
+    Cupom e oferta de valor fixo são do pedido: o motor rateia o valor no preço
+    cobrado, mas a linha segue falando o cheio.
+    """
+    return bool(
+        line.discount_name
+        and not line.discount_is_coupon
+        and line.unit_price_q < line.list_price_q
+    )
+
+
+@dataclass(frozen=True)
+class _CartSummary:
+    lines_subtotal_q: int
+    promo_savings_q: int
+    order_discount_lines: tuple[cart_data.CartDiscountLineProjection, ...]
+
+
+def _summary(data: cart_data.CartProjection) -> _CartSummary:
+    """O resumo que fecha com as linhas (decisão do dono 1, 16/11/2026).
+
+    O Subtotal é a soma das linhas como a tela as mostra: com promoção do
+    produto, o total com desconto; sem ela, o cheio. As linhas de desconto do
+    resumo são o que sobra depois de tirar o que já abateu nas linhas: cupom,
+    pontos e desconto de pedido. Subtotal menos elas é o que a cliente paga
+    pelos itens (``subtotal_q``).
+    """
+    lines_subtotal_q = 0
+    promo_savings_q = 0
+    saved_by_promo: dict[str, int] = {}
+    for line in data.lines:
+        if _has_product_promo(line):
+            saved_q = max(line.list_total_q - line.line_total_q, 0)
+            promo_savings_q += saved_q
+            name = line.discount_name or ""
+            saved_by_promo[name] = saved_by_promo.get(name, 0) + saved_q
+            lines_subtotal_q += line.line_total_q
+        else:
+            lines_subtotal_q += line.list_total_q
+
+    order_rows: list[cart_data.CartDiscountLineProjection] = []
+    for row in data.discount_lines:
+        on_lines_q = 0 if row.is_coupon else saved_by_promo.get(row.name, 0)
+        amount_q = row.amount_q - on_lines_q
+        if amount_q > 0:
+            order_rows.append(replace(row, amount_q=amount_q))
+
+    closes_q = lines_subtotal_q - sum(row.amount_q for row in order_rows)
+    if closes_q != data.subtotal_q:
+        # A tela mostraria um resumo que não soma. Não há como consertar aqui
+        # sem inventar número: o aviso é para quem mantém o motor de preço.
+        logger.warning(
+            "cart.summary_does_not_close shown_q=%s charged_q=%s",
+            closes_q, data.subtotal_q,
+        )
+    return _CartSummary(
+        lines_subtotal_q=lines_subtotal_q,
+        promo_savings_q=promo_savings_q,
+        order_discount_lines=tuple(order_rows),
+    )
+
+
+def _line_promise(
+    line: cart_data.CartLineProjection, facts: PromiseFacts | None,
+) -> PromiseProjection | None:
+    """A promessa da linha, pela mesma função do card e do produto.
+
+    A linha já tem dia: a da fornada que ela reservou (``planned_for_date``), ou
+    hoje, quando a reserva é do pronto de hoje (ou o item não tem estoque
+    controlado). A grade do checkout decide o resto: casa fechada ou corte do
+    dia levam a promessa para o próximo dia com horário.
+    """
+    if facts is None:
+        return None
+    from datetime import date
+
+    planned_for = facts.today
+    if line.planned_for_date:
+        try:
+            planned_for = date.fromisoformat(line.planned_for_date)
+        except ValueError:
+            return None
+    return promise_for(
+        line.sku,
+        facts,
+        orderable=line.is_available,
+        planned_for=planned_for,
+        made_to_order=line.is_made_to_order,
     )
 
 
@@ -473,15 +770,23 @@ def _iso(value) -> str | None:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+def _lapsed_display(lapsed_at) -> str | None:
+    """A hora da reserva vencida; de outro dia, com a data ("18/11 às 19h18")."""
+    if lapsed_at is None:
+        return None
+    if timezone.localtime(lapsed_at).date() == timezone.localdate():
+        return format_clock(lapsed_at) or None
+    return format_local(lapsed_at, "%d/%m às {clock}", empty="") or None
+
+
 def _deadline_display(deadline_iso: str | None) -> str | None:
     if not deadline_iso:
         return None
     try:
         from datetime import datetime
 
-        from django.utils import timezone as _tz
 
-        return _tz.localtime(datetime.fromisoformat(deadline_iso)).strftime("%H:%M")
+        return format_clock(datetime.fromisoformat(deadline_iso))
     except Exception:
         logger.debug("cart._deadline_display degraded", exc_info=True)
         return None
@@ -554,15 +859,217 @@ def _money(value_q: int | None) -> str:
     return f"R$ {format_money(int(value_q))}"
 
 
-def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
+def _open_elsewhere(request: HttpRequest, channel_ref: str) -> tuple[OpenElsewhereProjection, ...]:
+    """As outras sacolas abertas da cliente que entrou com o próprio dispositivo."""
+    from shopman.storefront.identity import get_authenticated_customer, knows_only_the_number
+
+    if getattr(request, "customer", None) is None or knows_only_the_number(request):
+        return ()
+    customer = get_authenticated_customer(request)
+    if customer is None:
+        return ()
+    bridge = _bridge_channel(channel_ref)
+    return tuple(
+        OpenElsewhereProjection(
+            channel=entry.channel_ref,
+            channel_label=entry.channel_name,
+            items_count=entry.items_count if isinstance(entry.items_count, int) else entry.lines_count,
+            items_phrase=cart_data.items_phrase(entry),
+            subtotal_q=entry.subtotal_q,
+            subtotal_display=_money(entry.subtotal_q),
+            bring=_bring_action(entry.channel_ref, entry.channel_name, bridge=bridge),
+        )
+        for entry in cart_data.open_elsewhere(customer.ref, channel_ref)
+    )
+
+
+def _bridge_channel(channel_ref: str) -> str:
+    """O canal da Nice quando a ponte de sacola está ligada e não é este canal; vazio se não."""
+    from shopman.storefront.concierge.service import transfer_bridge_channel
+
+    bridge = transfer_bridge_channel()
+    return bridge if bridge and bridge != channel_ref else ""
+
+
+def _bring_action(source_channel: str, channel_name: str, *, bridge: str) -> Action:
+    """"Trazer a sacola do WhatsApp": ligada só quando a passagem é possível agora (X1).
+
+    Os itens entram na sacola daqui (o mesmo item soma): é um gesto só, sem escolha.
+    """
+    label = f"Trazer a sacola do {channel_name}"
+    if source_channel and source_channel == bridge:
+        return Action(
+            ref="bring_cart",
+            kind="mutation",
+            label=label,
+            priority="secondary",
+            href="/api/v1/cart/bring/",
+            method="POST",
+            payload_schema={"channel": source_channel},
+            idempotency="none",
+        )
+    return Action(
+        ref="bring_cart",
+        kind="mutation",
+        label=label,
+        priority="secondary",
+        enabled=False,
+        reason="A passagem da sacola entre canais ainda não está ligada.",
+    )
+
+
+def nice_answers_this_customer(request: HttpRequest, bridge_channel: str) -> bool:
+    """A Nice atende ESTE cliente no WhatsApp? Sem isso, oferecer a passagem é mentir (X1).
+
+    A Concierge pode atender só uma coorte (``allowed_subjects`` da conexão). Quem já
+    conversou com ela tem assinante conhecido: a resposta é a da admissão do runtime
+    (``service.is_allowed`` para o vínculo dele). Anônimo, ou cliente sem conversa:
+    só quando a Nice atende todo visitante, o mesmo predicado da home (OC-06).
+    """
+    from shopman.shop.models import ConversationBinding
+    from shopman.storefront.concierge import service
+    from shopman.storefront.identity import get_authenticated_customer
+    from shopman.storefront.presentation.home import _concierge_answers_whatsapp
+
+    customer = get_authenticated_customer(request) if getattr(request, "customer", None) is not None else None
+    if customer is not None:
+        binding = (
+            ConversationBinding.objects.filter(
+                conversation__customer_ref=customer.ref,
+                conversation__channel_ref=bridge_channel,
+                status=ConversationBinding.Status.ACTIVE,
+            )
+            .order_by("-pk")
+            .first()
+        )
+        if binding is not None:
+            return service.is_allowed(binding)
+    return _concierge_answers_whatsapp()
+
+
+def _continue_in_conversation(request: HttpRequest, channel_ref: str, *, is_empty: bool) -> Action | None:
+    """"Continuar pelo WhatsApp", só quando a passagem é possível agora (X1, OC-16)."""
+    from shopman.storefront.identity import knows_only_the_number
+
+    if is_empty or knows_only_the_number(request):
+        return None
+    bridge = _bridge_channel(channel_ref)
+    if not bridge or not cart_data.conversation_number_available() or not nice_answers_this_customer(request, bridge):
+        return None
+    return Action(
+        ref="continue_in_conversation",
+        kind="mutation",
+        label="Continuar pelo WhatsApp",
+        priority="secondary",
+        href="/api/v1/cart/continue-in-conversation/",
+        method="POST",
+        idempotency="none",
+    )
+
+
+#: Como a loja e a Nice nomeiam o que não viajou na passagem da sacola (OC-16, #3517).
+_FULFILLMENT_NAMES = {"delivery": "Entrega", "pickup": "Retirada"}
+_PAYMENT_NAMES = {"pix": "Pix", "card": "Cartão", "cash": "Dinheiro", "external": "Pagamento externo"}
+_ADDRESS_FIELDS = frozenset(
+    {"delivery_address", "delivery_address_structured", "saved_address_id", "address_label"}
+)
+_GIFT_FIELDS = frozenset({"is_gift", "recipient", "gift_message", "gift_hide_values"})
+
+
+def transfer_difference_lines(differences) -> list[str]:
+    """Uma frase por diferença do recibo da passagem (``TransferReceipt.differences``).
+
+    A mesma frase na loja e na conversa, dita do lado que recebeu a sacola ("aqui").
+    Tipo que esta função não conhece vira uma frase que manda conferir, nunca silêncio.
+    """
+    lines: list[str] = []
+    for diff in differences or ():
+        if not isinstance(diff, dict):
+            continue
+        kind = diff.get("kind")
+        name = str(diff.get("name") or diff.get("sku") or "Um item")
+        if kind == "price_changed":
+            lines.append(f"{name}: agora {_plain_money(diff.get('to_q'))} (era {_plain_money(diff.get('from_q'))}).")
+        elif kind == "qty_reduced":
+            lines.append(f"{name}: só temos {diff.get('to_qty')} (eram {diff.get('from_qty')}).")
+        elif kind == "unavailable":
+            lines.append(f"{name}: indisponível, ficou de fora.")
+        elif kind == "fulfillment_not_available":
+            label = _FULFILLMENT_NAMES.get(str(diff.get("fulfillment_type") or ""), "A forma de receber")
+            lines.append(f"{label} indisponível aqui: escolha outra ao finalizar.")
+        elif kind == "payment_not_available":
+            method = _PAYMENT_NAMES.get(str(diff.get("method") or ""), "A forma de pagamento")
+            lines.append(f"{method} indisponível aqui: escolha outra forma ao finalizar.")
+        elif kind == "coupon_not_applied":
+            code = str(diff.get("code") or "")
+            lines.append(f"O cupom {code} não vale aqui." if code else "O cupom não vale aqui.")
+        elif kind == "details_not_carried":
+            fields = set(diff.get("fields") or ())
+            if fields & _ADDRESS_FIELDS:
+                lines.append("Endereço de entrega: informe ao finalizar.")
+            if fields & _GIFT_FIELDS:
+                lines.append("Dados do presente: informe ao finalizar.")
+        else:
+            lines.append("Um item chegou diferente. Confira a sacola.")
+    return lines
+
+
+def _plain_money(value_q) -> str:
+    """"R$ 0,00" inclusive para zero: a frase da diferença nunca omite o valor."""
+    return f"R$ {format_money(int(value_q or 0))}"
+
+
+def _glued(text: str) -> str:
+    """"R$ 7,65" sem quebra de linha entre o símbolo e o valor (a frase quebra em 375 px)."""
+    return text.replace("R$ ", "R$\u00a0")
+
+
+def carried_phrase(carried_lines: int, carried_units: str) -> str:
+    """"3 itens", "1 item"; com item de peso, conta os produtos ("2 produtos")."""
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        units = Decimal(carried_units or "0")
+    except InvalidOperation:
+        units = Decimal(0)
+    if units > 0 and units == units.to_integral_value():
+        count = int(units)
+        return f"{count} {'item' if count == 1 else 'itens'}"
+    return f"{carried_lines} {'produto' if carried_lines == 1 else 'produtos'}"
+
+
+def _transfer_arrival(session_key: str | None, came_from: dict | None) -> CartTransferArrivalProjection | None:
+    arrival = cart_data.transfer_arrival(session_key, came_from)
+    if arrival is None or not arrival.carried_lines:
+        return None
+    phrase = carried_phrase(arrival.carried_lines, arrival.carried_units)
+    verb = "Entrou" if phrase.startswith("1 ") else "Entraram"
+    return CartTransferArrivalProjection(
+        channel=arrival.source_channel,
+        title=_glued(f"{verb} {phrase} da sacola do {arrival.source_channel_name}."),
+        lines=tuple(_glued(line) for line in transfer_difference_lines(arrival.differences)),
+    )
+
+
+def _empty_copy(
+    request: HttpRequest, *, is_empty: bool, nothing_to_order: bool = False
+) -> tuple[str, str]:
     """Título e mensagem do estado vazio, por momento e audiência.
 
     Só resolve quando a sacola está vazia: montar o contexto omotenashi custa
     uma leitura do estado do negócio, e a sacola com itens nunca renderiza o
     bloco.
+
+    ``nothing_to_order``: nenhum item do cardápio tem promessa (OC-04). A copy
+    do momento convida a pedir ("Você pode encomendar para o próximo dia",
+    "Ainda dá tempo", "Pode ir escolhendo o que quer"), e ninguém consegue.
+    A sacola fica no vazio simples, sem frase: o que falta para cada item (o
+    "Me avise") é dito no próprio item (dono, prévia de 24/11).
     """
     if not is_empty:
         return "", ""
+    if nothing_to_order:
+        return _PLAIN_EMPTY_TITLE, ""
     from shopman.shop.omotenashi import OmotenashiContext
 
     omo = OmotenashiContext.from_request(request)
@@ -570,9 +1077,15 @@ def _empty_copy(request: HttpRequest, *, is_empty: bool) -> tuple[str, str]:
     return (entry.title or "").strip(), (entry.message or "").strip()
 
 
+#: O vazio sem convite: diz o estado da sacola e mais nada (OC-04).
+_PLAIN_EMPTY_TITLE = "Sacola vazia"
+
+
 def _cart_actions(
     data: cart_data.CartProjection,
     minimum_order_progress: MinimumOrderProgressProjection | None,
+    *,
+    nothing_to_order: bool = False,
 ) -> tuple[Action, ...]:
     """Map the data projection's checkout-eligibility decision to actions.
 
@@ -615,7 +1128,9 @@ def _cart_actions(
         Action(
             ref="continue_shopping",
             kind="link",
-            label="Continuar comprando",
+            # Sem nada para pedir, "Continuar comprando" convida ao que não existe;
+            # o cardápio é onde está o "Me avise" de cada item.
+            label="Ver cardápio" if nothing_to_order else "Continuar comprando",
             priority="secondary",
             enabled=True,
             href="/menu",
@@ -633,7 +1148,10 @@ __all__ = [
     "DiscountLineProjection",
     "FreeDeliveryProgressProjection",
     "MinimumOrderProgressProjection",
+    "CartTransferArrivalProjection",
+    "OpenElsewhereProjection",
     "UpsellSuggestionProjection",
     "build_cart",
+    "transfer_difference_lines",
     "present_cart_date_mismatch",
 ]

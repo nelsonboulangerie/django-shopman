@@ -390,14 +390,19 @@ def _score(
             score += PRICE_TIEBREAK
             reasons.append("price:below_cart_average")
 
-        ranked.append((paired, Suggestion(
-            sku=sku,
-            name=getattr(product, "name", "") or "",
-            unit_price_q=int(price_q or getattr(product, "base_price_q", 0) or 0),
-            image_url=getattr(product, "image_url", None) or None,
-            score=round(score, 4),
-            reasons=tuple(reasons),
-        )))
+        ranked.append(
+            (
+                paired,
+                Suggestion(
+                    sku=sku,
+                    name=getattr(product, "name", "") or "",
+                    unit_price_q=int(price_q if price_q is not None else (getattr(product, "base_price_q", 0) or 0)),
+                    image_url=getattr(product, "image_url", None) or None,
+                    score=round(score, 4),
+                    reasons=tuple(reasons),
+                ),
+            )
+        )
 
     # O pareamento é a regra da casa e vem primeiro; a afinidade ordena dentro
     # dele, e só fala sozinha quando nenhum pareamento casa. Sem esta ordem, um
@@ -719,24 +724,16 @@ def _cart_products_once(cart_skus: set[str]):
 
 def _listed_prices(skus: list[str], channel_ref: str) -> dict[str, int]:
     """Preço que o checkout cobraria, por SKU, neste canal."""
-    from shopman.offerman.models import ListingItem
-
     if not skus:
         return {}
-    prices: dict[str, int] = {}
-    items = (
-        ListingItem.objects.filter(
-            listing__ref=channel_ref, listing__is_active=True,
-            product__sku__in=skus, is_published=True,
-        )
-        .select_related("product")
-        .order_by("-min_qty")
+    from shopman.offerman.service import CatalogService
+
+    resolved = CatalogService.unit_prices(
+        [(sku, Decimal("1")) for sku in skus],
+        listings=(channel_ref,),
+        published_only=True,
     )
-    for item in items:
-        # `-min_qty` primeiro; o último a escrever é o degrau de menor
-        # quantidade, que é o preço de uma unidade.
-        prices[item.product.sku] = int(item.price_q or 0)
-    return prices
+    return {sku: price_q for sku, price_q in zip(skus, resolved, strict=True) if price_q is not None}
 
 
 def _cart_average(cart_skus: set[str], channel_ref: str, cart_products: list) -> int | None:

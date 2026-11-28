@@ -12,6 +12,56 @@ _install_postgres_lock_rule()
 
 
 @pytest.fixture(autouse=True)
+def _migration_graph_back_to_the_top(request):
+    """Teste de migração devolve o banco ao topo do grafo ao terminar.
+
+    Vários testes migram o banco para um ponto antigo e terminam lá (o "antes"
+    da migração que testam). O próximo teste do mesmo processo herdava um esquema
+    de antes de toda migração posterior, e quebrava com ``no such column`` no
+    primeiro campo novo. Só vale para módulos que usam o ``MigrationExecutor``.
+    """
+    yield
+    if "MigrationExecutor" not in vars(request.module):
+        return
+    if request.node.get_closest_marker("django_db") is None:
+        return
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+
+    executor = MigrationExecutor(connection)
+    targets = executor.loader.graph.leaf_nodes()
+    if executor.migration_plan(targets):
+        executor.migrate(targets)
+
+
+@pytest.fixture(autouse=True)
+def _materialized_channels(request):
+    """Materializa os canais que o teste declara com ``@pytest.mark.channels("web", ...)``.
+
+    A suíte roda no mesmo regime da produção: ``ChannelConfig.for_channel`` falha
+    fechado quando o canal não existe no banco (#1868), e não há fallback de teste.
+    Quem precisa de um canal o declara. A linha nasce vazia (config = defaults +
+    ``Shop.defaults``), como o canal que o descritor cria sem overrides.
+    """
+    marker = request.node.get_closest_marker("channels")
+    if marker is None:
+        return
+    import unittest
+
+    if request.node.get_closest_marker("django_db") is None and not isinstance(
+        request.instance, unittest.TestCase
+    ):
+        # Pedir o banco aqui, tarde, não reordena o teste: o pytest-django roda
+        # os testes sem marca DEPOIS dos transacionais, e lá o esquema pode estar
+        # num estado de migração antigo. Quem precisa de canal é teste de banco.
+        pytest.fail("@pytest.mark.channels exige @pytest.mark.django_db no teste", pytrace=False)
+    from shopman.shop.models import Channel
+
+    for ref in marker.args:
+        Channel.objects.get_or_create(ref=ref, defaults={"name": ref})
+
+
+@pytest.fixture(autouse=True)
 def _isolate_rules_state():
     """Keep process-level singletons deterministic across tests, regardless of order.
 

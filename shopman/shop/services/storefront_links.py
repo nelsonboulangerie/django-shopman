@@ -104,6 +104,11 @@ def path_login_revoke() -> str:
     return "/encerrar-acesso"
 
 
+def path_login_release() -> str:
+    """O "Liberar o Chrome no Windows" da mensagem de login começado no computador."""
+    return "/liberar-acesso"
+
+
 def storefront_url(path: str) -> str:
     """URL absoluta da loja para um caminho (base + caminho).
 
@@ -149,3 +154,8 @@ def stock_alert_management_url(capability: str) -> str:
 def login_revoke_url(ref: str) -> str:
     """A referência vai no fragmento, como a do aviso: nunca chega a log de HTTP."""
     return f"{storefront_url(path_login_revoke())}#{ref}"
+
+
+def login_release_url(ref: str) -> str:
+    """Idem: a referência de liberar vai no fragmento, fora de log e de referrer."""
+    return f"{storefront_url(path_login_release())}#{ref}"

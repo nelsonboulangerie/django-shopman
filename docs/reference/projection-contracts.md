@@ -45,6 +45,91 @@ erro estável. Projection v2 não transporta copy de UX, PII ou membership; aç�
 resolvidas pelo backend. Rotas e ownership:
 [`marketing-surface-contract.md`](marketing-surface-contract.md).
 
+### Histórico do Gestor × B.I.: o eixo da data
+
+O Histórico (`shopman/backstage/projections/order_history.py`,
+`GET /api/v1/backstage/orders/history/`) conta o período pelo dia em que o pedido
+**fechou** (`Coalesce(completed_at, cancelled_at, returned_at, updated_at)`). O B.I.
+conta a venda pelo **dia do pedido**: o dia combinado (`data.delivery_date`), e sem ele
+o dia em que o pedido foi feito (`order_helpers.agreed_day`; dono, 23/11/2026, #3427).
+A encomenda feita na quinta para sábado é venda de sábado, o dia em que a fornada a
+atende. O troco do balcão (`bi_change`) segue pelo dia em que o pedido foi feito, que
+é quando o dinheiro entrou. A margem da fornada não depende de data de pedido: parte
+das baixas dos lotes dela.
+
+Por isso o link "Abrir os N pedidos" do B.I. (`overShortOrdersHref`) manda
+`basis=ordered` na URL do Gestor, que vira `date_basis=ordered` no endpoint: o
+Histórico filtra pela mesma régua (`order_helpers.in_agreed_days`) e abre os mesmos N
+que o B.I. contou. Sem o
+parâmetro (`date_basis=closed`, o padrão), vale o eixo do fechamento. Tirar o
+recorte do produto tira o eixo junto. Trava:
+`test_ordered_basis_counts_by_the_day_the_order_was_made` e
+`surfaces/orders-nuxt/tests/history.test.ts` (beta 05/11/2026, ge:BI-03).
+
+### Central (hub): o número no canto do ícone
+
+A Central (`shopman/backstage/projections/hub.py`, `GET /api/v1/backstage/hub/`) é uma
+grade de ícones: cada app é o ícone e o nome, e no máximo um indicador, o número no
+canto superior direito do ícone (`attention_count` do tile; dono, 04/11/2026).
+
+**Para que serve o número:** quantas coisas estão paradas esperando um gesto de quem
+está operando, agora, que esta pessoa pode resolver. Movimento e informação não contam
+e não aparecem na Central; nem o que espera outra pessoa. Zero: o ícone fica limpo.
+
+| App | Conta | Não conta | Fonte (`projections/hub_queue.py`) |
+|---|---|---|---|
+| Gestor de Pedidos | pedido novo para aceitar; aviso de erro ou crítico não visto que se resolve no pedido | pedidos ativos do dia | `_orders`, `_alerts` |
+| Cozinha | pedido de estação que passou da meta | pedidos nas estações | `_kds` |
+| PDV | nada | encomenda para retirar na próxima hora (espera o cliente chegar), encomendas do dia, caixa aberto ou fechado | `_preorders`, `_pos_cash` |
+| Produção | lote iniciado que passou do tempo da receita; aviso de erro ou crítico não visto (insumo insuficiente, por exemplo) | lotes finalizados hoje | `_production`, `_alerts` |
+| Marketing | anúncio esperando decisão | campanhas ligadas | `_marketing_status` |
+| Compras | nada | pedido a caminho (espera o fornecedor) | `_purchase_status` |
+| B.I. | nada | vendas do período | `_bi_status` |
+| Loja online | nada | aberta, pedidos online | `_store_status` |
+
+Permissão: cada fonte só roda para quem passa no predicado da porta do app
+(`_SOURCES`), e os avisos só entram para quem opera o app onde eles se resolvem; o
+número é sempre do que esta pessoa pode resolver. O nome falado do ícone é o app e o
+que o número conta, por extenso ("Gestor de Pedidos, 1 para aceitar"). A frase
+`status_attention` continua no contrato (o trocador de apps do kit a mostra); a do PDV
+existe sem número. Travas: `shopman/backstage/tests/test_hub_queue.py`
+(`test_o_numero_do_icone_conta_so_o_que_espera_um_gesto_de_quem_opera`) e
+`surfaces/hub-nuxt/tests/hubAppIndicator.test.ts`.
+
+### PDV: o lastro da encomenda (WP-E2, D-041)
+
+A encomenda de outro dia promete o que o lote planejado PARA a data cobre. Duas chaves,
+apuradas pelo servidor (`shop/services/stock.py`, `plan_backing_on` e `over_plan_lines`,
+sobre `adapters/stock.planned_on_date`: saldos com `target_date == data` e as reservas
+ativas presas a eles); o PDV só as diz:
+
+| Onde | Chave | Forma |
+|---|---|---|
+| `GET /pos/schedule/` (`build_pos_schedule`) | `plan_by_sku` | `{sku: {planned_qty, unclaimed_qty}}` para os SKUs do carrinho com lote planejado na data, e `{planned_qty: 0, unclaimed_qty: 0}` para o SKU do carrinho em `unplanned_skus`; `{}` hoje |
+| `GET /pos/schedule/` (`build_pos_schedule`) | `sold_out_skus` · `unplanned_skus` | os SKUs da grade sem saldo na data (plano esgotado e falta de verdade: bloqueados) e os que viram pedido à Produção (WP-E3); `[]` hoje |
+| `POST /pos/sale/review/` | `preorder_over_plan` | `[{sku, name, date, requested_qty, planned_qty, unclaimed_qty}]`, com o motivo `preorder_over_plan` em `approval_reasons` |
+
+`planned_qty` é o lote planejado para a data, sem descontar reservas; `unclaimed_qty`, o que
+desse lote ainda não está preso a outra encomenda (nunca maior que `planned_qty`). **A sobra
+de hoje e a vitrine não entram em nenhum dos dois** (dono, 18/11/2026: "não oferecemos pães
+de um dia para o outro! eles não ficam disponíveis para encomenda!"). Passa do plano quando o
+pedido é maior que `unclaimed_qty`: o Validar trava e só o gerente libera. A liberação é o
+carimbo do WP-E1 (`issue_sale_approval`), com as linhas em `scope.over_plan`; o fechamento
+recusa carimbo de outros números.
+
+**Data sem plano não é sem saldo (WP-E3, D2 do dono).** A régua do Stockman responde zero
+por dois motivos, e o servidor os separa (`shop/services/stock.py`, `unplanned_on`): *plano
+esgotado* (a data tem lote planejado e ele acabou) segue em `sold_out_skus`, bloqueado, e
+acima do plano só o gerente libera; *sem plano* (o SKU é produzido aqui em lote, ficha "Em
+lote", e a data ainda não tem lote planejado dele) vai para `unplanned_skus`: o item entra
+como pedido à Produção, sem gerente. A linha diz "Ainda sem lote planejado para 30/11: vira
+pedido à Produção", e a ressalva da review diz o mesmo. Revenda e "Na hora" não entram: a
+Produção não planeja lote deles. A reserva fica como demanda sem lote, a sugestão da Produção
+a conta (`committed`) e o aviso `order_demand_over_plan` sai no fechamento. Travas:
+`shopman/shop/tests/test_pos_encomenda_sem_plano.py`. Travas do WP-E2: `shopman/shop/tests/test_pos_encomenda_acima_do_plano_bloqueia.py`,
+`surfaces/pos-nuxt/tests/encomendaAcimaDoPlano.test.ts` e os testes de componente
+`PosPaymentWorkspace.overPlan` e `PosCartPanel.plan`.
+
 ## Mudou o contrato de propósito?
 
 ```bash

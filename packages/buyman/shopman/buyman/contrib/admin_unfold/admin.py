@@ -134,8 +134,8 @@ class SupplierMaterialCostAdmin(BaseModelAdmin):
 
     @display(description=_("Custo da compra"))
     def cost_display(self, obj: SupplierMaterialCost):
-        """O número da nota, com a unidade em que ele foi digitado."""
-        return f"{format_money(obj.cost_q)} / {obj.purchase_unit_label}".strip(" /")
+        """O número da nota, com a unidade que ele paga (o kg, quando a base é g)."""
+        return f"{format_money(obj.cost_q)} / {obj.priced_unit_label}".strip(" /")
 
     @display(description=_("Por unidade-base"))
     def base_cost_display(self, obj: SupplierMaterialCost):

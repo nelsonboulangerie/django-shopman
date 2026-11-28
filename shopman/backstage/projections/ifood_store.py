@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import business_calendar, ifood_merchant
 
@@ -35,7 +36,8 @@ class IFoodStoreProjection:
 
 
 def _hhmm(value: datetime | None, tz) -> str:
-    return timezone.localtime(value, timezone=tz).strftime("%H:%M") if value else ""
+    # A hora sai no fuso da loja do iFood, já escolhido aqui: por isso o ``.time()``.
+    return format_clock(timezone.localtime(value, timezone=tz).time()) if value else ""
 
 
 def build_ifood_store_projection(*, user=None, now: datetime | None = None) -> IFoodStoreProjection:
@@ -71,7 +73,53 @@ def build_ifood_store_projection(*, user=None, now: datetime | None = None) -> I
     )
 
 
+@dataclass(frozen=True)
+class IFoodWidgetProjection:
+    """O widget oficial do iFood no Gestor (chat, notificações e rastreio).
+
+    ``widget_id`` vazio = desligado: a tela não carrega nada do iFood. O widget
+    roda no navegador e se autoriza sozinho, por dispositivo, no Portal do
+    Parceiro; o servidor só diz qual widget e qual loja.
+
+    ``has_order_in_progress``: há pedido iFood aberto e ainda não entregue. O
+    botão do iFood só aparece no Gestor enquanto isso for verdade (decisão do
+    dono, 14/11, DEV-2026-023): sem pedido em curso ele não polui a tela; com
+    pedido em curso, a mensagem nova do cliente aparece em qualquer tela.
+    """
+
+    widget_id: str = ""
+    merchant_ids: tuple[str, ...] = ()
+    has_order_in_progress: bool = False
+
+
+def build_ifood_widget_projection() -> IFoodWidgetProjection:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    widget_id = (shop.ifood_widget_id if shop else "").strip()
+    merchant = ifood_merchant.merchant_id()
+    if not widget_id or not merchant:
+        return IFoodWidgetProjection()
+    return IFoodWidgetProjection(
+        widget_id=widget_id,
+        merchant_ids=(merchant,),
+        has_order_in_progress=_ifood_order_in_progress(),
+    )
+
+
+def _ifood_order_in_progress() -> bool:
+    """Pedido iFood aberto e ainda não entregue (cancelado e devolvido não contam)."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services.ifood_ingest import IFOOD_CHANNEL_REF
+
+    finished = [Order.Status.DELIVERED, *Order.TERMINAL_STATUSES]
+    return Order.objects.filter(channel_ref=IFOOD_CHANNEL_REF).exclude(status__in=finished).exists()
+
+
 __all__ = [
     "IFoodStoreProjection",
+    "IFoodWidgetProjection",
     "build_ifood_store_projection",
+    "build_ifood_widget_projection",
 ]

@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 // cliente; Ajustes depois de um traço; Terminal no pé. A antesala (Sessão de caixa) é
 // sobre o caixa e não carrega mais a seção.
 import { quickBarLayout, quickBarProblems } from "../../operator-kit/app/presentation/suiteChrome";
-import { posCorridorRoute, posCurrentSection, posSections } from "../app/presentation/sections";
+import { posCorridorRoute, posCurrentSection, posSections, posSwitcherSections } from "../app/presentation/sections";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const app = (...parts: string[]) => resolve(here, "..", "app", ...parts);
@@ -18,7 +18,8 @@ const SHELL_SECTIONS = readFileSync(app("composables", "usePosShell.ts"), "utf8"
 const SESSION = readFileSync(app("pages", "session", "index.vue"), "utf8");
 const CASH = readFileSync(app("presentation", "cash.ts"), "utf8");
 
-const base = { tabs: [], hasOpenCashSession: true };
+// O gerente (fecha o dia). A Caixa, sem `canCloseDay`, tem o teste dela abaixo.
+const base = { tabs: [], hasOpenCashSession: true, canCloseDay: true };
 
 describe("Encomendas na barra lateral do PDV", () => {
   it("a seção mora entre Comandas e Caixa, e leva à casa da seção", () => {
@@ -39,6 +40,14 @@ describe("Encomendas na barra lateral do PDV", () => {
     }).find((s) => s.key === "preorders")!;
     expect(withBadge.badge).toBe("4");
     expect(SHELL_SECTIONS).toContain("usePosPreordersRail()");
+  });
+
+  it("destravar relê tudo: a recusa da tela travada não vira falta de permissão (beta 07/11)", () => {
+    // Com a tela travada, a lista das Encomendas volta 403 `station_locked`, o rail
+    // marca "sem permissão" e para de ler. Sem reler ao destravar, a Caixa ficava
+    // sem "Encomendas" e com "Estação travada" na tela, já identificada.
+    const SHELL = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(SHELL).toMatch(/watch\(locked, \(now, before\) => \{\s*if \(before && !now\) void refreshNuxtData\(\);/);
   });
 
   it("Comandas conta as em uso; Caixa acende quando o turno está fechado", () => {
@@ -120,5 +129,70 @@ describe("Encomendas sem redundância (varredura do fonte)", () => {
       expect(source).toContain("toneBadge(situationTone(");
       expect(source).not.toContain("TONE_CLASS");
     }
+  });
+});
+
+describe("O trocador do PDV (modelo de navegação, 31/10/2026)", () => {
+  it("o balcão é chão, Ajustes e Terminal são escritório, a Tela do cliente é parede", () => {
+    const forms = Object.fromEntries(
+      posSwitcherSections(posSections({ ...base, preorders: { allowed: true } })).map((s) => [s.key, s.form]),
+    );
+    expect(forms).toEqual({
+      board: "floor",
+      preorders: "floor",
+      cash: "floor",
+      closing: "floor",
+      display: "wall",
+      settings: "office",
+      terminal: "office",
+    });
+  });
+
+  it("o shell liga o trocador, e o que não é tela de seção nasce chão", () => {
+    const shell = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(shell).toContain(':switcher-sections="switcherSections"');
+    expect(shell).toContain('default-form="floor"');
+  });
+
+  // Dono, 03/11/2026: "seção vai para baixo". No celular e no tablet em pé, as seções do
+  // balcão ficam na barra de baixo, na ordem do app; o selo abre o resto.
+  it("a barra de baixo do chão: Comandas, Encomendas, Caixa e Fim do dia, sem 'Mais'", () => {
+    const shell = readFileSync(app("components", "PosOperatorShell.vue"), "utf8");
+    expect(shell).toMatch(/\bfloor-bar\b/);
+    const floor = posSwitcherSections(posSections({ ...base, preorders: { allowed: true } }))
+      .filter((s) => s.form === "floor");
+    const layout = quickBarLayout(floor);
+    expect(layout.items.map((s) => s.label)).toEqual(["Comandas", "Encomendas", "Caixa", "Fim do dia"]);
+    expect(layout.more).toBe(false);
+    expect(quickBarProblems(floor)).toEqual([]);
+  });
+});
+
+// Beta 05/11/2026 (op:PDV-13): o "Fim do dia" levava a Caixa a "Fechamento é do gerente".
+describe("Fim do dia só para quem fecha o dia", () => {
+  it("sem a permissão, a barra de baixo não oferece o Fim do dia", () => {
+    const sections = posSections({ tabs: [], hasOpenCashSession: true, preorders: { allowed: true } });
+    expect(sections.map((s) => s.key)).not.toContain("closing");
+    expect(quickBarProblems(sections)).toEqual([]);
+  });
+
+  it("o shell lê a permissão da projection", () => {
+    expect(SHELL_SECTIONS).toContain("canCloseDay: pos.value?.can_close_day === true");
+  });
+});
+
+// Rotinas (abertura, rotina e fechamento da loja) moram no PDV, perto do caixa e do fim
+// do dia (dono, 13/11/2026); saíram do Gestor.
+describe("Rotinas no PDV", () => {
+  it("aparecem só para quem executa rotina, antes de Ajustes, fora da barra de baixo", () => {
+    expect(posSections({ ...base, preorders: { allowed: true } }).map((s) => s.key)).not.toContain("checklists");
+    const sections = posSections({ ...base, preorders: { allowed: true }, canOperateChecklists: true });
+    const keys = sections.map((s) => s.key);
+    expect(keys.indexOf("checklists")).toBe(keys.indexOf("settings") - 1);
+    const rotinas = sections.find((s) => s.key === "checklists")!;
+    expect(rotinas).toMatchObject({ label: "Rotinas", to: "/checklists" });
+    expect(rotinas.quick).toBeUndefined();
+    expect(posCurrentSection("/checklists")).toBe("checklists");
+    expect(posSwitcherSections(sections).find((s) => s.key === "checklists")?.form).toBe("office");
   });
 });

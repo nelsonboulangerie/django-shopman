@@ -29,6 +29,7 @@ from django.utils import timezone
 from shopman.orderman.models import Directive, Order
 from shopman.payman import PaymentService
 from shopman.payman.models import PaymentIntent
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.test_card_authorization_expiry import STRIPE_MANUAL, FakeStripe
@@ -38,7 +39,7 @@ from shopman.shop.tests.test_stripe_checkout_session import (
 )
 
 WEB_PAYS_AT_ORDER = {
-    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 30, "stale_new_alert_minutes": 10},
+    "confirmation": {"mode": "auto_cancel", "timeout_minutes": 5, "preorder_timeout_minutes": 60},
     "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
 }
 
@@ -48,22 +49,23 @@ WEB_PAYS_AT_ORDER = {
 
 @pytest.mark.django_db
 def test_seed_a_loja_online_cobra_no_pedido_com_prazo_de_aceite():
-    from config.management.commands.seed import Command
+    from config.management.commands.seed import NELSON_INSTANCE_DESCRIPTOR, Command
     from shopman.shop.config import ChannelConfig
 
-    Shop.objects.create(name="Seed Test Shop")
     command = Command()
     command.stdout = StringIO()
-    channels = command._seed_channels()
+    command._materialize_instance(NELSON_INSTANCE_DESCRIPTOR)
+    channels = command._instance_channels()
 
     web = ChannelConfig.for_channel(channels["web"])
     assert web.payment.timing == "at_commit"
     # L2=1: sem "pagar na entrega" no site.
     assert web.payment.available_methods == ["pix", "card"]
     assert web.confirmation.mode == "auto_cancel"
-    assert web.confirmation.timeout_minutes == 30
-    assert web.confirmation.stale_new_alert_minutes == 10
-    assert web.confirmation.stale_new_alert_minutes < web.confirmation.timeout_minutes
+    # Emenda de 09/11/2026: 5 min no pedido do dia, 60 na encomenda.
+    assert web.confirmation.timeout_minutes == 5
+    assert web.confirmation.preorder_timeout_minutes == 60
+    assert web.confirmation.stale_new_alert_minutes == 0
 
 
 @pytest.mark.django_db
@@ -215,6 +217,65 @@ class CardPaidAtOrderTests(TestCase):
         self.assertNotEqual(order.status, Order.Status.CANCELLED)
 
 
+# ── Cartão nunca autorizado: o prazo de pagamento fecha o pedido ───────────
+
+
+@override_settings(
+    SHOPMAN_STRIPE=STRIPE_MANUAL,
+    SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    DEBUG=False,
+)
+class CardNeverAuthorizedTests(TestCase):
+    """Beta 06/11, F2: cartão recusado ou abandonado na tela do Stripe deixava o
+    pedido "Novo · Bloqueado" para sempre, com o estoque preso. Agora ele nasce
+    com ``payment.timeout``, e vencido com o gateway dizendo "pendente" cancela."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        _web_channel()
+        self.stripe = FakeStripe()
+        # Sessão aberta, nada pago: o cliente teve o cartão recusado e desistiu.
+        self.stripe.session.status = "open"
+        self.stripe.session.payment_intent = None
+        from shopman.shop.adapters import payment_stripe
+
+        patcher = patch.object(payment_stripe, "_get_stripe", return_value=self.stripe)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_pedido_de_cartao_nasce_com_prazo_de_pagamento(self) -> None:
+        with self.captureOnCommitCallbacks(execute=True):
+            order = _commit_card_order()
+        order.refresh_from_db()
+
+        self.assertTrue(order.data["payment"].get("expires_at"))
+        directive = Directive.objects.get(topic="payment.timeout", payload__order_ref=order.ref)
+        self.assertEqual(directive.payload["intent_ref"], order.data["payment"]["intent_ref"])
+
+    def test_prazo_vencido_sem_autorizacao_cancela_e_libera_o_estoque(self) -> None:
+        from shopman.shop.handlers.payment_timeout import PaymentTimeoutHandler
+
+        with self.captureOnCommitCallbacks(execute=True):
+            order = _commit_card_order()
+        directive = Directive.objects.get(topic="payment.timeout", payload__order_ref=order.ref)
+        directive.payload = {**directive.payload, "expires_at": (timezone.now() - timedelta(seconds=1)).isoformat()}
+        directive.save(update_fields=["payload"])
+
+        with (
+            patch("shopman.shop.services.stock.release") as release,
+            patch("shopman.shop.services.notification.send"),
+            self.captureOnCommitCallbacks(execute=True),
+        ):
+            PaymentTimeoutHandler().handle(message=directive, ctx={})
+
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.Status.CANCELLED)
+        self.assertEqual(order.data["cancellation_reason"], "payment_timeout")
+        self.assertEqual(order.data["cancellation_reason_key"], "payment_deadline_passed")
+        release.assert_called_once()
+        self.assertEqual(release.call_args.args[0].ref, order.ref)
+
+
 # ── Pix pago, ninguém aceita: estorno ───────────────────────────────────────
 
 
@@ -266,7 +327,8 @@ def test_pago_e_esperando_aceite_avisa_o_gestor_antes_do_prazo():
     alert = Directive.objects.get(topic="order.stale_new_alert", payload__order_ref=order.ref)
     assert alert.available_at < timer.available_at
     assert alert.payload["deadline_at"] == timer.payload["expires_at"]
-    assert timer.available_at - alert.available_at == timedelta(minutes=20)
+    # Pedido do dia, prazo de 5 min: o aviso sai a 1/3 dele (faltando 3min20s).
+    assert timer.available_at - alert.available_at == timedelta(minutes=5) * 2 / 3
 
     # Reagendar (o pagamento chegou) move o aviso junto, sem duplicar.
     _schedule_confirmation_timeout(order, config, action="cancel", source="order_commit")
@@ -293,6 +355,6 @@ def test_aviso_de_pedido_parado_diz_o_prazo_e_o_estorno():
     StaleNewOrderAlertHandler().handle(message=directive, ctx={})
 
     alert = OperatorAlert.objects.get(type="stale_new_order", order_ref=order.ref)
-    clock = timezone.localtime(deadline).strftime("%H:%M")
+    clock = format_clock(deadline)
     assert clock in alert.message
     assert "devolvido" in alert.message

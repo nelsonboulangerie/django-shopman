@@ -3,7 +3,7 @@ import { productionSections, toolSections } from "~/presentation/productionSecti
 /** O que a tela da Qualidade conta à barra lateral (o selo de lotes para confirmar). Fora
  *  dela o selo some, em vez de mentir com um número velho. */
 export function useProductionRail() {
-  return useState<{ qualityPending: number }>("production-rail", () => ({ qualityPending: 0 }));
+  return useState<{ qualityPending: number; viewedDate?: string }>("production-rail", () => ({ qualityPending: 0 }));
 }
 
 // As seções do shell (barra lateral, gaveta e barra inferior). Timers vêm do localStorage (o servidor não
@@ -14,6 +14,7 @@ export function useProductionSections() {
   const { canView: recipesAllowed } = useRecipeBookAccess();
   const floorTimers = useFloorTimers();
   const rail = useProductionRail();
+  const route = useRoute();
   const hydrated = ref(false);
   onMounted(() => {
     hydrated.value = true;
@@ -25,6 +26,7 @@ export function useProductionSections() {
     qualityPending: rail.value.qualityPending,
     canViewRecipes: recipesAllowed.value,
     canViewReports: reportsAllowed.value,
+    date: route.path === "/" || route.path === "/plan" ? rail.value.viewedDate : undefined,
   }));
   const sections = computed(() => productionSections(input.value));
   const tools = computed(() => toolSections(input.value));

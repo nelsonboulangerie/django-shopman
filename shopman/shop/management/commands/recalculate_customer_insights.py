@@ -21,7 +21,8 @@ Três decisões que o formato carrega:
 1. **Cliente sem NENHUM pedido fica de fora.** Sem pedido, ``r=1, f=1, m=1`` cai em
    ``r<=2 and f<=2`` e o segmento sai ``lost`` — chamar de "Perdido" quem nunca
    comprou é mentira, não classificação. Quem não tem ``last_order_at`` não tem
-   recência para envelhecer, e a varredura não o toca.
+   recência para envelhecer, e a varredura não o toca. O ``--all`` passa por todos,
+   mas o ``InsightService`` não classifica quem não tem pedido (segmento vazio).
 2. **Lote com teto por ciclo.** O ``maintenance_worker`` roda os comandos em SÉRIE:
    uma varredura de base inteira dentro de um ciclo atrasaria
    ``reconcile_payments`` e todo o resto atrás dela. Com teto, cada ciclo devolve o

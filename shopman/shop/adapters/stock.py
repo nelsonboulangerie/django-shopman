@@ -14,6 +14,9 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 from django.utils import timezone
 
+from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+from shopman.shop.protocols import ReserveRefusal
+
 logger = logging.getLogger(__name__)
 
 
@@ -22,52 +25,6 @@ def _get_product(sku: str):
     from shopman.offerman.models import Product
 
     return Product.objects.get(sku=sku)
-
-
-def check_availability(
-    sku: str,
-    qty: Decimal,
-    target_date: date | None = None,
-    *,
-    safety_margin: int = 0,
-    allowed_positions: list[str] | None = None,
-) -> dict:
-    """
-    Check stock availability for a SKU.
-
-    Returns:
-        {"available": bool, "available_qty": Decimal, "message": str | None}
-    """
-    from shopman.stockman.service import Stock as stock
-
-    try:
-        product = _get_product(sku)
-    except ObjectDoesNotExist:
-        return {
-            "available": False,
-            "available_qty": Decimal("0"),
-            "message": f"Produto não encontrado: {sku}",
-        }
-
-    if allowed_positions is not None:
-        from shopman.stockman.models import Position
-
-        total = Decimal("0")
-        positions = Position.objects.filter(ref__in=allowed_positions)
-        for pos in positions:
-            total += stock.available(product, target_date=target_date, position=pos)
-        available = total
-    else:
-        available = stock.available(product, target_date=target_date)
-
-    if target_date and target_date > timezone.localdate() and safety_margin > 0:
-        available = max(Decimal("0"), available - Decimal(str(safety_margin)))
-
-    return {
-        "available": qty <= available,
-        "available_qty": Decimal(str(available)),
-        "message": None if qty <= available else f"Disponível: {available}",
-    }
 
 
 def create_hold(
@@ -101,8 +58,13 @@ def create_hold(
     recusando.
 
     Returns:
-        {"success": bool, "hold_id": str | None, "error_code": str | None,
+        {"success": bool, "hold_id": str | None,
+         "error_code": ReserveRefusal | None,
          "message": str | None, "expires_at": datetime | None, "is_planned": bool}
+
+    A recusa sai SEMPRE do vocabulário fechado ``ReserveRefusal``. Erro que não
+    é recusa (banco, bug, código do Stockman que a reserva não conhece) sobe:
+    engolido aqui, ele virava "faltou estoque" na tela do cliente.
     """
     from shopman.stockman.exceptions import StockError
     from shopman.stockman.service import Stock as stock
@@ -113,7 +75,7 @@ def create_hold(
         return {
             "success": False,
             "hold_id": None,
-            "error_code": "product_not_found",
+            "error_code": ReserveRefusal.PRODUCT_NOT_FOUND,
             "message": f"Produto não encontrado: {sku}",
             "expires_at": None,
             "is_planned": False,
@@ -129,19 +91,21 @@ def create_hold(
     allowed_positions = scope.get("allowed_positions")
     excluded_positions = scope.get("excluded_positions")
     safety_margin = int(scope.get("safety_margin") or 0) if apply_safety_margin else 0
+    target = target_date or timezone.localdate()
 
     try:
         hold_id = stock.hold(
             qty,
             product,
-            target_date=target_date or timezone.localdate(),
+            target_date=target,
             expires_at=expires_at,
             allowed_positions=allowed_positions,
             excluded_positions=excluded_positions,
             safety_margin=safety_margin,
             # Gates de LOTE do canal (C2): a reserva respeita o mesmo escopo
-            # da leitura — vitrine e hold nunca discordam.
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            # da leitura — vitrine e hold nunca discordam. A margem é a do
+            # ALVO: a reserva para data futura não ancora na sobra de hoje.
+            expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
             include_nonconforming=scope.get("sells_nonconforming", True),
             allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             allow_demand=allow_demand,
@@ -196,21 +160,29 @@ def create_hold(
         return {
             "success": False,
             "hold_id": None,
-            "error_code": e.code if hasattr(e, "code") else "hold_failed",
+            "error_code": stock_error_code(e),
             "message": str(e),
             "expires_at": None,
             "is_planned": False,
         }
-    except Exception as e:
-        logger.warning("create_hold failed for SKU %s: %s", sku, e, exc_info=True)
-        return {
-            "success": False,
-            "hold_id": None,
-            "error_code": "hold_failed",
-            "message": str(e),
-            "expires_at": None,
-            "is_planned": False,
-        }
+
+
+def stock_error_code(error) -> ReserveRefusal:
+    """A recusa do ``Stock.hold`` no vocabulário do orquestrador.
+
+    O Stockman recusa a reserva com dois códigos: ``INVALID_QUANTITY`` e
+    ``INSUFFICIENT_AVAILABLE``, este carregando o ``reason_code`` da promessa
+    (pausado ou falta). Qualquer outro código não é recusa de reserva, é
+    defeito, e sobe com o erro original.
+    """
+    if error.code == "INVALID_QUANTITY":
+        return ReserveRefusal.INVALID_QUANTITY
+    if error.code == "INSUFFICIENT_AVAILABLE":
+        reason = error.data.get("reason_code")
+        if reason == ReserveRefusal.PAUSED:
+            return ReserveRefusal.PAUSED
+        return ReserveRefusal.INSUFFICIENT_SUPPLY
+    raise error
 
 
 def create_holds_up_to(
@@ -292,12 +264,13 @@ def _free_by_eligible_quant(sku: str, *, target_date: date | None, channel_ref: 
     from shopman.stockman.services.scope import quants_eligible_for
 
     scope = get_channel_scope(channel_ref) if channel_ref else {}
+    target = target_date or timezone.localdate()
     eligible = quants_eligible_for(
         sku,
-        target_date=target_date or timezone.localdate(),
+        target_date=target,
         allowed_positions=scope.get("allowed_positions"),
         excluded_positions=scope.get("excluded_positions"),
-        expiry_margin_days=scope.get("expiry_margin_days", 0),
+        expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), target),
         include_nonconforming=scope.get("sells_nonconforming", True),
         allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
     )
@@ -315,6 +288,25 @@ _HOLD_LIFECYCLE_METADATA = frozenset({
     "reference", "release_reason", "released_by", "confirmed_by", "ceded_to", "ceded_remainder_of",
     "remainder_of",
 })
+
+
+def is_held_by_a_cart(hold) -> bool:
+    """A reserva é de uma SACOLA (sessão aberta), e não de um compromisso?
+
+    A régua é a ``reference`` do hold, a mesma do ``is_cart_hold`` e da
+    varredura de órfãos: sacola é a chave da sessão; pedido é ``order:<ref>``
+    desde o commit. Não são de sacola o pedido, a reserva manual do operador
+    (sem referência) e a reserva de insumo da produção (``purpose=workorder``).
+
+    Diferente do ``is_cart_hold``, aqui a sacola na fila da fornada (``planned``,
+    sem prazo) também conta como sacola: ela é intenção de compra, não palavra
+    da casa, e só vira compromisso quando a sessão vira pedido.
+    """
+    metadata = hold.metadata or {}
+    reference = str(metadata.get("reference") or "")
+    if not reference or reference.startswith("order:"):
+        return False
+    return metadata.get("purpose") != "workorder"
 
 
 def is_cart_hold(hold) -> bool:
@@ -335,12 +327,9 @@ def is_cart_hold(hold) -> bool:
       prazo: quem está na fila recebeu a palavra da casa, inclusive nos 15 min
       de confirmação depois que o lote sai.
     """
+    if not is_held_by_a_cart(hold):
+        return False
     metadata = hold.metadata or {}
-    reference = str(metadata.get("reference") or "")
-    if not reference or reference.startswith("order:"):
-        return False
-    if metadata.get("purpose") == "workorder":
-        return False
     if metadata.get("planned") or metadata.get("on_demand"):
         return False
     return hold.expires_at is not None
@@ -414,8 +403,10 @@ def reserve_ceding_cart_holds(
             released.metadata = {**(released.metadata or {}), "ceded_to": beneficiary}
             released.save(update_fields=["metadata"])
             logger.info(
-                "stock.cart_hold_ceded hold=%s session=%s qty=%s ceded=%s to=%s",
-                hold.hold_id, cart_reference, hold.quantity, take, beneficiary,
+                # A sacola se identifica pelo hold (a chave da sessão fica no
+                # próprio hold, ``metadata.reference``), não no log.
+                "stock.cart_hold_ceded hold=%s qty=%s ceded=%s to=%s",
+                hold.hold_id, hold.quantity, take, beneficiary,
             )
             shortfall -= take
             entry = {
@@ -661,6 +652,16 @@ def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
         stock.fulfill(hold_id, quantity=qty, kind=Move.Kind.SELL)
         return {"success": True, "error_code": None, "message": None}
     except StockError as e:
+        if getattr(e, "code", None) == "INVALID_STATUS":
+            # Baixa concorrente do MESMO pedido (on_paid e on_accepted no
+            # mesmo instante, sweep re-despachando): a outra chamada baixou
+            # entre a leitura acima e a trava do Stockman. Já está feito, e é
+            # sucesso; o alerta ``stock_fulfill_failed`` mandaria o operador
+            # contar e "corrigir" um estoque que está certo.
+            hold.refresh_from_db(fields=["status"])
+            if hold.status == HoldStatus.FULFILLED:
+                logger.info("fulfill_hold: %s já baixado por chamada concorrente", hold_id)
+                return {"success": True, "error_code": None, "message": None}
         return {
             "success": False,
             "error_code": e.code if hasattr(e, "code") else "fulfill_failed",
@@ -794,7 +795,18 @@ def extend_hold(hold_id: str, *, expires_at=None) -> bool:
     """Redefine a expiração de um hold ativo (``None`` = nunca expira)."""
     from shopman.stockman import StockHolds
 
-    return StockHolds.extend(hold_id, expires_at=expires_at)
+    extended = StockHolds.extend(hold_id, expires_at=expires_at)
+    if extended and expires_at is not None:
+        # O ``extend`` grava por ``update``, sem ``post_save``: a releitura do novo
+        # prazo é agendada aqui, como na criação (#2785).
+        from shopman.stockman.models import Hold
+
+        from shopman.shop.services import shelf_recheck
+
+        pk = str(hold_id).rpartition(":")[2]
+        sku = Hold.objects.filter(pk=int(pk)).values_list("sku", flat=True).first() if pk.isdigit() else None
+        shelf_recheck.schedule([sku or ""], expires_at, scope=f"hold:{pk}")
+    return extended
 
 
 def hold_state(hold_id: str) -> str | None:
@@ -829,34 +841,203 @@ def hold_target_date(hold_id: str) -> date | None:
     return Hold.objects.filter(pk=pk).values_list("target_date", flat=True).first()
 
 
+def hold_backing(hold_ids: list[str]) -> dict[str, dict]:
+    """Por hold: SKU, quantidade e se tem lastro (``backed``) ou é demanda sem saldo.
+
+    Leitura pura. É a pergunta da decisão de disponibilidade e do aviso à
+    Produção (#2559): a reserva da encomenda ficou presa a um saldo (vitrine ou
+    fornada planejada) ou registrou demanda (``quant=None``)? Id que não é de
+    hold some da resposta, como em ``hold_state``.
+    """
+    from shopman.stockman import Hold
+
+    pks: dict[int, str] = {}
+    for hold_id in hold_ids or ():
+        try:
+            pks[int(str(hold_id).split(":")[1])] = hold_id
+        except (AttributeError, IndexError, ValueError):
+            continue
+    if not pks:
+        return {}
+    return {
+        pks[row["pk"]]: {"sku": row["sku"], "quantity": row["quantity"], "backed": row["quant_id"] is not None}
+        for row in Hold.objects.filter(pk__in=list(pks)).values("pk", "sku", "quantity", "quant_id")
+    }
+
+
+def _fulfilled_hold(hold_id: str):
+    """O hold FULFILLED de ``hold_id`` (com o saldo de onde saiu), ou ``None``."""
+    from shopman.stockman import Hold, HoldStatus
+
+    try:
+        pk = int(str(hold_id).split(":")[1])
+    except (AttributeError, IndexError, ValueError):
+        return None
+    return Hold.objects.select_related("quant__position").filter(pk=pk, status=HoldStatus.FULFILLED).first()
+
+
+def planned_on_date(skus: list[str], day: date) -> dict[str, dict[str, Decimal]]:
+    """Por SKU, o lote planejado PARA ``day`` e quanto dele já está preso a reservas.
+
+    ``planned_qty``: a soma dos saldos com ``target_date == day`` (o plano da data).
+    ``held_qty``: as reservas ativas presas a esses saldos (``Hold.objects.active()``,
+    a mesma régua de ``Quant.held``). Saldo com outra data (a sobra de hoje, a
+    vitrine) NÃO entra: pão de hoje não lastreia encomenda de amanhã (dono,
+    18/11/2026). Leitura pura; SKU sem lote planejado na data some da resposta.
+    """
+    from django.db.models import Sum
+    from shopman.stockman import Hold, Quant
+
+    wanted = [sku for sku in dict.fromkeys(skus or ()) if sku]
+    if not wanted:
+        return {}
+    quants = Quant.objects.filter(sku__in=wanted, target_date=day, _quantity__gt=0)
+    planned = {
+        row["sku"]: Decimal(str(row["total"]))
+        for row in quants.values("sku").annotate(total=Sum("_quantity"))
+        if row["total"]
+    }
+    held = {
+        row["quant__sku"]: Decimal(str(row["total"] or 0))
+        for row in Hold.objects.active()
+        .filter(quant__in=quants)
+        .values("quant__sku")
+        .annotate(total=Sum("quantity"))
+    }
+    return {sku: {"planned_qty": qty, "held_qty": held.get(sku, Decimal("0"))} for sku, qty in planned.items()}
+
+
 def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason: str) -> bool:
     """Devolve ao ledger o estoque de um hold FULFILLED (cancelamento tardio).
 
-    A devolução entra na MESMA posição de onde o fulfill baixou — devolver
-    "sem posição" sumiria da vitrine.
+    A devolução entra no MESMO saldo de onde o fulfill baixou: mesma posição
+    (devolver "sem posição" sumiria da vitrine) e mesmo LOTE. Entrar pela
+    coordenada (``receive``) abria o lote do dia para o perecível, e o pão de
+    ontem voltava à vitrine com a validade de hoje (#2604).
+
+    Baixa feita contra saldo de produção cujo lote ainda não fechou (#2724): o
+    mesmo saldo é esse saldo de produção, e a devolução entra na conta da
+    reserva (``Move.metadata.delivery``, que é o que o fechamento lê). Sem a
+    chave o fechamento abateria do lote uma entrega que foi desfeita.
 
     Returns:
         True se devolveu; False se o hold não está FULFILLED.
     """
-    from shopman.stockman import Hold, HoldStatus, Move
+    from shopman.stockman import Move
+    from shopman.stockman.services.holds import DELIVERY_RETURNED, delivery_entry
     from shopman.stockman.services.movements import StockMovements
 
-    try:
-        pk = int(hold_id.split(":")[1])
-    except (IndexError, ValueError):
-        return False
-    hold = Hold.objects.select_related("quant__position").filter(pk=pk, status=HoldStatus.FULFILLED).first()
+    hold = _fulfilled_hold(hold_id)
     if hold is None:
         return False
 
-    StockMovements.receive(
-        quantity=qty,
-        sku=hold.sku,
-        position=hold.quant.position if hold.quant else None,
-        reason=f"{reason} (ref: {reference})",
-        kind=Move.Kind.RETURN,
-    )
+    text = f"{reason} (ref: {reference})"
+    if hold.quant is not None:
+        # Saldo de produção (lote ainda não fechou): a devolução leva a chave da
+        # conta da entrega, que é o que o fechamento lê para não abater do lote
+        # o que foi desfeito. No saldo físico não há conta a acertar.
+        in_production_balance = hold.quant.target_date is not None
+        StockMovements.receive_into(
+            quantity=qty,
+            quant=hold.quant,
+            reason=text,
+            kind=Move.Kind.RETURN,
+            metadata=delivery_entry(hold.pk, DELIVERY_RETURNED) if in_production_balance else None,
+        )
+    else:
+        # Hold baixado sem saldo ligado não tem lote a que voltar.
+        StockMovements.receive(quantity=qty, sku=hold.sku, position=None, reason=text, kind=Move.Kind.RETURN)
     return True
+
+
+def waste_fulfilled_hold(hold_id: str, qty: Decimal, *, reason: str, metadata: dict) -> bool:
+    """Reclassifica como PERDA a saída de um hold FULFILLED (pedido não retirado).
+
+    Par ``RETURN`` + ``WASTE`` no MESMO saldo de onde a venda saiu: o número fica
+    como está e a saída deixa de ser venda para virar perda, com motivo (o mesmo
+    molde de ``made_to_order.settle_cancellation``). Uma transação; idempotente
+    pelo ledger: com ``WASTE`` de mesmo ``metadata["source"]`` + ``hold_id``, a
+    perda já foi escrita.
+
+    Returns:
+        True se a perda está escrita (agora ou antes); False se o hold não está
+        FULFILLED ou não tem saldo ligado.
+    """
+    from django.db import transaction
+    from shopman.stockman import Move
+    from shopman.stockman.services.movements import StockMovements
+
+    hold = _fulfilled_hold(hold_id)
+    if hold is None or hold.quant is None:
+        return False
+    meta = {**(metadata or {}), "hold_id": hold_id}
+    with transaction.atomic():
+        if Move.objects.filter(
+            kind=Move.Kind.WASTE, metadata__source=meta.get("source"), metadata__hold_id=hold_id
+        ).exists():
+            return True
+        StockMovements.receive_into(
+            quantity=qty, quant=hold.quant, kind=Move.Kind.RETURN, reason=reason, metadata=meta,
+        )
+        StockMovements.issue(
+            quantity=qty, quant=hold.quant, kind=Move.Kind.WASTE, reason=reason, metadata=meta,
+        )
+    return True
+
+
+def hold_lot_facts(hold_ids: list[str], *, on: date) -> dict[str, dict]:
+    """Por hold: SKU, se foi baixado (``fulfilled``) e se o lote dele venceu em ``on``.
+
+    Leitura pura, para quem decide o destino de mercadoria que não saiu (pedido
+    não retirado): volta à venda ou é perda? A validade é o fato que existir,
+    nesta ordem:
+
+    1. o ``Batch`` do saldo (``Quant.batch`` → ``Batch.expiry_date``, o último
+       dia em que o lote pode ser vendido);
+    2. sem lote com validade, o prazo do produto (``shelf_life_days``) contado
+       do dia do saldo (``target_date``, ou o dia em que ele nasceu);
+    3. sem nenhum dos dois, não há como saber: ``expired`` é ``False``.
+
+    Id que não é de hold some da resposta, como em ``hold_backing``.
+    """
+    from shopman.stockman import Hold, HoldStatus
+    from shopman.stockman.models import Batch
+    from shopman.stockman.shelflife import shelf_life_days_for
+
+    pks: dict[int, str] = {}
+    for hold_id in hold_ids or ():
+        try:
+            pks[int(str(hold_id).split(":")[1])] = hold_id
+        except (AttributeError, IndexError, ValueError):
+            continue
+    if not pks:
+        return {}
+    holds = list(Hold.objects.select_related("quant").filter(pk__in=list(pks)))
+    batch_refs = {hold.quant.batch for hold in holds if hold.quant is not None and hold.quant.batch}
+    expiry_by_batch = dict(
+        Batch.objects.filter(ref__in=batch_refs, expiry_date__isnull=False).values_list("ref", "expiry_date")
+    ) if batch_refs else {}
+    shelf_by_sku: dict[str, int | None] = {}
+    facts: dict[str, dict] = {}
+    for hold in holds:
+        quant = hold.quant
+        expired = False
+        if quant is not None:
+            last_day = expiry_by_batch.get(quant.batch) if quant.batch else None
+            if last_day is None:
+                if hold.sku not in shelf_by_sku:
+                    shelf_by_sku[hold.sku] = shelf_life_days_for(hold.sku)
+                shelf = shelf_by_sku[hold.sku]
+                if shelf is not None:
+                    born = quant.target_date or timezone.localdate(quant.created_at)
+                    last_day = born + timedelta(days=shelf)
+            expired = last_day is not None and on > last_day
+        facts[pks[hold.pk]] = {
+            "sku": hold.sku,
+            "fulfilled": hold.status == HoldStatus.FULFILLED and quant is not None,
+            "expired": expired,
+        }
+    return facts
 
 
 # ── Availability queries ─────────────────────────────────────────────
@@ -891,8 +1072,6 @@ def get_availability(
         include_nonconforming=include_nonconforming,
         allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
-
-
 def get_availability_for_skus(
     skus: list[str],
     *,
@@ -971,76 +1150,3 @@ def get_channel_scope(channel_ref: str | None) -> dict:
 
 def _copied(values):
     return None if values is None else list(values)
-
-
-def get_promise_decision(
-    sku: str,
-    qty,
-    *,
-    target_date: date | None = None,
-    safety_margin: int = 0,
-    allowed_positions: list[str] | None = None,
-    excluded_positions: list[str] | None = None,
-    expiry_margin_days: int = 0,
-    include_nonconforming: bool = True,
-    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
-):
-    """Return Stockman's explicit operational promise decision for a SKU."""
-    from shopman.stockman.services.availability import promise_decision_for_sku
-
-    return promise_decision_for_sku(
-        sku,
-        qty,
-        target_date=target_date,
-        safety_margin=safety_margin,
-        allowed_positions=allowed_positions,
-        excluded_positions=excluded_positions,
-        expiry_margin_days=expiry_margin_days,
-        include_nonconforming=include_nonconforming,
-        allowed_quality_grade_refs=allowed_quality_grade_refs,
-    )
-
-
-def promise_decision_from_availability(
-    sku: str,
-    qty,
-    info: dict,
-    *,
-    target_date: date | None = None,
-):
-    """Return the default promise decision from an already-loaded availability dict."""
-    from shopman.stockman.protocols.sku import PromiseDecision
-
-    qty_d = Decimal(str(qty))
-    available_qty = Decimal(str(info.get("total_promisable", 0)))
-    availability_policy = info.get("availability_policy", "planned_ok")
-    is_paused = bool(info.get("is_paused", False))
-
-    if is_paused:
-        approved = False
-        effective_available_qty = Decimal("0")
-    elif availability_policy == "demand_ok":
-        approved = True
-        effective_available_qty = max(available_qty, qty_d)
-    else:
-        approved = qty_d <= available_qty
-        effective_available_qty = available_qty
-
-    reason_code = None
-    if not approved:
-        reason_code = "paused" if is_paused else "insufficient_supply"
-
-    return PromiseDecision(
-        approved=approved,
-        sku=sku,
-        requested_qty=qty_d,
-        target_date=target_date,
-        availability_policy=availability_policy,
-        reason_code=reason_code,
-        available_qty=effective_available_qty,
-        available=Decimal(str(info.get("available", 0))),
-        expected=Decimal(str(info.get("expected", 0))),
-        planned=Decimal(str(info.get("planned", 0))),
-        is_planned=bool(info.get("is_planned", False)),
-        is_paused=is_paused,
-    )

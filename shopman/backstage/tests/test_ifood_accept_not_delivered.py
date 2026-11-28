@@ -17,12 +17,13 @@ from django.contrib.auth.models import Permission
 from django.urls import reverse
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue
 from shopman.shop.directives import IFOOD_STATUS_CALLBACK
 from shopman.shop.services import ifood_accept_sync
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("ifood")]
 
 
 @pytest.fixture
@@ -162,7 +163,7 @@ def test_fila_puts_the_order_in_needs_you_with_the_ifood_clock(operator, order):
     deadline = ifood_accept_sync.deadline(order)
     assert card.attention == "ifood_accept"
     assert card.attention_since_iso == order.created_at.isoformat()
-    assert card.goal_label == f"aceite até {timezone.localtime(deadline):%H:%M}"
+    assert card.goal_label == f"aceite até {format_clock(deadline)}"
 
 
 def test_fila_leaves_the_order_alone_once_ifood_has_the_accept(operator, order):

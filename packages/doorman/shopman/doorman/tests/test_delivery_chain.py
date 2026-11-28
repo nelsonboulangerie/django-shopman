@@ -145,6 +145,50 @@ class TestSendCodeWithFallback:
         assert success is True
         assert method == "sms"
 
+    def test_console_double_records_the_simulated_channel(self):
+        """Beta 05/11 (LOJA-01): em DEBUG a cadeia é ``sms,console``.
+
+        O console não é transporte: simula o SMS pedido. Se a prova gravada
+        fosse "console", o vínculo do telefone recusaria o código certo.
+        """
+        adapter = DefaultAuthAdapter()
+        adapter._chain_sender_sms = FakeSender(succeed=False)
+
+        with override_settings(DEBUG=True, DOORMAN={
+            "DELIVERY_CHAIN": ["sms", "console"],
+            "DELIVERY_SENDERS": {
+                "sms": "shopman.doorman.senders.ConsoleSender",
+                "console": "shopman.doorman.senders.ConsoleSender",
+            },
+        }):
+            success, method = adapter.send_code_with_fallback(
+                "+5543999990001", "123456", preferred_method="sms",
+            )
+        assert success is True
+        assert method == "sms"
+
+    def test_console_outside_debug_proves_nothing(self):
+        """Fora de DEBUG o código entregue pelo console só existe no log.
+
+        Quem lê o log não é o dono do telefone: a prova fica "console" e o
+        vínculo do contato recusa (falha fechada).
+        """
+        adapter = DefaultAuthAdapter()
+        adapter._chain_sender_sms = FakeSender(succeed=False)
+
+        with override_settings(DEBUG=False, DOORMAN={
+            "DELIVERY_CHAIN": ["sms", "console"],
+            "DELIVERY_SENDERS": {
+                "sms": "shopman.doorman.senders.ConsoleSender",
+                "console": "shopman.doorman.senders.ConsoleSender",
+            },
+        }):
+            success, method = adapter.send_code_with_fallback(
+                "+5543999990001", "123456", preferred_method="sms",
+            )
+        assert success is True
+        assert method == "console"
+
     @override_settings(DOORMAN={
         "DELIVERY_CHAIN": ["whatsapp", "sms", "email"],
     })
@@ -166,7 +210,7 @@ class TestRequestCodeWithFallback:
         reset_adapter()
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     })
     def test_successful_delivery_is_verifiable_once_end_to_end(self):
         """The public service path persists SENT before allowing one verification."""
@@ -183,23 +227,23 @@ class TestRequestCodeWithFallback:
         )
 
         assert requested.success is True
-        assert requested.debug_code is not None
         assert len(sender.calls) == 1
+        raw_code = sender.calls[0][1]
         code = VerificationCode.objects.get(pk=requested.code_id)
         assert code.status == VerificationCode.Status.SENT
 
-        verified = AuthService.verify_for_login(phone, requested.debug_code)
+        verified = AuthService.verify_for_login(phone, raw_code)
 
         assert verified.success is True
         code.refresh_from_db()
         assert code.status == VerificationCode.Status.VERIFIED
 
-        replay = AuthService.verify_for_login(phone, requested.debug_code)
+        replay = AuthService.verify_for_login(phone, raw_code)
         assert replay.success is False
         assert replay.error_code == ErrorCode.CODE_EXPIRED
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     })
     def test_request_code_records_actual_delivery_method(self):
         """request_code() records the actual delivery method used by fallback."""
@@ -220,7 +264,7 @@ class TestRequestCodeWithFallback:
         assert code.status == "sent"
 
     @override_settings(DOORMAN={
-        "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+        "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
         "DELIVERY_CHAIN": ["whatsapp", "sms"],
         "DELIVERY_SENDERS": {
             "whatsapp": "shopman.doorman.senders.ConsoleSender",

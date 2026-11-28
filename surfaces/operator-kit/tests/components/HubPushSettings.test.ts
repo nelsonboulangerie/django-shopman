@@ -133,7 +133,7 @@ describe("HubPushSettings", () => {
       expect(wrapper.text()).toContain("O que chega aqui");
       await wrapper.get('[role="checkbox"]').trigger("click");
       expect(state.updateCategories).toHaveBeenCalledWith(device, []);
-      await wrapper.get("button.text-xs").trigger("click");
+      await wrapper.get("[data-remove-push-device]").trigger("click");
       expect(state.removeDevice).toHaveBeenCalledWith(device);
     });
   });
@@ -156,7 +156,7 @@ describe("HubPushSettings", () => {
     // Checkbox canônico do Nuxt UI, exposto pela API estável do kit.
     await wrapper.get('[role="checkbox"]').trigger("click");
     expect(state.updateCategories).toHaveBeenCalledWith(device, []);
-    await wrapper.get("button.text-xs").trigger("click");
+    await wrapper.get("[data-remove-push-device]").trigger("click");
     expect(state.removeDevice).toHaveBeenCalledWith(device);
   });
 });

@@ -30,12 +30,6 @@ afterEach(() => {
 });
 
 const dom = (selector: string) => new DOMWrapper(document.querySelector(selector) as Element);
-const domAll = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)].map((element) => new DOMWrapper(element));
-
-const groups = [
-  { label: "Produto", presets: ["Item indisponível no momento"] },
-  { label: "", presets: ["Pedido em duplicidade"] },
-];
 
 describe("OperatorReasonDialog", () => {
   it("diz a consequência e confirma pelo rótulo de quem chama", async () => {
@@ -46,7 +40,7 @@ describe("OperatorReasonDialog", () => {
     expect(confirm.attributes("disabled")).toBeUndefined();
     await dom("[data-reason-input]").setValue("  Cliente desistiu  ");
     await confirm.trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", code: "", key: "" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Cliente desistiu", key: "" }]]);
   });
 
   it("motivo exigido: confirmar em branco não sai", async () => {
@@ -56,33 +50,16 @@ describe("OperatorReasonDialog", () => {
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
   });
 
-  it("motivos prontos: um toque escolhe; Outros exige texto e nunca vira o motivo", async () => {
-    const w = await mount({ presets: groups });
-    const chips = domAll("[data-reason-preset]");
-    expect(chips.map((c) => c.text())).toEqual(["Item indisponível no momento", "Pedido em duplicidade"]);
-    await chips[1]!.trigger("click");
-    expect(chips[1]!.attributes("aria-pressed")).toBe("true");
-    await dom("[data-testid='reason-other']").trigger("click");
-    expect(chips[1]!.attributes("aria-pressed")).toBe("false");
+  // Beta 05/11 (GES-14): o Cancelar apagado não dizia o que faltava.
+  it("botão apagado diz o que falta, ao lado dele, e some quando há motivo", async () => {
+    await mount({
+      keyedReasons: [{ key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." }],
+    });
+    expect(dom("[data-reason-missing]").text()).toBe("Escolha um motivo para confirmar.");
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await dom("[data-reason-input]").setValue("Forno em manutenção hoje");
-    await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Forno em manutenção hoje", code: "", key: "" }]]);
-  });
-
-  it("motivo codificado: escolhe da lista e espelha a descrição no motivo", async () => {
-    const w = await mount({ coded: true, codedReasons: [{ code: "B", description: "Loja fechada" }], presets: groups });
-    expect(document.querySelector("[data-reason-input]")).toBeNull();
-    expect(document.querySelector("[data-reason-preset]")).toBeNull();
-    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await dom("[data-reason-code]").trigger("click");
-    const option = domAll('[role="option"]').find((item) => item.text().includes("Loja fechada"))!;
-    option.element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
-    option.element.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, button: 0 }));
-    (option.element as HTMLElement).click();
+    document.querySelector<HTMLElement>('[data-reason-keyed] [role="radio"][aria-label="Acabou um item"]')!.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
-    await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Loja fechada", code: "B", key: "" }]]);
+    expect(document.querySelector("[data-reason-missing]")).toBeNull();
   });
 
   it("motivo da lista: escolher é obrigatório, mostra o que o cliente lê e o texto é interno", async () => {
@@ -90,9 +67,11 @@ describe("OperatorReasonDialog", () => {
       { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
       { key: "other", label: "Outro motivo", customer_text: "Sentimos muito pelo imprevisto." },
     ];
-    const w = await mount({ keyedReasons, presets: groups });
+    const w = await mount({ keyedReasons });
     expect(document.querySelector("[data-reason-preset]")).toBeNull();
     expect(document.querySelector("[data-reason-preview]")).toBeNull();
+    // O lugar da frase já está reservado e diz o que falta (PDV2-19/PDV2-21).
+    expect(dom("[data-reason-preview-pending]").text()).toContain("Escolha o motivo acima para ver a frase.");
     expect(document.body.textContent).toContain("Observação interna (opcional)");
     expect(document.body.textContent).toContain("O cliente não vê.");
     // Sem motivo escolhido, nem com observação digitada o Cancelar acende.
@@ -102,9 +81,26 @@ describe("OperatorReasonDialog", () => {
     radio.click();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(dom("[data-reason-preview]").text()).toContain("Um dos itens acabou.");
+    expect(document.querySelector("[data-reason-preview-pending]")).toBeNull();
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
     await dom("[data-reason-confirm]").trigger("click");
-    expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", code: "", key: "out_of_stock" }]]);
+    expect(w.emitted("confirm")).toEqual([[{ reason: "Faltou farinha", key: "out_of_stock" }]]);
+  });
+
+  // Beta 05/11 (Gestor, Pix vencido): a tela que sabe o porquê abre com o motivo
+  // marcado; Confirmar já acende e o rascunho não conta como "texto não salvo".
+  it("motivo inicial: abre marcado, confirma direto e não vira rascunho", async () => {
+    const keyedReasons = [
+      { key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." },
+      { key: "payment_not_confirmed", label: "Pagamento não confirmado", customer_text: "Não recebemos o pagamento." },
+    ];
+    const w = await mount({ keyedReasons, initialKey: "payment_not_confirmed", open: false });
+    await w.setProps({ open: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dom("[data-reason-preview]").text()).toContain("Não recebemos o pagamento.");
+    expect(w.emitted("dirty-change")?.at(-1)).toEqual([false]);
+    await dom("[data-reason-confirm]").trigger("click");
+    expect(w.emitted("confirm")).toEqual([[{ reason: "", key: "payment_not_confirmed" }]]);
   });
 
   it("fechar com texto digitado pergunta dentro do diálogo, sem window.confirm", async () => {
@@ -131,11 +127,87 @@ describe("OperatorReasonDialog", () => {
     expect(w.emitted("confirm")).toBeUndefined();
   });
 
-  it("erro ao ler os motivos: bloqueia e oferece consultar de novo", async () => {
-    const w = await mount({ error: "Não foi possível consultar os motivos." });
-    expect(document.body.textContent).toContain("Não foi possível consultar os motivos.");
+  it("motivo exigido sem lista: o botão apagado diz que falta escrever", async () => {
+    await mount({ required: true });
+    expect(dom("[data-reason-missing]").text()).toBe("Escreva o motivo para confirmar.");
+  });
+
+  // WP-G06 (laudo do Gestor, P2-29): com oito motivos em 850 px de altura o confirmar
+  // ficava cortado na base do corpo, que rola. O que decide o gesto mora no rodapé.
+  it("o confirmar, o Voltar e o que falta ficam no rodapé, que não rola", async () => {
+    await mount({
+      keyedReasons: [{ key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." }],
+    });
+    const footer = document.querySelector("[data-reason-footer]")!;
+    expect(footer.closest('[data-slot="footer"]')).not.toBeNull();
+    expect(footer.querySelector("[data-reason-confirm]")).not.toBeNull();
+    expect(footer.querySelector("[data-reason-back]")).not.toBeNull();
+    expect(footer.querySelector("[data-reason-missing]")).not.toBeNull();
+    // Os motivos e a frase do cliente continuam no corpo, que é o que rola.
+    expect(document.querySelector('[data-slot="body"] [data-reason-keyed]')).not.toBeNull();
+    expect(footer.querySelector("[data-reason-keyed]")).toBeNull();
+  });
+
+  it("a pergunta de descarte aparece no rodapé, no lugar dos botões", async () => {
+    await mount();
+    await dom("[data-reason-input]").setValue("Cliente desistiu");
+    await dom("[data-reason-back]").trigger("click");
+    const footer = document.querySelector("[data-reason-footer]")!;
+    expect(footer.querySelector("[data-reason-discard]")).not.toBeNull();
+    expect(footer.querySelector("[data-reason-confirm]")).toBeNull();
+  });
+
+  // P1-11: a falha da recusa aparecia num aviso atrás do diálogo aberto.
+  it("a falha do gesto aparece dentro do diálogo, e o motivo escolhido fica", async () => {
+    const w = await mount({ required: true });
+    await dom("[data-reason-input]").setValue("Fora de área");
+    expect(document.querySelector("[data-reason-error]")).toBeNull();
+    await w.setProps({ error: "O Recusar não chegou. Tente de novo." });
+    const alert = dom("[data-reason-error]");
+    expect(alert.text()).toContain("O Recusar não chegou. Tente de novo.");
+    expect(alert.attributes("data-reason-error")).toBe("action");
+    expect(alert.element.closest("[data-reason-footer]")).not.toBeNull();
+    expect((dom("[data-reason-input]").element as HTMLTextAreaElement).value).toBe("Fora de área");
+    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
+  });
+
+  it("a falha que aponta um campo marca o campo (dialeto detail, field, errors)", async () => {
+    const keyedReasons = [{ key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." }];
+    const w = await mount({ keyedReasons, error: "Escolha um dos motivos da lista.", errorField: "key" });
+    expect(dom("[data-reason-error]").attributes("data-reason-error")).toBe("key");
+    expect(dom("[data-reason-keyed]").attributes("aria-invalid")).toBe("true");
+    await w.setProps({ error: "", errorField: "" });
+    expect(document.querySelector("[data-reason-error]")).toBeNull();
+    expect(dom("[data-reason-keyed]").attributes("aria-invalid")).toBeUndefined();
+  });
+
+  it("quem chama ainda não pode deixar confirmar: o botão apaga e a linha diz por quê", async () => {
+    const keyedReasons = [{ key: "out_of_stock", label: "Acabou um item", customer_text: "Um dos itens acabou." }];
+    const w = await mount({ keyedReasons, blocked: "Falta ler o que acontece com o dinheiro." });
+    // Primeiro o que depende de quem está na tela.
+    expect(dom("[data-reason-missing]").text()).toBe("Escolha um motivo para confirmar.");
+    document.querySelector<HTMLElement>('[data-reason-keyed] [role="radio"][aria-label="Acabou um item"]')!.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dom("[data-reason-missing]").text()).toBe("Falta ler o que acontece com o dinheiro.");
     expect(dom("[data-reason-confirm]").attributes("disabled")).toBeDefined();
-    await domAll("button").find((button) => button.text() === "Consultar novamente")!.trigger("click");
-    expect(w.emitted("retry")).toHaveLength(1);
+    await dom("[data-reason-confirm]").trigger("click");
+    expect(w.emitted("confirm")).toBeUndefined();
+    await w.setProps({ blocked: "" });
+    expect(document.querySelector("[data-reason-missing]")).toBeNull();
+    expect(dom("[data-reason-confirm]").attributes("disabled")).toBeUndefined();
+  });
+
+  it("quem chama diz sobre o quê é o gesto, antes da pergunta do motivo", async () => {
+    const { h } = await import("vue");
+    const wrapper = await mountSuspended(OperatorReasonDialog, {
+      props: { open: true, title: "Recusar o pedido W33?", description: "Escolha o motivo.", confirmLabel: "Recusar pedido" },
+      slots: { summary: () => h("p", { "data-test-summary": "" }, "Ana Souza · R$ 48,00") },
+      attachTo: document.body,
+    });
+    mounted.push(wrapper as unknown as VueWrapper);
+    const summary = document.querySelector("[data-test-summary]")!;
+    expect(summary.textContent).toBe("Ana Souza · R$ 48,00");
+    const input = document.querySelector("[data-reason-input]")!;
+    expect(summary.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

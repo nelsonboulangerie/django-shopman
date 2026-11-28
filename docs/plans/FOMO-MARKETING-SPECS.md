@@ -1,6 +1,6 @@
 # FOMO-MARKETING-SPECS — marketing operacional + FOMO orgânico
 
-> **Atualização de contrato (2026-09-11):** a ADR-029 substitui referências a
+> **Atualização de contrato (2026-09-11):** a ADR-039 substitui referências a
 > `StockAlertSubscription.notified_at` como fila consumível. “Avise-me” é uma
 > assinatura persistente; cada fornada/reposição legítima tem ocorrência e recibo próprios.
 
@@ -23,9 +23,9 @@
 > na ADR-020. A execução vive em
 > [SURFACE-OFFER-CAMPAIGN-PLAN](SURFACE-OFFER-CAMPAIGN-PLAN.md).
 
-**Cross-refs:** [SOCIAL-PIM-SPECS](SOCIAL-PIM-SPECS.md) ·
+**Cross-refs:** [SOCIAL-PIM-SPECS](completed/SOCIAL-PIM-SPECS.md) ·
 [SOCIAL-PIM-IMPLEMENTATION-PLAN](SOCIAL-PIM-IMPLEMENTATION-PLAN.md) ·
-[CROSS-CHANNEL-CATALOG-HUB-PLAN](CROSS-CHANNEL-CATALOG-HUB-PLAN.md) ·
+[CROSS-CHANNEL-CATALOG-HUB-PLAN](completed/CROSS-CHANNEL-CATALOG-HUB-PLAN.md) ·
 docs/reference/data-schemas.md · docs/guides/lifecycle.md
 
 ---

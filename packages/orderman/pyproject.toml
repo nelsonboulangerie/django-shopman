@@ -1,10 +1,12 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopman-orderman"
 version = "0.1.0"
+license = "FSL-1.1-ALv2"
+license-files = ["LICENSE.md"]
 description = "Shopman Orderman — Omnichannel Order Kernel"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,9 +15,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+api = [
+    "djangorestframework>=3.17,<4.0",
+]
+# Geração de refs pelo registro do shopman-refs; sem ele, `ids.py` cai no gerador local.
+refs = [
+    "shopman-refs>=0.1.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-django>=4.5",
+    "djangorestframework>=3.17,<4.0",
+    "shopman-refs>=0.1.0",
 ]
 
 [tool.setuptools.packages.find]

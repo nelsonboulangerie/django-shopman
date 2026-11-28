@@ -17,9 +17,11 @@ from rest_framework.authentication import SessionAuthentication
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.utils.formatting import format_local
 
 from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.omotenashi import resolve_copy
+from shopman.shop.projections import customer_context
 from shopman.shop.projections.types import Action
 from shopman.shop.services import account as account_service
 from shopman.shop.services import auth as auth_service
@@ -47,7 +49,7 @@ from .actions import action_payload
 # reescrito. Ele falha fechado em três camadas (DEBUG, flag, segredo conferido
 # por `compare_digest`), e uma segunda cópia da regra é uma segunda chance de
 # alguma delas ficar para trás.
-from .auth import _debug_otp_response, _normalize_payload_phone
+from .auth import _normalize_payload_phone
 from .projections import projection_data
 from .serializers import (
     AddressSerializer,
@@ -63,7 +65,10 @@ logger = logging.getLogger(__name__)
 # A confirmação marca a sessão por uma janela curta; delete/export checam essa marca.
 STEP_UP_SESSION_KEY = "account_step_up"
 STEP_UP_MAX_AGE_SECONDS = 600  # 10 minutos
-STEP_UP_PURPOSES = frozenset({"export", "delete"})
+# ``phone`` e ``email``: trocar um contato da conta é tomada de conta se feito por quem só
+# conhece o número (link encaminhado). O código vai para o número ATUAL antes, e a marca
+# vale para UMA troca: confirmada a mudança, ela é consumida.
+STEP_UP_PURPOSES = frozenset({"export", "delete", "phone", "email"})
 
 
 def _mark_step_up(request, *, customer_uuid, purpose: str) -> None:
@@ -94,11 +99,84 @@ def _step_up_authorized_at(request, *, customer_uuid, purpose: str):
     return accepted_at if 0 <= age <= STEP_UP_MAX_AGE_SECONDS else None
 
 
+def _consume_step_up(request, *, purpose: str) -> None:
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    raw = session.get(STEP_UP_SESSION_KEY)
+    if isinstance(raw, dict) and raw.get("purpose") == purpose:
+        session.pop(STEP_UP_SESSION_KEY, None)
+
+
 def _step_up_required_response() -> Response:
+    detail = "Confirme sua identidade para continuar."
     return Response(
-        {"detail": "Confirme sua identidade para continuar.", "code": "step_up_required"},
+        {"detail": detail, "field": None, "errors": {}, "code": "step_up_required"},
         status=status.HTTP_403_FORBIDDEN,
     )
+
+
+def _contact_change_refused(request, customer, *, purpose: str) -> Response | None:
+    """A cerca da troca de contato: sessão forte E código recente no número ATUAL.
+
+    Sessão que só conhece o número (link encaminhado) nunca troca contato: a troca de
+    telefone apontaria a conta para o número de quem recebeu o link, e o próximo código
+    chegaria na mão dele. O step-up manda o código para o número de hoje, que é de quem
+    a conta é; confirmado, a sessão fica forte e a marca vale 10 minutos.
+    """
+    if knows_only_the_number(request):
+        return _step_up_required_response()
+    if _step_up_authorized_at(request, customer_uuid=customer.uuid, purpose=purpose) is None:
+        return _step_up_required_response()
+    return None
+
+
+#: Endereços que ESTA sessão criou. Quem só conhece o número digitou esses agora
+#: (o checkout cria e logo dá o apelido); mexer neles não é mexer no cadastro de antes.
+ADDRESSES_CREATED_HERE_KEY = "addresses_created_here"
+
+
+def _remember_address_created_here(request, address_id) -> None:
+    session = getattr(request, "session", None)
+    if session is None or not knows_only_the_number(request):
+        return
+    created = [int(pk) for pk in session.get(ADDRESSES_CREATED_HERE_KEY, []) if str(pk).isdigit()]
+    session[ADDRESSES_CREATED_HERE_KEY] = [*created, int(address_id)][-20:]
+
+
+def _number_access_refused(request, *, address_id=None) -> Response | None:
+    """Troca de dados pede acesso de DISPOSITIVO (D3a); o número sozinho não troca.
+
+    Sessão que só conhece o número (link encaminhado, número sem prova recente) pede,
+    vê os pedidos recentes e paga. Mexer no cadastro (nome, endereço salvo) passa
+    pela mesma confirmação por código que a tela de perfil já oferece: ela devolve a
+    sessão forte e o pedido segue. O endereço que a própria sessão acabou de criar
+    fica livre: foi ela que o digitou.
+    """
+    if not knows_only_the_number(request):
+        return None
+    if address_id is not None:
+        created = getattr(request, "session", {}).get(ADDRESSES_CREATED_HERE_KEY, [])
+        if int(address_id) in {int(pk) for pk in created if str(pk).isdigit()}:
+            return None
+    return _step_up_required_response()
+
+
+#: O que a sessão que só conhece o número enxerga do histórico (D3a): os pedidos
+#: em andamento e os dos últimos dias. O histórico completo pede dispositivo.
+NUMBER_ACCESS_HISTORY_DAYS = 30
+
+
+def _recent_for_number_access(orders: list[dict]) -> list[dict]:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    cutoff = timezone.now() - timedelta(days=NUMBER_ACCESS_HISTORY_DAYS)
+    return [
+        order for order in orders
+        if order.get("is_active") or (order.get("created_at") and order["created_at"] >= cutoff)
+    ]
 
 
 def _privacy_receipt_unavailable_response(*, operation: str) -> Response:
@@ -116,7 +194,7 @@ def _fmt_dt(value) -> str:
     if not value:
         return ""
     try:
-        return timezone.localtime(value).strftime("%d/%m/%Y às %H:%M")
+        return format_local(value, "%d/%m/%Y às {clock}")
     except Exception:
         logger.debug("account._fmt_dt degraded; using fallback", exc_info=True)
         return str(value)
@@ -487,7 +565,30 @@ class ProfileView(ServerTimingMixin, APIView):
             )
 
         last_name = clean_name(payload["last_name"]) if "last_name" in payload else UNSET
+        # `<` e `>` não existem em nome de gente, e um nome com `<img …>` vai para o
+        # ticket da cozinha, para a notificação e para o Admin (beta 06/11). Recusar
+        # com o campo apontado é melhor que limpar calado: a pessoa vê o que mudou.
+        for field_name, value in (("first_name", first_name), ("last_name", last_name)):
+            if isinstance(value, str) and NAME_MARKUP_CHARS.intersection(value):
+                return Response(
+                    {
+                        "detail": NAME_MARKUP_DETAIL,
+                        "field": field_name,
+                        "errors": {field_name: [NAME_MARKUP_DETAIL]},
+                    },
+                    status=400,
+                )
         email = clean_text(payload["email"]) if "email" in payload else UNSET
+        # Trocar (ou apagar) o e-mail é trocar um contato da conta: a mesma cerca do
+        # telefone. Mandar o MESMO e-mail de volta (o formulário manda todos os campos)
+        # não é troca e não pede código.
+        email_changes = email is not UNSET and (
+            str(email or "").strip().lower() != str(getattr(customer, "email", "") or "").strip().lower()
+        )
+        if email_changes:
+            refused = _contact_change_refused(request, customer, purpose="email")
+            if refused is not None:
+                return refused
 
         birthday = UNSET
         if "birthday" in payload:
@@ -498,6 +599,18 @@ class ProfileView(ServerTimingMixin, APIView):
                     birthday = date_type.fromisoformat(birthday_raw)
                 except ValueError:
                     birthday = None
+
+        # Trocar nome ou aniversário é troca de dado (D3a): a sessão que só conhece o
+        # número confirma antes. Salvar o formulário sem mudar nada não é troca.
+        profile_changes = (
+            first_name != (customer.first_name or "")
+            or (last_name is not UNSET and last_name != (customer.last_name or ""))
+            or (birthday is not UNSET and birthday != getattr(customer, "birthday", None))
+        )
+        if profile_changes:
+            refused = _number_access_refused(request)
+            if refused is not None:
+                return refused
 
         intent = ProfileUpdateIntent(
             first_name=first_name,
@@ -522,6 +635,8 @@ class ProfileView(ServerTimingMixin, APIView):
                 status=400,
             )
 
+        if email_changes:
+            _consume_step_up(request, purpose="email")
         return Response(
             CustomerProfileSerializer({
                 "ref": updated.ref,
@@ -623,6 +738,7 @@ class AccountSummaryView(ServerTimingMixin, APIView):
                     "label": pref.label,
                     "description": pref.description,
                     "enabled": pref.enabled,
+                    "order_notifications_enabled": pref.order_notifications_enabled,
                 }
                 for pref in account.notification_prefs
             ],
@@ -725,6 +841,7 @@ class AddressListView(ServerTimingMixin, APIView):
                 status=400,
             )
 
+        _remember_address_created_here(request, created.pk)
         return Response(_serialize_address(created), status=status.HTTP_201_CREATED)
 
 
@@ -764,6 +881,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # get_address é escopado ao cliente (None para PK inexistente OU de outro
         # cliente) → 404 uniforme, sem oráculo de enumeração 403 vs 404.
         addr = account_service.get_address(customer.ref, pk)
@@ -791,6 +911,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # 404 uniforme (get_address escopado ao cliente) fecha o oráculo de enumeração.
         if not account_service.get_address(customer.ref, pk):
             return Response({"detail": "Endereço não encontrado."}, status=404)
@@ -805,6 +928,9 @@ class AddressDetailView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _number_access_refused(request, address_id=pk)
+        if refused is not None:
+            return refused
         # 404 uniforme (get_address escopado ao cliente) fecha o oráculo de enumeração.
         if not account_service.get_address(customer.ref, pk):
             return Response({"detail": "Endereço não encontrado."}, status=404)
@@ -847,12 +973,20 @@ class OrderHistoryView(ServerTimingMixin, APIView):
             filter_param=filter_param,
             limit=50,
         )
+        number_only = knows_only_the_number(request)
+        if number_only:
+            # O número sozinho vê os pedidos recentes, não o histórico (D3a).
+            data = _recent_for_number_access(data)
         serializer = OrderHistoryItemSerializer([_with_order_actions(order) for order in data], many=True)
-        return Response({
-            "orders": serializer.data,
-            # Contagens independem do filtro aplicado: a tela mostra
-            # "X em andamento (Y no total)" seja qual for o recorte.
-            "counts": {
+        if number_only:
+            recent = _recent_for_number_access(
+                order_service.order_history_for_customer(
+                    customer_ref=customer.ref, phone=customer.phone, filter_param="todos", limit=50,
+                )
+            )
+            counts = {"total": len(recent), "active": sum(1 for order in recent if order.get("is_active"))}
+        else:
+            counts = {
                 "total": order_service.order_count_for_customer(
                     customer_ref=customer.ref,
                     phone=customer.phone,
@@ -861,7 +995,12 @@ class OrderHistoryView(ServerTimingMixin, APIView):
                     customer_ref=customer.ref,
                     phone=customer.phone,
                 ),
-            },
+            }
+        return Response({
+            "orders": serializer.data,
+            # Contagens independem do filtro aplicado: a tela mostra
+            # "X em andamento (Y no total)" seja qual for o recorte.
+            "counts": counts,
             "copy": {"empty": _history_empty_copy(filter_param)},
         })
 
@@ -934,8 +1073,11 @@ class NotificationPreferenceToggleView(APIView):
         if result.response_code != 200:
             return Response(result.response_body, status=result.response_code)
         # A receipt is historical; show the current preference after a later opt-out.
-        prefs = present_notification_prefs(account_service.enabled_notification_channels(customer.ref))
-        return Response({"notification_preferences": [{"key": p.key, "label": p.label, "description": p.description, "enabled": p.enabled} for p in prefs]})
+        prefs = present_notification_prefs(
+            account_service.enabled_notification_channels(customer.ref),
+            revoked_channels=customer_context.revoked_notification_channels(customer.ref, account_service.NOTIFICATION_CONSENT_CHANNELS),
+        )
+        return Response({"notification_preferences": [{"key": p.key, "label": p.label, "description": p.description, "enabled": p.enabled, "order_notifications_enabled": p.order_notifications_enabled} for p in prefs]})
 
     def _post(self, request):
         customer = get_authenticated_customer(request)
@@ -959,7 +1101,8 @@ class NotificationPreferenceToggleView(APIView):
                 # TRUSTED_PROXY_DEPTH — o leftmost é forjável pelo cliente.
                 ip_address=auth_service.client_ip(request),
                 **({"enabled": enabled} if "enabled" in request.data else {}),
-            )
+            ),
+            revoked_channels=customer_context.revoked_notification_channels(customer.ref, account_service.NOTIFICATION_CONSENT_CHANNELS),
         )
         return Response({
             "notification_preferences": [
@@ -968,6 +1111,7 @@ class NotificationPreferenceToggleView(APIView):
                     "label": pref.label,
                     "description": pref.description,
                     "enabled": pref.enabled,
+                    "order_notifications_enabled": pref.order_notifications_enabled,
                 }
                 for pref in prefs
             ]
@@ -1080,7 +1224,7 @@ class AccountDeviceListView(ServerTimingMixin, APIView):
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         devices = device_service.list_devices(
-            customer_id=customer_info.uuid,
+            customer_id=customer_info.subject_id,
             raw_token=request.COOKIES.get(device_service.cookie_name()),
         )
         return Response({
@@ -1093,7 +1237,7 @@ class AccountDeviceListView(ServerTimingMixin, APIView):
         customer_info = getattr(request, "customer", None)
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
-        revoked = device_service.revoke_all(customer_id=customer_info.uuid)
+        revoked = device_service.revoke_all(customer_id=customer_info.subject_id)
         response = Response({"revoked": revoked})
         response.delete_cookie(device_service.cookie_name())
         return response
@@ -1110,11 +1254,11 @@ class AccountDeviceDetailView(APIView):
         if customer_info is None:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
         devices = device_service.list_devices(
-            customer_id=customer_info.uuid,
+            customer_id=customer_info.subject_id,
             raw_token=request.COOKIES.get(device_service.cookie_name()),
         )
         current_ids = {str(device.get("id")) for device in devices if device.get("is_current")}
-        error = device_service.revoke_device(customer_id=customer_info.uuid, device_id=device_id)
+        error = device_service.revoke_device(customer_id=customer_info.subject_id, device_id=device_id)
         if error:
             return Response({"detail": error}, status=400)
         response = Response({"revoked": True, "id": str(device_id)})
@@ -1175,12 +1319,17 @@ class AccountAccessDetailView(APIView):
 
 
 class AccountExportView(APIView):
-    """GET /api/v1/account/export/ — customer data export JSON."""
+    """POST /api/v1/account/export/ — gera o arquivo com os dados do cliente.
+
+    É POST porque cada pedido abre e fecha um recibo de privacidade (LGPD): o
+    efeito é do comando, e GET não produz efeito. A sessão autentica e o CSRF
+    vale, como no ``AccountDeleteView``.
+    """
 
     permission_classes = [AllowAny]
-    authentication_classes = []
+    authentication_classes = [SessionAuthentication]
 
-    def get(self, request):
+    def post(self, request):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
@@ -1300,6 +1449,61 @@ class AccountStepUpView(APIView):
     ratelimit(key="user_or_ip", rate="5/m", method="POST", block=False),
     name="dispatch",
 )
+class AccountNotMeView(APIView):
+    """POST /api/v1/account/not-me/ — "não sou eu / troquei de número" (D3d).
+
+    Quem recebeu da operadora um número que já era de alguém entra (código no número,
+    mensagem no WhatsApp) e cai na conta da pessoa anterior. Este é o gesto que
+    desliga: o número sai daquela conta (chaves de login, assinante do WhatsApp,
+    conversa da Concierge), a sessão termina, e a próxima entrada por esse número
+    nasce como conta própria, sem herdar endereço, pedido nem conversa.
+
+    ⚠️ O gesto não tem desfazer pela loja: pede ``confirm: true``. Sem ele, a resposta
+    explica a consequência e nada muda. Só o número principal desta conta sai.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response({"detail": "Muitas tentativas. Aguarde alguns minutos."}, status=429)
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        phone = getattr(customer, "phone", "") or ""
+        if not phone:
+            return Response({"detail": "Esta conta não tem número para desligar."}, status=400)
+        confirm = (request.data or {}).get("confirm")
+        if confirm is not True and str(confirm).strip().lower() not in {"1", "true"}:
+            return Response(
+                {
+                    "detail": "Este número deixa de abrir esta conta e você sai dela. Confirme para continuar.",
+                    "field": "confirm",
+                    "errors": {},
+                    "code": "confirmation_required",
+                },
+                status=400,
+            )
+
+        released = auth_service.release_number_not_me(customer_uuid=customer.uuid, phone=phone)
+        logger.warning("account.not_me customer=%s released=%s", customer.ref, bool(released))
+
+        from django.contrib.auth import logout as django_logout
+
+        preserved = auth_service.preserved_session_values(request.session) if hasattr(request, "session") else {}
+        django_logout(request)
+        for key, value in preserved.items():
+            request.session[key] = value
+        response = Response({"ok": True, "released": bool(released)})
+        auth_service.revoke_current_device(request=request, response=response)
+        return response
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="5/m", method="POST", block=False),
+    name="dispatch",
+)
 class PhoneChangeRequestView(APIView):
     """POST /api/v1/account/phone/request/ — manda o código para o número NOVO.
 
@@ -1326,6 +1530,9 @@ class PhoneChangeRequestView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        refused = _contact_change_refused(request, customer, purpose="phone")
+        if refused is not None:
+            return refused
 
         payload = request.data if hasattr(request, "data") else {}
         try:
@@ -1350,6 +1557,18 @@ class PhoneChangeRequestView(APIView):
             )
 
         if not resultado.success:
+            if auth_service.auth_error_code(resultado) == "cooldown":
+                # O código pedido há pouco ainda vale: a recusa leva a validade, e a
+                # tela vai ao passo de digitar em vez de abrir com um erro vermelho
+                # para quem ainda não tentou nada (beta 06/11).
+                return Response(
+                    auth_service.code_cooldown_body(
+                        auth_service.request_code_error_message(resultado),
+                        resultado,
+                        phone=phone,
+                    ),
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             return Response(
                 {
                     "detail": auth_service.request_code_error_message(resultado),
@@ -1363,11 +1582,6 @@ class PhoneChangeRequestView(APIView):
                 "ok": True,
                 "phone": phone,
                 "code_expires_at": getattr(resultado, "expires_at", None) or "",
-                # O código só sai daqui pelo mesmo portão do login — que falha
-                # fechado fora de DEBUG e exige o segredo no cabeçalho. Repetir
-                # a regra à mão aqui seria abrir uma segunda porta para o mesmo
-                # cofre, e é assim que uma delas fica destrancada.
-                **_debug_otp_response(resultado, request),
             }
         )
 
@@ -1397,6 +1611,12 @@ class PhoneChangeConfirmView(APIView):
         customer = get_authenticated_customer(request)
         if not customer:
             return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        # A mesma cerca do pedido: o código do número novo prova o número novo, não a
+        # conta. Sem isto, quem só conhece o número pediria o código pelo login e
+        # confirmaria aqui.
+        refused = _contact_change_refused(request, customer, purpose="phone")
+        if refused is not None:
+            return refused
 
         payload = request.data if hasattr(request, "data") else {}
         try:
@@ -1427,7 +1647,114 @@ class PhoneChangeConfirmView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        _consume_step_up(request, purpose="phone")
         return Response({"ok": True, "phone": phone})
+
+
+# A etapa que ainda segura a exclusão, dita como o cliente a reconhece, e o que
+# esperar dela. "Uma etapa obrigatória do pedido" sem dizer qual deixava a pessoa
+# sem saber se tinha de fazer algo ou só aguardar (beta 06/11). A chave é o
+# prefixo do tópico da diretiva (``shopman.shop.directives``).
+_DELETION_PENDING_STEPS = {
+    "fiscal": (
+        "a nota fiscal",
+        "Ela é emitida sozinha, em geral em poucos minutos.",
+    ),
+    "payment.refund": (
+        "o estorno do pagamento",
+        "Ele é feito sozinho; assim que for concluído, a exclusão fica liberada.",
+    ),
+    "payment": (
+        "a confirmação do pagamento",
+        "Ela é concluída sozinha, em geral em poucos minutos.",
+    ),
+    "loyalty": (
+        "o registro dos seus pontos",
+        "Ele é concluído sozinho, em geral em poucos minutos.",
+    ),
+    "return": (
+        "a devolução",
+        "A loja conclui a devolução; se tiver dúvida, fale com a padaria.",
+    ),
+    "fulfillment": ("a entrega", "Ela termina quando o pedido for entregue."),
+    "courier": ("a entrega", "Ela termina quando o pedido for entregue."),
+    "delivery": ("a entrega", "Ela termina quando o pedido for entregue."),
+}
+_DELETION_PENDING_STEP_DEFAULT = (
+    "um registro interno da loja",
+    "Ele é concluído sozinho, sem nada a fazer da sua parte.",
+)
+
+_DELETION_BLOCKED_MESSAGES = {
+    "stock_alert_delivery_in_flight": (
+        "Um aviso está sendo enviado neste instante. Aguarde um momento e tente novamente."
+    ),
+    "order_automation_in_flight": (
+        "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
+    ),
+    "conversation_delivery_in_flight": (
+        "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
+    ),
+    "otp_delivery_in_flight": (
+        "Um código de acesso está sendo enviado neste instante. "
+        "Aguarde a conclusão e tente excluir a conta novamente."
+    ),
+    "marketing_delivery_in_flight": (
+        "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
+    ),
+}
+
+
+def _deletion_pending_step(topic: str) -> tuple[str, str]:
+    for prefix in (topic, topic.split(".", 1)[0]):
+        if prefix in _DELETION_PENDING_STEPS:
+            return _DELETION_PENDING_STEPS[prefix]
+    return _DELETION_PENDING_STEP_DEFAULT
+
+
+def _deletion_blocked_message(blocker) -> str:
+    order = f"O pedido {blocker.order_ref}" if blocker.order_ref else "Um pedido seu"
+    if blocker.reason == "active_order":
+        return (
+            f"{order} ainda está em andamento. Quando ele for concluído ou cancelado, "
+            "você pode excluir a conta."
+        )
+    if blocker.reason == "order_obligation_pending":
+        step, expect = _deletion_pending_step(blocker.topic)
+        return (
+            f"{order} ainda tem uma etapa em aberto: {step}. {expect} "
+            "Depois disso, você pode excluir a conta."
+        )
+    return _DELETION_BLOCKED_MESSAGES.get(
+        blocker.reason,
+        "A exclusão está temporariamente bloqueada. Aguarde um momento e tente novamente.",
+    )
+
+
+def _deletion_blocked_body(blocker) -> dict:
+    """A recusa da exclusão no dialeto da casa, com o pedido nomeado e o caminho até ele."""
+    detail = _deletion_blocked_message(blocker)
+    actions = []
+    if blocker.order_ref:
+        actions.append(action_payload(
+            ref="open_order",
+            kind="link",
+            label=f"Ver o pedido {blocker.order_ref}",
+            href=f"/pedido/{blocker.order_ref}",
+            priority="primary",
+            idempotency="none",
+        ))
+    return {
+        "detail": detail,
+        "error": {"code": "account_deletion_blocked", "reason": blocker.reason},
+        "order_ref": blocker.order_ref,
+        "actions": actions,
+    }
+
+
+# Os sinais que um nome nunca tem e que viram marcação em qualquer tela que o mostre.
+NAME_MARKUP_CHARS = frozenset("<>")
+NAME_MARKUP_DETAIL = "O nome não pode ter os sinais < ou >."
 
 
 class AccountDeleteView(APIView):
@@ -1435,6 +1762,23 @@ class AccountDeleteView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = [SessionAuthentication]
+
+    def get(self, request):
+        """O que já recusaria a exclusão, conferido ANTES do código de confirmação.
+
+        A tela pergunta aqui antes de pedir o SMS: um pedido em andamento é
+        conhecido de antemão, e descobrir isso depois de digitar o código era
+        gastar a mensagem e a paciência do cliente à toa (beta 06/11).
+        """
+        from shopman.storefront.services import account_privacy
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+        blocker = account_privacy.deletion_preflight(customer)
+        if blocker is None:
+            return Response({"ok": True, "blocked": False})
+        return Response({"ok": False, "blocked": True, **_deletion_blocked_body(blocker)})
 
     def post(self, request):
         from shopman.storefront.services import account_privacy
@@ -1511,41 +1855,8 @@ class AccountDeleteView(APIView):
                 status=409,
             )
         except account_privacy.AccountDeletionBlocked as exc:
-            messages = {
-                "active_order": (
-                    "Ainda existe um pedido em andamento. Conclua ou cancele esse pedido antes "
-                    "de excluir a conta."
-                ),
-                "stock_alert_delivery_in_flight": (
-                    "Um aviso está sendo enviado neste instante. Aguarde um momento e tente novamente."
-                ),
-                "order_automation_in_flight": (
-                    "Uma atualização do pedido está sendo concluída. Aguarde um momento e tente novamente."
-                ),
-                "order_obligation_pending": (
-                    "Ainda há uma etapa obrigatória do pedido para concluir. Aguarde a conclusão e tente novamente."
-                ),
-                "conversation_delivery_in_flight": (
-                    "Uma mensagem está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-                "otp_delivery_in_flight": (
-                    "Um código de acesso está sendo enviado neste instante. "
-                    "Aguarde a conclusão e tente excluir a conta novamente."
-                ),
-                "marketing_delivery_in_flight": (
-                    "Uma mensagem de marketing está sendo enviada neste instante. Aguarde um momento e tente novamente."
-                ),
-            }
-            return Response(
-                {
-                    "detail": messages.get(
-                        exc.reason,
-                        "A exclusão está temporariamente bloqueada. Aguarde um momento e tente novamente.",
-                    ),
-                    "error": {"code": "account_deletion_blocked", "reason": exc.reason},
-                },
-                status=409,
-            )
+            blocker = account_privacy.deletion_blocker_details(customer, exc.reason)
+            return Response(_deletion_blocked_body(blocker), status=409)
         except Exception:
             logger.exception("storefront_account_deletion_failed")
             return Response(

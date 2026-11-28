@@ -13,12 +13,12 @@ Three verbs:
     check(sku, qty, *, channel_ref) -> dict
         Read-only. Returns whether `qty` of `sku` can be ordered now.
 
-    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reserve(sku, qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Checks first; if available, creates a hold tagged with session_key
         as `reference` so the order's CommitService can adopt it. On shortage,
         populates `substitutes` with suggested SKUs.
 
-    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=30) -> dict
+    reconcile(sku, new_qty, *, session_key, channel_ref, ttl_minutes=None) -> dict
         Write. Brings the total reserved quantity for `(session_key, sku)` to
         exactly `new_qty`. Grows by creating a fresh hold for the delta (may
         shortage); shrinks by releasing holds FIFO and returning any release
@@ -36,9 +36,11 @@ from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from shopman.stockman.protocols.sku import PromiseReasonCode
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel
+from shopman.shop.protocols import ReserveRefusal
 
 from . import substitutes, waitlist
 
@@ -56,7 +58,12 @@ def _cart_hold_metadata(source_sku: str, *, bundle_parent_sku: str | None = None
     return metadata
 
 
-def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
+def bump_session_hold_expiry(
+    session_key: str,
+    *,
+    channel_ref: str | None = None,
+    ttl_minutes: int | None = None,
+) -> int:
     """Extend the TTL of every active hold tagged with ``session_key``.
 
     Called from the cart's write paths (add/update/set_qty) so the session's
@@ -64,8 +71,21 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
     abandoned sessions still die naturally at their TTL — this just keeps
     the "active shopper" case alive.
 
+    O prazo da renovação é o MESMO da criação: ``ttl_minutes=None`` resolve o
+    TTL configurado no canal (``ChannelConfig.stock.hold_ttl_minutes``); sem
+    configuração, 30 minutos. Até 19/11/2026 a renovação usava 30 fixos: canal
+    com 15 tinha a reserva esticada para 30 no mesmo gesto que a criou, e canal
+    com 60 ficava com itens da mesma sacola em prazos diferentes (#2773). A
+    sacola diz essa hora à cliente ("Guardamos seus itens até 19h18").
+
     Indefinite holds (``expires_at IS NULL`` — planned holds) are untouched:
     their TTL only starts after materialization (AVAILABILITY-PLAN §8).
+
+    Hold JÁ vencido também fica de fora: desde que venceu ele não conta no
+    saldo, e outra sacola pode ter reservado o mesmo pão. Estendê-lo antes do
+    ``release_expired`` passar o ressuscitaria por cima da reserva alheia, e o
+    mesmo item seria vendido duas vezes. O que ele cobria volta a faltar e
+    segue o caminho de sempre (o commit reserva de novo ou recusa).
 
     Returns the number of holds whose ``expires_at`` was bumped.
     """
@@ -80,16 +100,25 @@ def bump_session_hold_expiry(session_key: str, *, ttl_minutes: int = 30) -> int:
         logger.debug("availability.bump_session_hold_expiry degraded; returning 0", exc_info=True)
         return 0
 
-    new_expiry = timezone.now() + timedelta(minutes=ttl_minutes)
-    return (
-        Hold.objects.filter(
-            metadata__reference=session_key,
-            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-            expires_at__isnull=False,
-            expires_at__lt=new_expiry,
-        )
-        .update(expires_at=new_expiry)
+    if ttl_minutes is None:
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
+    now = timezone.now()
+    new_expiry = now + timedelta(minutes=ttl_minutes)
+    bumping = Hold.objects.filter(
+        metadata__reference=session_key,
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        expires_at__isnull=False,
+        expires_at__gte=now,
+        expires_at__lt=new_expiry,
     )
+    skus = set(bumping.values_list("sku", flat=True))
+    bumped = bumping.update(expires_at=new_expiry)
+    # O ``update`` não passa pelo ``post_save``: a releitura do novo prazo é agendada
+    # aqui (#2785). A do prazo antigo, se já existia, acha a reserva viva e não avisa.
+    from shopman.shop.services import shelf_recheck
+
+    shelf_recheck.schedule(skus, new_expiry, scope=f"bag:{session_key}")
+    return bumped
 
 
 def release_session_holds(session_key: str) -> int:
@@ -308,6 +337,101 @@ def session_hold_dates_around(session_key: str, first_new_hold_id: str | None) -
     return before, new
 
 
+def session_holds_after(session_key: str, day: date) -> list[tuple[str, str, date]]:
+    """Reservas vivas da sessão presas a uma fornada DEPOIS de ``day``.
+
+    ``[(hold_id, sku, data da fornada)]``. Só reserva ancorada num quant
+    planejado (``Quant.target_date``) cuja data vem depois de ``day``: o pão
+    que ainda vai ser assado nesse dia. Pronto de hoje (quant físico), fornada
+    do próprio dia e reserva de demanda (sem quant) não entram. É a pergunta do
+    fechamento: "o pedido para ``day`` está levando uma reserva de um pão que só
+    existe depois?" (um pedido, uma data).
+    """
+    if not session_key or day is None:
+        return []
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_holds_after degraded; returning empty", exc_info=True)
+        return []
+
+    rows = (
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            quant__target_date__gt=day,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by("pk")
+        .values_list("pk", "sku", "quant__target_date")
+    )
+    return [(f"hold:{pk}", sku, batch_date) for pk, sku, batch_date in rows]
+
+
+def session_holds_on_batch(session_key: str, day: date) -> set[str]:
+    """Reservas vivas da sessão presas à fornada DE ``day`` (ids ``hold:N``).
+
+    Par de :func:`session_holds_after`: a vaga que a fila já guardou para a
+    sacola no lote planejado desse dia. É o que o pedido para ``day`` adota no
+    fechamento, em vez de disputar o lote com a própria reserva.
+    """
+    if not session_key or day is None:
+        return set()
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_holds_on_batch degraded; returning empty", exc_info=True)
+        return set()
+
+    pks = (
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            quant__target_date=day,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .values_list("pk", flat=True)
+    )
+    return {f"hold:{pk}" for pk in pks}
+
+
+def session_hold_dates(session_key: str) -> set[date]:
+    """Datas que as reservas vivas da sessão já prometem (a data da sacola).
+
+    As mesmas reservas que :func:`session_hold_dates_around` conta (ancoradas
+    num quant, com data), sem separar antes e depois. Vazio = a sacola ainda
+    não fixou data.
+    """
+    if not session_key:
+        return set()
+    try:
+        from django.db.models import Q
+        from django.utils import timezone
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("availability.session_hold_dates degraded; returning empty", exc_info=True)
+        return set()
+
+    return set(
+        Hold.objects.filter(
+            metadata__reference=session_key,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            quant__isnull=False,
+            target_date__isnull=False,
+        )
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by()
+        .values_list("target_date", flat=True)
+        .distinct()
+    )
+
+
 def stock_on_dates(
     skus: list[str],
     dates: list[date],
@@ -330,28 +454,46 @@ def stock_on_dates(
 
     Devolve cópias: quem recebe pode mexer no ``dict`` sem tocar o memo.
     Fora do memo (comando, worker, request que muta) é a leitura direta.
+
+    A margem de validade é a de CADA data (``expiry_margin_for_target``): hoje
+    lê com a margem do canal, e a data futura não conta o que estará no último
+    dia de validade nela. As duas saem da mesma varredura, e a chave do memo
+    não muda: a margem de uma data sai do recorte, do dia de hoje e da data,
+    que já estão na chave.
     """
     from django.utils import timezone
     from shopman.stockman.services.availability import availability_for_skus_on_dates
 
     from shopman.shop import request_memo
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
+    def read(read_skus, read_dates):
+        return availability_for_skus_on_dates(
+            read_skus,
+            read_dates,
+            **scope,
+            expiry_margin_days_by_date={
+                on: expiry_margin_for_target(scope.get("expiry_margin_days", 0), on)
+                for on in dict.fromkeys(read_dates)
+            },
+        )
 
     unique_dates = list(dict.fromkeys(dates))
     unique_skus = list(dict.fromkeys(skus))
     if not unique_skus or not unique_dates:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     try:
         base = ("stock_on_dates", _scope_key(scope), timezone.localdate())
         hash(base)
     except TypeError:
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
     buckets = {on: request_memo.stock_bucket((*base, on)) for on in unique_dates}
     if any(bucket is None for bucket in buckets.values()):
-        return availability_for_skus_on_dates(skus, dates, **scope)
+        return read(skus, dates)
 
     missing = [sku for sku in unique_skus if any(sku not in buckets[on] for on in unique_dates)]
     if missing:
-        fresh = availability_for_skus_on_dates(missing, unique_dates, **scope)
+        fresh = read(missing, unique_dates)
         for on in unique_dates:
             for sku, info in (fresh.get(on) or {}).items():
                 buckets[on].setdefault(sku, info)
@@ -425,11 +567,14 @@ def decide(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": bundle_result["available_qty"],
+            "orderable_ceiling": bundle_result["orderable_ceiling"],
+            "is_tracked": bundle_result["is_tracked"],
             "reason_code": bundle_result.get("error_code"),
             "is_paused": bundle_result.get("is_paused", False),
             "is_planned": bundle_result.get("is_planned", False),
             "target_date": target_date,
             "failed_sku": bundle_result.get("failed_sku"),
+            "_component_tracking": bundle_result.get("_component_tracking", {}),
             "source": "availability.bundle_decision",
         }
 
@@ -442,8 +587,10 @@ def decide(
 
     adapter = get_adapter("stock")
     scope = adapter.get_channel_scope(channel_ref)
-    info = adapter.get_availability(sku, target_date=target_date, **_availability_kwargs(scope))
-    return _stock_decision(adapter, sku, qty_d, info, target_date=target_date)
+    info = adapter.get_availability(sku, target_date=target_date, **availability_kwargs(scope, target_date))
+    from shopman.stockman.services.availability import decision_from_availability
+
+    return _promise_payload(decision_from_availability(sku, qty_d, info, target_date=target_date))
 
 
 def decide_many(
@@ -461,12 +608,14 @@ def decide_many(
     revisão da venda do PDV perguntava linha por linha. Aqui o canal, a vitrine,
     a detecção de bundle e a leitura do Stockman são feitas uma vez para todos os
     SKUs, e cada linha é decidida pelos MESMOS passos de ``decide``
-    (``_listing_gate_decision`` e ``_stock_decision``).
+    (``_listing_gate_decision`` e ``decision_from_availability`` do Stockman).
 
     Ficam no caminho de ``decide``, um por um: linha sem ``target_date`` (a data
     ali depende do SKU e da quantidade, via fila de espera) e SKU que é bundle
     (a expansão é recursiva e rara no balcão).
     """
+    from shopman.stockman.services.availability import decision_from_availability
+
     items = [(str(sku), Decimal(str(qty))) for sku, qty in lines]
     if not items:
         return []
@@ -494,7 +643,7 @@ def decide_many(
     ]
     if to_read:
         scope = adapter.get_channel_scope(channel_ref)
-        kwargs = _availability_kwargs(scope)
+        kwargs = availability_kwargs(scope, target_date)
         bulk_read = getattr(adapter, "get_availability_for_skus", None)
         if bulk_read is not None:
             infos = bulk_read(to_read, target_date=target_date, **kwargs)
@@ -512,17 +661,25 @@ def decide_many(
         if gate is not None:
             decisions.append(gate)
             continue
-        decisions.append(_stock_decision(adapter, sku, qty, infos[sku], target_date=target_date))
+        decisions.append(
+            _promise_payload(decision_from_availability(sku, qty, infos[sku], target_date=target_date))
+        )
     return decisions
 
 
-def _availability_kwargs(scope: dict) -> dict:
-    """O recorte do canal nos argumentos da leitura de estoque do adapter."""
+def availability_kwargs(scope: dict, target_date: date | None) -> dict:
+    """O recorte do canal nos argumentos da leitura de estoque do adapter.
+
+    A margem de validade é a da DATA lida (``expiry_margin_for_target``): a
+    mesma que a reserva usa em ``adapters.stock.create_hold``.
+    """
+    from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
+
     return {
         "safety_margin": scope["safety_margin"],
         "allowed_positions": scope["allowed_positions"],
         "excluded_positions": scope.get("excluded_positions"),
-        "expiry_margin_days": scope.get("expiry_margin_days", 0),
+        "expiry_margin_days": expiry_margin_for_target(scope.get("expiry_margin_days", 0), target_date),
         "include_nonconforming": scope.get("sells_nonconforming", True),
         "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
     }
@@ -545,6 +702,8 @@ def _listing_gate_decision(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": Decimal("0"),
+            "orderable_ceiling": Decimal("0"),
+            "is_tracked": None,
             "reason_code": "not_in_listing",
             "is_paused": False,
             "is_planned": False,
@@ -558,6 +717,8 @@ def _listing_gate_decision(
             "sku": sku,
             "requested_qty": qty_d,
             "available_qty": Decimal("0"),
+            "orderable_ceiling": Decimal("0"),
+            "is_tracked": None,
             "reason_code": "paused",
             "is_paused": True,
             "is_planned": False,
@@ -571,42 +732,27 @@ def _listing_gate_decision(
     return None
 
 
-def _stock_decision(adapter, sku: str, qty_d: Decimal, info: dict, *, target_date: date | None) -> dict:
-    """A decisão a partir da leitura de estoque já feita (passo final de ``decide``)."""
-    if not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions"))):
-        return {
-            "approved": True,
-            "sku": sku,
-            "requested_qty": qty_d,
-            "available_qty": Decimal("999999"),
-            "reason_code": None,
-            "is_paused": False,
-            "is_planned": False,
-            "target_date": target_date,
-            "failed_sku": None,
-            "source": "stock.untracked",
-            "untracked": True,
-        }
+def _promise_payload(decision) -> dict:
+    """A ``PromiseDecision`` do Stockman na forma do dict de ``decide``.
 
-    decision = adapter.promise_decision_from_availability(
-        sku,
-        qty_d,
-        info,
-        target_date=target_date,
-    )
-    approved = decision.approved if isinstance(getattr(decision, "approved", None), bool) else qty_d <= info["total_promisable"]
-    reason_code = getattr(decision, "reason_code", None)
-    if not isinstance(reason_code, str | type(None)):
-        reason_code = None if approved else ("paused" if info.get("is_paused", False) else "insufficient_stock")
+    Só traduz: a decisão é do Stockman (``decision_from_availability``) e chega
+    pronta. O orquestrador acrescenta o que é dele: ``failed_sku`` (bundles),
+    ``source`` e o nome ``ready_qty`` para o pronto de agora.
+    """
     return {
-        "approved": approved,
-        "sku": getattr(decision, "sku", sku),
-        "requested_qty": getattr(decision, "requested_qty", qty_d),
-        "available_qty": getattr(decision, "available_qty", info["total_promisable"]),
-        "reason_code": reason_code,
-        "is_paused": getattr(decision, "is_paused", info.get("is_paused", False)),
-        "is_planned": getattr(decision, "is_planned", info.get("is_planned", False)),
-        "target_date": getattr(decision, "target_date", target_date),
+        "approved": decision.approved,
+        "sku": decision.sku,
+        "requested_qty": decision.requested_qty,
+        "available_qty": decision.available_qty,
+        "orderable_ceiling": decision.orderable_ceiling,
+        "is_tracked": decision.is_tracked,
+        "reason_code": decision.reason_code,
+        "is_paused": decision.is_paused,
+        "is_planned": decision.is_planned,
+        # O pronto de agora, separado do que a promessa soma (pronto + lote):
+        # quem precisa dizer "ainda não está pronto" compara com este.
+        "ready_qty": decision.available,
+        "target_date": decision.target_date,
         "failed_sku": None,
         "source": "stock.promise_decision",
     }
@@ -641,7 +787,9 @@ def check(
     Returns:
         {
             "ok": bool,                 # passes listing check AND stock check
-            "available_qty": Decimal,   # total_promisable for this channel
+            "available_qty": Decimal | None,  # factual supply; None = no ledger
+            "orderable_ceiling": Decimal | None,  # finite policy limit, if any
+            "is_tracked": bool | None,
             "is_paused": bool,          # product paused/unpublished
             "is_planned": bool,         # only future quants exist
             "breakdown": {ready, in_production},
@@ -660,6 +808,8 @@ def check(
     return {
         "ok": decision["approved"],
         "available_qty": decision["available_qty"],
+        "orderable_ceiling": decision.get("orderable_ceiling"),
+        "is_tracked": decision.get("is_tracked"),
         "is_paused": decision["is_paused"],
         "is_planned": decision["is_planned"],
         "breakdown": {},
@@ -667,7 +817,7 @@ def check(
         "is_bundle": decision["source"] == "availability.bundle_decision",
         "failed_sku": decision.get("failed_sku"),
         "target_date": target_date,
-        "untracked": decision.get("untracked", False),
+        "_component_tracking": decision.get("_component_tracking", {}),
     }
 
 
@@ -704,7 +854,11 @@ def _check_bundle(
     Returns ok=False at the first failing component, or ok=True with
     available_qty = number of full bundles constructable from components.
     """
-    min_constructable: Decimal | None = None
+    min_factual_constructable: Decimal | None = None
+    min_orderable_ceiling: Decimal | None = None
+    any_factual_supply = False
+    any_component_tracked = False
+    component_tracking: dict[str, bool] = {}
 
     for comp in components:
         comp_sku = comp["sku"]
@@ -716,6 +870,8 @@ def _check_bundle(
             return {
                 "ok": False,
                 "available_qty": result["available_qty"],
+                "orderable_ceiling": result.get("orderable_ceiling"),
+                "is_tracked": result.get("is_tracked"),
                 "is_paused": result.get("is_paused", False),
                 "is_planned": result.get("is_planned", False),
                 "breakdown": result.get("breakdown", {}),
@@ -730,17 +886,41 @@ def _check_bundle(
         # CatalogService.expand multiplies by qty). To get per-bundle qty,
         # divide back: comp_qty_per_bundle = comp_qty / bundle_qty.
         comp_qty_per_bundle = comp_qty / bundle_qty if bundle_qty else comp_qty
-        if comp_qty_per_bundle > 0:
-            constructable = result["available_qty"] / comp_qty_per_bundle
-        else:
-            constructable = Decimal("0")
+        component_available = result.get("available_qty")
+        if component_available is not None:
+            any_factual_supply = True
+            factual_constructable = (
+                component_available / comp_qty_per_bundle
+                if comp_qty_per_bundle > 0
+                else Decimal("0")
+            )
+            if (
+                min_factual_constructable is None
+                or factual_constructable < min_factual_constructable
+            ):
+                min_factual_constructable = factual_constructable
+        is_tracked = result.get("is_tracked") is not False
+        component_tracking[comp_sku] = is_tracked
+        any_component_tracked = any_component_tracked or is_tracked
 
-        if min_constructable is None or constructable < min_constructable:
-            min_constructable = constructable
+        component_ceiling = result.get("orderable_ceiling")
+        if component_ceiling is not None:
+            ceiling = (
+                component_ceiling / comp_qty_per_bundle
+                if comp_qty_per_bundle > 0
+                else Decimal("0")
+            )
+            if min_orderable_ceiling is None or ceiling < min_orderable_ceiling:
+                min_orderable_ceiling = ceiling
 
     return {
         "ok": True,
-        "available_qty": min_constructable if min_constructable is not None else Decimal("0"),
+        "available_qty": min_factual_constructable if any_factual_supply else None,
+        "orderable_ceiling": min_orderable_ceiling,
+        # A mixed bundle is tracked because its tracked components still need
+        # holds. Per-component tracking below prevents trying to reserve the
+        # components that intentionally have no Stockman ledger.
+        "is_tracked": any_component_tracked,
         "is_paused": False,
         "is_planned": False,
         "breakdown": {},
@@ -748,6 +928,7 @@ def _check_bundle(
         "is_bundle": True,
         "failed_sku": None,
         "target_date": target_date,
+        "_component_tracking": component_tracking,
     }
 
 
@@ -813,22 +994,14 @@ def _listing_items_for_skus(skus: list[str], channel_ref: str | None) -> dict[st
     return {sku: found.get(sku, False) for sku in skus}
 
 
-def _channel_hold_ttl_minutes(channel_ref: str | None) -> int:
+def channel_hold_ttl_minutes(channel_ref: str | None) -> int:
     """TTL de hold de carrinho do canal (config) — default seguro de 30 min."""
     if not channel_ref:
         return 30
-    try:
-        from shopman.shop.config import ChannelConfig
-        from shopman.shop.models import Channel
+    from shopman.shop.config import ChannelConfig
 
-        channel = Channel.objects.filter(ref=channel_ref).first()
-        if channel is None:
-            return 30
-        configured = ChannelConfig.for_channel(channel).stock.hold_ttl_minutes
-        return int(configured) if configured else 30
-    except Exception:
-        logger.debug("availability.hold_ttl_lookup_failed channel=%s", channel_ref, exc_info=True)
-        return 30
+    configured = ChannelConfig.for_channel(channel_ref).stock.hold_ttl_minutes
+    return int(configured) if configured else 30
 
 
 def reserve(
@@ -855,16 +1028,19 @@ def reserve(
     Returns:
         {
             "ok": bool,
-            "hold_id": str | None,
+            "hold_ids": list[str],      # vazia quando nada foi reservado (SKU fora do ledger, recusa)
             "available_qty": Decimal,
             "is_paused": bool,
-            "error_code": str | None,    # only when ok=False
-            "substitutes": list[dict],  # only when ok=False
+            "error_code": ReserveRefusal | None,  # só quando ok=False
+            "substitutes": list[dict],  # só quando ok=False
         }
+
+    ``hold_ids`` é sempre lista: a reserva pode cair em mais de um quant
+    (estoque espalhado em posições ou lotes), e cada pedaço é uma reserva.
     """
     qty_d = Decimal(str(qty))
     if ttl_minutes is None:
-        ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
     if target_date is None:
         # A pronta-entrega é servida primeiro; só quando ela não cobre o pedido
         # a reserva ancora na fornada planejada — e ancora na data DELA, não no
@@ -908,7 +1084,7 @@ def reserve(
     if result.get("success"):
         return {
             "ok": True,
-            "hold_id": result["hold_id"],
+            "hold_ids": [result["hold_id"]],
             "available_qty": qty_d,
             "is_paused": False,
             "error_code": None,
@@ -926,7 +1102,6 @@ def reserve(
         ttl_minutes=ttl_minutes,
         adapter=adapter,
         initial_hold_result=result,
-        initial_hold_error_code=result.get("error_code"),
     )
 
 
@@ -936,28 +1111,25 @@ def _reserve_listing_gate_error(
     *,
     channel_ref: str | None,
 ) -> dict | None:
-    listing_item = _sku_in_channel_listing(sku, channel_ref)
-    if listing_item is False:
-        return {
-            "ok": False,
-            "hold_id": None,
-            "available_qty": Decimal("0"),
-            "is_paused": True,
-            "is_planned": False,
-            "error_code": "not_in_listing",
-            "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
-        }
-    if isinstance(listing_item, dict) and not listing_item.get("is_sellable", True):
-        return {
-            "ok": False,
-            "hold_id": None,
-            "available_qty": Decimal("0"),
-            "is_paused": True,
-            "is_planned": False,
-            "error_code": "paused",
-            "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
-        }
-    return None
+    """O portão da vitrine na reserva: a MESMA decisão de ``_listing_gate_decision``."""
+    gate = _listing_gate_decision(
+        sku,
+        qty_d,
+        _sku_in_channel_listing(sku, channel_ref),
+        as_component=False,
+        target_date=None,
+    )
+    if gate is None:
+        return None
+    return {
+        "ok": False,
+        "hold_ids": [],
+        "available_qty": gate["available_qty"],
+        "is_paused": gate["is_paused"],
+        "is_planned": False,
+        "error_code": ReserveRefusal(gate["reason_code"]),
+        "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
+    }
 
 
 def _reserve_checked_status(
@@ -971,31 +1143,19 @@ def _reserve_checked_status(
     ttl_minutes: int,
     adapter=None,
     initial_hold_result: dict | None = None,
-    initial_hold_error_code: str | None = None,
 ) -> dict:
     adapter = adapter or get_adapter("stock")
-
-    # SKUs that are not tracked by Stockman: skip the hold (the order will
-    # commit without stock reservation, same as the legacy noop path).
-    if status.get("untracked"):
-        return {
-            "ok": True,
-            "hold_id": None,
-            "available_qty": status["available_qty"],
-            "is_paused": False,
-            "error_code": None,
-            "substitutes": [],
-        }
 
     if not status["ok"]:
         return {
             "ok": False,
-            "hold_id": None,
+            "hold_ids": [],
             "available_qty": status["available_qty"],
             "is_paused": status["is_paused"],
             "is_planned": status.get("is_planned", False),
-            "error_code": status.get("error_code") or (
-                "paused" if status["is_paused"] else "insufficient_stock"
+            "error_code": ReserveRefusal(
+                status.get("error_code")
+                or (PromiseReasonCode.PAUSED if status["is_paused"] else PromiseReasonCode.INSUFFICIENT_SUPPLY)
             ),
             "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
         }
@@ -1011,8 +1171,22 @@ def _reserve_checked_status(
                 channel_ref=channel_ref,
                 target_date=target_date,
                 available_qty=status["available_qty"],
+                component_tracking=status.get("_component_tracking", {}),
                 adapter=adapter,
             )
+
+    # A simple SKU outside Stockman scope needs no hold. Bundles are handled
+    # above even when every component is untracked so the result can record
+    # precisely which components were skipped.
+    if status.get("is_tracked") is False:
+        return {
+            "ok": True,
+            "hold_ids": [],
+            "available_qty": status["available_qty"],
+            "is_paused": False,
+            "error_code": None,
+            "substitutes": [],
+        }
 
     result = initial_hold_result or adapter.create_hold(
         sku=sku,
@@ -1028,14 +1202,14 @@ def _reserve_checked_status(
         # Stockman's Hold model pins each hold to a single Quant. When the
         # requested qty fits in the channel's total_promisable but not in any
         # single quant (stock fragmented across positions/batches), the hold
-        # fails with INSUFFICIENT_AVAILABLE even though check() said ok.
+        # fails with INSUFFICIENT_SUPPLY even though check() said ok.
         #
         # Split the request into multiple partial holds, one per quant, so
         # the caller receives the qty it legitimately has access to. All
         # partial holds share the same session_key reference so CommitService
         # adopts them together.
-        error_code = initial_hold_error_code or result.get("error_code")
-        if error_code == "INSUFFICIENT_AVAILABLE":
+        error_code = result["error_code"]
+        if error_code == ReserveRefusal.INSUFFICIENT_SUPPLY:
             partial = _reserve_across_quants(
                 sku=sku, qty=qty_d,
                 ttl_minutes=ttl_minutes,
@@ -1046,16 +1220,23 @@ def _reserve_checked_status(
                 hold_metadata=_cart_hold_metadata(sku),
             )
             if partial["ok"]:
-                return partial
+                return {
+                    "ok": True,
+                    "hold_ids": partial["hold_ids"],
+                    "available_qty": partial["available_qty"],
+                    "is_paused": False,
+                    "error_code": None,
+                    "substitutes": [],
+                }
             # Fall through to 422 with partial["available_qty"] reflecting what
             # we could actually hold (may be less than status.available_qty).
             return {
                 "ok": False,
-                "hold_id": None,
+                "hold_ids": [],
                 "available_qty": partial["available_qty"],
                 "is_paused": False,
                 "is_planned": False,
-                "error_code": "insufficient_stock",
+                "error_code": ReserveRefusal.INSUFFICIENT_SUPPLY,
                 "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
             }
 
@@ -1065,17 +1246,17 @@ def _reserve_checked_status(
         )
         return {
             "ok": False,
-            "hold_id": None,
+            "hold_ids": [],
             "available_qty": status["available_qty"],
-            "is_paused": False,
+            "is_paused": error_code == ReserveRefusal.PAUSED,
             "is_planned": False,
-            "error_code": error_code or "hold_failed",
+            "error_code": error_code,
             "substitutes": substitutes.find(sku, qty=qty_d, channel=channel_ref),
         }
 
     return {
         "ok": True,
-        "hold_id": result["hold_id"],
+        "hold_ids": [result["hold_id"]],
         "available_qty": status["available_qty"],
         "is_paused": False,
         "error_code": None,
@@ -1094,81 +1275,45 @@ def _reserve_across_quants(
     adapter,
     hold_metadata: dict[str, str] | None = None,
 ) -> dict:
-    """Split a reservation across multiple quants/batches when no single quant
-    fits the full qty. All partial holds share ``reference=session_key`` so
-    Commit adopts them together.
+    """Reserva ``qty`` em pedaços, quando nenhum quant sozinho a cobre.
 
-    Returns the same shape as ``reserve()``; on partial success (stock covered
-    exactly), ``hold_id`` carries the first hold id for compatibility and
-    ``ok=True``. When the combined quant capacity is still short, returns
-    ``ok=False`` with ``available_qty`` reflecting what actually fit.
+    O corte é o do adapter (``create_holds_up_to``): o maior livre de cada
+    quant elegível no escopo do canal, em ``Decimal`` (meio quilo é meio
+    quilo). Todos os pedaços levam ``reference=session_key``, e o commit os
+    adota juntos. Tudo ou nada: se a soma não cobre ``qty``, os pedaços são
+    soltos e ``available_qty`` diz quanto coube.
+
+    Returns:
+        ``{"ok": True, "hold_ids": [...], "available_qty": qty}`` ou
+        ``{"ok": False, "hold_ids": [], "available_qty": <o que coube>}``.
     """
-    remaining = Decimal(qty)
-    reserved = Decimal("0")
-    first_hold_id: str | None = None
-    created_hold_ids: list[str] = []
-    attempts = 0
-    # Hard cap to avoid infinite loops if adapter misbehaves.
-    while remaining > 0 and attempts < 32:
-        attempts += 1
-        # Binary search downward: try remaining, then half, etc., until the
-        # adapter accepts a single-quant hold.
-        current_try = remaining
-        accepted = False
-        while current_try > 0:
-            r = adapter.create_hold(
-                sku=sku,
-                qty=current_try,
-                ttl_minutes=ttl_minutes,
-                reference=session_key,
-                target_date=target_date,
-                channel_ref=channel_ref,
-                **(hold_metadata or {}),
-            )
-            if r.get("success"):
-                if first_hold_id is None:
-                    first_hold_id = r["hold_id"]
-                created_hold_ids.append(r["hold_id"])
-                reserved += current_try
-                remaining -= current_try
-                accepted = True
-                break
-            if r.get("error_code") != "INSUFFICIENT_AVAILABLE":
-                break
-            # Halve and retry. Decimal halving is exact enough for integer units.
-            current_try = (current_try // 2)
-        if not accepted:
-            break
+    pieces = adapter.create_holds_up_to(
+        sku=sku,
+        qty=qty,
+        ttl_minutes=ttl_minutes,
+        reference=session_key,
+        target_date=target_date,
+        channel_ref=channel_ref,
+        **(hold_metadata or {}),
+    )
+    hold_ids = [hold_id for hold_id, _piece in pieces]
+    reserved = sum((piece for _hold_id, piece in pieces), Decimal("0"))
 
-    if remaining > 0:
-        # Roll back whatever we reserved so the cart does not end up with a
-        # partial reservation that the customer did not consent to.
-        if created_hold_ids:
-            try:
-                adapter.release_holds(created_hold_ids)
-            except Exception:
-                logger.warning(
-                    "availability.reserve: failed to release partial holds %s",
-                    created_hold_ids,
-                )
+    if reserved < qty:
+        # Nada de reserva parcial que o cliente não pediu.
+        if hold_ids:
+            adapter.release_holds(hold_ids)
         logger.info(
             "availability.reserve: split holds insufficient sku=%s asked=%s reserved=%s",
             sku, qty, reserved,
         )
-        return {"ok": False, "available_qty": int(reserved)}
+        return {"ok": False, "hold_ids": [], "available_qty": reserved}
 
     logger.info(
         "availability.reserve: split across %d holds sku=%s qty=%s",
-        len(created_hold_ids), sku, qty,
+        len(hold_ids), sku, qty,
     )
-    return {
-        "ok": True,
-        "hold_id": first_hold_id,
-        "available_qty": int(qty),
-        "is_paused": False,
-        "error_code": None,
-        "substitutes": [],
-    }
+    return {"ok": True, "hold_ids": hold_ids, "available_qty": Decimal(qty)}
 
 
 def reconcile(
@@ -1178,10 +1323,15 @@ def reconcile(
     session_key: str,
     channel_ref: str | None = None,
     target_date: date | None = None,
-    ttl_minutes: int = 30,
+    ttl_minutes: int | None = None,
 ) -> dict:
     """
     Bring the total reserved qty for `(session_key, sku)` to exactly `new_qty`.
+
+    ``ttl_minutes=None`` resolve o TTL configurado no canal
+    (``ChannelConfig.stock.hold_ttl_minutes``), como o ``reserve``; sem
+    configuração, 30 minutos. O acréscimo pelo seletor de quantidade nasce com
+    o mesmo prazo do primeiro item (#2773).
 
     Used by the cart's stepper and remove flows: while `reserve()` assumes a
     brand-new additive reservation, `reconcile()` computes the delta against
@@ -1224,6 +1374,8 @@ def reconcile(
     new_qty_d = Decimal(str(new_qty))
     if new_qty_d < 0:
         new_qty_d = Decimal("0")
+    if ttl_minutes is None:
+        ttl_minutes = channel_hold_ttl_minutes(channel_ref)
 
     # Bundles are reconciled per component. Component holds are scoped by
     # cart-line metadata so a combo using CROIS-01 cannot consume/release a
@@ -1317,6 +1469,7 @@ def _reconcile_simple(
     ttl_minutes: int,
     hold_metadata: dict[str, str] | None = None,
     metadata_filters: dict[str, str] | None = None,
+    is_tracked: bool | None = None,
 ) -> dict:
     """Reconcile a simple (non-bundle) SKU to `new_qty`."""
     existing = _load_session_holds_for_sku(
@@ -1342,6 +1495,17 @@ def _reconcile_simple(
     # ── Grow ──
     if new_qty > current_total:
         delta = new_qty - current_total
+        if is_tracked is False:
+            return {
+                "ok": True,
+                "hold_ids": [],
+                "released_ids": [],
+                "available_qty": None,
+                "is_paused": False,
+                "error_code": None,
+                "substitutes": [],
+                "untracked_skus": [sku],
+            }
         if target_date is None:
             # O acréscimo entra no MESMO dia que a linha já promete: a sacola
             # que está na fila da fornada de amanhã cresce dentro dela, e a de
@@ -1393,7 +1557,7 @@ def _reconcile_simple(
 
         status = check(sku, delta, channel_ref=channel_ref, target_date=target_date)
 
-        if status.get("untracked"):
+        if status.get("is_tracked") is False:
             # SKU outside Stockman scope — no hold needed, treat as ok.
             return {
                 "ok": True,
@@ -1413,12 +1577,14 @@ def _reconcile_simple(
                 "available_qty": status["available_qty"],
                 "is_paused": status.get("is_paused", False),
                 "is_planned": status.get("is_planned", False),
-                "error_code": status.get("error_code") or "insufficient_stock",
+                "error_code": ReserveRefusal(
+                    status.get("error_code") or PromiseReasonCode.INSUFFICIENT_SUPPLY
+                ),
                 "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
             }
 
         # Fragmented stock: fall back to multi-quant split reservation.
-        if result.get("error_code") == "INSUFFICIENT_AVAILABLE":
+        if result["error_code"] == ReserveRefusal.INSUFFICIENT_SUPPLY:
             split = _reserve_across_quants(
                 sku=sku, qty=delta,
                 ttl_minutes=ttl_minutes,
@@ -1431,7 +1597,7 @@ def _reconcile_simple(
             if split["ok"]:
                 return {
                     "ok": True,
-                    "hold_ids": [split["hold_id"]],
+                    "hold_ids": split["hold_ids"],
                     "released_ids": [],
                     "available_qty": status["available_qty"],
                     "is_paused": False,
@@ -1444,7 +1610,7 @@ def _reconcile_simple(
                 "released_ids": [],
                 "available_qty": split["available_qty"],
                 "is_paused": False,
-                "error_code": "insufficient_stock",
+                "error_code": ReserveRefusal.INSUFFICIENT_SUPPLY,
                 "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
             }
 
@@ -1457,8 +1623,8 @@ def _reconcile_simple(
             "hold_ids": [],
             "released_ids": [],
             "available_qty": status["available_qty"],
-            "is_paused": False,
-            "error_code": result.get("error_code", "hold_failed"),
+            "is_paused": result["error_code"] == ReserveRefusal.PAUSED,
+            "error_code": result["error_code"],
             "substitutes": substitutes.find(sku, qty=delta, channel=channel_ref),
         }
 
@@ -1574,6 +1740,7 @@ def _reconcile_bundle_components(
     """
     created_ids: list[str] = []
     released_ids: list[str] = []
+    untracked_skus: list[str] = []
     adapter = get_adapter("stock")
     hold_metadata = _cart_hold_metadata(bundle_sku, bundle_parent_sku=bundle_sku)
 
@@ -1581,6 +1748,15 @@ def _reconcile_bundle_components(
         comp_sku = comp["sku"]
         comp_qty = Decimal(str(comp["qty"]))
 
+        component_status = check(
+            comp_sku,
+            comp_qty,
+            channel_ref=channel_ref,
+            target_date=target_date,
+            as_component=True,
+        )
+        if component_status.get("is_tracked") is False:
+            untracked_skus.append(comp_sku)
         result = _reconcile_simple(
             comp_sku, comp_qty,
             session_key=session_key,
@@ -1589,6 +1765,7 @@ def _reconcile_bundle_components(
             ttl_minutes=ttl_minutes,
             hold_metadata=hold_metadata,
             metadata_filters=hold_metadata,
+            is_tracked=component_status.get("is_tracked"),
         )
         if not result["ok"]:
             # Rollback: release any new holds we've created for previous components.
@@ -1600,7 +1777,7 @@ def _reconcile_bundle_components(
                 "released_ids": released_ids,
                 "available_qty": result["available_qty"],
                 "is_paused": result.get("is_paused", False),
-                "error_code": result.get("error_code", "hold_failed"),
+                "error_code": result["error_code"],
                 "substitutes": substitutes.find(
                     bundle_sku, qty=bundle_qty, channel=channel_ref,
                 ),
@@ -1616,6 +1793,7 @@ def _reconcile_bundle_components(
         "is_paused": False,
         "error_code": None,
         "substitutes": [],
+        "untracked_skus": untracked_skus,
     }
 
 
@@ -1628,7 +1806,8 @@ def _reserve_bundle_components(
     ttl_minutes: int,
     channel_ref: str | None,
     target_date: date | None,
-    available_qty: Decimal,
+    available_qty: Decimal | None,
+    component_tracking: dict[str, bool],
     adapter,
 ) -> dict:
     """Create one hold per bundle component.
@@ -1637,11 +1816,16 @@ def _reserve_bundle_components(
     and returns ok=False.
     """
     created_hold_ids: list[str] = []
+    untracked_skus: list[str] = []
     hold_metadata = _cart_hold_metadata(bundle_sku, bundle_parent_sku=bundle_sku)
 
     for comp in components:
         comp_sku = comp["sku"]
         comp_qty = Decimal(str(comp["qty"]))
+
+        if component_tracking.get(comp_sku) is False:
+            untracked_skus.append(comp_sku)
+            continue
 
         result = adapter.create_hold(
             sku=comp_sku,
@@ -1663,11 +1847,10 @@ def _reserve_bundle_components(
                 adapter.release_holds(created_hold_ids)
             return {
                 "ok": False,
-                "hold_id": None,
                 "hold_ids": [],
                 "available_qty": available_qty,
-                "is_paused": False,
-                "error_code": result.get("error_code", "hold_failed"),
+                "is_paused": result["error_code"] == ReserveRefusal.PAUSED,
+                "error_code": result["error_code"],
                 "is_bundle": True,
                 "substitutes": substitutes.find(bundle_sku, qty=bundle_qty, channel=channel_ref),
             }
@@ -1676,11 +1859,11 @@ def _reserve_bundle_components(
 
     return {
         "ok": True,
-        "hold_id": None,          # use hold_ids for bundles
         "hold_ids": created_hold_ids,
         "available_qty": available_qty,
         "is_paused": False,
         "error_code": None,
         "is_bundle": True,
         "substitutes": [],
+        "untracked_skus": untracked_skus,
     }

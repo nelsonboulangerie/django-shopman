@@ -22,6 +22,21 @@ function onOpenChange(value: boolean) {
   // Esc e o "Continuar editando" chegam aqui como `false`: ficar.
   if (!value) answer(false);
 }
+
+// O FOCO DEPOIS DO SIM (`returnFocusOnConfirm: false`, ver `useConfirm`). Ao desmontar,
+// o Reka devolve o foco a quem o tinha na abertura; quando o sim troca a tela, esse
+// elemento está de saída, e quem pediu leva o foco ao gesto que segue. O `preventDefault`
+// do `close-auto-focus` é o gancho do Reka para isso. A resposta já saiu de `pending`
+// quando a caixa desmonta: a escolha fica guardada aqui.
+let callerTakesFocus = false;
+function confirm() {
+  callerTakesFocus = pending.value?.returnFocusOnConfirm === false;
+  answer(true);
+}
+function onCloseAutoFocus(event: Event) {
+  if (callerTakesFocus) event.preventDefault();
+  callerTakesFocus = false;
+}
 </script>
 
 <template>
@@ -31,6 +46,7 @@ function onOpenChange(value: boolean) {
     :title="pending.title"
     :description="pending.description"
     :close="false"
+    :content="{ onCloseAutoFocus }"
     @update:open="onOpenChange"
   >
     <template #footer>
@@ -41,7 +57,7 @@ function onOpenChange(value: boolean) {
           :label="pending.confirmLabel"
           data-operator-confirm-act
           :data-tone="pending.tone"
-          @click="answer(true)"
+          @click="confirm"
         />
       </div>
     </template>

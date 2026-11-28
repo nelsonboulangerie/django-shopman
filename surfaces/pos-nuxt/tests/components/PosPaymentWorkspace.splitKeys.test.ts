@@ -45,6 +45,24 @@ describe("PosPaymentWorkspace — no modal de dividir, o número é a tecla", ()
     expect(modalAberto()).toBe(false);
   });
 
+  it("a tecla que escolhe não vaza para o teclado do pagamento", async () => {
+    // Beta test de 05/11/2026: o "2" escolhia duas pessoas E virava o valor da
+    // forma selecionada (Débito de R$ 12,00 para R$ 2,00).
+    const w = await mountSuspended(PosPaymentWorkspace, { props: workspaceProps() });
+    await abrir(w);
+    const vazou: string[] = [];
+    const ouvinte = (event: KeyboardEvent) => vazou.push(event.key);
+    window.addEventListener("keydown", ouvinte);
+    try {
+      tecla("2");
+      await w.vm.$nextTick();
+    } finally {
+      window.removeEventListener("keydown", ouvinte);
+    }
+    expect(w.emitted("setSplitCount")).toEqual([[2]]);
+    expect(vazou).toEqual([]);
+  });
+
   it("dígito que não é preset não faz nada — o modal fica aberto", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, { props: workspaceProps() });
     await abrir(w);

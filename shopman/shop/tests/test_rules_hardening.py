@@ -19,6 +19,9 @@ from django.test import RequestFactory, TestCase
 from shopman.shop.models import RuleConfig
 from shopman.shop.rules.engine import load_rule
 
+#: Janela e percentual são obrigatórios na regra (A7-2): o teste os declara.
+HAPPY_HOUR_PARAMS = {"discount_percent": 25, "start": "17:30", "end": "18:00"}
+
 
 def _make_rule_config(**kwargs) -> RuleConfig:
     defaults = {
@@ -26,7 +29,7 @@ def _make_rule_config(**kwargs) -> RuleConfig:
         "rule_path": "shopman.shop.rules.pricing.HappyHourRule",
         "label": "Test Rule",
         "enabled": True,
-        "params": {},
+        "params": dict(HAPPY_HOUR_PARAMS),
         "priority": 0,
     }
     defaults.update(kwargs)
@@ -87,7 +90,7 @@ class TestLoadRuleDefenseInDepth(TestCase):
     def test_load_rule_accepts_whitelisted_path(self):
         rc = RuleConfig.__new__(RuleConfig)
         rc.rule_path = "shopman.shop.rules.pricing.HappyHourRule"
-        rc.params = {}
+        rc.params = dict(HAPPY_HOUR_PARAMS)
         rule = load_rule(rc)
         from shopman.shop.rules.pricing import HappyHourRule
         assert isinstance(rule, HappyHourRule)
@@ -179,6 +182,7 @@ class TestRuleConfigHistory(TestCase):
             ref="history-test",
             rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="History Test",
+            params=dict(HAPPY_HOUR_PARAMS),
             priority=99,
         )
         assert rc.history.count() == 1
@@ -189,6 +193,7 @@ class TestRuleConfigHistory(TestCase):
             ref="history-update",
             rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="Before",
+            params=dict(HAPPY_HOUR_PARAMS),
             priority=99,
         )
         rc.label = "After"
@@ -203,6 +208,7 @@ class TestRuleConfigHistory(TestCase):
             ref="history-delete",
             rule_path="shopman.shop.rules.pricing.HappyHourRule",
             label="To Delete",
+            params=dict(HAPPY_HOUR_PARAMS),
             priority=99,
         )
         pk = rc.pk

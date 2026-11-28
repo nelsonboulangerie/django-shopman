@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 describe("Saída larga", () => {
   it("a grade não estica os cartões até o mais alto da linha", () => {
     const column = readFileSync(new URL("../app/components/OrderBoardColumn.vue", import.meta.url), "utf8");
-    const grid = column.slice(column.indexOf('v-else-if="wide"'), column.indexOf("data-zone-cards"));
+    const grid = column.slice(column.indexOf('v-else-if="wide || twoUp"'), column.indexOf("data-zone-cards"));
     expect(grid).toMatch(/class="grid [^"]*\bitems-start\b/);
     // E o cartão não se estica sozinho: `h-full` preenchia a linha da grade.
     const card = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
@@ -15,10 +15,11 @@ describe("Saída larga", () => {
     expect(root).not.toMatch(/\bh-full\b/);
   });
 
-  it("o cartão da vez tem o destaque semântico, pelo tema do kit", () => {
+  it("o cartão da vez tem a moldura do KDS (borda grossa e halo dourado), pelo tema do kit", () => {
     const card = readFileSync(new URL("../app/components/OrderCard.vue", import.meta.url), "utf8");
-    expect(card).toContain(`:data-highlight="next ? 'true' : undefined"`);
+    expect(card).toContain(`:data-highlight="next ? 'ready' : undefined"`);
     const theme = readFileSync(new URL("../../operator-kit/app/app.config.ts", import.meta.url), "utf8");
-    expect(theme).toContain('root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary"');
+    expect(theme).toContain("data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-primary");
+    expect(theme).toContain("data-[highlight=ready]:shadow-[0_0_0_6px_");
   });
 });

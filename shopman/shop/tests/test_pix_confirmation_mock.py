@@ -6,6 +6,7 @@ import base64
 import json
 from unittest.mock import patch
 
+import pytest
 from django.test import TestCase
 from shopman.orderman.exceptions import DirectiveTerminalError
 from shopman.orderman.models import Directive, Order
@@ -14,6 +15,8 @@ from shopman.payman.models import PaymentIntent
 
 from shopman.shop.adapters import payment_mock
 from shopman.shop.handlers.mock_pix import MOCK_PIX_CONFIRM, MockPixConfirmHandler
+
+pytestmark = pytest.mark.channels("web")
 
 
 class MockPixConfirmationTests(TestCase):
@@ -27,6 +30,7 @@ class MockPixConfirmationTests(TestCase):
         )
 
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -52,6 +56,7 @@ class MockPixConfirmationTests(TestCase):
 
         with self.captureOnCommitCallbacks(execute=True):
             intent = payment_mock.create_intent(
+                pix_timeout_minutes=60,
                 order_ref=order.ref,
                 amount_q=order.total_q,
                 method="pix",
@@ -76,6 +81,7 @@ class MockPixConfirmationTests(TestCase):
         )
 
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -138,6 +144,7 @@ class MockPixConfirmationTests(TestCase):
             message=f"Falha ao gerar pagamento PIX do pedido {order.ref}.",
         )
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",
@@ -174,6 +181,7 @@ class MockPixConfirmationTests(TestCase):
             data={"payment": {"method": "pix"}},
         )
         intent = payment_mock.create_intent(
+            pix_timeout_minutes=60,
             order_ref=order.ref,
             amount_q=order.total_q,
             method="pix",

@@ -1,11 +1,12 @@
 # ADR-022 — O caixa é um pacote do Core: `cashman`, livro imutável por turno
 
-**Status:** Aceito e implementado (2026-08-19; WP-0..9 do CASHMAN-PLAN no `main`: pacote, Payman sem gateway, venda no livro, backstage sobre o pacote, backfill e corte dos models legados, reconciliação cruzada, trava da gaveta, cancelar não é devolver, troco da entrega; resta WP-10)
+**Status:** Aceito
+**Implementação:** WP-0..9 do CASHMAN-PLAN no `main` em 2026-08-19; resta WP-10
 **Data:** 2026-08-18
 **Escopo:** novo pacote `packages/cashman` (`Terminal`, `Shift`, `Entry`, services); `packages/payman` (métodos sem gateway: `cash`, `external`); `shopman/shop` (grava a venda no livro; deixa de etiquetar turno no `Order.data`); `shopman/backstage` (opera o turno pelo pacote; perde `POSTerminal`, `CashShift`, `CashMovement`); `docs/reference/data-schemas.md`
 **Supersede parcialmente:** ADR-011 §3 ("Caixa passa a usar `POSTerminal`, `CashShift` e `CashMovement`") e §5 (`DayClosing` continua não sendo livro-caixa; agora existe um)
 **Mantém:** ADR-011 §4 (fechamento cego obrigatório) e os invariantes "terminal não guarda dinheiro", "turno fechado é imutável salvo ajuste gerencial auditado"
-**Análise completa:** [docs/plans/CASH-LEDGER-ARCHITECTURE.md](../plans/CASH-LEDGER-ARCHITECTURE.md); execução: [docs/plans/CASHMAN-PLAN.md](../plans/CASHMAN-PLAN.md)
+**Análise completa:** [docs/plans/CASH-LEDGER-ARCHITECTURE.md](../plans/completed/CASH-LEDGER-ARCHITECTURE.md); execução: [docs/plans/CASHMAN-PLAN.md](../plans/completed/CASHMAN-PLAN.md)
 
 ---
 
@@ -183,6 +184,6 @@ caixa é o terceiro domínio de quantidade e o único sem livro.
 
 ## Referências
 
-- [CASH-LEDGER-ARCHITECTURE.md](../plans/CASH-LEDGER-ARCHITECTURE.md), [CASHMAN-PLAN.md](../plans/CASHMAN-PLAN.md), [CORE-BOUNDARIES-AUDIT.md](../plans/CORE-BOUNDARIES-AUDIT.md)
+- [CASH-LEDGER-ARCHITECTURE.md](../plans/completed/CASH-LEDGER-ARCHITECTURE.md), [CASHMAN-PLAN.md](../plans/completed/CASHMAN-PLAN.md), [CORE-BOUNDARIES-AUDIT.md](../plans/CORE-BOUNDARIES-AUDIT.md)
 - ADR-001 (cores e bridges), ADR-004 (refs string), ADR-011 (caixa; superada em parte), ADR-019 (precedente da seta invertida), ADR-021 (inventário de ledgers)
 - `packages/stockman/shopman/stockman/models/move.py`, `packages/payman/shopman/payman/models/transaction.py`

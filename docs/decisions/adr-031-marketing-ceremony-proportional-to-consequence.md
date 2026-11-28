@@ -1,7 +1,8 @@
 # ADR-031 — A cerimônia de confirmação do Marketing mede a consequência
 
-**Status:** Aceito em 2026-09-17 · **superada em parte** por
-[ADR-032](adr-032-marketing-ceremony-threshold-is-proportional.md) em 2026-09-17: os
+**Status:** Aceito; emendado por ADR-032
+**Data:** 2026-09-17
+**Emenda:** [ADR-032](adr-032-marketing-ceremony-threshold-is-proportional.md): os
 limiares fixos de 50 e 500 descritos abaixo viraram uma proporção da base de clientes (ou
 o teto de gasto, o que chegar primeiro), ajustável no Admin, e passaram a contar PESSOAS
 em vez de destinos externos. Tudo o mais desta ADR continua valendo.

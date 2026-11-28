@@ -10,6 +10,8 @@ legada só mantém leitura/edição/preview durante a migração.
     GET    campaign/decisions/          → a fila de decisões, por prazo (a casa do app)
     GET    campaign/history/            → tudo que já saiu
     GET    campaign/options/            → vocabulário do formulário de regra
+    GET    campaign/offers/             → listar ofertas/cupom  POST → criar
+    PATCH  campaign/offers/<ref>/       → editar/ativar/desativar oferta ou cupom
     GET    campaign/platforms/          → estado de entrega de cada plataforma
     POST   campaign/preview/            → como a mensagem vai ficar (mesmo resolvedor do envio)
     GET    campaign/announcements/<pk>/         → um announcement
@@ -100,7 +102,9 @@ from shopman.shop.models import (
     Promotion,
     Trigger,
 )
+from shopman.shop.observability import ServerTimingMixin
 from shopman.shop.services import campaign as campaign_service
+from shopman.shop.services import campaign_exclusivity
 from shopman.shop.services.marketing_commands import (
     MarketingCommandConflict,
     MarketingCommandRejected,
@@ -247,10 +251,13 @@ class MarketingFreezeView(_CampaignBase):
     }
 
     def get(self, request):
-        from shopman.shop.services.marketing_security import safety_state
+        # Leitura sem gravar: antes do primeiro comando a linha ainda não existe, e
+        # o que se mostra é o estado de nascença (não congelado, versão e geração 1).
+        # A linha nasce no primeiro comando, por ``safety_state(for_update=True)``.
+        from shopman.shop.models import MarketingSafetyState
 
-        state = safety_state()
-        return Response(_safety_payload(state))
+        state = MarketingSafetyState.objects.filter(scope="default").first()
+        return Response(_safety_payload(state or MarketingSafetyState(scope="default")))
 
     def post(self, request):
         from shopman.shop.services.marketing_security import activate_freeze
@@ -325,7 +332,14 @@ class MarketingDecisionQueueView(_CampaignBase):
             "decisions",
             marketing_decisions_projection.build_decision_queue,
         )
-        response = Response({"queue": projection_data(queue)})
+        # Quem olha a fila: "pede você" só é verdade para quem pode decidir, e
+        # "Preparar disparo" só é convite para quem pode disparar (beta 05/11).
+        user = request.user
+        viewer = {
+            "can_decide": bool(user.has_perm("shop.approve_marketing_announcements")),
+            "can_fire": bool(user.has_perm("shop.fire_marketing_campaigns")),
+        }
+        response = Response({"queue": projection_data(queue), "viewer": viewer})
         response["Cache-Control"] = "private, no-store"
         return response
 
@@ -558,6 +572,63 @@ class MarketingOfferListView(_CampaignBase):
             },
             status=201,
         )
+
+
+class MarketingOfferDetailView(_CampaignBase):
+    """Edit an existing offer or coupon from the Marketing cockpit."""
+
+    permission_map = {"PATCH": "shop.edit_marketing_campaigns"}
+
+    def patch(self, request, ref: str):
+        payload = request.data if isinstance(request.data, dict) else {}
+        try:
+            with transaction.atomic():
+                promotion = Promotion.objects.select_for_update().prefetch_related("channels", "coupons").filter(
+                    ref=ref
+                ).first()
+                if promotion is None:
+                    return Response({"detail": "Esta oferta não existe."}, status=404)
+                try:
+                    fields, coupon_fields, error = _marketing_offer_fields(payload, existing=promotion)
+                except DRFValidationError as exc:
+                    return Response(_offer_parser_error(exc), status=422)
+                if error:
+                    return Response(error, status=422)
+
+                channels = fields.pop("channels")
+                fields.pop("ref", None)
+                for field, value in fields.items():
+                    setattr(promotion, field, value)
+                promotion.full_clean()
+                promotion.save()
+                promotion.channels.set(channels)
+
+                coupon = promotion.coupons.first()
+                if coupon_fields is not None:
+                    if coupon is None:
+                        coupon = Coupon(promotion=promotion)
+                    for field, value in coupon_fields.items():
+                        setattr(coupon, field, value)
+                    coupon.full_clean()
+                    coupon.save()
+        except DjangoValidationError as exc:
+            return Response(_model_validation_error(exc), status=422)
+        except IntegrityError:
+            return Response(
+                {
+                    "code": "offer_conflict",
+                    "detail": "Outra alteração desta oferta aconteceu ao mesmo tempo. Atualize e tente novamente.",
+                },
+                status=409,
+            )
+
+        logger.info(
+            "marketing.offer_updated actor=%s promotion=%s request_id=%s",
+            request.user.pk,
+            promotion.ref,
+            str(request.headers.get("X-Request-ID") or ""),
+        )
+        return Response({"ok": True, "offer": _marketing_offer_projection(promotion)})
 
 
 # ── Posts ────────────────────────────────────────────────────────────
@@ -1363,7 +1434,11 @@ def _marketing_offer_options() -> dict:
     }
 
 
-def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]:
+def _marketing_offer_fields(
+    data: dict,
+    *,
+    existing: Promotion | None = None,
+) -> tuple[dict, dict | None, dict | None]:
     from django.utils.dateparse import parse_datetime
     from shopman.offerman.models import Collection, Product
 
@@ -1397,6 +1472,10 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
         return {}, None, _offer_error("kind", "Escolha Oferta ou Cupom.")
 
     coupon_code = str(data.get("coupon_code") or "").strip().upper()
+    existing_coupon = existing.coupons.first() if existing is not None else None
+    expected_kind = "coupon" if existing_coupon is not None else "offer"
+    if existing is not None and kind != expected_kind:
+        return {}, None, _offer_error("kind", "O tipo de um cadastro existente não pode ser trocado.")
     if kind == "coupon":
         if not coupon_code:
             return {}, None, _offer_error("coupon_code", "Informe o código do cupom.")
@@ -1409,7 +1488,10 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
                     "Use até 50 letras, números, hífen ou sublinhado, sem espaços.",
                 ),
             )
-        if Coupon.objects.filter(code=coupon_code).exists():
+        duplicate_coupon = Coupon.objects.filter(code=coupon_code)
+        if existing_coupon is not None:
+            duplicate_coupon = duplicate_coupon.exclude(pk=existing_coupon.pk)
+        if duplicate_coupon.exists():
             return {}, None, _offer_error("coupon_code", "Já existe um cupom com este código.")
 
     name = str(data.get("name") or "").strip()
@@ -1499,11 +1581,14 @@ def _marketing_offer_fields(data: dict) -> tuple[dict, dict | None, dict | None]
     if min_order_q < 0:
         return {}, None, _offer_error("min_order_q", "O pedido mínimo não pode ser negativo.")
 
-    requested_ref = str(data.get("ref") or "").strip()
-    base_ref = slugify(requested_ref or (coupon_code if kind == "coupon" else name))[:64]
-    if not base_ref:
-        return {}, None, _offer_error("name", "O nome precisa formar uma referência válida.")
-    ref = _unique_promotion_ref(base_ref)
+    if existing is not None:
+        ref = existing.ref
+    else:
+        requested_ref = str(data.get("ref") or "").strip()
+        base_ref = slugify(requested_ref or (coupon_code if kind == "coupon" else name))[:64]
+        if not base_ref:
+            return {}, None, _offer_error("name", "O nome precisa formar uma referência válida.")
+        ref = _unique_promotion_ref(base_ref)
 
     fields = {
         "ref": ref,
@@ -1618,11 +1703,14 @@ class CampaignListView(_CampaignBase):
         fields, error = _rule_fields(request.data, partial=False)
         if error:
             return Response(error, status=400)
+        exclusive_tiers = fields.pop("exclusive_price_tiers", [])
         rule = Campaign(**fields)
-        error = _pairing_error(rule)
+        error = _pairing_error(rule) or _exclusive_platform_error(rule, exclusive_tiers)
         if error:
             return Response(error, status=400)
-        rule.save()
+        with transaction.atomic():
+            rule.save()
+            _save_exclusive_tiers(rule, exclusive_tiers)
         return Response(
             {"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))},
             status=201,
@@ -1717,7 +1805,7 @@ class PreviewView(_CampaignBase):
         return Response(preview)
 
 
-class AudienceCountView(_CampaignBase):
+class AudienceCountView(ServerTimingMixin, _CampaignBase):
     """POST marketing/audience/count/ → quantas pessoas este público alcança.
 
     ⚠️ A tela deixava escolher público às cegas: o tamanho só aparecia depois do envio,
@@ -1731,6 +1819,9 @@ class AudienceCountView(_CampaignBase):
 
     permission_map = {"POST": "shop.preview_marketing_audience"}
     throttle_classes = [MarketingAudienceUserThrottle, MarketingAudienceShopThrottle]
+    #: A contagem é a ida que o gestor espera a cada clique no público; o header diz
+    #: quanto foi SQL (inclusive a filiação da campanha exclusiva) e quanto foi o resto.
+    server_timing_methods = ("POST",)
 
     def post(self, request):
         from shopman.shop.services.audience import PUBLIC_RULE_KEYS
@@ -1752,11 +1843,27 @@ class AudienceCountView(_CampaignBase):
                 },
                 status=422,
             )
+        # A campanha que vai enviar, quando a contagem é do disparo dela: campanha
+        # exclusiva de grupo só alcança membros, e a tela tem de contar o que sai.
+        raw_campaign_id = payload.get("campaign_id")
+        campaign_id = None
+        if raw_campaign_id not in (None, ""):
+            if isinstance(raw_campaign_id, bool) or not str(raw_campaign_id).isdigit():
+                return Response(
+                    {
+                        "code": "invalid_campaign",
+                        "detail": "A campanha da contagem é inválida.",
+                        "field_errors": {"campaign_id": ["Use o número da campanha."]},
+                    },
+                    status=422,
+                )
+            campaign_id = int(raw_campaign_id)
         return Response(
             projection_data(
                 marketing_projection.build_audience_count(
                     rules,
                     sku=str(payload.get("sku") or ""),
+                    campaign_id=campaign_id,
                 )
             )
         )
@@ -1767,7 +1874,7 @@ class PlatformsView(_CampaignBase):
 
     A tela que faltava, e cuja ausência explicava os remendos: o estado das plataformas
     vazava para o painel de revisão, primeiro como ação dentro de um alerta, depois como
-    botão no cabeçalho. Ver `docs/plans/MARKETING-UX-PLAN.md`.
+    botão no cabeçalho. Ver `docs/plans/completed/MARKETING-UX-PLAN.md`.
 
     Devolve TODA plataforma, pronta ou não — esconder as saudáveis obrigaria o gestor a
     deduzir ausência de aviso como boa notícia.
@@ -2068,6 +2175,7 @@ class CampaignDetailView(_CampaignBase):
             fields, error = _rule_fields(request.data, partial=True)
             if error:
                 return Response(error, status=400)
+            exclusive_tiers = fields.pop("exclusive_price_tiers", None)
             if "audience_rules" in fields:
                 fields["audience_rules"] = _merge_public_audience_rules(
                     rule.audience_rules,
@@ -2075,18 +2183,29 @@ class CampaignDetailView(_CampaignBase):
                 )
             for name, value in fields.items():
                 setattr(rule, name, value)
-            error = _pairing_error(rule)
+            error = _pairing_error(rule) or _exclusive_platform_error(
+                rule,
+                exclusive_tiers
+                if exclusive_tiers is not None
+                else campaign_exclusivity.for_campaign(rule.pk).declared,
+            )
             if error:
                 return Response(error, status=400)
             rule.version += 1
             rule.save()
+            if exclusive_tiers is not None:
+                _save_exclusive_tiers(rule, exclusive_tiers)
         return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
     def delete(self, request, pk: int):
         rule = _rule_or_none(pk)
         if rule is None:
             return Response({"detail": "Campanha não encontrada."}, status=404)
-        rule.delete()
+        with transaction.atomic():
+            # A referência morre junto (grupo nenhum aponta para campanha apagada), e os
+            # anúncios dela herdam os grupos: nunca viram envio para todos.
+            campaign_exclusivity.forget_campaign(rule.pk)
+            rule.delete()
         return Response({"ok": True, "pk": pk})
 
 
@@ -2179,6 +2298,32 @@ def _offer_exists(ref: str) -> bool:
     return True
 
 
+def _exclusive_platform_error(rule: Campaign, exclusive_tiers) -> dict | None:
+    """Aviso exclusivo de grupo sai só por mensagem direta.
+
+    Postagem pública (Instagram, Facebook, Google) é vista por qualquer pessoa: uma
+    campanha exclusiva publicada no mural deixa de ser exclusiva. A recusa aponta o
+    campo do grupo, porque é ele que muda o sentido das plataformas escolhidas.
+    """
+    if not exclusive_tiers:
+        return None
+    public = [
+        platform
+        for platform in (rule.platforms or ())
+        if platform in campaign_service.POSTING_PLATFORMS
+    ]
+    if not public:
+        return None
+    return {
+        "detail": "Campanha exclusiva de grupo sai só pelo WhatsApp. Desmarque as postagens públicas.",
+        "field": "exclusive_price_tiers",
+    }
+
+
+def _save_exclusive_tiers(rule: Campaign, exclusive_tiers) -> None:
+    campaign_exclusivity.set_exclusive_tiers(rule.pk, exclusive_tiers)
+
+
 def _pairing_error(rule: Campaign) -> dict | None:
     """A validação de gatilho×agendamento do model, no dialeto de erro da API.
 
@@ -2203,6 +2348,7 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         return {}, {"detail": "Payload da regra inválido.", "field": "payload"}
     allowed = {
         "audience_rules",
+        "exclusive_price_tiers",
         "expires_after_minutes",
         "is_active",
         "name",
@@ -2229,6 +2375,9 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         name = str(data.get("name") or "").strip()
         if not name:
             return {}, {"detail": "A regra precisa de um nome.", "field": "name"}
+        # O banco guarda até 100: passar disso virava DataError e 500 (beta 05/11, ge:MKT-04).
+        if len(name) > _NAME_MAX_LENGTH:
+            return {}, {"detail": f"Use no máximo {_NAME_MAX_LENGTH} caracteres.", "field": "name"}
         fields["name"] = name
 
     if not partial or "trigger" in data:
@@ -2285,6 +2434,14 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
                     }
             fields[name] = value
 
+    if not partial or "exclusive_price_tiers" in data:
+        try:
+            fields["exclusive_price_tiers"] = campaign_exclusivity.clean_tier_refs(
+                data.get("exclusive_price_tiers")
+            )
+        except campaign_exclusivity.CampaignExclusivityError as exc:
+            return {}, {"detail": exc.detail, "field": "exclusive_price_tiers"}
+
     if not partial or "promotion_ref" in data:
         offer_ref = str(data.get("promotion_ref") or "").strip()
         if offer_ref and not _offer_exists(offer_ref):
@@ -2322,6 +2479,49 @@ def _merge_public_audience_rules(current, incoming: dict) -> dict:
     return {**private_or_legacy, **incoming}
 
 
+_NAME_MAX_LENGTH = 100
+# Sem `\s*` dos dois lados de um grupo que pode ser vazio (backtracking quadrático): o
+# miolo inteiro é capturado e aparado em Python.
+_TEMPLATE_VARIABLE = re.compile(r"\{\{([^{}]*)\}\}")
+
+
+def _unknown_template_variable(value) -> str:
+    """A primeira `{{variável}}` fora da lista suportada, ou vazio.
+
+    Sem isto o modelo salvava `{{inexistente}}`, a lista o mostrava como dado
+    disponível e o erro só aparecia na aprovação do anúncio (beta 05/11, ge:MKT-13).
+    """
+    from shopman.shop.services.campaign import available_variables
+
+    if isinstance(value, dict):
+        for item in value.values():
+            found = _unknown_template_variable(item)
+            if found:
+                return found
+        return ""
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            found = _unknown_template_variable(item)
+            if found:
+                return found
+        return ""
+    if not isinstance(value, str):
+        return ""
+    known = set(available_variables())
+    for match in _TEMPLATE_VARIABLE.finditer(value):
+        name = match.group(1).strip()
+        if name not in known:
+            return name or "vazia"
+    return ""
+
+
+def _unknown_variable_error(variable: str, field: str) -> dict:
+    return {
+        "detail": f"A variável {{{{{variable}}}}} não existe. Use uma das variáveis da lista.",
+        "field": field,
+    }
+
+
 def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     fields: dict = {}
 
@@ -2351,12 +2551,17 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         name = str(data.get("name") or "").strip()
         if not name:
             return {}, {"detail": "O modelo precisa de um nome.", "field": "name"}
+        if len(name) > _NAME_MAX_LENGTH:
+            return {}, {"detail": f"Use no máximo {_NAME_MAX_LENGTH} caracteres.", "field": "name"}
         fields["name"] = name
 
     if not partial or "body" in data:
         body = str(data.get("body") or "").strip()
         if not body:
             return {}, {"detail": "O modelo precisa de um texto.", "field": "body"}
+        unknown = _unknown_template_variable(body)
+        if unknown:
+            return {}, _unknown_variable_error(unknown, "body")
         fields["body"] = body
 
     if "image_source" in data:
@@ -2369,6 +2574,9 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         variants = data.get("platform_variants")
         if not isinstance(variants, dict):
             return {}, {"detail": "Variações inválidas.", "field": "platform_variants"}
+        unknown = _unknown_template_variable(variants)
+        if unknown:
+            return {}, _unknown_variable_error(unknown, "platform_variants")
         fields["platform_variants"] = variants
 
     if "variables" in data:
@@ -2586,6 +2794,25 @@ def _authorization_error_response(
     return response
 
 
+def _authorization_read_error_response(exc: MarketingAuthorizationError, request) -> Response:
+    """A recusa de uma LEITURA: mesma resposta do comando, sem gravar.
+
+    GET não produz efeito, então a recusa não vira ``MarketingSecurityEvent``
+    aqui; ela fica no log. A recusa por falta de capacidade continua auditada
+    na permissão da view, antes do handler.
+    """
+    logger.warning(
+        "marketing.read_denied code=%s actor=%s path=%s",
+        exc.code,
+        getattr(request.user, "pk", None),
+        request.path,
+    )
+    response = Response(exc.as_payload(), status=exc.status_code)
+    if exc.retry_after is not None:
+        response["Retry-After"] = str(exc.retry_after)
+    return response
+
+
 def _safety_payload(state) -> dict:
     return {
         "frozen": state.frozen,
@@ -2640,12 +2867,14 @@ def _publish_at(raw, *, timezone_name: str = "") -> tuple[object | None, dict | 
         try:
             marketing_time.require_configured_timezone(timezone_name)
         except ValueError as exc:
-            code = str(exc)
+            # O código volta ao cliente como literal da casa, nunca como texto
+            # da exceção: só os dois desfechos conhecidos têm nome.
+            mismatch = str(exc) == "timezone_mismatch"
             return None, {
-                "code": code,
+                "code": "timezone_mismatch" if mismatch else "unknown_timezone",
                 "detail": (
                     "O timezone não corresponde ao configurado para a loja."
-                    if code == "timezone_mismatch"
+                    if mismatch
                     else "O timezone informado não existe."
                 ),
                 "field": "publish_timezone",

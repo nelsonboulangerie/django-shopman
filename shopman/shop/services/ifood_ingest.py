@@ -105,7 +105,9 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             f"Canal iFood '{channel_ref}' não encontrado. Rode o seed ou crie o canal no admin.",
         ) from e
 
-    items = normalize_items(payload["items"])
+    items = normalize_items(
+        payload["items"], channel_ref=channel_ref, merchant_id=payload.get("merchant_id", "")
+    )
     items_subtotal_q = sum(int(item["line_total_q"]) for item in items)
     # Marketplace orders are pre-priced by iFood: the authoritative total is the
     # grand total (orderAmount = subtotal + delivery fee + service fees − benefits).
@@ -142,6 +144,7 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
             "totals": payload.get("totals") or {},
             "payments": payload.get("payments") or {},
             "benefits": payload.get("benefits") or [],
+            "additional_fees": payload.get("additional_fees") or [],
             "delivered_by": delivery.get("delivered_by", ""),
             "pickup_code": delivery.get("pickup_code", ""),
             "takeout_at": delivery.get("takeout_at", ""),
@@ -168,6 +171,12 @@ def ingest(payload: dict, *, channel_ref: str = IFOOD_CHANNEL_REF) -> Order:
         delivery_date = delivery_date_from_payload(payload.get("schedule") or {})
         if delivery_date is not None:
             order_data["delivery_date"] = delivery_date.isoformat()
+            # O mesmo carimbo que o commit grava (``orderman.services.commit``): o
+            # pedido do iFood nasce aqui, fora do commit, e é o carimbo que a régua
+            # única de "é encomenda?" lê no pedido (``order_helpers.is_preorder``, #3163).
+            from django.utils import timezone
+
+            order_data["is_preorder"] = delivery_date > timezone.localdate()
 
     # Prazo do marketplace, gravado no pedido em vez de recalculado: é fato da
     # ingestão (quando ELE nasceu lá, com o SLA que valia então), não config de hoje.
@@ -252,11 +261,7 @@ def _external_confirm_deadline(channel_ref: str, created_at) -> str:
 
     from shopman.shop.config import ChannelConfig
 
-    try:
-        minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
-    except Exception:  # canal ausente ou config inválida não impede ingerir o pedido
-        logger.warning("ifood_ingest: SLA externo indisponível para %s — card fica sem contagem", channel_ref)
-        return ""
+    minutes = int(ChannelConfig.for_channel(channel_ref).confirmation.external_sla_minutes or 0)
     if minutes <= 0 or not created_at:
         return ""
     placed = parse_datetime(str(created_at))
@@ -404,14 +409,20 @@ def _validate_payload(payload: dict) -> None:
         raise IFoodIngestError("missing_items", "items (lista não vazia) é obrigatório")
 
 
-def normalize_items(raw_items: list[dict]) -> list[dict]:
-    """Ensure every item has line_id / line_total_q computed.
+def normalize_items(raw_items: list[dict], *, channel_ref: str, merchant_id: str = "") -> list[dict]:
+    """Ensure every item has line_id / line_total_q computed and the house SKU.
 
     Público porque a reconciliação de um pedido ALTERADO
     (``ifood_events._process_patch``) relê o pedido inteiro e precisa da mesma
     normalização que a ingestão usou — duas normalizações do mesmo payload
     seriam duas verdades sobre o mesmo pedido.
+
+    O ``sku`` que chega é o código do iFood; o que sai é o SKU da casa quando há
+    vínculo confirmado (``services/ifood_item_sku``). Sem vínculo o item entra
+    como veio e o aviso de SKU fora do catálogo sai na reserva.
     """
+    from shopman.shop.services.ifood_item_sku import resolve_items
+
     normalized: list[dict] = []
     for idx, raw in enumerate(raw_items, start=1):
         if not raw.get("sku"):
@@ -430,7 +441,7 @@ def normalize_items(raw_items: list[dict]) -> list[dict]:
             "line_total_q": line_total_q,
             "meta": raw.get("meta", {}),
         })
-    return normalized
+    return resolve_items(normalized, channel_ref=channel_ref, merchant_id=merchant_id)
 
 
 def _fulfillment_type(payload: dict) -> str:

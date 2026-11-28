@@ -2,30 +2,24 @@
 
 Brecha real: com Pix/cartão o checkout manda o cliente para a tela de pagamento.
 Se ele clicasse em "Acompanhar pedido" sem pagar, o acompanhamento carregava
-pela primeira vez, consumia `just_placed` e soltava o confete — comemorando um
-pedido que ainda podia expirar. Pior: como o consumo é de uso único, a
-comemoração se perdia para sempre, justamente antes do momento em que ela faz
-sentido (a volta depois de pagar).
+pela primeira vez, consumia a marca e soltava o confete, comemorando um pedido
+que ainda podia expirar.
+
+Quem sabe que o pedido ACABOU de ser fechado é o navegador do checkout
+(``surfaces/storefront-nuxt/app/utils/justPlaced.ts``); o servidor só diz, numa
+leitura sem efeito, se o pedido já pode ser comemorado (``placement_secured``).
 """
 from __future__ import annotations
 
 import pytest
 
-from shopman.shop.services.customer_orders import JUST_PLACED_SESSION_KEY
-
 pytestmark = pytest.mark.django_db
 
 
-def _armar_momento(client, ref: str) -> None:
-    sessao = client.session
-    sessao[JUST_PLACED_SESSION_KEY] = ref
-    sessao.save()
-
-
-def _just_placed(client, ref: str):
+def _tracking(client, ref: str) -> dict:
     resposta = client.get(f"/api/v1/tracking/{ref}/")
     assert resposta.status_code == 200, resposta.status_code
-    return resposta.json().get("just_placed")
+    return resposta.json()
 
 
 class TestPedidoQueAindaDevePagamento:
@@ -33,34 +27,28 @@ class TestPedidoQueAindaDevePagamento:
         from shopman.orderman.models import Order as _Order
 
         _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
-        _armar_momento(client, order_with_payment.ref)
 
-        assert _just_placed(client, order_with_payment.ref) is False
+        dados = _tracking(client, order_with_payment.ref)
 
-    def test_a_comemoracao_sobrevive_para_depois_do_pagamento(self, client, order_with_payment):
-        """A flag não pode ser queimada na visita que não comemora."""
-        from shopman.orderman.models import Order as _Order
-
-        _Order.objects.filter(pk=order_with_payment.pk).update(status="accepted")
-        _armar_momento(client, order_with_payment.ref)
-
-        _just_placed(client, order_with_payment.ref)  # visita sem pagar
-
-        assert client.session.get(JUST_PLACED_SESSION_KEY) == order_with_payment.ref
+        assert dados["placement_secured"] is False
+        assert dados["payment_due"] is True
 
 
 class TestPedidoSemPagamentoPendente:
     def test_comemora_quando_nao_ha_o_que_pagar(self, client, order):
         """Dinheiro/balcão: colocar o pedido JÁ é a conclusão do ato."""
-        _armar_momento(client, order.ref)
+        dados = _tracking(client, order.ref)
 
-        assert _just_placed(client, order.ref) is True
+        assert dados["placement_secured"] is True
+        assert dados["payment_due"] is False
 
-    def test_comemora_uma_vez_so(self, client, order):
-        _armar_momento(client, order.ref)
+    def test_a_leitura_nao_consome_nada(self, client, order):
+        """O GET é leitura: a segunda visita responde igual à primeira."""
+        sessao_antes = dict(client.session.items())
 
-        assert _just_placed(client, order.ref) is True
-        assert _just_placed(client, order.ref) is False
+        assert _tracking(client, order.ref)["placement_secured"] is True
+        assert _tracking(client, order.ref)["placement_secured"] is True
+        assert dict(client.session.items()) == sessao_antes
 
 
 class TestPedidoMorto:
@@ -69,6 +57,5 @@ class TestPedidoMorto:
         from shopman.orderman.models import Order as _Order
 
         _Order.objects.filter(pk=order.pk).update(status="cancelled")
-        _armar_momento(client, order.ref)
 
-        assert _just_placed(client, order.ref) is False
+        assert _tracking(client, order.ref)["placement_secured"] is False

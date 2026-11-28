@@ -7,6 +7,9 @@ export interface OperatorCard {
   id: number;
   username: string;
   name: string;
+  /** O PIN desta pessoa tem 4 dígitos fixos (#3223): o teclado envia sozinho no
+   *  quarto. `null` = sem PIN, ou PIN antigo à espera da troca obrigatória. */
+  pin_digits?: number | null;
 }
 
 export interface OperatorSession {
@@ -18,12 +21,17 @@ export interface OperatorSession {
   workstation?: WorkstationCard | null;
   operator: OperatorCard | null;
   locked: boolean;
-  // O operador recebeu um PIN temporário (reset do gerente) e precisa trocá-lo
+  // O operador precisa trocar o PIN antes de operar: recebeu um temporário (reset
+  // do gerente) ou tem um PIN de antes dos 4 dígitos fixos (#3223). Precisa trocá-lo
   // antes de operar. O shell força a troca quando true.
   pin_must_change: boolean;
   // Resposta somente para a capability solicitada pela superfície. Evita montar
   // o app para um operador identificado, porém sem acesso.
   authorized: boolean;
+  // Perfil da superfície composta, quando ela possui mais de uma persona. Não
+  // substitui as permissões dos endpoints; serve apenas à landing/navegação.
+  surface_role?: string | null;
+  landing_path?: string;
 }
 
 export type OperatorSessionResponse = OperatorSession;
@@ -91,6 +99,8 @@ export interface WorkstationManageState {
   station?: string;
   workstations: WorkstationManageRow[];
   kinds: WorkstationKindOption[];
+  /** O tipo que o posto novo já traz: um que o Gestor oferece para vincular (#2584). */
+  default_kind?: WorkstationKindOption["kind"];
   copy: WorkstationCopy;
 }
 

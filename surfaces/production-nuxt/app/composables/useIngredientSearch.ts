@@ -69,5 +69,5 @@ export function useIngredientSearch() {
     if (timer) clearTimeout(timer);
   });
 
-  return { term, options, pending, error, search, reset };
+  return { term, options, pending, error, run, search, reset };
 }

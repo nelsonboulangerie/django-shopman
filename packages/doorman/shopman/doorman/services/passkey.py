@@ -127,8 +127,15 @@ def _consume_challenge(request, key: str) -> bytes:
 # ── Cadastrar ────────────────────────────────────────────────────────
 
 
-def registration_options(request, *, customer_id, display_name: str, user_name: str) -> dict:
-    """As opções que o navegador precisa para criar a credencial."""
+def registration_options(
+    request, *, customer_id, display_name: str, user_name: str, rp_name: str = ""
+) -> dict:
+    """As opções que o navegador precisa para criar a credencial.
+
+    ``rp_name`` é o nome que o sistema operacional mostra ("Passkey para …"): quem
+    instala o kernel o informa (a marca da loja). Vazio cai no ``PASSKEY_RP_NAME``
+    do deployment e, sem ele, no domínio da credencial.
+    """
     from webauthn import generate_registration_options, options_to_json
     from webauthn.helpers.structs import (
         AuthenticatorSelectionCriteria,
@@ -144,7 +151,7 @@ def registration_options(request, *, customer_id, display_name: str, user_name: 
 
     options = generate_registration_options(
         rp_id=_rp_id(request),
-        rp_name=_rp_name(),
+        rp_name=_rp_name(rp_name, request),
         user_id=str(customer_id).encode(),
         user_name=user_name,
         user_display_name=display_name,
@@ -268,10 +275,10 @@ def verify_login(request, *, credential: dict) -> PasskeyResult:
 # ── Helpers ──────────────────────────────────────────────────────────
 
 
-def _rp_name() -> str:
+def _rp_name(given: str, request) -> str:
     from ..conf import doorman_settings
 
-    return doorman_settings.PASSKEY_RP_NAME
+    return (given or "").strip() or doorman_settings.PASSKEY_RP_NAME or _rp_id(request)
 
 
 def _expected_origin(request) -> str:

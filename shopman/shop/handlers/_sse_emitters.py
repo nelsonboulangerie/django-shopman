@@ -127,6 +127,7 @@ def _publish_for_sku(sku: str, *, event_type: str, payload: dict) -> None:
         logger.warning("django_eventstream not installed; SSE emit skipped")
         return
 
+    channel_refs: list[str] = []
     try:
         channel_refs = _channels_for_sku(sku)
         for ref in channel_refs:
@@ -140,9 +141,28 @@ def _publish_for_sku(sku: str, *, event_type: str, payload: dict) -> None:
         logger.warning(
             "SSE emit failed sku=%s type=%s", sku, event_type, exc_info=True,
         )
+    # A vitrine pública (#2784): o SKU só sai quando o que qualquer visitante vê dele
+    # mudou. Depois do bloco acima, que já apagou o cache de disponibilidade do canal:
+    # a assinatura é lida fresca.
+    _publish_public_shelf(sku, channel_refs)
     # Estoque mexeu ⇒ "Últimas X unidades" pode ter mudado. Independente do
     # bloco acima: uma falha no stream de estoque não deve calar o FOMO.
     _publish_fomo(sku, reason=event_type)
+
+
+def _publish_public_shelf(sku: str, channel_refs: list[str]) -> None:
+    try:
+        from django_eventstream import send_event
+
+        from shopman.shop.services import public_shelf
+
+        targets = [(sku, channel_refs)]
+        targets += [(bundle, _channels_for_sku(bundle)) for bundle in public_shelf.bundles_using(sku)]
+        for target, refs in targets:
+            for ref in public_shelf.changed_channels(target, refs):
+                send_event(public_shelf.shelf_channel(ref), public_shelf.SHELF_EVENT, {"sku": target})
+    except Exception:
+        logger.warning("SSE public shelf emit failed sku=%s", sku, exc_info=True)
 
 
 # ── FOMO badges ──────────────────────────────────────────────────────
@@ -195,6 +215,8 @@ def _publish_surface_changed(surface_ref: str) -> None:
         return
     try:
         send_event(f"stock-{surface_ref}", "listing-changed", {"surface_ref": surface_ref})
+        # A vitrine pública relê tudo: sem SKU, o aviso vale para qualquer página (#2784).
+        send_event(f"shelf-{surface_ref}", "shelf-update", {})
         # A TV (menuboard) assina ``stock-catalog``, não ``stock-{ref}``: sem este
         # segundo envio, ligar/desligar, trocar coleções ou rotação só chegava ao
         # quadro no poll de 30 s. O quadro filtra nada — relê o próprio estado.
@@ -371,6 +393,16 @@ def emit_courier_update(order, payload: dict) -> None:
     )
 
 
+def emit_courier_position(ride_ref: str) -> None:
+    """A posição do entregador da corrida mudou: a página Entregas do Gestor relê.
+
+    Só a corrida vai no aviso, nunca a coordenada: o canal ``backstage-orders`` guarda
+    histórico, e a posição do entregador é dado pessoal. O limite de um aviso a cada
+    10 s por corrida é de quem grava (``courier_position.store_position``).
+    """
+    _emit_backstage("orders", "backstage-courier-position", {"ride": str(ride_ref)})
+
+
 def emit_fiscal_update(order) -> None:
     """A NFC-e do pedido mudou (autorizou): o quadro do Gestor relê.
 
@@ -449,9 +481,27 @@ def _on_production_changed(sender, product_ref, date, action, work_order, **kwar
         scope=_default_backstage_scope(),
     )
     if action == "finished":
-        # "Saiu do forno" nasce aqui e vale 60 min. O storefront precisa saber
+        # O selo de fornada pronta nasce aqui e vale 60 min. O storefront precisa saber
         # na hora — é o badge mais perecível do sistema.
         emit_fomo_for_sku(work_order.output_sku, reason="production_finished")
+        # A vitrine pública (cardápio e página do produto) ouve a prateleira, e a
+        # assinatura dela não muda quando um produto já disponível ganha fornada:
+        # sem este aviso, o selo "Fornada pronta" só chegava no próximo poll (#2807).
+        sku = work_order.output_sku
+        if sku:
+            _publish_after_commit(("shelf-fresh", sku), lambda: _publish_fresh_batch(sku))
+
+
+def _publish_fresh_batch(sku: str) -> None:
+    try:
+        from django_eventstream import send_event
+
+        from shopman.shop.services import public_shelf
+
+        for ref in sorted(set(_channels_for_sku(sku)) & public_shelf.public_channels()):
+            send_event(public_shelf.shelf_channel(ref), public_shelf.SHELF_EVENT, {"sku": sku})
+    except Exception:
+        logger.warning("SSE fresh batch shelf emit failed sku=%s", sku, exc_info=True)
 
 
 def _on_operator_alert_saved(sender, instance, created, **kwargs):

@@ -23,17 +23,287 @@ from shopman.backstage.models import DayClosing
 logger = logging.getLogger(__name__)
 
 
+class PendingProductionBlocksClosing(ValueError):
+    """Há ordem de produção aberta e ninguém liberou o fechamento.
+
+    Decisão do dono (05/11/2026): produção aberta IMPEDE selar o dia. Quem fecha
+    resolve na Produção (conclui ou cancela as ordens) ou libera ali mesmo com a
+    autorização de um gerente escolhido da lista, com PIN e motivo. A camada
+    HTTP responde 409 com ``code="pending_production"``.
+    """
+
+    code = "pending_production"
+
+    def __init__(self, message: str, *, field: str = "production_release"):
+        super().__init__(message)
+        self.field = field
+
+
+class NotPickedUpBatchRefused(ValueError):
+    """O "Encerrar todos como não retirado" do fechamento não pôde ser feito.
+
+    Decisão da coordenação em 22/11/2026, reversível (substitui o padrão da
+    resposta 5 do mapa do "Não retirado", de 17/11): o fechamento do dia AVISA e
+    não trava. Os prontos não retirados aparecem no topo com um gesto em lote,
+    opcional, assinado por um Gerente; cada um também se resolve sozinho no Gestor.
+    Esta recusa é do gesto (lista mudou, pedido mudou, nada a encerrar), nunca do
+    fechamento. A camada HTTP responde 409 com ``code="not_picked_up_refused"``.
+    """
+
+    code = "not_picked_up_refused"
+
+    def __init__(self, message: str, *, field: str = "orders"):
+        super().__init__(message)
+        self.field = field
+
+
+#: O que cabe a cada pedido pronto não retirado no fechamento. Nenhum segura o dia.
+READY_RESOLVE = "resolve"  # o "Não retirado" já pode ser feito (sozinho ou no gesto em lote)
+READY_IN_TIME = "in_time"  # ainda no prazo combinado: o Gestor resolve depois
+READY_OWNER = "owner"  # o gesto não serve a este pedido (conta acertada, venda mista): fica com o Dono
+
+#: O caminho de cada pedido aberto que não ficou pronto (#3169).
+OPEN_CANCEL_OR_RESCHEDULE = "cancel_or_reschedule"
+OPEN_CANCEL = "cancel"
+OPEN_CONCLUDE_OR_CANCEL = "conclude_or_cancel"
+OPEN_CONCLUDE = "conclude"
+_OPEN_PATH_SENTENCE = {
+    OPEN_CANCEL_OR_RESCHEDULE: "Cancele ou remarque no Gestor.",
+    OPEN_CANCEL: "Cancele no Gestor. A data deste pedido não muda por aqui.",
+    OPEN_CONCLUDE_OR_CANCEL: "Já está na Cozinha: conclua ou cancele no Gestor.",
+    OPEN_CONCLUDE: "Conclua no Gestor quando a entrega chegar.",
+}
+
+
+def pending_ready_orders(closing_date: date, *, now=None) -> list[dict]:
+    """Pedidos de retirada prontos, do dia ou de antes, que ninguém veio buscar.
+
+    Cada um com o que o fechamento faz com ele (:data:`READY_RESOLVE`,
+    :data:`READY_IN_TIME`, :data:`READY_OWNER`) e, para os que se resolvem agora,
+    a prévia do "Não retirado" (a frase do dinheiro e a base que a tela leu). O
+    pedido combinado para depois do dia que fecha não entra: ainda não é do dia.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import fulfillment_window, no_show
+
+    now = now or timezone.now()
+    rows: list[dict] = []
+    for order in Order.objects.filter(status=Order.Status.READY).order_by("ready_at", "ref"):
+        if not no_show.is_candidate(order):
+            continue
+        day = no_show.commitment_day(order)
+        if day is not None and day > closing_date:
+            continue
+        promised = fulfillment_window.promised_at(order)
+        customer = (order.data or {}).get("customer") or {}
+        row = {
+            "ref": order.ref,
+            "customer_name": str(customer.get("name") or ""),
+            "promised_at": promised.isoformat() if promised is not None else "",
+            "state": READY_RESOLVE,
+            "reason": "",
+            "money_sentence": "",
+            "revision": "",
+        }
+        reason = no_show.eligibility_reason(order)
+        if reason:
+            row.update(state=READY_OWNER, reason=reason)
+        else:
+            releases_at, why = no_show.release_gate(order, now=now)
+            if releases_at is not None:
+                row.update(state=READY_IN_TIME, reason=why)
+            else:
+                preview = no_show.preview(order, now=now)
+                if not preview["allowed"]:
+                    row.update(state=READY_OWNER, reason=preview["block_reason"])
+                else:
+                    row.update(money_sentence=preview["money_sentence"], revision=preview["revision"])
+        rows.append(row)
+    return rows
+
+
+def resolve_not_picked_up(*, user, release: dict | None, closing_date: date | None = None) -> dict:
+    """O gesto em lote do fechamento: encerra como não retirado os prontos da lista.
+
+    Opcional (decisão da coordenação em 22/11/2026): fechar o dia não depende dele.
+    ``release`` = ``{"orders": [{"ref", "revision"}], "manager_approval": {...}}``: a
+    base que a tela leu de cada pedido e o Gerente, com PIN ou crachá. Cada pedido
+    passa pelo mesmo "Não retirado" do Gestor (``no_show.mark_not_picked_up``), numa
+    transação só. Pedido novo na lista, que a tela não mostrou, ou pedido que mudou
+    depois da leitura recusam o gesto inteiro: ninguém assina o que não viu.
+    Devolve quem assinou, quem pediu, quando e quais pedidos.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import no_show
+    from shopman.shop.services.pos import validate_manager_override
+
+    closing_date = closing_date or timezone.localdate()
+    resolvable = [row for row in pending_ready_orders(closing_date) if row["state"] == READY_RESOLVE]
+    if not resolvable:
+        raise NotPickedUpBatchRefused("Não há pedido pronto para encerrar como não retirado agora.")
+    sent = {
+        str(row.get("ref") or ""): str(row.get("revision") or "")
+        for row in ((release or {}).get("orders") or [])
+        if isinstance(row, dict)
+    }
+    if any(row["ref"] not in sent for row in resolvable):
+        raise NotPickedUpBatchRefused(
+            "Há pedido pronto que a tela ainda não mostrava. Confira a lista e assine de novo."
+        )
+    actor = user.get_username() if user is not None else ""
+    approver = validate_manager_override(
+        (release or {}).get("manager_approval") or {},
+        operator_username=actor,
+        action="day_closing_not_picked_up",
+    ).get_username()
+    resolved = []
+    with transaction.atomic():
+        for row in resolvable:
+            order = Order.objects.get(ref=row["ref"])
+            try:
+                no_show.mark_not_picked_up(
+                    order, actor=actor, approved_by=approver, expected_revision=sent[row["ref"]],
+                )
+            except no_show.NoShowStale as exc:
+                raise NotPickedUpBatchRefused(
+                    f"O pedido {row['ref']} mudou depois que a lista foi aberta. Confira e assine de novo."
+                ) from exc
+            except no_show.NoShowRefused as exc:
+                raise NotPickedUpBatchRefused(f"Pedido {row['ref']}: {exc}") from exc
+            resolved.append(row["ref"])
+    logger.info("closing.not_picked_up_batch approver=%s actor=%s orders=%s", approver, actor, resolved)
+    return {"approved_by": approver, "requested_by": actor, "at": timezone.now().isoformat(), "orders": resolved}
+
+
+def _open_order_path(order) -> str:
+    """O caminho de um pedido aberto que não ficou pronto: o que o Gestor oferece a ele."""
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import reschedule
+
+    if order.status in (Order.Status.READY, Order.Status.DISPATCHED):
+        return OPEN_CONCLUDE
+    if reschedule.physical_work_started(order):
+        return OPEN_CONCLUDE_OR_CANCEL
+    # A mesma régua do "Remarcar" do PDV: o pedido do iFood tem a data combinada lá.
+    return OPEN_CANCEL if reschedule.state_refusal(order) else OPEN_CANCEL_OR_RESCHEDULE
+
+
+def pending_open_orders(closing_date: date) -> list[dict]:
+    """Pedidos abertos que não ficaram prontos, do dia ou de antes (#3169).
+
+    Novo, aceito, em preparo e a entrega (pronta para sair ou já na rua). O pronto
+    de retirada fica na lista dos não retirados (:func:`pending_ready_orders`). O
+    pedido combinado para depois do dia que fecha não entra: ainda não é do dia.
+    Cada um com o caminho que o Gestor oferece (cancelar, remarcar ou concluir).
+    Nenhum segura o dia: fechar com algo em aberto não apaga nada, e o pedido
+    aparece de novo no Gestor no dia seguinte.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import fulfillment_window, no_show
+
+    statuses = (
+        Order.Status.NEW, Order.Status.ACCEPTED, Order.Status.PREPARING,
+        Order.Status.READY, Order.Status.DISPATCHED,
+    )
+    rows: list[dict] = []
+    for order in Order.objects.filter(status__in=statuses).order_by("created_at", "ref"):
+        if order.status == Order.Status.READY and no_show.is_candidate(order):
+            continue
+        day = no_show.commitment_day(order)
+        if day is not None and day > closing_date:
+            continue
+        promised = fulfillment_window.promised_at(order)
+        customer = (order.data or {}).get("customer") or {}
+        path = _open_order_path(order)
+        rows.append({
+            "ref": order.ref,
+            "customer_name": str(customer.get("name") or ""),
+            "status": str(order.status),
+            "status_label": str(order.get_status_display()).capitalize(),
+            "promised_at": promised.isoformat() if promised is not None else "",
+            "path": path,
+            "path_sentence": _OPEN_PATH_SENTENCE[path],
+        })
+    return rows
+
+
+def _authorize_production_release(*, user, pending: list[dict], release: dict | None) -> dict:
+    """A liberação do fechamento com produção aberta, assinada e com o porquê.
+
+    O motivo vem ANTES do PIN: conferir o PIN de um pedido que vai ser recusado
+    por falta de motivo gastaria uma tentativa do gerente à toa. Quem assina é o
+    APROVADOR que o PIN (ou o crachá) resolveu, o mesmo validador da sangria
+    (``validate_manager_override``): uma regra de quem pode autorizar, não duas.
+    Levanta ``PosIntentError`` quando a assinatura falta ou não confere.
+    """
+    from shopman.shop.services.pos import validate_manager_override
+
+    quantas = len(pending)
+    if not release:
+        aberta = "Uma ordem de produção segue aberta" if quantas == 1 else f"{quantas} ordens de produção seguem abertas"
+        raise PendingProductionBlocksClosing(
+            f"{aberta}. Conclua ou cancele na Produção, ou libere o fechamento com a autorização de um gerente."
+        )
+    reason = str(release.get("reason") or "").strip()[:200]
+    if not reason:
+        raise PendingProductionBlocksClosing(
+            "Diga por que o dia fecha com produção aberta.",
+            field="production_release.reason",
+        )
+    approver = validate_manager_override(
+        release.get("manager_approval") or {},
+        operator_username=user.get_username() if user is not None else "",
+        action="day_closing_release_production",
+    )
+    return {
+        "approved_by": approver.get_username(),
+        "approved_by_id": approver.pk,
+        "requested_by": user.get_username() if user is not None else "",
+        "reason": reason,
+        "at": timezone.now().isoformat(),
+        "work_orders": [row["ref"] for row in pending],
+    }
+
+
 def perform_day_closing(
     *,
     user,
     items: Iterable,
     quantities_by_sku: dict[str, str],
     closing_date: date | None = None,
+    production_release: dict | None = None,
 ) -> date:
-    """Execute day closing and return the closing date."""
+    """Execute day closing and return the closing date.
+
+    Produção aberta (ordem planejada ou em produção com alvo até hoje) impede o
+    fechamento, salvo ``production_release`` = ``{"reason": ..., "manager_approval":
+    {"username", "pin"} | {"badge"}}``. A liberação fica gravada no próprio
+    ``DayClosing`` (``data["pending_production_release"]``): quem pediu, quem
+    autorizou, quando, por quê e quais ordens.
+
+    Pedido aberto NÃO impede (decisão da coordenação em 22/11/2026, reversível): os
+    prontos não retirados e os que não ficaram prontos ficam gravados em
+    ``data["pending_ready_orders"]`` e ``data["pending_open_orders"]``, seguem
+    abertos e aparecem de novo no Gestor no dia seguinte. O gesto em lote dos não
+    retirados é :func:`resolve_not_picked_up`, antes do fechamento e opcional.
+    """
     closing_date = closing_date or timezone.localdate()
     if DayClosing.objects.filter(date=closing_date).exists():
         raise ValueError("Fechamento de hoje já foi realizado.")
+
+    pending_production = _pending_production_snapshot(closing_date)
+    release_record = None
+    if pending_production:
+        release_record = _authorize_production_release(
+            user=user, pending=pending_production, release=production_release
+        )
+
+    ready_rows = pending_ready_orders(closing_date)
+    open_rows = pending_open_orders(closing_date)
 
     snapshot = []
     with transaction.atomic():
@@ -86,7 +356,10 @@ def perform_day_closing(
                 "items": snapshot,
                 "production_summary": production_summary(closing_date),
                 "production_by_version": production_summary_by_version(closing_date),
-                "pending_production": _pending_production_snapshot(closing_date),
+                "pending_production": pending_production,
+                "pending_production_release": release_record,
+                "pending_ready_orders": ready_rows,
+                "pending_open_orders": open_rows,
                 "cash_shift_summary": cash_summary,
                 "reconciliation_errors": _reconciliation_errors(
                     closing_date=closing_date,
@@ -96,6 +369,14 @@ def perform_day_closing(
         )
 
     _alert_open_cash_shifts(closing_date, cash_summary.get("open_shifts") or [])
+    if release_record:
+        logger.info(
+            "day_closing_production_released date=%s requested_by=%s approved_by=%s work_orders=%s",
+            closing_date,
+            release_record["requested_by"],
+            release_record["approved_by"],
+            ",".join(release_record["work_orders"]),
+        )
     return closing_date
 
 
@@ -253,7 +534,7 @@ def _write_off_lots(
 
 
 def _pending_production_snapshot(closing_date: date) -> list[dict]:
-    """WOs abertas no fechamento — registradas para auditoria (não bloqueiam)."""
+    """WOs abertas no fechamento: impedem selar sem liberação, e ficam registradas."""
     from shopman.craftsman.models import WorkOrder
 
     rows = []
@@ -535,6 +816,8 @@ def _cash_shift_summary(closing_date: date) -> dict:
     from shopman.cashman import services as cash
     from shopman.cashman.models import Entry, Shift
 
+    from shopman.shop.services import pos_offline_sale
+
     closed = (
         Shift.objects.filter(status=Shift.Status.CLOSED, closed_at__date=closing_date)
         .select_related("terminal", "opened_by")
@@ -561,6 +844,9 @@ def _cash_shift_summary(closing_date: date) -> dict:
             "blind_closing_amount_q": cash.counted(shift) or 0,
             "expected_amount_q": cash.expected_before_count(shift),
             "difference_q": cash.difference(shift) or 0,
+            # Venda sem conexão cobrada por um preço que o catálogo não explica:
+            # SKU, preço do catálogo, cobrado, operador e o gerente que conferiu.
+            "offline_review_sales": pos_offline_sale.review_sales(shift, include_acknowledged=True),
         }
         shift_rows.append(row)
         for key in totals:
@@ -607,7 +893,14 @@ def _payment_method_totals(closing_date: date) -> dict:
     day_intents = exclude_provider_simulated(
         PaymentIntent.objects.filter(status__in=settled, captured_at__date=closing_date)
     )
-    captured = day_intents.values("method").annotate(total=Sum("amount_q"))
+    # O que entrou é o CAPTURADO (transações de captura), não o ``amount_q`` do
+    # intent: captura parcial (cartão capturado a menos, encomenda editada antes
+    # da captura) inflava o mix acima do que o banco liquidou.
+    captured = (
+        PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.CAPTURE)
+        .values("intent__method")
+        .annotate(total=Sum("amount_q"))
+    )
     refunded = (
         PaymentTransaction.objects.filter(intent__in=day_intents, type=PaymentTransaction.Type.REFUND)
         .values("intent__method")
@@ -615,7 +908,7 @@ def _payment_method_totals(closing_date: date) -> dict:
     )
     totals: dict[str, int] = {}
     for row in captured:
-        totals[str(row["method"])] = int(row["total"] or 0)
+        totals[str(row["intent__method"])] = int(row["total"] or 0)
     for row in refunded:
         method = str(row["intent__method"])
         totals[method] = totals.get(method, 0) - int(row["total"] or 0)

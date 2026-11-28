@@ -16,12 +16,11 @@ def context(settings, monkeypatch):
     monkeypatch.setattr("shopman.orderman.dispatch._on_commit_callback", lambda *args: None)
     Shop.objects.create(name="Synthetic cancellation recovery lab")
     order = Order.objects.create(ref="CANCEL-RIDE-LAB", status="ready", data={
-        "fulfillment_type": "delivery", "courier": {"id_mch": "RIDE-LAB", "status": "A"}})
+        "fulfillment_type": "delivery", "courier": {"ride_ref": "RIDE-LAB", "status": "A"}})
     adapter = Mock()
     adapter.cancel.return_value = True
-    monkeypatch.setattr(courier, "get_adapter", lambda name: adapter)
     monkeypatch.setattr("shopman.shop.adapters.get_adapter", lambda name: adapter)
-    monkeypatch.setattr("shopman.shop.handlers.courier_cancel.get_adapter", lambda name: adapter)
+    monkeypatch.setattr("shopman.shop.services.delivery_services.get_adapter", lambda name: adapter)
     return order, adapter
 
 
@@ -54,7 +53,8 @@ def test_remote_timeout_never_reposts(context):
             run(task)
     with pytest.raises(ValueError, match="já iniciado"):
         courier.cancel_ride(order, actor="operator")
-    adapter.cancel.assert_called_once_with("RIDE-LAB", reason_id=None)
+    # A corrida está aceita (A): sem motivo escolhido vai o padrão de depois do aceite.
+    adapter.cancel.assert_called_once_with("RIDE-LAB", reason_id=12)
     order.refresh_from_db()
     assert courier.get_block(order)["status"] == "A"
 
@@ -78,7 +78,7 @@ def test_accepted_cancel_recovers_after_local_failure(context, monkeypatch):
 def test_changed_ride_before_worker_does_not_cancel_replacement(context):
     order, adapter = context
     task = courier.cancel_ride(order, actor="operator")
-    order.data["courier"]["id_mch"] = "REPLACEMENT"
+    order.data["courier"]["ride_ref"] = "REPLACEMENT"
     order.save(update_fields=["data"])
     run(task)
     adapter.cancel.assert_not_called()
@@ -92,14 +92,14 @@ def test_accepted_response_cannot_cancel_replacement(context):
 
     def replace(*args, **kwargs):
         other = Order.objects.get(pk=order.pk)
-        other.data["courier"]["id_mch"] = "REPLACEMENT"
+        other.data["courier"]["ride_ref"] = "REPLACEMENT"
         other.save(update_fields=["data"])
         return True
 
     adapter.cancel.side_effect = replace
     run(task)
     order.refresh_from_db()
-    assert courier.get_block(order) == {"id_mch": "REPLACEMENT", "status": "A"}
+    assert courier.get_block(order) == {"ride_ref": "REPLACEMENT", "status": "A"}
 
 
 @pytest.mark.django_db(transaction=True)
@@ -180,7 +180,7 @@ def test_definitive_rejection_is_not_success(context):
     order.refresh_from_db()
     assert courier.get_block(order)["status"] == "A"
     task.refresh_from_db()
-    assert task.payload["cancel_attempt"]["state"] == "not_applied"
+    assert task.payload["cancel_attempt"]["state"] == "refused"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -228,4 +228,9 @@ def test_definitive_worker_refusal_remains_visible_in_existing_panel(context):
     _process_directive(task)
     panel = _courier_block(order)
     assert panel["can_cancel"]
-    assert "recusou" in panel["error"]["message"]
+    # A recusa mora no estado do cancelamento, não na falha de abrir a corrida.
+    assert panel["error"] is None
+    assert panel["cancel_state"]["state"] == "failed"
+    assert panel["cancel_state"]["message"] == (
+        "A TaOn não cancelou a corrida do pedido LAB. Cancele pela central da TaOn."
+    )

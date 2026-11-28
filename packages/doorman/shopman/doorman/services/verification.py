@@ -18,7 +18,7 @@ from ..error_codes import ErrorCode
 from ..exceptions import GateError
 from ..gates import Gates
 from ..models import VerificationCode
-from ..protocols.customer import AuthCustomerInfo
+from ..protocols.identity import IdentityConflict, IdentityView
 from ..signals import verification_code_sent, verification_code_verified
 
 if TYPE_CHECKING:
@@ -37,9 +37,10 @@ class CodeRequestResult:
     code_id: str | None = None
     expires_at: str | None = None
     delivery_method: str | None = None
-    debug_code: str | None = None
     error: str | None = None
     error_code: ErrorCode | None = None
+    #: COOLDOWN only: seconds until G11 accepts a new request for this target.
+    retry_after_seconds: int | None = None
 
 
 @dataclass
@@ -47,7 +48,7 @@ class VerifyResult:
     """Result of code verification."""
 
     success: bool
-    customer: AuthCustomerInfo | None = None
+    customer: IdentityView | None = None
     created_customer: bool = False
     error: str | None = None
     error_code: ErrorCode | None = None
@@ -90,7 +91,8 @@ class AuthService:
             CodeRequestResult with code_id and expiration
         """
         adapter = get_adapter()
-        target_value = adapter.normalize_login_target(target_value)
+        handle = adapter.login_handle(target_value)
+        target_value = handle.value
         if not target_value:
             return CodeRequestResult(
                 success=False,
@@ -122,28 +124,46 @@ class AuthService:
         # loudly instead of pretending an inner savepoint was a real commit.
         with transaction.atomic(durable=True):
             if purpose == VerificationCode.Purpose.LOGIN and customer_id is None:
-                customer_hint = adapter.resolve_customer(target_value)
+                try:
+                    customer_hint = adapter.resolve_identity(
+                        handle.kind,
+                        handle.value,
+                        purpose="login",
+                    )
+                except IdentityConflict:
+                    return CodeRequestResult(
+                        success=False,
+                        error="Identity ownership is conflicting.",
+                        error_code=ErrorCode.IDENTITY_CONFLICT,
+                    )
                 if customer_hint is not None:
-                    customer_id = customer_hint.uuid
+                    customer_id = customer_hint.subject_id
             if customer_id is not None:
-                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
-                target_is_current = (
-                    purpose != VerificationCode.Purpose.LOGIN
-                    or (
-                        locked_customer is not None
-                        and adapter.login_target_belongs_to_customer(
-                            locked_customer,
-                            target_value,
+                locked_customer = adapter.lock_active_identity(customer_id, purpose="login")
+                try:
+                    target_is_current = (
+                        purpose != VerificationCode.Purpose.LOGIN
+                        or (
+                            locked_customer is not None
+                            and adapter.login_target_belongs_to_customer(
+                                locked_customer,
+                                handle,
+                            )
                         )
                     )
-                )
+                except IdentityConflict:
+                    return CodeRequestResult(
+                        success=False,
+                        error="Identity ownership is conflicting.",
+                        error_code=ErrorCode.IDENTITY_CONFLICT,
+                    )
                 if locked_customer is None or not target_is_current:
                     return CodeRequestResult(
                         success=False,
                         error="Account inactive.",
                         error_code=ErrorCode.ACCOUNT_INACTIVE,
                     )
-                customer_id = locked_customer.uuid
+                customer_id = locked_customer.subject_id
 
             # G9: Rate limit by target
             try:
@@ -179,17 +199,29 @@ class AuthService:
                     target_value=target_value,
                     cooldown_seconds=doorman_settings.ACCESS_CODE_COOLDOWN_SECONDS,
                 )
-            except GateError:
+            except GateError as exc:
+                # The code sent moments ago may still be valid: say so (expiry
+                # and channel), so the surface can take the person back to
+                # typing it instead of a bare "wait".
+                pending = cls._get_valid_code(target_value, purpose)
+                retry_after = exc.data.get("retry_after")
                 return CodeRequestResult(
                     success=False,
                     error="Please wait before requesting a new code.",
                     error_code=ErrorCode.COOLDOWN,
+                    retry_after_seconds=int(retry_after) if retry_after is not None else None,
+                    expires_at=pending.expires_at.isoformat() if pending else None,
+                    delivery_method=pending.delivery_method if pending else None,
                 )
 
             # G10: Rate limit by IP
             if ip_address:
                 try:
-                    Gates.ip_rate_limit(ip_address)
+                    Gates.ip_rate_limit(
+                        ip_address,
+                        max_requests=doorman_settings.IP_RATE_LIMIT_MAX,
+                        window_minutes=doorman_settings.IP_RATE_LIMIT_WINDOW_MINUTES,
+                    )
                 except GateError:
                     return CodeRequestResult(
                         success=False,
@@ -237,17 +269,25 @@ class AuthService:
         # cross an already-completed account deletion.
         with transaction.atomic():
             if customer_id is not None:
-                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
-                target_is_current = (
-                    purpose != VerificationCode.Purpose.LOGIN
-                    or (
-                        locked_customer is not None
-                        and adapter.login_target_belongs_to_customer(
-                            locked_customer,
-                            target_value,
+                locked_customer = adapter.lock_active_identity(customer_id, purpose="login")
+                try:
+                    target_is_current = (
+                        purpose != VerificationCode.Purpose.LOGIN
+                        or (
+                            locked_customer is not None
+                            and adapter.login_target_belongs_to_customer(
+                                locked_customer,
+                                handle,
+                            )
                         )
                     )
-                )
+                except IdentityConflict:
+                    cls._fail_pending_code(code.pk)
+                    return CodeRequestResult(
+                        success=False,
+                        error="Identity ownership is conflicting.",
+                        error_code=ErrorCode.IDENTITY_CONFLICT,
+                    )
                 if locked_customer is None or not target_is_current:
                     cls._fail_pending_code(code.pk)
                     return CodeRequestResult(
@@ -283,7 +323,7 @@ class AuthService:
                         error_code=ErrorCode.SEND_FAILED,
                     )
             except Exception:
-                logger.exception("Send failed", extra={"target": target_value})
+                logger.error("Send failed", extra={"handle_kind": handle.kind})
                 cls._fail_pending_code(code.pk)
                 return CodeRequestResult(
                     success=False, error="Error sending code.",
@@ -306,17 +346,25 @@ class AuthService:
         # won while transport was running, the delivered code is failed closed.
         with transaction.atomic():
             if customer_id is not None:
-                locked_customer = adapter.lock_active_customer_by_uuid(customer_id)
-                target_is_current = (
-                    purpose != VerificationCode.Purpose.LOGIN
-                    or (
-                        locked_customer is not None
-                        and adapter.login_target_belongs_to_customer(
-                            locked_customer,
-                            target_value,
+                locked_customer = adapter.lock_active_identity(customer_id, purpose="login")
+                try:
+                    target_is_current = (
+                        purpose != VerificationCode.Purpose.LOGIN
+                        or (
+                            locked_customer is not None
+                            and adapter.login_target_belongs_to_customer(
+                                locked_customer,
+                                handle,
+                            )
                         )
                     )
-                )
+                except IdentityConflict:
+                    cls._fail_pending_code(code.pk)
+                    return CodeRequestResult(
+                        success=False,
+                        error="Identity ownership is conflicting.",
+                        error_code=ErrorCode.IDENTITY_CONFLICT,
+                    )
                 if locked_customer is None or not target_is_current:
                     cls._fail_pending_code(code.pk)
                     return CodeRequestResult(
@@ -341,22 +389,23 @@ class AuthService:
                 update_fields.append("delivery_method")
             code.save(update_fields=update_fields)
 
-        # Signal
-        verification_code_sent.send(
-            sender=cls,
-            code=code,
-            target_value=target_value,
-            delivery_method=actual_method,
+        # ADR-025: anúncio depois do COMMIT.
+        transaction.on_commit(
+            lambda: verification_code_sent.send(
+                sender=cls,
+                code=code,
+                target_value=target_value,
+                delivery_method=actual_method,
+            )
         )
 
-        logger.info("Code sent", extra={"target": target_value, "purpose": purpose})
+        logger.info("Code sent", extra={"handle_kind": handle.kind, "purpose": purpose})
 
         return CodeRequestResult(
             success=True,
             code_id=str(code.id),
             expires_at=code.expires_at.isoformat(),
             delivery_method=actual_method,
-            debug_code=raw_code,
         )
 
     @staticmethod
@@ -393,7 +442,8 @@ class AuthService:
             VerifyResult with customer
         """
         adapter = get_adapter()
-        target_value = adapter.normalize_login_target(target_value)
+        handle = adapter.login_handle(target_value)
+        target_value = handle.value
         if not target_value:
             return VerifyResult(
                 success=False,
@@ -409,6 +459,8 @@ class AuthService:
             for_update=False,
         )
         if not code_hint:
+            if cls._latest_code_exhausted(target_value, VerificationCode.Purpose.LOGIN):
+                return cls._max_attempts_result()
             return VerifyResult(
                 success=False,
                 error="Code expired. Please request a new one.",
@@ -418,18 +470,36 @@ class AuthService:
         customer = None
         customer_hint = None
         if code_hint.customer_id:
-            customer_hint = adapter.resolve_customer_by_uuid(code_hint.customer_id)
+            customer_hint = adapter.identity(code_hint.customer_id, purpose="login")
         if customer_hint is None:
-            customer_hint = adapter.resolve_customer(target_value)
+            try:
+                customer_hint = adapter.resolve_identity(handle.kind, handle.value, purpose="login")
+            except IdentityConflict:
+                return VerifyResult(
+                    success=False,
+                    error="Identity ownership is conflicting.",
+                    error_code=ErrorCode.IDENTITY_CONFLICT,
+                )
         if customer_hint is not None:
-            customer = adapter.lock_active_customer_by_uuid(customer_hint.uuid)
+            customer = adapter.lock_active_identity(customer_hint.subject_id, purpose="login")
             if customer is None:
                 return VerifyResult(
                     success=False,
                     error="Account inactive.",
                     error_code=ErrorCode.ACCOUNT_INACTIVE,
                 )
-            if not adapter.login_target_belongs_to_customer(customer, target_value):
+            try:
+                target_belongs_to_customer = adapter.login_target_belongs_to_customer(
+                    customer,
+                    handle,
+                )
+            except IdentityConflict:
+                return VerifyResult(
+                    success=False,
+                    error="Identity ownership is conflicting.",
+                    error_code=ErrorCode.IDENTITY_CONFLICT,
+                )
+            if not target_belongs_to_customer:
                 return VerifyResult(
                     success=False,
                     error="Code expired. Please request a new one.",
@@ -440,7 +510,7 @@ class AuthService:
         # Never fall back to auto-creation when that owner was deleted or when
         # the target stopped belonging to it while this request waited.
         if code_hint.customer_id and (
-            customer is None or str(code_hint.customer_id) != str(customer.uuid)
+            customer is None or str(code_hint.customer_id) != str(customer.subject_id)
         ):
             return VerifyResult(
                 success=False,
@@ -466,7 +536,7 @@ class AuthService:
                 error_code=ErrorCode.CODE_EXPIRED,
             )
         if code.customer_id and (
-            customer is None or str(code.customer_id) != str(customer.uuid)
+            customer is None or str(code.customer_id) != str(customer.subject_id)
         ):
             return VerifyResult(
                 success=False,
@@ -478,6 +548,10 @@ class AuthService:
         if not code.verify(code_input):
             code.record_attempt()
             adapter.on_login_failed(request, target_value, "incorrect_code")
+            if code.attempts_remaining == 0:
+                # This guess killed the code: say that, not "incorrect" with
+                # nothing left to try (and not "expired" on the next one).
+                return cls._max_attempts_result()
             return VerifyResult(
                 success=False,
                 error="Incorrect code.",
@@ -488,22 +562,34 @@ class AuthService:
         # Get or create Customer via adapter
         created = False
 
-        if not customer:
-            if not adapter.should_auto_create_customer():
-                adapter.on_login_failed(request, target_value, "account_not_found")
-                return VerifyResult(
-                    success=False,
-                    error="Account not found. Please contact support.",
-                    error_code=ErrorCode.ACCOUNT_NOT_FOUND,
+        try:
+            with transaction.atomic():
+                if not customer:
+                    if not adapter.should_auto_create_customer():
+                        adapter.on_login_failed(request, target_value, "account_not_found")
+                        return VerifyResult(
+                            success=False,
+                            error="Account not found. Please contact support.",
+                            error_code=ErrorCode.ACCOUNT_NOT_FOUND,
+                        )
+
+                    customer = adapter.create_identity(handle)
+                    created = True
+
+                customer = adapter.bind_verified_handle(
+                    customer,
+                    handle,
+                    proof=code.delivery_method,
                 )
-
-            customer = adapter.create_customer(target_value)
-            created = True
-
-        cls._link_verified_identifier(customer, target_value)
+        except IdentityConflict:
+            return VerifyResult(
+                success=False,
+                error="This handle belongs to another account.",
+                error_code=ErrorCode.IDENTITY_CONFLICT,
+            )
 
         # Mark code verified
-        code.mark_verified(customer.uuid)
+        code.mark_verified(customer.subject_id)
 
         # Django login if request provided
         if request is not None:
@@ -524,18 +610,20 @@ class AuthService:
             for key, val in preserved.items():
                 request.session[key] = val
 
-        # Signal
-        verification_code_verified.send(
-            sender=cls,
-            code=code,
-            customer=customer,
-            purpose=VerificationCode.Purpose.LOGIN,
+        # ADR-025: anúncio depois do COMMIT (o código só está verificado se a troca gravou).
+        transaction.on_commit(
+            lambda: verification_code_verified.send(
+                sender=cls,
+                code=code,
+                customer=customer,
+                purpose=VerificationCode.Purpose.LOGIN,
+            )
         )
 
         logger.info(
             "Login verified",
             extra={
-                "customer_id": str(customer.uuid),
+                "customer_id": str(customer.subject_id),
                 "created_customer": created,
             },
         )
@@ -546,57 +634,28 @@ class AuthService:
             created_customer=created,
         )
 
-    @classmethod
-    def _link_verified_identifier(cls, customer: AuthCustomerInfo, target_value: str) -> None:
-        """Best-effort linking of the verified login handle into Guestman's identifier table."""
-        try:
-            from shopman.guestman.contrib.identifiers import IdentifierService, IdentifierType
-            from shopman.guestman.models import ContactPoint
-            from shopman.guestman.models import Customer as GuestCustomer
-            from shopman.guestman.services import identity as identity_service
-
-            from ..conf import get_adapter
-
-            guest_customer = GuestCustomer.objects.filter(uuid=customer.uuid, is_active=True).first()
-            if not guest_customer:
-                return
-            adapter = get_adapter()
-            if adapter.target_kind(target_value) == "email":
-                identity_service.ensure_contact_point(
-                    guest_customer,
-                    type=ContactPoint.Type.EMAIL,
-                    value_normalized=target_value,
-                    is_primary=True,
-                    is_verified=True,
-                )
-                IdentifierService.ensure_identifier(
-                    customer_ref=guest_customer.ref,
-                    identifier_type=IdentifierType.EMAIL,
-                    identifier_value=target_value,
-                    is_primary=True,
-                    source_system="doorman",
-                )
-                return
-            identity_service.ensure_contact_point(
-                guest_customer,
-                type=ContactPoint.Type.WHATSAPP,
-                value_normalized=target_value,
-                is_primary=True,
-                is_verified=True,
-            )
-            IdentifierService.ensure_identifier(
-                customer_ref=guest_customer.ref,
-                identifier_type=IdentifierType.WHATSAPP,
-                identifier_value=target_value,
-                is_primary=True,
-                source_system="doorman",
-            )
-        except Exception:
-            logger.exception("verify_for_login: failed to link verified identifier")
-
     # ===========================================
     # Helpers
     # ===========================================
+
+    @classmethod
+    def _latest_code_exhausted(cls, target_value: str, purpose: str) -> bool:
+        """Whether the newest code for target/purpose died by wrong guesses."""
+        latest = (
+            VerificationCode.objects.filter(target_value=target_value, purpose=purpose)
+            .order_by("-created_at")
+            .first()
+        )
+        return latest is not None and latest.attempts >= latest.max_attempts
+
+    @staticmethod
+    def _max_attempts_result() -> VerifyResult:
+        return VerifyResult(
+            success=False,
+            error="Too many incorrect attempts. Please request a new code.",
+            error_code=ErrorCode.CODE_MAX_ATTEMPTS,
+            attempts_remaining=0,
+        )
 
     @classmethod
     def _get_valid_code(

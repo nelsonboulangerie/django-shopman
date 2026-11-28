@@ -74,7 +74,7 @@ def get_authenticated_customer(request):
 
     from shopman.guestman.services import customer as customer_service
 
-    return customer_service.get_by_uuid(customer_info.uuid)
+    return customer_service.get_by_uuid(customer_info.subject_id)
 
 
 def addresses(customer_ref: str):
@@ -147,14 +147,6 @@ def update_address(customer_ref: str, pk: int, intent) -> None:
         address_service.update_address(customer_ref, pk, **fields)
 
 
-def update_address_label(customer_ref: str, pk: int, *, label: str, label_custom: str) -> None:
-    from shopman.guestman.services import address as address_service
-
-    with transaction.atomic():
-        lock_active_customer(customer_ref=customer_ref)
-        address_service.update_address(customer_ref, pk, label=label, label_custom=label_custom)
-
-
 def delete_address(customer_ref: str, pk: int) -> None:
     from shopman.guestman.services import address as address_service
 
@@ -208,13 +200,19 @@ PHONE_TAKEN_DETAIL = "Este número já está em uso em outra conta."
 
 # Os dois tipos de contato que respondem por "o telefone do cliente".
 #
-# Não é redundância: o login grava o número verificado como `WHATSAPP`
-# (`doorman.verification._link_verified_identifier`) e o cache do `Customer`
-# espelha o mesmo número como `PHONE` (`Customer._sync_contact_points`). Os dois
-# apontam para `Customer.phone` no caminho de volta (`_sync_to_customer`), e
-# `get_by_phone` procura nos DOIS. Trocar só um deixa o outro respondendo pelo
-# número velho — que é exatamente o buraco que esta troca existe para fechar.
+# Não é redundância: o IdentityResolver do Guestman reúne PHONE e WHATSAPP no
+# mesmo handle de login, e sua bridge registra o handle verificado sem trocar a
+# primazia existente. Ambos podem espelhar `Customer.phone`; a troca de número
+# precisa retirar os dois para que nenhum identificador antigo continue capaz
+# de resolver a identidade.
 PHONE_CONTACT_TYPES = ("phone", "whatsapp")
+# Canal por onde o código de troca de número saiu → origem gravada no contato
+# (valores de ``ContactPoint.VerificationMethod``). Canal fora desta lista não
+# prova posse de telefone, e a troca é recusada.
+PHONE_PROOF_VERIFICATION_METHODS = {
+    "sms": "otp_sms",
+    "whatsapp": "otp_whatsapp",
+}
 
 
 class PhoneChangeRefused(ValueError):
@@ -243,7 +241,8 @@ def _phone_belongs_to_someone_else(customer, phone: str) -> bool:
     )
 
 
-def _set_primary_phone(customer, phone: str) -> None:
+@transaction.atomic
+def _set_primary_phone(customer, phone: str, *, proof: str) -> None:
     """Promove o número a contato principal do cliente — pelo Core, não à mão.
 
     ⚠️ O caminho intuitivo (``customer.phone = novo; customer.save()``) NÃO
@@ -272,6 +271,18 @@ def _set_primary_phone(customer, phone: str) -> None:
     poucos meses. Guardar o histórico não vale entregar a chave junto.
     """
     from shopman.guestman.models import ContactPoint
+    from shopman.guestman.services import identity as identity_service
+
+    # A origem da verificação é o canal por onde o código saiu de fato
+    # (``proof``), não o canal pedido: a cadeia de produção começa no SMS, e
+    # gravar "OTP via WhatsApp" fixo era carimbo falso.
+    verification_method = PHONE_PROOF_VERIFICATION_METHODS.get(proof)
+    if verification_method is None:
+        raise PhoneChangeRefused(
+            "Não foi possível confirmar o número. Peça um novo código.",
+            field="code",
+            error_code="unsupported_proof",
+        )
 
     if _phone_belongs_to_someone_else(customer, phone):
         raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
@@ -285,17 +296,18 @@ def _set_primary_phone(customer, phone: str) -> None:
         .values_list("value_normalized", flat=True)
     )
 
-    for tipo in PHONE_CONTACT_TYPES:
-        contato, _created = ContactPoint.objects.get_or_create(
-            customer=customer,
-            type=tipo,
-            value_normalized=phone,
-            defaults={"value_display": phone},
-        )
-        if not contato.is_primary:
-            contato.set_as_primary()
-        if not contato.is_verified:
-            contato.mark_verified(ContactPoint.VerificationMethod.OTP_WHATSAPP)
+    try:
+        for tipo in PHONE_CONTACT_TYPES:
+            contato = identity_service.ensure_contact_point(
+                customer,
+                type=tipo,
+                value_normalized=phone,
+                is_primary=True,
+            )
+            if not contato.is_verified:
+                contato.mark_verified(verification_method)
+    except identity_service.ContactPointOwnershipConflict as exc:
+        raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone") from exc
 
     ContactPoint.objects.filter(
         customer=customer,
@@ -336,8 +348,11 @@ def request_phone_change(customer, raw_phone: str, *, ip_address: str | None = N
                 error_code="phone_unchanged",
             )
 
-        if _phone_belongs_to_someone_else(locked_customer, phone):
-            raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+        # ⚠️ Se o número já é de OUTRA conta, isto NÃO é dito aqui. Antes da prova de
+        # posse, responder "este número já está em uso" deixava qualquer cliente logado
+        # perguntar à loja quem é cliente, número por número (beta 06/11). O código vai
+        # para o número de qualquer jeito, e a colisão só aparece depois que ele for
+        # confirmado: a essa altura quem lê é o dono do número.
         customer_uuid = locked_customer.uuid
 
     # Provider I/O is deliberately outside the Customer transaction.  The OTP
@@ -386,8 +401,12 @@ def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
         if resultado.success:
             try:
                 with transaction.atomic():
-                    _set_primary_phone(locked_customer, phone)
-            except IntegrityError:
+                    _set_primary_phone(
+                        locked_customer,
+                        phone,
+                        proof=resultado.delivery_method,
+                    )
+            except (IntegrityError, ContactAlreadyTaken):
                 # O savepoint reverte somente os contatos. O OTP confirmado
                 # continua consumido quando a transação externa fechar.
                 conflict = True
@@ -788,6 +807,8 @@ _PII_NESTED_KEYS: dict[str, frozenset[str]] = {
         {"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}
     ),
     "context": frozenset({"customer_name", "customer_phone", "customer_email", "recipient_name", "recipient_phone"}),
+    # O comentário da avaliação é texto do titular; a nota fica (é métrica da loja).
+    "customer_rating": frozenset({"comment"}),
 }
 
 # Handles que SÃO a pessoa. `pos_tab`, `table` e o código de pedido do iFood
@@ -860,6 +881,42 @@ def privacy_order_deletion_blocker(customer_ref: str, phone: str) -> str:
     if any(topic not in PERSONAL_ORDER_DELIVERY_TOPICS for topic, _state in live_directives):
         return "order_obligation_pending"
     return ""
+
+
+def privacy_order_deletion_subject(customer_ref: str, phone: str, reason: str) -> tuple[str, str]:
+    """Qual pedido e qual etapa causam a recusa da exclusão. Só leitura.
+
+    Devolve ``(order_ref, topic)``; vazio quando o motivo não é de pedido ou o
+    pedido já não aparece. A DECISÃO continua sendo
+    ``privacy_order_deletion_blocker``: aqui só se nomeia o que ela recusou, para a
+    loja dizer "o pedido X ainda tem a nota fiscal em aberto" em vez de "um pedido".
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.directives import PERSONAL_ORDER_DELIVERY_TOPICS
+
+    orders = _customer_orders(customer_ref, phone)
+    if reason == "active_order":
+        order = (
+            orders.exclude(status__in=("completed", "cancelled", "returned"))
+            .order_by("-created_at")
+            .first()
+        )
+        return (order.ref if order else "", "")
+    if reason not in ("order_automation_in_flight", "order_obligation_pending"):
+        return ("", "")
+    directive = (
+        Directive.objects.filter(
+            payload__order_ref__in=list(orders.values_list("ref", flat=True)),
+            status__in=(Directive.Status.QUEUED, Directive.Status.RUNNING),
+        )
+        .exclude(topic__in=PERSONAL_ORDER_DELIVERY_TOPICS)
+        .order_by("pk")
+        .first()
+    )
+    if directive is None:
+        return ("", "")
+    return (str((directive.payload or {}).get("order_ref") or ""), directive.topic)
 
 
 def privacy_otp_deletion_blocker(customer) -> str:
@@ -1095,7 +1152,6 @@ def _scrub_gateway_pii(value):
 
 def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> dict[str, int]:
     """Apaga o PII do titular dos pedidos e das sessões dele. Idempotente."""
-    from django.apps import apps
     from django.db import IntegrityError
     from shopman.orderman.models import Directive, Order, OrderEvent, Session, SessionEvent
     from shopman.payman.models import PaymentIntent
@@ -1107,44 +1163,17 @@ def _anonymize_order_trail(*, customer_ref: str, phone: str, pseudonym: str) -> 
         "sessions": 0,
         "order_events": 0,
         "session_events": 0,
-        "operator_alerts": 0,
         "payment_intents": 0,
         "directives": 0,
     }
 
     matching_orders = _customer_orders(customer_ref, phone)
     matching_order_refs = tuple(matching_orders.values_list("ref", flat=True))
-    from shopman.shop.services.cancellation_requests import (
-        operational_message as cancellation_operational_message,
-    )
 
-    cancellation_requests = {
-        order_ref: (protocol, bool(before_preparation))
-        for order_ref, protocol, before_preparation in OrderEvent.objects.filter(
-            order__ref__in=matching_order_refs,
-            type="customer_cancellation_requested",
-        ).values_list("order__ref", "payload__protocol", "payload__before_preparation")
-    }
+    # O comentário da nota baixa também mora no aviso do operador (#2359).
+    from shopman.shop.adapters import alert as alert_adapter
 
-    # Só este tipo de alerta carrega texto escrito pelo titular. O prefixo é
-    # evidência operacional (pedido + protocolo) e é reconstruído a partir do
-    # evento estruturado, sem tentar recortar uma mensagem livre histórica.
-    OperatorAlert = apps.get_model("backstage.OperatorAlert")
-    cancellation_alerts = OperatorAlert.objects.filter(
-        type="customer_cancellation_requested",
-        order_ref__in=matching_order_refs,
-    )
-    for alert in cancellation_alerts.only("pk", "order_ref", "message").iterator():
-        protocol, before_preparation = cancellation_requests.get(alert.order_ref, ("", False))
-        message = cancellation_operational_message(
-            order_ref=alert.order_ref,
-            protocol=str(protocol or ""),
-            before_preparation=before_preparation,
-        )
-        if alert.message != message:
-            OperatorAlert.objects.filter(pk=alert.pk).update(message=message)
-            counts["operator_alerts"] += 1
-
+    counts["operator_alerts"] = alert_adapter.scrub_customer_comments(matching_order_refs)
     payment_intents = PaymentIntent.objects.filter(order_ref__in=matching_order_refs)
     for payment_intent in payment_intents.only("pk", "gateway_data").iterator():
         gateway_data, changed = _scrub_gateway_pii(payment_intent.gateway_data)
@@ -1345,7 +1374,6 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
     falhas: list[str] = []
     original_ref = customer.ref
     original_phone = customer.phone or ""
-    original_email = customer.email or ""
     phone_hash = hashlib.sha256(original_phone.encode()).hexdigest()[:12]
 
     # O pseudônimo do pedido vem do uuid do Customer, e NÃO do `phone_hash`
@@ -1404,9 +1432,9 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
         logger.warning("anonymize: purge_pii falhou correlation=%s", correlation_ref)
 
     try:
-        from shopman.doorman.services._user_bridge import forget_customer
+        from shopman.doorman import forget_customer
 
-        forget_customer(customer.uuid, phone=original_phone, email=original_email)
+        forget_customer(customer.uuid)
     except Exception:
         falhas.append("esquecer o login")
         logger.warning("anonymize: forget_customer falhou correlation=%s", correlation_ref)
@@ -1499,11 +1527,12 @@ def anonymize_customer(customer, *, correlation_ref: str = "") -> tuple[str, str
             logger.warning("anonymize: %s falhou correlation=%s", label, correlation_ref)
 
     # As superfícies guardam dado do cliente que o shop não pode importar
-    # (`storefront` importa `shop`, nunca o contrário — ADR-001). O anúncio é um
-    # signal porque não precisamos de retorno: quem guarda, apaga.
+    # (`storefront` importa `shop`, nunca o contrário — ADR-001): quem guarda, apaga.
+    # Não é anúncio: sem o receiver a anonimização LGPD fica incompleta.
     try:
         from shopman.shop.signals import customer_anonymized
 
+        # ADR-025: escrita acoplada — o receiver apaga na transação da anonimização.
         customer_anonymized.send(
             sender=None,
             customer_ref=original_ref,

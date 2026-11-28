@@ -23,17 +23,27 @@ NUMERO_ANTIGO = "+5543999990001"
 NUMERO_NOVO = "+5543999990002"
 
 
-DEBUG_OTP_TOKEN = "segredo-da-suite"
-
-
 @pytest.fixture(autouse=True)
 def _disable_request_rate_limits(settings, monkeypatch):
     settings.RATELIMIT_ENABLE = False
-    # O código só volta na resposta pelo portão real do OTP de depuração — o
-    # mesmo do login, com segredo conferido no cabeçalho. A suíte passa pela
-    # porta em vez de contorná-la.
-    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
-    settings.SHOPMAN_DEBUG_OTP_TOKEN = DEBUG_OTP_TOKEN
+    settings.DOORMAN = {
+        **settings.DOORMAN,
+        "DELIVERY_CHAIN": [],
+        "MESSAGE_SENDER_CLASS": "shopman.storefront.tests.identity_fakes.CapturingSender",
+    }
+    from shopman.doorman.conf import reset_adapter
+
+    from shopman.storefront.tests.identity_fakes import CapturingSender
+
+    CapturingSender.last_code = ""
+    reset_adapter()
+
+    # Os contadores de limite por IP moram no cache, que não volta com o banco entre
+    # os testes: cada teste deste arquivo pede o CSRF e o código várias vezes, e somados
+    # passavam do limite e devolviam 429 no meio de um teste que não mede limite.
+    from django.core.cache import cache
+
+    cache.clear()
 
     # A portaria de intervalo entre envios (G11) é por NÚMERO e não olha a
     # finalidade: quem acabou de confirmar o número novo espera o intervalo
@@ -50,11 +60,12 @@ def _make_customer(ref: str = "CUS-TEL-01", phone: str = NUMERO_ANTIGO) -> Custo
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=getattr(customer, "email", None) or None,
@@ -62,6 +73,9 @@ def _login_as_customer(client: Client, customer: Customer):
     )
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    from shopman.storefront.tests.identity_fakes import grant_recent_step_up
+
+    grant_recent_step_up(client, customer.uuid, "phone")
     return user
 
 
@@ -75,7 +89,6 @@ def _pedir_codigo(client: Client, phone: str = NUMERO_NOVO):
         "/api/v1/account/phone/request/",
         data={"phone": phone},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
         **_csrf_headers(client),
     )
 
@@ -89,12 +102,18 @@ def _confirmar(client: Client, code: str, phone: str = NUMERO_NOVO):
     )
 
 
+def _last_code() -> str:
+    from shopman.storefront.tests.identity_fakes import CapturingSender
+
+    assert CapturingSender.last_code
+    return CapturingSender.last_code
+
+
 def _trocar_numero(client: Client, phone: str = NUMERO_NOVO):
     """Faz a troca inteira e devolve a resposta da confirmação."""
     resposta = _pedir_codigo(client, phone)
     assert resposta.status_code == 200, resposta.content
-    codigo = resposta.json()["debug_otp_code"]
-    return _confirmar(client, codigo, phone)
+    return _confirmar(client, _last_code(), phone)
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +247,8 @@ def test_codigo_errado_e_recusado_e_o_numero_nao_muda(client: Client):
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    correto = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    correto = _last_code()
     errado = "000000" if correto != "000000" else "111111"
 
     resposta = _confirmar(client, errado)
@@ -258,7 +278,7 @@ def test_codigo_de_login_nao_serve_para_trocar_de_numero(client: Client):
     )
     assert login_result.success
 
-    resposta = _confirmar(client, login_result.debug_code)
+    resposta = _confirmar(client, _last_code())
 
     assert resposta.status_code == 400
     customer.refresh_from_db()
@@ -286,12 +306,36 @@ def _dono_do_numero() -> Customer:
     )
 
 
-def test_numero_de_outro_cadastro_recusa_com_saida(client: Client):
+def test_antes_da_prova_numero_em_uso_e_numero_livre_respondem_igual(client: Client):
+    """Pedir o código não pode dizer se o número já é de alguém (beta 06/11).
+
+    Responder "este número já está em uso" ANTES da prova de posse deixava qualquer
+    cliente logado perguntar à loja quem é cliente, número por número. O código vai
+    para o número nos dois casos, e as duas respostas têm a mesma forma.
+    """
+    livre = "+5543999990077"
     customer = _make_customer()
     _dono_do_numero()
     _login_as_customer(client, customer)
 
-    resposta = _pedir_codigo(client)
+    em_uso = _pedir_codigo(client, NUMERO_NOVO)
+    codigo_em_uso = _last_code()
+    sem_dono = _pedir_codigo(client, livre)
+
+    assert em_uso.status_code == sem_dono.status_code == 200
+    assert codigo_em_uso
+    assert set(em_uso.json()) == set(sem_dono.json())
+    assert em_uso.json()["phone"] == NUMERO_NOVO
+    assert "em uso" not in em_uso.content.decode()
+
+
+def test_numero_de_outro_cadastro_recusa_com_saida_depois_do_codigo(client: Client):
+    customer = _make_customer()
+    _dono_do_numero()
+    _login_as_customer(client, customer)
+
+    assert _pedir_codigo(client).status_code == 200
+    resposta = _confirmar(client, _last_code())
 
     assert resposta.status_code == 409
     corpo = resposta.json()
@@ -301,6 +345,24 @@ def test_numero_de_outro_cadastro_recusa_com_saida(client: Client):
     assert corpo["title"] == "Confira o número"
     # A saída existe: entrar naquela conta prova a posse pelo OTP.
     assert any(a["ref"] == "sign_in_with_phone" for a in corpo["actions"])
+    customer.refresh_from_db()
+    assert customer.phone == NUMERO_ANTIGO
+
+
+def test_codigo_errado_em_numero_de_outro_cadastro_nao_revela_o_dono(client: Client):
+    """Sem a prova, a recusa é a do código, igual à de um número livre."""
+    customer = _make_customer()
+    _dono_do_numero()
+    _login_as_customer(client, customer)
+
+    _pedir_codigo(client)
+    certo = _last_code()
+    errado = "000000" if certo != "000000" else "111111"
+    resposta = _confirmar(client, errado)
+
+    assert resposta.status_code == 400
+    assert resposta.json()["field"] == "code"
+    assert "em uso" not in resposta.content.decode()
 
 
 def test_a_recusa_nao_diz_de_quem_e_o_numero(client: Client):
@@ -312,7 +374,8 @@ def test_a_recusa_nao_diz_de_quem_e_o_numero(client: Client):
     dono = _dono_do_numero()
     _login_as_customer(client, customer)
 
-    corpo = _pedir_codigo(client).content.decode().lower()
+    _pedir_codigo(client)
+    corpo = _confirmar(client, _last_code()).content.decode().lower()
 
     assert "joana" not in corpo
     assert "prado" not in corpo
@@ -325,7 +388,8 @@ def test_numero_de_outro_cadastro_recusado_tambem_na_confirmacao(client: Client)
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    codigo = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    codigo = _last_code()
     _dono_do_numero()
 
     resposta = _confirmar(client, codigo)
@@ -394,10 +458,9 @@ def test_o_cliente_entra_com_o_numero_novo(client: Client):
         "/api/v1/auth/request-code/",
         data={"phone": NUMERO_NOVO},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
     )
     assert pedido.status_code == 200, pedido.content
-    codigo = pedido.json()["debug_otp_code"]
+    codigo = _last_code()
 
     entrada = client.post(
         "/api/v1/auth/verify-code/",
@@ -425,10 +488,9 @@ def test_entrar_pelo_numero_antigo_nao_abre_a_conta_de_quem_o_deixou(client: Cli
         "/api/v1/auth/request-code/",
         data={"phone": NUMERO_ANTIGO},
         content_type="application/json",
-        HTTP_X_SHOPMAN_DEBUG_OTP=DEBUG_OTP_TOKEN,
     )
     assert pedido.status_code == 200
-    codigo = pedido.json()["debug_otp_code"]
+    codigo = _last_code()
 
     entrada = client.post(
         "/api/v1/auth/verify-code/",
@@ -474,9 +536,35 @@ def test_o_codigo_nao_serve_duas_vezes(client: Client):
     customer = _make_customer()
     _login_as_customer(client, customer)
 
-    codigo = _pedir_codigo(client).json()["debug_otp_code"]
+    _pedir_codigo(client)
+    codigo = _last_code()
     assert _confirmar(client, codigo).status_code == 200
 
     terceiro = Customer.objects.create(ref="CUS-TEL-TERCEIRO", first_name="Dario")
     _login_as_customer(client, terceiro)
     assert _confirmar(client, codigo).status_code == 400
+
+
+def test_pedir_de_novo_com_o_codigo_valendo_devolve_o_codigo_e_nao_um_erro_seco(
+    client: Client, monkeypatch
+):
+    """Com o código anterior valendo, a tela vai ao passo de digitar (beta 06/11).
+
+    A recusa da espera entre envios leva a validade do código: a tela não abre o
+    passo com um erro vermelho para quem ainda não tentou nada.
+    """
+    from shopman.doorman.conf import doorman_settings
+
+    monkeypatch.setattr(doorman_settings, "ACCESS_CODE_COOLDOWN_SECONDS", 60)
+    customer = _make_customer()
+    _login_as_customer(client, customer)
+
+    assert _pedir_codigo(client).status_code == 200
+    resposta = _pedir_codigo(client)
+
+    assert resposta.status_code == 400
+    corpo = resposta.json()
+    assert corpo["error_code"] == "cooldown"
+    assert corpo["phone"] == NUMERO_NOVO
+    assert corpo["code_expires_at"]
+    assert corpo["retry_after_seconds"] > 0

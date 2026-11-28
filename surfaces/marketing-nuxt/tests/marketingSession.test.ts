@@ -90,4 +90,22 @@ describe("Marketing session error policy", () => {
     });
     expect(refreshNuxtData).toHaveBeenCalledWith("operator-session");
   });
+
+  it("um 404 não toca o estado do app: o 'não existe' chega à tela (ge:MKT-11)", () => {
+    Object.assign(globalThis, {
+      useState: () => {
+        throw new Error("nuxt instance unavailable");
+      },
+      useOperatorSession: () => {
+        throw new Error("nuxt instance unavailable");
+      },
+    });
+
+    expect(() =>
+      marketingSessionOnError({
+        response: { status: 404, _data: { detail: "Anúncio não encontrado." } },
+      }),
+    ).not.toThrow();
+    expect(refreshNuxtData).not.toHaveBeenCalled();
+  });
 });

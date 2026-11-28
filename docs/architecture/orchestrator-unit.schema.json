@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shopman.local/schemas/orchestrator-unit.schema.json",
+  "title": "Shopman orchestrator semantic unit",
+  "type": "object",
+  "required": [
+    "id",
+    "question",
+    "owner",
+    "responsibility",
+    "public_entrypoint",
+    "authoritative_symbols",
+    "entrypoint_kind",
+    "sources",
+    "touchpoints",
+    "domains",
+    "ports",
+    "events",
+    "directives",
+    "config_surface",
+    "tests",
+    "test_gap_reason",
+    "policy",
+    "out_of_extraction"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "question": {"type": "string", "minLength": 1},
+    "owner": {"type": "string", "minLength": 1},
+    "responsibility": {
+      "enum": ["decisão", "composição", "leitura", "contrato", "configuração", "infraestrutura"]
+    },
+    "public_entrypoint": {
+      "type": "string",
+      "pattern": "^shopman\\.shop(?:\\.[A-Za-z_]\\w*)*:[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)?$"
+    },
+    "authoritative_symbols": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^shopman\\.shop(?:\\.[A-Za-z_]\\w*)*:[A-Za-z_]\\w*(?:\\.[A-Za-z_]\\w*)?$"
+      }
+    },
+    "entrypoint_kind": {"enum": ["symbol"]},
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["path", "symbols"],
+        "additionalProperties": false,
+        "properties": {
+          "path": {"type": "string", "pattern": "^shopman/shop/.+\\.py$"},
+          "symbols": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1, "not": {"const": "*"}},
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    "touchpoints": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["service", "adapter", "handler", "projection", "API", "admin", "model", "lifecycle", "middleware", "outro"]
+      }
+    },
+    "domains": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "ports": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "events": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "directives": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "config_surface": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "tests": {"type": "array", "uniqueItems": true, "items": {"type": "string"}},
+    "test_gap_reason": {"type": "null"},
+    "policy": {"type": "boolean"},
+    "out_of_extraction": {"type": "boolean"}
+  }
+}

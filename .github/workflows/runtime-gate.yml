@@ -26,10 +26,40 @@ env:
   PYTHONUNBUFFERED: "1"
 
 jobs:
+  # ── Escopo do PR (17/11/2026, docs/reference/ci-escopo.md) ─────────────
+  # No pull_request roda o leve e só o que o PR mexe; o pesado (shards do shop e
+  # do backstage, cobertura, imagem Docker, estresse Postgres+Redis) roda na
+  # fila (merge_group), que testa a árvore exata que pousa no main. Check
+  # obrigatório que não roda no PR reporta verde ("pulado") com o MESMO nome.
+  # Quality, meia-correção e os agregadores rodam sempre.
+  scope:
+    name: Escopo do PR
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      python: ${{ steps.scope.outputs.python }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: |
+            .github/actions
+            scripts/ci_scope.py
+          sparse-checkout-cone-mode: false
+      - name: Escopo
+        id: scope
+        uses: ./.github/actions/ci-scope
+
   quality:
     name: Quality + deploy contract
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: read
 
     steps:
       - name: Checkout
@@ -64,6 +94,24 @@ jobs:
       # `sleep 420` — dezesseis runs cancelados, asserção nenhuma, e nada
       # vermelho, porque run cancelado não fica vermelho. Defeito aritmético,
       # visível sem rodar nada; a CI lembra no lugar de alguém.
+      # O classificador decide o que o PR deixa de rodar: erro nele solta código
+      # sem teste no PR (a fila ainda pega). Ver docs/reference/ci-escopo.md.
+      - name: Escopo da CI erra para o lado de rodar
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_ci_scope.py -q
+
+      # DEV-2026-098: o executor local (make check-*/preflight/ready) lê os passos
+      # DESTE arquivo; estes testes avisam quando um workflow muda de forma e o
+      # local perde a paridade, e conferem que as partes dos shards concordam
+      # entre Makefile, matriz e Coverage Gate.
+      - name: Executor local, shards e hook de promoção
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_local_ci.py -q
+
+      # Dono, 25/11: "NÃO DEIXAR que esse tipo de 'sacada' se perca". Seed
+      # completo contado (crescer reprova), quem semeia no shard certo, shards
+      # partidos completos e equilibrados pelos pesos medidos.
+      - name: "Custo dos testes: seed contado, shards completos e equilibrados"
+        run: .venv/bin/python scripts/check_test_cost.py
+
       - name: Teto do job cabe a espera do job
         run: .venv/bin/python scripts/check_workflow_budgets.py
 
@@ -89,8 +137,71 @@ jobs:
       # must observe the same ADR-015 trigger state as the migrations gate.
       # It runs in the already-required Quality context, so drift blocks merge
       # without creating another workflow/context that could race the R5 gates.
+      #
+      # ⚠️ Gate que só existe no Makefile não é gate: o laudo CORE-SOVEREIGNTY
+      # (A12-1) achou o de docs, o teste puro das políticas de promoção e o de
+      # descritores de Instância rodando só na máquina de quem lembrava. Todo
+      # alvo stdlib-only de `make canonical-docs` mora aqui também.
       - name: Canonical go-live docs have no drift
-        run: python scripts/check_canonical_docs.py
+        run: |
+          .venv/bin/python scripts/check_adr_governance.py
+          .venv/bin/python scripts/check_docs_governance.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_docs_governance.py -q
+          .venv/bin/python scripts/check_orchestrator_units.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_orchestrator_units.py scripts/tests/test_promotion_minimum_policy.py scripts/tests/test_promotion_eligibility_policy.py -q
+          .venv/bin/python scripts/check_instance_descriptors.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_instance_descriptors.py -q
+          python scripts/check_canonical_docs.py
+
+      # Gate de nascimento dos compromissos: PR que adia trabalho numa seção
+      # "Fora deste PR / Seguimento / Pendências" precisa citar um DEV-AAAA-NNN
+      # que exista em docs/coordination/commitments/ (um arquivo por entrada;
+      # a tabela COMMITMENTS.md está congelada até 25/11). Sem isto, o adiamento
+      # morre no merge (foi o #2298: dois itens reais, sem ID, dono ou data).
+      # No merge_group não há corpo de PR; o PR já passou por aqui antes.
+      - name: "Compromissos: adiamento tem ID, dono, prazo e prova"
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .venv/bin/python scripts/check_commitments.py --pr-body-env --no-fail-overdue --with-issues \
+            --pr-created "${{ github.event.pull_request.created_at }}" \
+            --author "${{ github.event.pull_request.user.login }}"
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_commitments.py -q
+
+      # Trava barata de multi-loja (ADR-042): o alvo é um schema do Postgres por
+      # loja, e até lá nenhuma configuração ou credencial NOVA de uma loja entra
+      # por env ou `settings`. Conta por arquivo as leituras de hoje contra a
+      # baseline versionada; crescer reprova, diminuir passa. Stdlib-only.
+      - name: "ADR-042: configuração de loja não cresce por env/settings"
+        run: |
+          .venv/bin/python scripts/check_tenant_config.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_tenant_config.py -q
+
+      # R4 do release (OC-20): versão paralela permanente é dívida. Anotação
+      # `EXPERIMENT(<ref>) remove_after AAAA-MM-DD` vencida nas superfícies, ou
+      # ExperienceRule semeada com prazo passado, reprova. Stdlib-only.
+      - name: "R4: experimento vencido reprova"
+        run: |
+          .venv/bin/python scripts/check_experiments.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_experiments.py -q
+
+      # Porta única de IA (ID3A-PLAN, E1): cliente de SDK e endereço de API de
+      # provedor só em shopman/shop/ai.py, que freia e mede cada chamada paga.
+      - name: "ID3A: nenhuma chamada a modelo fora da porta de IA"
+        run: |
+          .venv/bin/python scripts/check_ai_port.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_check_ai_port.py -q
+
+      # Cláusulas pétreas da Constituição como máquina (docs/reference/guard-map.md):
+      # C2, C3, C5, C6, C7, C10, C11 e ADR-025, AST e stdlib-only, contra a baseline
+      # versionada scripts/constitution-baseline.json. Achado novo reprova; entrada
+      # que deixou de acontecer também, até ser apagada no PR que consertou.
+      - name: "Constituição: cláusulas pétreas + mapa de guardas"
+        run: |
+          .venv/bin/python scripts/constitution_guards.py
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -p no:django -W ignore::pytest.PytestConfigWarning scripts/tests/test_constitution_guards.py -q
 
       # ADR-015 como máquina: pós-tag, (1) o diff do PR/merge group só pode
       # ADICIONAR arquivos em */migrations/ e (2) todo marcador DEPRECATED
@@ -160,7 +271,6 @@ jobs:
           FOCUS_NFE_ENVIRONMENT: producao
           EFI_SANDBOX: "false"
           EFI_WEBHOOK_TOKEN: ci-efi-webhook-token
-          IFOOD_WEBHOOK_TOKEN: ci-ifood-webhook-token
           MANYCHAT_API_TOKEN: ci-manychat-api-token
           MANYCHAT_WEBHOOK_SECRET: ci-manychat-webhook-secret
           SHOPMAN_PRIVACY_RECEIPT_HMAC_KEY: ci-only-privacy-receipt-hmac-key-at-least-32-bytes
@@ -216,7 +326,7 @@ jobs:
   # repositório trava para sempre.
   silent-swallow-gate:
     name: Gate da meia-correção
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
 
     steps:
@@ -253,7 +363,10 @@ jobs:
   # Aqui ele passa a rodar em todo PR e na fila de merge.
   admin-gate:
     name: Admin/Unfold gate
-    runs-on: ubuntu-latest
+    needs: scope
+    # Escopo que falha (saída vazia) RODA: só `false` explícito pula.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.scope.outputs.python != 'false') }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
 
     steps:
@@ -285,13 +398,20 @@ jobs:
   # e reprovam cedo o erro bobo.
   tests:
     name: Testes
-    runs-on: ubuntu-latest
+    needs: scope
+    # Sem `if:` de escopo no JOB, de propósito: matriz pulada no nível do job
+    # reporta um check só, com o nome sem a matriz ("Testes"), e os três
+    # obrigatórios "Testes (test-*)" nunca chegam. O escopo decide nos passos.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_SUITE: ${{ github.event_name != 'pull_request' || needs.scope.outputs.python != 'false' }}
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
     # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
     # derrubou o job — suíte verde virou check vermelho e a fila de merge
     # expulsou PR inocente (#361). O job cobre install (~3 min) + step.
     #
-    # O backstage saiu desta matriz e virou dois shards logo abaixo: ele era o
+    # O backstage saiu desta matriz e virou shards logo abaixo (hoje três): ele era o
     # caminho crítico do gate inteiro (12min26s a 12min55s, contra ~5 min do
     # segundo colocado). O shop saiu depois, pelo mesmo motivo (18min12s e
     # 20min00s na fila de 30/09). Aqui ficaram as suítes que já respondem em
@@ -306,22 +426,31 @@ jobs:
         suite: [test-cores, test-storefront, test-counter-agent]
 
     steps:
+      - name: Fora do escopo deste PR
+        if: env.RUN_SUITE != 'true'
+        run: echo "Nenhum arquivo Python mudou neste PR; ${{ matrix.suite }} roda na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+
       - name: Checkout
+        if: env.RUN_SUITE == 'true'
         uses: actions/checkout@v7
 
       - name: Set up Python
+        if: env.RUN_SUITE == 'true'
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Create virtualenv
+        if: env.RUN_SUITE == 'true'
         run: python -m venv .venv
 
       - name: Install dependencies
+        if: env.RUN_SUITE == 'true'
         run: make install
 
       - name: ${{ matrix.suite }}
+        if: env.RUN_SUITE == 'true'
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.${{ matrix.suite }}
@@ -332,7 +461,7 @@ jobs:
           make ${{ matrix.suite }}
 
       - name: Publicar cobertura do shard
-        if: matrix.suite == 'test-storefront'
+        if: env.RUN_SUITE == 'true' && matrix.suite == 'test-storefront'
         uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.suite }}
@@ -340,7 +469,7 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # ── O backstage roda em DOIS shards, sob um nome só ────────────────────
+  # ── O backstage roda em TRÊS shards, sob um nome só ───────────────────
   # `Testes (test-backstage)` é check OBRIGATÓRIO em `main`. Trocar as entradas
   # da matriz por dois nomes novos faria esse nome nunca mais aparecer — e check
   # obrigatório AUSENTE trava o PR para sempre, todos eles, inclusive o que faz
@@ -350,14 +479,33 @@ jobs:
   # ⚠️ `needs:` que falha PULA o dependente, e job pulado conta como SUCESSO
   # para branch protection — o agregador viraria um gate que não guarda nada.
   # Daí o `if: always()` e a conferência explícita de `needs.*.result`.
+  #
+  # O terceiro shard (`heavy`) nasceu em 06/11/2026: o `rest` passou a estourar
+  # o teto de 30 min do step (job 127686511444: "10225 passed ... in 1792.68s"
+  # e morto pelo timeout; job 127687615016 morreu antes de terminar) e tirou o
+  # #2154 da fila. A divisão e a medição moram no Makefile, junto de
+  # BACKSTAGE_HEAVY_TESTS. O nome `Backstage rest` ficou com o shard do resto.
+  #
+  # 25/11/2026 (DEV-2026-098): `seed` e `rest` partidos em DOIS cada, por peso
+  # medido (scripts/test_shards.py + scripts/test-shard-weights.json). O
+  # benchmark do mesmo commit mostrou que só esses dois aceleram com mais núcleo
+  # (1,95x e 1,47x com 8 vCPU): dois runners grátis de 4 vCPU fazem o mesmo de
+  # graça. O número de partes mora no Makefile (BACKSTAGE_SEED_PARTS,
+  # BACKSTAGE_REST_PARTS); esta matriz e a lista do Coverage Gate precisam
+  # concordar com ele (scripts/tests/test_local_ci.py reprova se não).
   tests-backstage-shards:
     name: Backstage ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [seed, rest]
+        shard: [seed-1, seed-2, heavy-1, heavy-2, rest-1, rest-2]
 
     steps:
       - name: Checkout
@@ -379,7 +527,9 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.backstage-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+          # junit: a vigia diária (ci-time-watch.yml) re-mede os pesos dos
+          # shards com ele (scripts/test_shards.py --measure).
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0 --junitxml=junit-backstage-${{ matrix.shard }}.xml
         run: make test-backstage-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
@@ -390,20 +540,36 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+      - name: Publicar tempos do shard (junit)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-backstage-${{ matrix.shard }}
+          path: junit-backstage-${{ matrix.shard }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes — ver o comentário acima.
   tests-backstage:
     name: Testes (test-backstage)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-backstage-shards
     if: always()
     timeout-minutes: 5
 
     steps:
-      - name: Os dois shards do backstage passaram
+      - name: Todos os shards do backstage passaram
         run: |
           resultado='${{ needs.tests-backstage-shards.result }}'
           echo "shards: $resultado"
+          # No pull_request os shards não rodam (só na fila): `skipped` ali é o
+          # esperado. Em qualquer outro evento continua reprovando.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$resultado" = "skipped" ]; then
+            echo "pull_request: os shards rodam na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # `success` é o único resultado aceitável — a comparação é por
           # igualdade, não uma lista de falhas conhecidas. `failure`,
           # `cancelled` e `skipped` reprovam sem precisar ser enumerados, e um
@@ -421,12 +587,19 @@ jobs:
   # a desenha moram no Makefile, junto de SHOP_HEAVY_TESTS.
   tests-shop-shards:
     name: Shop ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
+    # Grátis de propósito: medido em 25 e 26/11 (evidence/ci-dx-098/), máquina paga não
+    # acelera estes shards Python (8-core 1,0–1,9x só no seed/rest; Ubicloud ~1,0x). O
+    # ganho deles veio da divisão em mais shards, de graça.
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
-        shard: [heavy, rest]
+        # 25/11 (DEV-2026-098): `rest` partido por peso medido, como o do
+        # backstage; partes em SHOP_REST_PARTS no Makefile.
+        shard: [heavy, rest-1, rest-2]
 
     steps:
       - name: Checkout
@@ -448,7 +621,7 @@ jobs:
         timeout-minutes: 30
         env:
           COVERAGE_FILE: .coverage.shop-${{ matrix.shard }}
-          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0
+          PYTEST_ADDOPTS: --cov=shopman --cov-report= --cov-append --cov-fail-under=0 --junitxml=junit-shop-${{ matrix.shard }}.xml
         run: make test-shop-${{ matrix.shard }}
 
       - name: Publicar cobertura do shard
@@ -459,11 +632,21 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
+      - name: Publicar tempos do shard (junit)
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-shop-${{ matrix.shard }}
+          path: junit-shop-${{ matrix.shard }}.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
   # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
   # trocar o contexto obrigatório antes.
   tests-shop:
     name: Testes (test-shop)
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     needs: tests-shop-shards
     if: always()
     timeout-minutes: 5
@@ -473,6 +656,11 @@ jobs:
         run: |
           resultado='${{ needs.tests-shop-shards.result }}'
           echo "shards: $resultado"
+          # Mesmo contrato do agregador do backstage: `skipped` só no PR.
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "$resultado" = "skipped" ]; then
+            echo "pull_request: os shards rodam na fila (merge_group)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # Igualdade com `success`, não lista de falhas: `failure`,
           # `cancelled` e `skipped` reprovam sem enumerar (ver o agregador do
           # backstage acima).
@@ -481,8 +669,10 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: [tests, tests-backstage-shards, tests-shop-shards]
-    if: always()
-    runs-on: ubuntu-latest
+    # Pesado: só na fila. No PR o job inteiro é pulado (verde, mesmo nome);
+    # fora dele, `always()` mantém a conferência explícita dos shards abaixo.
+    if: always() && github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - name: Todos os shards de teste passaram
@@ -506,8 +696,9 @@ jobs:
       - name: Instalar coverage
         run: python -m pip install 'coverage[toml]>=7.6,<8.0'
 
-      # storefront + backstage (seed, rest) + shop (heavy, rest) = 5
-      - name: Baixar todos os cinco shards
+      # Os shards pelo NOME, não pela contagem: shard faltando é dito qual.
+      # storefront + backstage (seed-1, seed-2, heavy-1, heavy-2, rest-1, rest-2) + shop (heavy, rest-1, rest-2)
+      - name: Baixar todos os shards
         uses: actions/download-artifact@v8
         with:
           pattern: coverage-*
@@ -515,9 +706,18 @@ jobs:
           merge-multiple: true
 
       - name: Combinar, publicar e aplicar o piso de 75%
+        env:
+          COVERAGE_SHARDS: >-
+            test-storefront
+            backstage-seed-1 backstage-seed-2 backstage-heavy-1 backstage-heavy-2 backstage-rest-1 backstage-rest-2
+            shop-heavy shop-rest-1 shop-rest-2
         run: |
+          for shard in $COVERAGE_SHARDS; do
+            test -f "coverage-data/.coverage.$shard" || { echo "::error::falta a cobertura do shard $shard"; exit 1; }
+          done
           count=$(find coverage-data -type f -name '.coverage.*' | wc -l | tr -d ' ')
-          test "$count" = "5"
+          expected=$(echo $COVERAGE_SHARDS | wc -w | tr -d ' ')
+          test "$count" = "$expected" || { echo "::error::$count arquivos de cobertura, esperados $expected"; exit 1; }
           python -m coverage combine coverage-data
           python -m coverage report --fail-under=75 | tee coverage.txt
           python -m coverage xml -o coverage.xml
@@ -534,7 +734,9 @@ jobs:
 
   docker-image:
     name: Docker deploy image
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
@@ -558,29 +760,36 @@ jobs:
       - name: Build deploy image
         run: >-
           docker build --tag django-shopman:ci
-          --build-arg PYTHON_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/python:3.12-slim
-          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1
+          --build-arg PYTHON_IMAGE=ghcr.io/nelsonboulangerie/ci-mirror/python:3.12-slim@sha256:b18b261e1b4974b4f321451ad5251ded85abb22c2b8b262da527dda1d031ab30
+          --build-arg BUILDKIT_SYNTAX=ghcr.io/nelsonboulangerie/ci-mirror/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
           .
 
-      # `docker build` prova que o COPY não falha, NÃO que o arquivo caiu onde o
-      # código procura. O Admin serve o agente do balcão a partir de
-      # `BASE_DIR/tools/pos-counter-agent/` (projections/pos_agent.py); se o
-      # caminho divergir, o build passa verde e o defeito só aparece quando
-      # alguém clica em "baixar" no balcão. Aqui o BASE_DIR é derivado do mesmo
-      # jeito que o config/settings.py deriva: o pai do pacote `config`.
-      - name: O agente do balcão veio na imagem
+      # `docker build` prova que o COPY não falha, NÃO que os artefatos caíram
+      # onde o runtime procura. Além do agente baixado pelo Admin, o check de
+      # deploy da sessão operacional lê `surfaces/registry.json` pelo caminho
+      # derivado de `shopman/shop/checks.py`. A ausência deste segundo arquivo
+      # já causou rollback do alpha depois de todos os gates do PR passarem.
+      - name: Os artefatos de runtime vieram na imagem
         run: |
           docker run --rm django-shopman:ci python -c "
+          import json
           import pathlib, config
           base = pathlib.Path(config.__file__).resolve().parent.parent
-          alvo = base / 'tools' / 'pos-counter-agent' / 'counter_agent.py'
-          assert alvo.is_file(), f'agente do balcão ausente da imagem: {alvo}'
-          print('ok:', alvo)
+          agente = base / 'tools' / 'pos-counter-agent' / 'counter_agent.py'
+          registry = base / 'surfaces' / 'registry.json'
+          assert agente.is_file(), f'agente do balcão ausente da imagem: {agente}'
+          assert registry.is_file(), f'registry de superfícies ausente da imagem: {registry}'
+          payload = json.loads(registry.read_text(encoding='utf-8'))
+          assert payload.get('surfaces'), f'registry de superfícies inválido: {registry}'
+          print('ok:', agente)
+          print('ok:', registry)
           "
 
   runtime-security-reliability:
     name: PostgreSQL + Redis runtime stress gate
-    runs-on: ubuntu-latest
+    # Pesado: só na fila (docs/reference/ci-escopo.md).
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.

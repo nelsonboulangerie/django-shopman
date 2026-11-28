@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from shopman.utils.formatting import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ AUTHORIZATION_WINDOW = timedelta(days=7)
 LAST_CALL_BEFORE = timedelta(hours=24)
 
 #: O primeiro aviso do cartão vem DEPOIS do aviso normal de pedido parado
-#: (``stale_new_order``, 10 min na loja online): se nem ele resolveu em uma hora,
+#: (``stale_new_order``, a 1/3 do prazo de aceite na loja online): se nem ele resolveu em uma hora,
 #: o Gestor passa a ver o prazo da autorização e o que se perde com ele.
 STUCK_AFTER = timedelta(hours=1)
 
@@ -123,7 +124,7 @@ def expires_at(order) -> datetime | None:
 def deadline_label(when: datetime) -> str:
     """"20/10 às 14h30", no fuso da loja."""
     local = timezone.localtime(when)
-    return local.strftime("%d/%m às %Hh%M")
+    return format_local(local, "%d/%m às {clock}")
 
 
 def watch(order) -> None:

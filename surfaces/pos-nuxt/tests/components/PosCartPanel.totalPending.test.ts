@@ -45,7 +45,7 @@ function props(total: SaleTotalView, overrides: Record<string, unknown> = {}) {
 }
 
 const quickPayments = [
-  { ref: "pix", label: "PIX", icon: "lucide:qr-code" },
+  { ref: "pix", label: "Pix", icon: "lucide:qr-code" },
   { ref: "card", label: "Maquininha", icon: "lucide:credit-card" },
 ];
 

@@ -85,6 +85,27 @@ def test_kitchen_sink_accepts_superuser_without_granting_the_permission_to_other
 
 
 @pytest.mark.django_db
+def test_catalog_operator_enters_common_gestor_session_at_catalog_without_order_access(client, balcao):
+    catalog = User.objects.create_user("catalogo", password="x", is_staff=True)
+    PinCredential.set_for(catalog, "4321")
+    catalog = _grant(catalog, "manage_catalog", app="shop")
+    permission = "shop.manage_orders|backstage.operate_kds|shop.manage_catalog"
+    unlocked = client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": catalog.pk, "pin": "4321", "perm": permission},
+        content_type="application/json",
+    )
+    assert unlocked.status_code == 200
+    session = client.get(reverse("api-backstage-operator-session"), {"perm": permission})
+    assert session.status_code == 200
+    assert session.json()["authorized"] is True
+    assert session.json()["surface_role"] == "catalog"
+    assert session.json()["landing_path"] == "/catalog"
+    assert catalog.has_perm("shop.manage_orders") is False
+    assert catalog.has_perm("shop.manage_customers") is False
+
+
+@pytest.mark.django_db
 def test_session_reports_locked_then_operator(client, balcao, baker):
     session_url = reverse("api-backstage-operator-session")
     body = client.get(session_url, {"perm": "backstage.operate_production"}).json()
@@ -283,3 +304,22 @@ def test_bloquear_da_central_trava_o_dispositivo_e_qualquer_destrave_libera(
     )
     assert client.get(session_url).json()["locked"] is False
     assert client.get(board).status_code == 200
+
+
+@pytest.mark.django_db
+def test_bi_session_says_whether_the_operator_audits_the_cash(client, balcao):
+    """ge:BI-07: o B.I. esconde o Caixa de quem não audita, pela persona da antessala."""
+    gerente = User.objects.create_user("gerente-bi", password="x", is_staff=True)
+    PinCredential.set_for(gerente, "4321")
+    gerente = _grant(gerente, "view_bi")
+    permission = "backstage.view_bi"
+    unlocked = client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": gerente.pk, "pin": "4321", "perm": permission},
+        content_type="application/json",
+    )
+    assert unlocked.status_code == 200
+    assert client.get(reverse("api-backstage-operator-session"), {"perm": permission}).json()["surface_role"] == "reader"
+
+    _grant(gerente, "audit_shift", app="cashman")
+    assert client.get(reverse("api-backstage-operator-session"), {"perm": permission}).json()["surface_role"] == "cash_auditor"

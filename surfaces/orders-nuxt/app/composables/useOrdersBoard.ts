@@ -1,6 +1,7 @@
 import { useReadMetadata } from "./useReadMetadata";
 import { useOperatorResourceKey } from "./useOperatorResourceKey";
 import { coalesceRefresh } from "../utils/coalesceRefresh";
+import { mutationFieldErrors } from "../utils/mutationFieldErrors";
 import { useOrderIntention } from "./useOrderIntention";
 // Order board read-side. Single source for the live queue:
 //   - useFetch the canonical two-zone projection (GET /api/v1/backstage/orders/);
@@ -10,17 +11,18 @@ import { useOrderIntention } from "./useOrderIntention";
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type {
-  CancellationReason,
   OrderQueueResponse,
   TwoZoneQueueProjection,
 } from "~/types/orders";
 import {
+  attentionKeyRef,
   preorderGroups,
   situationAfterContinua,
-  treatableOrderRefs,
+  treatableAttentionKeys,
   zonesView,
   type PreorderGroup,
   type ZoneView,
+  splitRef,
 } from "~/presentation/board";
 import { stationReadyPath, stationRecallPath } from "~/presentation/kitchen";
 import { showTreatableOrderNotification } from "~/utils/treatableNotification";
@@ -30,8 +32,6 @@ import {
   openResilientEventSource,
   type ResilientEventSource,
 } from "../../../operator-kit/app/utils/resilientEventSource";
-
-export type { CancellationReason };
 
 // ── pedido tratável: som (mutável) + aviso mesmo com a aba oculta ─────────
 // ⚠️ Este bloco é DECISÃO DO DONO, tomada ouvindo os candidatos lado a lado
@@ -83,7 +83,9 @@ export function gestorAttentionDecision(
   previousSignature: string,
   serviceDay: string,
 ): { signature: string; firstUnseen: string; shouldStop: boolean } {
-  const refs = [...treatableOrderRefs(queue)].sort();
+  // Chaves, não refs: a encomenda que chega à Cozinha é um fato novo do mesmo pedido
+  // (`treatableAttentionKeys`). No pedido comum a chave é o próprio ref.
+  const refs = [...treatableAttentionKeys(queue).keys()].sort();
   const signature = `${serviceDay}:${refs.join("|")}`;
   const noUnseen = refs.every((ref_) => seenRefs.has(ref_));
   if (signature === previousSignature) {
@@ -117,6 +119,39 @@ export function gestorServiceDayBoundaryDelay(
 
 export const gestorAttentionStorageKey = (serviceDay: string) =>
   `gestor_seen_${serviceDay}`;
+
+/** O dia anterior a "AAAA-MM-DD", no mesmo formato; "" quando a data não se lê. Conta
+ *  em UTC de propósito: é aritmética de calendário, sem fuso do tablet no meio. */
+export function previousServiceDay(serviceDay: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(serviceDay);
+  if (!match) return "";
+  const at = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) - 1);
+  return Number.isFinite(at) ? new Date(at).toISOString().slice(0, 10) : "";
+}
+
+/**
+ * O que já foi visto e vale para `serviceDay`: o do dia e o da véspera.
+ *
+ * A memória é guardada por dia, e à meia-noite a chave muda. Lendo só a do dia novo,
+ * todo pedido aberto de ontem voltava a tocar o aviso às 00:00 para quem já estava
+ * diante da tela (WP-G02, P1-04). `read` devolve o texto guardado na chave, ou `null`.
+ */
+export function gestorSeenKeys(
+  read: (storageKey: string) => string | null,
+  serviceDay: string,
+): Set<string> {
+  const seen = new Set<string>();
+  const previous = previousServiceDay(serviceDay);
+  for (const day of previous ? [previous, serviceDay] : [serviceDay]) {
+    try {
+      const value = JSON.parse(read(gestorAttentionStorageKey(day)) || "[]");
+      if (Array.isArray(value)) for (const key of value) seen.add(String(key));
+    } catch {
+      // Memória ilegível de um dia não apaga a do outro.
+    }
+  }
+  return seen;
+}
 
 // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
 // O SSE só dispara o refetch; a mudança da projection para ação liberada avisa.
@@ -191,11 +226,13 @@ export function useOrdersBoard() {
   const preorders = computed<PreorderGroup[]>(() =>
     queue.value ? preorderGroups(queue.value) : [],
   );
-  // Maquininhas na rua: o quadro responde "onde está" sem abrir card.
+  // Maquininhas na rua: o painel responde "onde está" sem abrir card.
   const equipmentAvailable = computed(
     () => queue.value?.equipment_available ?? [],
   );
   const equipmentOut = computed(() => queue.value?.equipment_out ?? []);
+  // Os motivos de recusar: a lista única do backend, a mesma do detalhe.
+  const cancelReasons = computed(() => queue.value?.cancel_reasons ?? []);
   // A impressora desta estação — a DANFE da sacola sai por ela (useDanfePrint).
   const deviceAgent = computed(() => data.value?.device_agent ?? null);
 
@@ -226,6 +263,8 @@ export function useOrdersBoard() {
   let attentionReady = false;
   let lastAttentionSignature = "";
   const attentionPending = ref(false);
+  // O pedido que fez o aviso tocar, para o aviso dizer qual é (não só "pedido novo").
+  const attentionRef = ref("");
   let pendingAttentionRefs = new Set<string>();
   let pendingAttentionDay = "";
   // O aviso pendente já chegou ao alto-falante ao menos uma vez?
@@ -234,10 +273,15 @@ export function useOrdersBoard() {
   function seenTreatableRefs(day: string): Set<string> {
     if (!import.meta.client) return new Set();
     try {
-      const value = JSON.parse(
-        localStorage.getItem(gestorAttentionStorageKey(day)) || "[]",
-      );
-      return new Set(Array.isArray(value) ? value.map(String) : []);
+      const seen = gestorSeenKeys((key) => localStorage.getItem(key), day);
+      // A véspera passa para o dia novo na primeira leitura: sem isso, o pedido visto
+      // anteontem e ainda aberto voltaria a tocar na segunda virada.
+      if (seen.size && localStorage.getItem(gestorAttentionStorageKey(day)) === null)
+        localStorage.setItem(
+          gestorAttentionStorageKey(day),
+          JSON.stringify([...seen].slice(-500)),
+        );
+      return seen;
     } catch {
       return new Set();
     }
@@ -352,12 +396,15 @@ export function useOrdersBoard() {
     if (decision.firstUnseen) {
       const seen = seenTreatableRefs(day);
       pendingAttentionRefs = new Set(
-        [...treatableOrderRefs(queue.value)].filter((ref_) => !seen.has(ref_)),
+        [...treatableAttentionKeys(queue.value).keys()].filter(
+          (key) => !seen.has(key),
+        ),
       );
       pendingAttentionDay = day;
       pendingAttentionHeard = false;
       attentionPending.value = pendingAttentionRefs.size > 0;
-      announceTreatableOrder(decision.firstUnseen);
+      attentionRef.value = attentionKeyRef(decision.firstUnseen);
+      announceTreatableOrder(attentionKeyRef(decision.firstUnseen));
     }
   }
 
@@ -521,14 +568,23 @@ export function useOrdersBoard() {
     actionErrors.value = next;
   }
   function clearActionError(ref_: string) {
+    actionErrorFields.delete(ref_);
     if (!actionErrors.value.has(ref_)) return;
     const next = new Map(actionErrors.value);
     next.delete(ref_);
     actionErrors.value = next;
   }
+  // O campo que a recusa do servidor apontou (`field` do dialeto `{detail, field,
+  // errors}`), para o gesto que mora num diálogo marcar o próprio campo (WP-G06). Lido
+  // logo depois da falha, por quem abriu o diálogo; some com o erro.
+  const actionErrorFields = new Map<string, string>();
+  const actionErrorField = (ref_: string) => actionErrorFields.get(ref_) ?? "";
   // A falha diz em que pé o pedido ficou e QUAL gesto não chegou (F8 do laudo do
-  // Gestor; frase do dono, 09/10/2026): "WEB-6 continua novo: o Aceitar não chegou.
-  // Tente de novo." A referência, a situação e o nome do botão vêm da projeção.
+  // Gestor; frase do dono, 09/10/2026): "K42 continua novo: o Aceitar não chegou.
+  // Tente de novo." O pedido vai pelo CÓDIGO que o cartão mostra ("K42"), não pela
+  // referência inteira ("WEB-261118-K42"): é o nome pelo qual quem opera o conhece
+  // (auditoria da prévia do WP-G06, 18/11/2026). A situação e o nome do botão vêm da
+  // projeção.
   function failureMessage(ref_: string, action: string): string {
     const card = [
       ...zones.value.flatMap((zone) => zone.cards),
@@ -540,7 +596,7 @@ export function useOrdersBoard() {
     const situation = situationAfterContinua(card?.status_label);
     if (!label) return "O pedido não foi atualizado. Tente de novo.";
     return card?.ref && situation
-      ? `${card.ref} continua ${situation}: o ${label} não chegou. Tente de novo.`
+      ? `${splitRef(card.ref).code} continua ${situation}: o ${label} não chegou. Tente de novo.`
       : `O ${label} não chegou. Tente de novo.`;
   }
 
@@ -557,7 +613,7 @@ export function useOrdersBoard() {
     if (error.value) {
       setActionError(
         ref_,
-        "A leitura está desatualizada. Atualize o quadro antes de confirmar.",
+        "A leitura está desatualizada. Atualize o painel antes de confirmar.",
       );
       return false;
     }
@@ -631,13 +687,15 @@ export function useOrdersBoard() {
         ? httpErrorMessage(
             error,
             "O pedido mudou de estado antes da ação chegar.",
-          ) + " Atualizamos o quadro: confira o pedido antes de tentar de novo."
+          ) + " Atualizamos o painel: confira o pedido antes de tentar de novo."
         : httpErrorMessage(error, failureMessage(ref_, action));
       // Um lugar só: o aviso no cartão (ou na linha), que fica até a próxima tentativa.
       // O toast repetia a mesma frase ao mesmo tempo (laudo do Gestor, P1-6).
       setActionError(ref_, message);
+      const field = Object.keys(mutationFieldErrors(error))[0];
+      if (field) actionErrorFields.set(ref_, field);
       // Refetch canônico: o estado no servidor pode ter mudado (é justamente o
-      // caso do 409) — o quadro precisa mostrar a verdade, não a foto velha.
+      // caso do 409) — o painel precisa mostrar a verdade, não a foto velha.
       await refresh();
       return false;
     } finally {
@@ -692,10 +750,10 @@ export function useOrdersBoard() {
   const equipmentBack = (ref_: string) => act(ref_, "equipment-back");
   // "Entregador voltou": fecha a saída inteira (entrega, dinheiro, troco e maquininha).
   const courierBack = (ref_: string) => act(ref_, "courier-back");
-  // Marketplace (iFood) rejects carry the operator-picked cancellation code so the
-  // backend calls requestCancellation with a valid code; empty for other channels.
-  const reject = (ref_: string, reason: string, cancellation_code = "") =>
-    act(ref_, "reject", { reason, cancellation_code });
+  // Recusar: a chave da lista única de motivos (`reason_key`, em qualquer canal; no
+  // iFood o código dele sai da chave, no servidor) e a observação interna.
+  const reject = (ref_: string, choice: { reasonKey: string; internalNote: string }) =>
+    act(ref_, "reject", { reason_key: choice.reasonKey, internal_note: choice.internalNote });
   // ``change_back``: o troco que voltou com o entregador (reais, zero vale);
   // obrigatório no servidor quando saiu troco no despacho.
   const settleCash = (
@@ -712,16 +770,6 @@ export function useOrdersBoard() {
       ...(baseRevision ? { base_revision: baseRevision } : {}),
     });
 
-  // Valid cancellation reasons for a ref: for iFood, the live per-order list
-  // ({code, description}); empty for channels without reason codes.
-  async function fetchCancellationReasons(
-    ref_: string,
-  ): Promise<CancellationReason[]> {
-    const res = await $fetch<{ reasons: CancellationReason[] }>(
-      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
-    );
-    return res.reasons;
-  }
   const assign = (ref_: string) => act(ref_, "assign");
   // Volumes declarados por quem embalou (0 apaga a declaração). ``surface`` diz de onde:
   // o ⋯ do cartão ("orders") ou a coluna/posto Saída ("exit"); o evento guarda as duas.
@@ -787,16 +835,17 @@ export function useOrdersBoard() {
     refresh,
     isBusy,
     actionError,
+    actionErrorField,
     clearActionError,
     confirm,
     advance,
     reject,
-    fetchCancellationReasons,
     settleCash,
     equipmentBack,
     courierBack,
     equipmentOut,
     equipmentAvailable,
+    cancelReasons,
     assign,
     unassign,
     declareVolumes,
@@ -812,6 +861,7 @@ export function useOrdersBoard() {
     soundBlocked,
     alerting,
     attentionPending,
+    attentionRef,
     toggleSound,
     activateAttentionSound,
     acknowledgeAttention,

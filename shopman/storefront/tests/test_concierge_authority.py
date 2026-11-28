@@ -8,6 +8,7 @@ from django.test import override_settings
 from shopman.orderman.models import Order, Session
 
 from shopman.shop.models import ConversationMessage as Message
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import tools
 from shopman.storefront.tests.test_concierge_engine import (
     CONCIERGE_SETTINGS,
@@ -79,6 +80,29 @@ def test_d05_receipt_precedes_cart_and_rejects_payload_change(ctx):
     assert Order.objects.count() == 1
     conflict = tools.place_order(ctx, quote["quote_token"], "pix", "nova observação")
     assert conflict["error"] == "intent_conflict"
+
+
+def test_d05_order_receipt_recovers_crash_before_concierge_receipt(ctx):
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.shop.models import Conversation
+
+    quote = _pickup_ready(ctx)
+    session_key = ctx.conversation.session_key
+    accept_review(ctx, quote)
+    first = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert first["ok"], first
+
+    # Estado observável de um processo morto depois do commit do Orderman e
+    # antes de confirmar o recibo/ponteiro do orquestrador.
+    IdempotencyKey.objects.filter(scope__startswith="concierge.purchase:").delete()
+    Conversation.objects.filter(pk=ctx.conversation.pk).update(session_key=session_key)
+    ctx.conversation.session_key = session_key
+
+    recovered = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert recovered["order_ref"] == first["order_ref"]
+    assert recovered["outcome"] == "already_applied"
+    assert Order.objects.count() == 1
 
 
 @pytest.mark.parametrize("qty", [-1, True, False, 1.3, "NaN", float("inf"), 100, {}, None])
@@ -155,8 +179,9 @@ def test_h03_channel_catalog_never_falls_back_to_web(ctx):
     assert tools._catalog_channel_ref("whatsapp") == "whatsapp"
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_d12_mint_failure_rolls_back_transfer_and_preserves_slot(ctx, monkeypatch):
+    configure_ai("fixture")
     # ctx fixture sets config before method decorator; override is active during body.
     _pickup_ready(ctx)
     key = ctx.conversation.session_key
@@ -169,16 +194,26 @@ def test_d12_mint_failure_rolls_back_transfer_and_preserves_slot(ctx, monkeypatc
     assert Session.objects.count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
 def test_h08_exact_stock_transfer_preserves_all_quantity_and_fulfillment(ctx, monkeypatch):
+    configure_ai("fixture")
     from types import SimpleNamespace
+
+    from shopman.shop.services import session_transfer
     assert tools.set_item(ctx, SKU, 10)["ok"]
     assert tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12")["ok"]
     key = ctx.conversation.session_key
-    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token",
-        lambda *a, **k: SimpleNamespace(success=True, url="https://example.invalid/access", expires_at=""))
+    minted = []
+    def mint(*a, **k):
+        minted.append(k["metadata"])
+        return SimpleNamespace(success=True, url="https://example.invalid/access", expires_at="")
+    monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
     result = tools.send_web_link(ctx, "checkout")
     assert result["ok"], result
+    # Todo o estoque da fornada está na sacola: o aceite devolve e reserva de novo na mesma transação.
+    offer = session_transfer.TransferOffer.from_metadata(minted[0][session_transfer.TRANSFER_METADATA_KEY])
+    session_transfer.accept(offer, actor="storefront", dest_context=session_transfer.TransferDestination(
+        customer_ref=ctx.conversation.customer_ref, identity_strength="device"))
     target = Session.objects.get(channel_ref="web", state="open")
     assert Decimal(target.items[0]["qty"]) == 10
     assert target.data["delivery_time_slot"] == "slot-12"
@@ -190,11 +225,17 @@ def test_h03_review_channel_price_and_concurrent_catalog_change_never_buy(ctx):
     ListingItem.objects.filter(listing__ref="web", product__sku=SKU).update(price_q=900)
     quote = _pickup_ready(ctx)
     assert quote["total_q"] == 180
+    reviewed_revision = Session.objects.get(session_key=ctx.conversation.session_key).rev
     accept_review(ctx, quote)
     ListingItem.objects.filter(listing__ref="whatsapp", product__sku=SKU).update(price_q=110)
     placed = tools.place_order(ctx, quote["quote_token"], "pix")
     assert not placed["ok"] and not Order.objects.exists()
-    assert Session.objects.get(session_key=ctx.conversation.session_key).state == "open"
+    repriced = Session.objects.get(session_key=ctx.conversation.session_key)
+    assert repriced.state == "open"
+    assert repriced.rev == reviewed_revision + 1
+    assert repriced.items[0]["unit_price_q"] == 110
+    replay = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert replay == placed
 
 
 def test_h11_checkout_passes_session_fulfillment_to_default_writer(ctx, monkeypatch):
@@ -209,7 +250,7 @@ def test_h11_checkout_passes_session_fulfillment_to_default_writer(ctx, monkeypa
 
 
 @pytest.mark.django_db(transaction=True)
-def test_c04_provider_callback_runs_after_local_receipt_and_outside_transaction(ctx, monkeypatch):
+def test_c04_provider_callback_runs_outside_orchestrator_transaction(ctx, monkeypatch):
     from django.db import connection
     from shopman.orderman.models import IdempotencyKey
     seen = []
@@ -222,7 +263,7 @@ def test_c04_provider_callback_runs_after_local_receipt_and_outside_transaction(
     accept_review(ctx, quote)
     placed = tools.place_order(ctx, quote["quote_token"], "pix")
     assert placed["ok"], placed
-    assert seen == [(False, 1, 1)]
+    assert seen == [(False, 0, 1)]
 
 
 @requires_postgres
@@ -242,7 +283,8 @@ def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx,
     barrier = Barrier(2)
     original = remote_mutations.run_idempotent_mutation
     def synchronized(**kwargs):
-        barrier.wait(timeout=10)
+        if kwargs["scope"].startswith("concierge.purchase:"):
+            barrier.wait(timeout=10)
         return original(**kwargs)
     monkeypatch.setattr(remote_mutations, "run_idempotent_mutation", synchronized)
     monkeypatch.setattr("shopman.shop.services.payment.initiate", lambda order: None)
@@ -270,8 +312,9 @@ def test_c04_two_postgres_confirmation_workers_create_one_order_and_receipt(ctx,
             close_old_connections()
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(pool.map(lambda _: run(), range(2)))
-    assert all(result["ok"] for result in results), results
-    assert len({result["order_ref"] for result in results}) == 1
+    applied = [result for result in results if result.get("ok")]
+    assert len(applied) == 1, results
+    assert {result.get("error") for result in results if not result.get("ok")} == {"in_progress"}
     assert Order.objects.count() == 1
     assert IdempotencyKey.objects.filter(scope__startswith="concierge.purchase:").count() == 1
 
@@ -340,19 +383,32 @@ def test_h03_delivery_fee_is_in_review_order_and_payment_once(ctx, monkeypatch, 
     assert order.items.filter(sku="__DELIVERY_FEE__").count() == 1
 
 
-@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True}, AI_ASSIST_API_KEY="fixture")
-def test_d15_transfer_retry_returns_same_destination_without_recopied_cart(ctx, monkeypatch):
+@override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "transfer_enabled": True})
+def test_d15_transfer_retry_offers_the_same_cart_and_lands_on_one_destination(ctx, monkeypatch):
+    """Pedir o link duas vezes são dois links da MESMA oferta; aceitar os dois é uma sacola só (X4)."""
+    configure_ai("fixture")
     from types import SimpleNamespace
+
+    from shopman.shop.services import session_transfer
     tools.set_item(ctx, SKU, 2)
     minted = []
     def mint(*a, **k):
-        minted.append(k["metadata"]["cart_session_key"])
-        return SimpleNamespace(success=True, url="https://example.invalid/one-use-token", expires_at="")
+        minted.append(k["metadata"][session_transfer.TRANSFER_METADATA_KEY])
+        return SimpleNamespace(success=True, url=f"https://example.invalid/one-use-token-{len(minted)}", expires_at="")
     monkeypatch.setattr("shopman.doorman.services.access_link.AccessLinkService.create_token", mint)
     first = tools.send_web_link(ctx, "checkout")
     second = tools.send_web_link(ctx, "checkout")
-    assert first["ok"] and second == first
-    assert len(minted) == 1
+    assert first["ok"] and second["ok"] and first["resource_ref"] == second["resource_ref"]
+    assert minted[0] == {**minted[1], "at": minted[0]["at"]}
+    assert not Session.objects.filter(channel_ref="web").exists()  # oferecer não copia nada
+    destination = session_transfer.TransferDestination(
+        customer_ref=ctx.conversation.customer_ref, identity_strength="device")
+    receipts = [
+        session_transfer.accept(session_transfer.TransferOffer.from_metadata(carried), dest_context=destination,
+                                actor="storefront")
+        for carried in minted
+    ]
+    assert receipts[0].dest_session_key == receipts[1].dest_session_key and receipts[1].replayed
     assert Session.objects.filter(channel_ref="web").count() == 1
 
 
@@ -422,3 +478,31 @@ def test_review_invalid_notes_do_not_mutate_draft(ctx):
     assert not tools.review_order(ctx, "pix", "x" * 301)["ok"]
     session.refresh_from_db()
     assert session.data == before
+
+
+def test_the_engine_grant_places_once_and_another_command_with_it_is_refused(ctx, django_capture_on_commit_callbacks):
+    """ADR-050, emenda de 24/11: a confirmação do motor vale UMA vez. O mesmo comando repete o resultado (o mesmo
+    pedido); outro comando com a mesma concessão é recusado antes de chegar à casa, e nenhum pedido novo nasce."""
+    from types import SimpleNamespace
+
+    from shopman.storefront.concierge.effect_site import ConciergeEffectSite
+
+    quote = _pickup_ready(ctx)
+    site = ConciergeEffectSite(ctx)
+    first = SimpleNamespace(grant_id="grant-1", command_id="cmd-1")
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = site._place_by_engine(first, quote["quote_token"], "pix", "")
+    assert placed["ok"], placed
+    again = site._place_by_engine(first, quote["quote_token"], "pix", "")  # reenvio do mesmo comando
+    assert again["order_ref"] == placed["order_ref"]
+    reused = site._place_by_engine(SimpleNamespace(grant_id="grant-1", command_id="cmd-2"), quote["quote_token"],
+                                   "pix", "")
+    assert reused == {"ok": False, "code": "confirmation_used"}
+    assert Order.objects.count() == 1
+
+
+def test_without_the_engine_proof_the_house_still_asks_for_the_code(ctx):
+    """Fora do sítio de efeito do motor, nada muda: o registro sem a confirmação do código é recusado (ADR-050)."""
+    quote = _pickup_ready(ctx)
+    refused = tools.place_order(ctx, quote["quote_token"], "pix")
+    assert refused["error"] == "confirmation_required" and not Order.objects.exists()

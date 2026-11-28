@@ -24,6 +24,7 @@ from shopman.guestman.contrib.consent.models import CommunicationConsent
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.orderman.models import Order, Session
 from shopman.orderman.services.commit import CommitService
+from shopman.orderman.tests.commit_support import seal_for
 
 from shopman.shop.models import (
     DeliveryAttempt,
@@ -203,6 +204,8 @@ def test_deletion_wins_against_checkout_without_leaving_a_personal_order(monkeyp
             session_key="privacy-race-checkout",
             channel_ref="web",
             idempotency_key="privacy-race-checkout-idempotency",
+            seal=seal_for("privacy-race-checkout", "web"),
+            channel_config={},
         )
     )
 
@@ -269,6 +272,8 @@ def test_checkout_rejects_phone_changed_after_customer_lock(monkeypatch):
             session_key=session.session_key,
             channel_ref="web",
             idempotency_key="privacy-race-checkout-phone-change-idempotency",
+            seal=seal_for(session.session_key, "web"),
+            channel_config={},
         )
     )
 
@@ -324,12 +329,13 @@ def test_deletion_wins_against_stock_alert_without_recreating_contact(monkeypatc
 
 
 def _access_link_for(customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services.access_link import AccessLinkService
 
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
     return AccessLinkService.create_token(
-        AuthCustomerInfo(
-            uuid=customer.uuid,
+        make_identity_view(
+            subject_id=customer.uuid,
             name=customer.name,
             phone=customer.phone,
             email=customer.email,
@@ -376,12 +382,13 @@ def test_deletion_wins_against_access_link_exchange(monkeypatch):
 
 def test_deletion_wins_against_access_link_creation(monkeypatch):
     from shopman.doorman.models import AccessLink
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
     from shopman.doorman.services.access_link import AccessLinkService
 
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
     customer = _customer("09")
-    stale_info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    stale_info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=customer.email,
@@ -408,21 +415,21 @@ def test_deletion_wins_against_access_link_creation(monkeypatch):
 
 def test_access_link_exchange_wins_then_deletion_removes_auth_artifacts(monkeypatch):
     from shopman.doorman.models import AccessLink, CustomerUser
-    from shopman.guestman.adapters.auth import CustomerResolver
+    from shopman.guestman.adapters.auth import IdentityResolver
 
     customer = _customer("08")
     token_result = _access_link_for(customer)
     link = AccessLink.get_by_token(token_result.token)
     subject_locked, release = Event(), Event()
-    original_lock = CustomerResolver.lock_active_by_uuid
+    original_lock = IdentityResolver.lock_active
 
-    def pause_after_subject_lock(resolver, customer_uuid):
-        info = original_lock(resolver, customer_uuid)
+    def pause_after_subject_lock(resolver, customer_uuid, *, purpose):
+        info = original_lock(resolver, customer_uuid, purpose=purpose)
         subject_locked.set()
         assert release.wait(10)
         return info
 
-    monkeypatch.setattr(CustomerResolver, "lock_active_by_uuid", pause_after_subject_lock)
+    monkeypatch.setattr(IdentityResolver, "lock_active", pause_after_subject_lock)
     exchange = Worker(lambda: _exchange_access_link(token_result.token))
     deletion = Worker(
         lambda: account_privacy.delete_account(

@@ -37,7 +37,8 @@ class BusinessHoursRule(BaseRule):
 
     Comportamento (WP-S6): se ``Shop.opening_hours`` estiver vazio/ausente, não
     marca fora do horário — alinhado ao storefront (``_shop_status`` trata como
-    sempre aberto). Com grade configurada, usa ``open``/``close`` por dia da semana.
+    sempre aberto). Com grade configurada, usa ``open``/``close`` por dia da semana,
+    menos os intervalos (``breaks``).
     """
 
     code = "shop.business_hours"
@@ -83,7 +84,11 @@ class BusinessHoursRule(BaseRule):
             except (KeyError, ValueError):
                 open_time = self.start
                 close_time = self.end
-            return not (open_time <= now_time < close_time)
+            from shopman.shop.projections.opening_hours import split_by_breaks
+
+            # Intervalo entre turnos (``breaks``) também é fora do horário.
+            shifts = split_by_breaks((open_time, close_time), day_hours)
+            return not any(start <= now_time < end for start, end in shifts)
 
         # Sem grade no Shop: não inferir janela pelos defaults da regra (evita
         # divergência com o vitrine, que assume "sempre aberto" sem horários).
@@ -274,7 +279,13 @@ class DeliveryZoneRule(BaseRule):
         # O mínimo de entrega continua valendo.
         agreed_by_operator = operator_agreed_delivery_fee_q(session_data) is not None
 
-        if session_data.get("delivery_zone_error") and not agreed_by_operator:
+        from shopman.shop.services.delivery_distance import session_address_outside_store_area
+
+        # A cidade/UF são reconferidas aqui, na porta do pedido, sem depender de a
+        # sessão ter passado pelos modifiers depois da última troca de endereço.
+        if not agreed_by_operator and (
+            session_data.get("delivery_zone_error") or session_address_outside_store_area(session_data)
+        ):
             raise OrderValidationError(
                 code="delivery_zone_not_covered",
                 message="Não entregamos neste endereço ainda.",
@@ -319,18 +330,6 @@ def delivery_minimum_message(minimum_q: int) -> str:
     """A frase do mínimo de entrega — uma só, para o commit e para o PDV avisar antes."""
     minimum_display = f"R$ {minimum_q / 100:.2f}".replace(".", ",")
     return f"Pedido mínimo para entrega: {minimum_display}."
-
-
-def _normalize_city(value) -> str:
-    """Cidade comparável: sem acento, minúscula, sem espaços nas pontas.
-
-    'São Paulo' e 'Sao Paulo' (digitado à mão vs autocomplete do Google) têm
-    de casar — senão o antifraude bloqueia entrega legítima.
-    """
-    import unicodedata
-
-    text = str(value or "").strip().lower()
-    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
 
 
 def _coordinates_match_claimed_address(session_data: dict) -> bool:
@@ -385,10 +384,12 @@ def _coordinates_match_claimed_address(session_data: dict) -> bool:
         return True
 
     resolved_cep = "".join(c for c in str(getattr(resolved, "postal_code", "") or "") if c.isdigit())
-    resolved_city = _normalize_city(getattr(resolved, "city", ""))
+    from shopman.shop.services.delivery_distance import normalize_locality
+
+    resolved_city = normalize_locality(getattr(resolved, "city", ""))
     if claimed_cep and resolved_cep and claimed_cep[:5] == resolved_cep[:5]:
         return True
-    if claimed_city and resolved_city and _normalize_city(claimed_city) == resolved_city:
+    if claimed_city and resolved_city and normalize_locality(claimed_city) == resolved_city:
         return True
     logger.warning(
         "delivery_zone_rule: coordenadas não conferem com o endereço (cep %s×%s, cidade %s×%s)",

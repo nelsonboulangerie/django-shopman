@@ -12,6 +12,10 @@ from dataclasses import asdict, dataclass, field
 
 QUALITY_OK_GRADE_REFS = ("excellent", "standard")
 
+
+class InstanceConfigurationError(RuntimeError):
+    """Runtime configuration was not materialized in the database."""
+
 #: Meta de tempo de cada etapa do pedido no Gestor, em minutos (decisão do dono,
 #: 04/10/2026). O canal pode mudar qualquer uma em
 #: ``fulfillment.stage_goal_minutes`` (``Channel.config`` ou ``Shop.defaults``); a
@@ -48,12 +52,7 @@ def quality_grade_refs_for_channel(
     """
     from django.conf import settings
 
-    local_counter_refs = {
-        "pdv",
-        "pos",
-        str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv") or "pdv"),
-    }
-    if sells_nonconforming and channel_ref in local_counter_refs:
+    if sells_nonconforming and channel_ref == str(settings.SHOPMAN_POS_CHANNEL_REF):
         return None
     return QUALITY_OK_GRADE_REFS
 
@@ -97,10 +96,18 @@ class ChannelConfig:
         # "auto_cancel"  — auto-CANCELA após timeout se operador não confirma
         # "manual"       — aguarda aprovação explícita, sem timeout
         timeout_minutes: int = 5  # para mode=auto_confirm ou auto_cancel
+        preorder_timeout_minutes: int | None = None
+        # Prazo da ENCOMENDA (data combinada posterior a hoje), em minutos de loja
+        # aberta, para mode=auto_confirm ou auto_cancel. Quem pede para outro dia
+        # não espera a resposta na tela, e a casa tem mais tempo para olhar a
+        # produção (dono, 09/11/2026: 5 min no dia, 60 na encomenda). Sem chave,
+        # a encomenda segue o ``timeout_minutes``.
         stale_new_alert_minutes: int = 0
         # Opt-in para mode=manual: após X minutos em NEW sem decisão do operador,
         # dispara OperatorAlert("stale_new_order"). 0 (default) desabilita.
         # Usado em canais marketplace (iFood) para escalar pedidos esquecidos.
+        # Não vale no auto_cancel: lá o aviso sai a 1/3 do prazo do próprio pedido
+        # (``lifecycle._schedule_stale_alert_before_deadline``), e o validate recusa.
         external_sla_minutes: int = 0
         # Prazo que o MARKETPLACE impõe para confirmar, contado da criação do pedido
         # lá. Não é timer nosso: vencido, quem cancela é o marketplace, e o pedido
@@ -108,6 +115,24 @@ class ChannelConfig:
         # visível, em vez de ser conta de cabeça do operador. 0 = o canal não tem SLA
         # externo (todo canal da casa). iFood documenta 8 minutos para DELIVERY e
         # TAKEOUT; medido em 19/09/2026, cancelou seis pedidos a 8min10s da criação.
+        concierge_verify_nudge_minutes: int = 10
+        concierge_verify_handoff_minutes: int = 30
+        # "Vou verificar" da Concierge (WP-05; dono, 16/11/2026: "Sim. Configurável via
+        # admin."): a parte sem fato vira uma pergunta à equipe no sino do Gestor. Os
+        # dois prazos contam só tempo de loja aberta (``business_calendar``). No
+        # primeiro, a Concierge promete a resposta ao cliente e o cartão sobe a
+        # urgente; no segundo, sem resposta, a conversa vai para a equipe. Vale o do
+        # canal da Concierge (``whatsapp``) ou o de ``Shop.defaults``.
+
+        def acceptance_timeout_minutes(self, *, long_deadline: bool) -> int:
+            """O prazo de aceite do pedido: o longo quando ninguém espera a resposta na hora.
+
+            Prazo longo é o da encomenda para outro dia e o do pedido que chega com a
+            casa fechada; o curto, o do pedido do dia feito com a casa aberta.
+            """
+            if long_deadline and self.preorder_timeout_minutes:
+                return self.preorder_timeout_minutes
+            return self.timeout_minutes
 
     # ── 2. Pagamento ──
 
@@ -128,7 +153,10 @@ class ChannelConfig:
         # "post_commit" — initiate payment after order confirmed (default for remote)
         # "at_commit"   — initiate payment at commit time
         # "external"    — no digital payment (local counter / marketplace)
-        timeout_minutes: int = 10  # só para method=pix
+        # Janela para pagar a cobrança online (Pix e cartão da loja online), em
+        # minutos. Vencida sem pagamento, o `payment.timeout` cancela o pedido e
+        # devolve o estoque. O cartão respeita o piso de 30 min do Stripe.
+        timeout_minutes: int = 10
         # Janela do LINK de pagamento (pedido remoto anotado no balcão), em
         # minutos, contada da venda. É o teto: o link vence em
         # ``min(agora + janela, corte do atendimento)`` — o corte é o início da
@@ -155,12 +183,14 @@ class ChannelConfig:
         # "external"    — handled externally (marketplace)
         auto_sync: bool = True
         prep_start: str = "auto"
-        # QUANDO o trabalho físico (tickets do KDS + status "preparando") começa:
-        # "auto"     — dispara sozinho quando o pedido é aceito e pago. Bom para
+        # QUANDO o pedido entra em "preparando". Os tickets do KDS nascem no
+        # aceite (pago) em todo canal; o knob decide o status do pedido:
+        # "auto"     — vai a "preparando" junto com os tickets. Bom para
         #              iFood/PDV/balcão (operador presente ou marketplace).
-        # "operator" — pago fica em "Aceito"; a cozinha só é acionada quando o
-        #              operador dá "Iniciar preparo" no gestor. Honesto com o
-        #              cliente remoto (web): "Em preparo" só quando alguém encosta.
+        # "operator" — fica em "Aceito" com os tickets esperando "Iniciar
+        #              preparo" na Cozinha (a verdade); o do Gestor é atalho do
+        #              mesmo ato. Honesto com o cliente remoto (web): "Em
+        #              preparo" só quando alguém encosta.
         auto_ready: bool = True
         # A Cozinha concluiu TODAS as estações do pedido (inclusive a estação sem
         # tela, que conclui pelo papel na Saída): o pedido vai a "pronto"
@@ -254,7 +284,9 @@ class ChannelConfig:
         # Não oferecer lote a menos de N dias do vencimento (near-expiry).
         # 0 = só exclui o já vencido (comportamento de sempre). O queijo de
         # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
-        # não é afetado.
+        # não é afetado. Esta é a margem da venda de HOJE: para data futura
+        # ela ganha um dia em todo canal, porque a sobra de hoje não lastreia
+        # encomenda (``policies/promise_expiry_margin``, #2693).
 
     # ── 4b. Fila de espera (WP-P2E) ──
     @dataclass
@@ -344,11 +376,10 @@ class ChannelConfig:
         coluna (a natureza é a ``commerce_policy``, que precisa ser indexada e
         não pode ser herdada pela cascata).
 
-        ``format`` seleciona **dialeto de XML**, e por isso ``menuboard`` não é um
-        valor dele: menuboard é *rota*. ``/menuboard/<ref>/`` renderiza HTML com
-        SSE e ``/feed/<ref>.xml`` renderiza XML — a rota já escolhe o
-        renderizador; ao ``format`` resta dizer se o XML segue a especificação do
-        Google ou a da Meta.
+        ``format`` seleciona a **plataforma**, e por isso ``menuboard`` não é um
+        valor dele: menuboard é *rota* (``/menuboard/<ref>/`` renderiza HTML com
+        SSE). ``google_merchant`` é escrito só pela Merchant API, sem XML;
+        ``meta_catalog`` tem também o XML público em ``/feed/<ref>.xml``.
 
         ``prices_from`` é a ref do canal transacional cujo preço este canal
         anuncia. Um feed manda o cliente para a loja, então o preço correto não é
@@ -368,7 +399,9 @@ class ChannelConfig:
         prices_from: str = ""
         # Ref do canal transacional cujo preço é anunciado.
         paused_skus: list[str] = field(default_factory=list)
-        # Exceções por SKU: tirado deste canal sem sair da coleção.
+        # Pausa por SKU: segue à mostra neste canal, como indisponível.
+        hidden_skus: list[str] = field(default_factory=list)
+        # Ocultação por SKU: some deste canal sem sair da coleção. Vence a pausa.
         rotate_seconds: int = 0
         # Menuboard: segundos entre a troca de páginas. 0 = sem rotação (tudo
         # numa tela, comportamento clássico). Quando > 0, mínimo de 5s — abaixo
@@ -447,16 +480,16 @@ class ChannelConfig:
     @classmethod
     def from_dict(cls, data: dict) -> ChannelConfig:
         return cls(
-            confirmation=_safe_init(cls.Confirmation, data.get("confirmation", {})),
-            payment=_safe_init(cls.Payment, data.get("payment", {})),
-            fulfillment=_safe_init(cls.Fulfillment, data.get("fulfillment", {})),
-            stock=_safe_init(cls.Stock, data.get("stock", {})),
-            waitlist=_safe_init(cls.Waitlist, data.get("waitlist", {})),
-            notifications=_safe_init(cls.Notifications, data.get("notifications", {})),
-            pricing=_safe_init(cls.Pricing, data.get("pricing", {})),
-            editing=_safe_init(cls.Editing, data.get("editing", {})),
-            rules=_safe_init(cls.Rules, data.get("rules", {})),
-            display=_safe_init(cls.Display, data.get("display", {})),
+            confirmation=_section(cls.Confirmation, data.get("confirmation", {}), "confirmation"),
+            payment=_section(cls.Payment, data.get("payment", {}), "payment"),
+            fulfillment=_section(cls.Fulfillment, data.get("fulfillment", {}), "fulfillment"),
+            stock=_section(cls.Stock, data.get("stock", {}), "stock"),
+            waitlist=_section(cls.Waitlist, data.get("waitlist", {}), "waitlist"),
+            notifications=_section(cls.Notifications, data.get("notifications", {}), "notifications"),
+            pricing=_section(cls.Pricing, data.get("pricing", {}), "pricing"),
+            editing=_section(cls.Editing, data.get("editing", {}), "editing"),
+            rules=_section(cls.Rules, data.get("rules", {}), "rules", foreign=SHOP_RULE_POLICY_KEYS),
+            display=_section(cls.Display, data.get("display", {}), "display"),
             lifecycle=data.get("lifecycle", {}),
             handle_label=data.get("handle_label", cls.handle_label),
             handle_placeholder=data.get("handle_placeholder", cls.handle_placeholder),
@@ -482,7 +515,7 @@ class ChannelConfig:
           2. Shop.defaults (nível loja, Admin-configurável)
           3. Channel.config (nível canal, Admin-configurável)
         """
-        from shopman.shop.models import Shop
+        from shopman.shop.models import Channel, Shop
         from shopman.shop.request_memo import channel_by_ref
 
         base = cls.defaults()
@@ -502,8 +535,17 @@ class ChannelConfig:
         else:
             channel = channel_or_ref
 
-        if channel and channel.config:
+        if channel is None:
+            raise InstanceConfigurationError(
+                f"channel {channel_or_ref!r} is not materialized in the database; "
+                "apply the Instance descriptor before serving runtime traffic"
+            )
+        if not isinstance(channel, Channel):
+            raise TypeError("channel_or_ref must be a Channel or channel ref")
+
+        if channel.config:
             base = deep_merge(base, copy.deepcopy(channel.config))
+        _drop_inherited_keys_of_another_mode(base, channel.config or {})
 
         config = cls.from_dict(base)
         config.validate()
@@ -519,6 +561,19 @@ class ChannelConfig:
             raise ValueError(
                 f"timeout_minutes deve ser > 0 para mode={self.confirmation.mode}",
             )
+        preorder_timeout = self.confirmation.preorder_timeout_minutes
+        if preorder_timeout is not None:
+            if self.confirmation.mode not in ("auto_confirm", "auto_cancel"):
+                raise ValueError(
+                    "confirmation.preorder_timeout_minutes só vale para mode=auto_confirm ou auto_cancel",
+                )
+            if isinstance(preorder_timeout, bool) or not isinstance(preorder_timeout, int) or preorder_timeout <= 0:
+                raise ValueError("confirmation.preorder_timeout_minutes deve ser um inteiro > 0")
+        if self.confirmation.mode == "auto_cancel" and self.confirmation.stale_new_alert_minutes:
+            raise ValueError(
+                "confirmation.stale_new_alert_minutes não vale para mode=auto_cancel: "
+                "o aviso sai a 1/3 do prazo de aceite do próprio pedido",
+            )
         # Os métodos que o PDV e os adapters conhecem (``services/pos.py``,
         # ``payment_gate``). ``mixed`` fica de fora: é o resultado de uma venda
         # com mais de uma forma, não algo que um canal declara.
@@ -528,8 +583,8 @@ class ChannelConfig:
         for m in self.payment.available_methods:
             if m not in valid_methods:
                 raise ValueError(f"payment.method inválido: {m}")
-        if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
-            raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if {"pix", "card"} & set(self.payment.available_methods) and self.payment.timeout_minutes <= 0:
+            raise ValueError("timeout_minutes deve ser > 0 para method=pix ou card")
         if self.payment.link_timeout_minutes <= 0:
             raise ValueError("payment.link_timeout_minutes deve ser > 0")
         valid_timings = {"at_commit", "post_commit", "external"}
@@ -600,6 +655,15 @@ class ChannelConfig:
             )
         if self.pricing.policy not in ("internal", "external"):
             raise ValueError(f"pricing.policy inválido: {self.pricing.policy}")
+        nudge = self.confirmation.concierge_verify_nudge_minutes
+        handoff = self.confirmation.concierge_verify_handoff_minutes
+        for label, value in (("nudge", nudge), ("handoff", handoff)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ValueError(f"confirmation.concierge_verify_{label}_minutes deve ser um inteiro maior que zero")
+        if nudge >= handoff:
+            raise ValueError(
+                "confirmation.concierge_verify_nudge_minutes deve ser menor que concierge_verify_handoff_minutes"
+            )
         cap = self.pricing.concierge_discount_max_percent
         if isinstance(cap, bool) or not isinstance(cap, (int, float)) or not 0 <= cap <= 100:
             raise ValueError("pricing.concierge_discount_max_percent deve ser um número entre 0 e 100")
@@ -655,13 +719,38 @@ class ChannelConfig:
             )
 
 
-def _safe_init(cls, data: dict):
-    """Instantiate a dataclass filtering out unknown fields."""
+# Políticas da LOJA que moram em ``Shop.defaults["rules"]``, ao lado das regras
+# do canal, e têm leitor próprio (``projections.cart.shop_rule_q``). São chaves
+# declaradas: a seção ``rules`` do ChannelConfig as reconhece e não as carrega.
+SHOP_RULE_POLICY_KEYS = frozenset({
+    "minimum_order_q",
+    "delivery_minimum_q",
+    "free_delivery_above_q",
+    "default_delivery_fee_q",
+})
+
+
+def _section(cls, data, section: str, *, foreign: frozenset[str] = frozenset()):
+    """Instancia a seção do ``ChannelConfig`` e GRITA com chave desconhecida.
+
+    Chave que a seção não declara é erro de digitação ou resto de um nome
+    antigo: ``safty_margin: 9`` era descartada em silêncio e a seção seguia
+    com o default, e o operador via o canal ignorar o que ele escreveu.
+    """
     import dataclasses
 
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{section} deve ser um objeto")
     valid_fields = {f.name for f in dataclasses.fields(cls)}
-    filtered = {k: v for k, v in data.items() if k in valid_fields}
-    return cls(**filtered)
+    unknown = sorted(set(data) - valid_fields - foreign)
+    if unknown:
+        raise ValueError(
+            f"{section}: chave desconhecida {', '.join(unknown)} "
+            f"(válidas: {', '.join(sorted(valid_fields))})"
+        )
+    return cls(**{key: value for key, value in data.items() if key in valid_fields})
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -680,3 +769,30 @@ def deep_merge(base: dict, override: dict) -> dict:
         else:
             result[key] = value
     return result
+
+
+#: Chaves de ``confirmation`` que só fazem sentido em alguns modos de aceite.
+_CONFIRMATION_KEYS_BY_MODE = {
+    "stale_new_alert_minutes": ("immediate", "auto_confirm", "manual"),
+    "preorder_timeout_minutes": ("auto_confirm", "auto_cancel"),
+}
+
+
+def _drop_inherited_keys_of_another_mode(base: dict, channel_config: dict) -> None:
+    """Padrão da LOJA que não vale no modo de aceite deste canal não desce para ele.
+
+    ``Shop.defaults`` é escrito pensando no modo padrão; um canal troca o modo e
+    herdaria uma chave que o ``validate`` recusa nele (o ``stale_new_alert_minutes``
+    da loja derrubava todo ``for_channel`` do canal ``auto_cancel``, onde o aviso
+    sai a 1/3 do prazo do pedido). A chave que o PRÓPRIO canal declara fica, e o
+    ``validate`` continua recusando: ali é erro de quem configurou o canal.
+    """
+    confirmation = base.get("confirmation")
+    if not isinstance(confirmation, dict):
+        return
+    own = channel_config.get("confirmation")
+    own = own if isinstance(own, dict) else {}
+    mode = confirmation.get("mode")
+    for key, modes in _CONFIRMATION_KEYS_BY_MODE.items():
+        if key in confirmation and key not in own and mode not in modes:
+            del confirmation[key]

@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
+from shopman.doorman import forget_customer
 from shopman.doorman.models import CustomerUser, Passkey, TrustedDevice, VerificationCode
-from shopman.doorman.services._user_bridge import forget_customer
 
 User = get_user_model()
 pytestmark = pytest.mark.django_db
@@ -69,7 +69,7 @@ def test_forget_customer_apaga_o_telefone_do_vinculo_e_codigo_canonico():
     )
     VerificationCode.objects.create(target_value="+5543990000000", purpose=VerificationCode.Purpose.LOGIN)
 
-    forget_customer(cid, phone=phone)
+    forget_customer(cid)
 
     assert not CustomerUser.objects.filter(customer_id=cid).exists()
     assert not VerificationCode.objects.filter(target_value=phone).exists()
@@ -89,7 +89,7 @@ def test_forget_customer_preserva_otp_ownerless_ambiguo():
         purpose=VerificationCode.Purpose.LOGIN,
     )
 
-    forget_customer(cid, email=email)
+    forget_customer(cid)
 
     assert VerificationCode.objects.filter(target_value=email).exists()
     assert VerificationCode.objects.filter(target_value="outra@example.com").exists()
@@ -105,7 +105,7 @@ def test_forget_customer_preserva_otp_vinculado_a_outro_customer() -> None:
         purpose=VerificationCode.Purpose.LOGIN,
     )
 
-    forget_customer(cid, phone=recycled_phone)
+    forget_customer(cid)
 
     assert VerificationCode.objects.filter(pk=code.pk).exists()
 

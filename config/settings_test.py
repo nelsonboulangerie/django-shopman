@@ -45,7 +45,6 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 
 # ── Flags de comportamento (runtime) ─────────────────────────────────────────
 SHOPMAN_ENVIRONMENT = "development"
-SHOPMAN_EXPOSE_DEBUG_OTP = True
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
 SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
 SHOPMAN_MARKETING_PUBLICATION_CANARY_ENABLED = False
@@ -69,7 +68,6 @@ SHOPMAN_PRIVACY_RECEIPT_HMAC_PREVIOUS_KEYS = {}
 SHOPMAN_ADMIN_REQUIRE_2FA = False
 SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = 0
 SHOPMAN_CART_MUTATION_PERF_LOG_MS = 0.0
-SHOPMAN_PIX_EXPIRY_SECONDS = 3600
 STOREFRONT_TRACKING_POLL_SECONDS = 30
 STOCKMAN_ALERT_COOLDOWN_MINUTES = 60
 GOOGLE_MAPS_API_KEY = ""
@@ -199,8 +197,6 @@ SHOPMAN_IFOOD.update(  # noqa: F405
     timeout=30,
     catalog_category_map={},
     catalog_default_category="",
-    cancellation_default_code="",
-    cancellation_default_reason="Problemas de sistema na loja",
     webhook_hmac_secret="",
 )
 SHOPMAN_MACHINE.update(  # noqa: F405
@@ -213,7 +209,6 @@ SHOPMAN_MACHINE.update(  # noqa: F405
     forma_pagamento="F",
     retorno=False,
     timeout=15,
-    cancel_reason_id=1,
 )
 STRIPE_PUBLISHABLE_KEY = ""
 STRIPE_SECRET_KEY = ""
@@ -268,7 +263,8 @@ DOORMAN.update(  # noqa: F405
     USE_HTTPS=False,
     ACCESS_LINK_API_KEY="",
     MESSAGE_SENDER_CLASS="shopman.doorman.senders.ConsoleSender",
-    CUSTOMER_RESOLVER_CLASS="shopman.guestman.adapters.auth.CustomerResolver",
+    IDENTITY_RESOLVER_CLASS="shopman.guestman.adapters.auth.IdentityResolver",
+    MANYCHAT_IDENTITY_BRIDGE_CLASS="shopman.guestman.adapters.auth.ManychatIdentityBridge",
     DELIVERY_CHAIN=["sms", "console"],  # DEBUG=true, ambiente development
     ACCESS_LINK_ENTRY_URL="",
 )
@@ -288,6 +284,7 @@ SHOPMAN_OPERATOR_API_HOST = ""
 # ── DRF: rate limit no default do CI ─────────────────────────────────────────
 REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
     "anon": "120/minute",
+    "pos_customer_search": "10000/minute",
     "marketing_audience_user": "10000/minute",
     "marketing_audience_shop": "10000/minute",
     "marketing_dangerous_user": "10000/minute",

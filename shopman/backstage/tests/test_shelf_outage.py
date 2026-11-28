@@ -548,6 +548,89 @@ class TestBusinessDayIsTheDenominator:
         assert por_dia_share[longo.isoformat()] == 33.3
         assert por_dia_share[curto.isoformat()] == 75.0
 
+    @pytest.mark.parametrize("by, by2", [("time", ""), ("sku", ""), ("channel", ""), ("time", "channel")])
+    def test_share_uses_product_channel_hours_not_one_day_for_the_whole_catalog(
+        self, vitrine, canal, pao, expediente, by, by2
+    ):
+        day = timezone.localdate() - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+        for sku in ("PAO", "CROISSANT"):
+            for channel in ("web", "pdv"):
+                ShelfOutage.objects.create(
+                    sku=sku, channel_ref=channel,
+                    started_at=timezone.datetime(day.year, day.month, day.day, 9, tzinfo=tz),
+                    ended_at=timezone.datetime(day.year, day.month, day.day, 18, tzinfo=tz),
+                )
+
+        report = build_bi_explore(
+            metric="unavailable_share", by=by, by2=by2, date_from=day, date_to=day,
+        )
+        assert report.rows
+        assert all(row.value == 100.0 for row in report.rows)
+        hours = build_bi_explore(
+            metric="unavailable_hours", by="time", date_from=day, date_to=day,
+        )
+        # Horas são aditivas por produto/canal; proporção não é.
+        assert hours.rows[0].value == 36.0
+
+    def test_reason_changes_do_not_duplicate_the_product_channel_denominator(
+        self, vitrine, canal, pao, expediente
+    ):
+        day = timezone.localdate() - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+        for start, end, reason in ((9, 12, OutageReason.PAUSED), (12, 18, OutageReason.SOLD_OUT)):
+            ShelfOutage.objects.create(
+                sku="PAO", channel_ref="web", reason=reason,
+                started_at=timezone.datetime(day.year, day.month, day.day, start, tzinfo=tz),
+                ended_at=timezone.datetime(day.year, day.month, day.day, end, tzinfo=tz),
+            )
+        report = build_bi_explore(
+            metric="unavailable_share", by="time", date_from=day, date_to=day,
+        )
+        assert report.rows[0].value == 100.0
+
+    def test_overlapping_outages_are_counted_once_per_product_and_channel(
+        self, vitrine, canal, pao, expediente
+    ):
+        day = timezone.localdate() - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+        for start, end, reason in ((9, 15, OutageReason.PAUSED), (12, 18, OutageReason.SOLD_OUT)):
+            ShelfOutage.objects.create(
+                sku="PAO", channel_ref="web", reason=reason,
+                started_at=timezone.datetime(day.year, day.month, day.day, start, tzinfo=tz),
+                ended_at=timezone.datetime(day.year, day.month, day.day, end, tzinfo=tz),
+            )
+        share = build_bi_explore(
+            metric="unavailable_share", by="time", date_from=day, date_to=day,
+        )
+        hours = build_bi_explore(
+            metric="unavailable_hours", by="time", date_from=day, date_to=day,
+        )
+        assert share.rows[0].value == 100.0
+        assert hours.rows[0].value == 9.0
+
+    def test_share_weights_observed_product_channel_days_without_inventing_zeroes(
+        self, vitrine, canal, pao, expediente
+    ):
+        from shopman.offerman.models import Product
+
+        day = timezone.localdate() - timedelta(days=1)
+        tz = timezone.get_current_timezone()
+        Product.objects.create(sku="SEM_REGISTRO", name="Sem medição", unit="un", base_price_q=100)
+        for sku, end in (("PAO", 12), ("CROISSANT", 18)):
+            ShelfOutage.objects.create(
+                sku=sku, channel_ref="web",
+                started_at=timezone.datetime(day.year, day.month, day.day, 9, tzinfo=tz),
+                ended_at=timezone.datetime(day.year, day.month, day.day, end, tzinfo=tz),
+            )
+        report = build_bi_explore(
+            metric="unavailable_share", by="weekday",
+            date_from=day - timedelta(days=1), date_to=day,
+        )
+        # 3h + 9h em duas exposições de 9h = 66,7%. Nem o produto
+        # sem medição nem o dia sem ocorrência viram disponibilidade inferida.
+        assert report.rows[0].value == 66.7
+
     def test_closed_day_stamps_zero_and_leaves_the_reading(self, canal, pao):
         """Dia em que a casa não abriu não conta como falta.
 

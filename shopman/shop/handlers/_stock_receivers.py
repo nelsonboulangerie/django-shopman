@@ -1,12 +1,10 @@
-"""
-Stock signal receivers — auto-commit sessions after hold materialization,
-and production voided → release holds + notify sessions with planned holds.
-"""
+"""Stock receivers: materialization notifications and production-void cleanup."""
 
 from __future__ import annotations
 
 import logging
-import uuid
+
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.handlers._resilient import resilient_receiver
 
@@ -63,6 +61,10 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
     de produção a contribuição desta fornada. Ver
     ``_overbooked_holds_on_production_quants`` para o que fica e o que sai.
 
+    O pedido aceito que perde a reserva vira fato do pedido: evento na linha do
+    tempo e aviso no sino do Gestor (``services.production_promise``, #2547). A
+    sacola aberta segue avisada pela notificação ``production_cancelled``.
+
     Best-effort por desenho (a liberação de cada hold já é engolida em DEBUG); o
     wrapper fecha o único ponto que faltava — a query de topo — para o void de
     uma WO nunca abortar a cadeia de receivers nem o caller.
@@ -70,13 +72,17 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
     if action != "voided" or not date:
         return
 
+    from decimal import Decimal
+
     from shopman.stockman.service import Stock as stock
 
+    from shopman.shop.services import production_promise
+
     session_keys = set()
+    lost_by_order: dict[str, Decimal] = {}
     for hold in _overbooked_holds_on_production_quants(product_ref, date):
         ref = (hold.metadata or {}).get("reference")
-        if ref:
-            session_keys.add(ref)
+        order_ref = production_promise.order_ref_from_hold_reference(ref)
         try:
             stock.release(hold.hold_id, reason="Produção cancelada")
         except Exception:
@@ -84,6 +90,20 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
             logger.warning(
                 "on_production_voided: could not release hold %s", hold.hold_id, exc_info=True,
             )
+        if order_ref:
+            # O pedido aceito perdeu a reserva: vira fato DELE (#2547), não só
+            # linha de estoque. A reserva que não saiu também perdeu o lastro.
+            lost_by_order[order_ref] = lost_by_order.get(order_ref, Decimal("0")) + hold.quantity
+        elif ref:
+            session_keys.add(ref)
+
+    if lost_by_order:
+        try:
+            production_promise.announce_lost_holds(
+                lost_by_order, sku=product_ref, date=date, work_order=work_order,
+            )
+        except Exception:
+            logger.warning("on_production_voided: failed to announce lost order holds", exc_info=True)
 
     if not session_keys:
         return
@@ -118,18 +138,65 @@ def on_production_voided(sender, product_ref, date, action, work_order, **kwargs
         logger.warning("on_production_voided: failed to notify sessions", exc_info=True)
 
 
+@resilient_receiver
+def on_production_adjusted(sender, product_ref, date, action, work_order, **kwargs):
+    """Plano que encolhe abaixo das sacolas: a sacola solta o que perdeu lastro (#3265).
+
+    A sacola não segura o plano (``adapters.demand.LedgerAwareDemandBackend.committed``
+    não a conta): o forneiro pode planejar menos do que as sacolas abertas
+    reservaram. Roda depois da ponte craftsman→stockman, que já baixou o saldo
+    planejado. O excesso sai da sacola, da mais nova para a mais antiga, como no
+    cancelamento. A reserva de pedido não sai daqui: plano abaixo do pedido só
+    passa com a falta aprovada pelo operador, e é decisão dele.
+
+    Sem isso a sacola ficava com mais do que o lote vai render, e o pedido que a
+    adotasse no checkout nasceria com reserva sem lastro (baixa que falha).
+    """
+    if action != "adjusted" or not date:
+        return
+
+    from shopman.stockman.service import Stock as stock
+
+    from shopman.shop.adapters.stock import is_held_by_a_cart
+
+    for hold in _overbooked_holds_on_production_quants(product_ref, date):
+        if not is_held_by_a_cart(hold):
+            continue
+        try:
+            stock.release(hold.hold_id, reason="Plano de produção reduzido")
+        except Exception:
+            logger.warning(
+                "on_production_adjusted: could not release hold %s", hold.hold_id, exc_info=True,
+            )
+
+
+@resilient_receiver
+def on_production_finished(sender, product_ref, date, action, work_order, **kwargs):
+    """Lote fechado com menos do que as reservas de pedido: vira fato do pedido (#2594).
+
+    Roda depois da ponte craftsman→stockman, que já levou à vitrine as reservas que
+    couberam no rendimento. O que sobrou preso ao saldo de produção é avisado
+    (``services.production_promise.announce_short_lot``), sem soltar a reserva.
+    """
+    if action != "finished" or not date:
+        return
+
+    from shopman.shop.services import production_promise
+
+    production_promise.announce_short_lot(product_ref, date, work_order=work_order)
+
+
 def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     """React when planned holds are materialized (stock became physical).
 
-    Two responsibilities:
-    1. Fire an **active notification** to the shopper (AVAILABILITY-PLAN §8):
+    One responsibility: fire an **active notification** to the shopper
+    (AVAILABILITY-PLAN §8):
        "seu produto chegou, você tem até HH:MM pra confirmar". Honours
        ``feedback_transparent_timeouts`` — the shopper left the site, the
        storefront toast would never reach them. Uses the existing notification
        registry to route through WhatsApp / SMS / email based on
-       customer preferences.
-    2. Auto-commit the session when every planned hold has materialized
-       (existing behaviour — ADR-007).
+       customer preferences. The Session remains open until a surface reviews
+       revision and total and submits an explicit CommitSeal.
     """
     if not hold_ids:
         return
@@ -180,13 +247,8 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
     )
 
     for session in sessions:
-        check_result = (
-            (session.data or {}).get("checks", {}).get("stock", {}).get("result", {})
-        )
-
-        # (1) Active notification — fire for every materialization event,
-        # independent of auto-commit. The shopper needs to know their
-        # reserved item arrived.
+        # Materialization only announces availability. Creating an Order
+        # requires a fresh, explicit review and CommitSeal from a real surface.
         try:
             _notify_stock_arrived(
                 session,
@@ -200,19 +262,6 @@ def on_holds_materialized(sender, hold_ids, sku, target_date, **kwargs):
                 session.session_key, sku, exc_info=True,
             )
 
-        if not check_result.get("has_planned_holds"):
-            continue
-
-        if not _all_holds_materialized(check_result):
-            continue
-
-        try:
-            _auto_commit_session(session)
-        except Exception:
-            logger.warning(
-                "Failed to auto-commit session %s:%s",
-                session.channel_ref, session.session_key, exc_info=True,
-            )
 
 
 def _complete_activated_preorder(order_ref: str) -> None:
@@ -272,8 +321,18 @@ def _notify_stock_arrived(session, *, sku: str, target_date, hold_ids: list[str]
     except Exception:  # silêncio-deliberado: o aviso degrada para o SKU como nome
         logger.debug("stock_arrived: product lookup failed for sku=%s", sku, exc_info=True)
 
+    backend = _notification_backend(customer)
+    if backend is None:
+        # Sem canal com consentimento (e contato) não há aviso a mandar. Antes
+        # isto seguia para ``notify(backend=None)``, que fora de DEBUG não tem
+        # backend padrão e grita (fallbacks perigosos, item 14).
+        logger.debug(
+            "stock_arrived not dispatched (customer %s has no consented channel)",
+            getattr(customer, "pk", None),
+        )
+        return
+
     try:
-        backend = _notification_backend(customer)
         deadline_at = _deadline_at_for_holds(hold_ids or [])
         notify(
             event="stock_arrived",
@@ -434,7 +493,7 @@ def _deadline_note(deadline_at: str | None) -> str:
         from django.utils import timezone as _tz
 
         local = _tz.localtime(datetime.fromisoformat(deadline_at))
-        return f" Confirme até as {local.strftime('%H:%M')}."
+        return f" Confirme até as {format_clock(local)}."
     except Exception:
         logger.debug("stock_receivers._deadline_note degraded", exc_info=True)
         return ""
@@ -446,43 +505,3 @@ def _cart_url() -> str:
     from shopman.shop.services.storefront_links import cart_url
 
     return cart_url()
-
-
-def _all_holds_materialized(check_result: dict) -> bool:
-    from shopman.stockman.models import Hold
-
-    planned_holds = [h for h in check_result.get("holds", []) if h.get("is_planned")]
-    if not planned_holds:
-        return True
-
-    for hold_data in planned_holds:
-        hold_id = hold_data.get("hold_id")
-        if not hold_id:
-            continue
-        try:
-            pk = int(hold_id.split(":")[1])
-            hold = Hold.objects.get(pk=pk)
-            if hold.quant is None or hold.quant.target_date is not None:
-                return False
-        except (Hold.DoesNotExist, IndexError, ValueError):
-            return False
-
-    return True
-
-
-def _auto_commit_session(session):
-    from shopman.orderman.services.commit import CommitService
-
-    idempotency_key = f"auto-commit-{session.session_key}-{uuid.uuid4().hex[:8]}"
-
-    result = CommitService.commit(
-        session_key=session.session_key,
-        channel_ref=session.channel_ref,
-        idempotency_key=idempotency_key,
-        ctx={"actor": "stock_materialized"},
-    )
-
-    logger.info(
-        "Auto-commit successful: session=%s:%s order=%s",
-        session.channel_ref, session.session_key, result.order_ref,
-    )

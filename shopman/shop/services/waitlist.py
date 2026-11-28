@@ -47,13 +47,9 @@ def config(channel_ref: str | None = None):
     from shopman.shop.config import ChannelConfig
     from shopman.shop.request_memo import channel_config
 
-    try:
-        if channel_ref:
-            return dataclasses.replace(channel_config(channel_ref).waitlist)
-        return ChannelConfig().waitlist
-    except Exception:
-        logger.debug("waitlist.config degraded; using hardcoded defaults", exc_info=True)
-        return ChannelConfig().waitlist
+    if channel_ref:
+        return dataclasses.replace(channel_config(channel_ref).waitlist)
+    return ChannelConfig().waitlist
 
 
 def is_enabled(channel_ref: str | None = None) -> bool:
@@ -197,6 +193,26 @@ def candidate_batch_dates(skus: list[str], *, channel_ref: str | None = None) ->
         return _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
     except Exception:
         logger.debug("waitlist.candidate_batch_dates degraded; returning empty", exc_info=True)
+        return []
+
+
+def batch_dates_until(skus: list[str], horizon: date) -> list[date]:
+    """Datas de fornada com saldo entre amanhã e ``horizon``, com a fila ligada ou não.
+
+    Para quem pergunta por uma data ANTERIOR à fornada que a sacola já espera
+    (``policies.order_date_before_batch``): a reserva já existe, então a pergunta
+    não depende do horizonte da fila. Degrada para vazio.
+    """
+    from django.utils import timezone
+
+    unique_skus = list(dict.fromkeys(sku for sku in skus if sku))
+    today = timezone.localdate()
+    if not unique_skus or horizon <= today:
+        return []
+    try:
+        return _candidate_batch_dates(unique_skus, today=today, horizon=horizon)
+    except Exception:
+        logger.debug("waitlist.batch_dates_until degraded; returning empty", exc_info=True)
         return []
 
 
@@ -436,6 +452,54 @@ def _order_holds(
     return list(qs.order_by("created_at"))
 
 
+# ── Quem NÃO é fila, mesmo com o carimbo ──
+#
+# Toda reserva contra fornada planejada nasce com ``metadata.planned``, a da
+# encomenda também: o carimbo diz "este hold espera um lote", não "este pedido
+# está na fila". A fila é uma compra em duas fases que promete de graça e cobra
+# na confirmação. Dois pedidos esperam lote sem ser isso:
+#
+#   • a ENCOMENDA (``Order.data.is_preorder``, gravado no commit): a casa produz
+#     para uma pessoa numa data combinada, e o aceite e o pagamento já são dela;
+#   • o pedido já PAGO: não há o que confirmar nem o que cobrar.
+#
+# Laudo de 09/11: sem esta pergunta a encomenda paga lia "Você está na fila...
+# Nada foi cobrado ainda", e quando a fornada saía ``open_window`` a chamava para
+# confirmar e ``sweep_expired`` soltava a reserva dela no fim do prazo.
+
+
+def is_preorder(order) -> bool:
+    """Encomenda: a régua única do shop (``order_helpers.is_preorder``, #3163).
+
+    No pedido é o carimbo do commit, que o reagendamento regravava como "data
+    depois de hoje": a encomenda não paga trazida para hoje voltava a ser fila
+    (fermata). Agora ele regrava "feito antes do novo dia" (F-9).
+    """
+    from shopman.shop.services.order_helpers import is_preorder as made_before_the_day
+
+    return made_before_the_day(order)
+
+
+def _is_paid(order) -> bool:
+    """Dinheiro capturado cobre o pedido? Leitura que falha conta como pago.
+
+    Quem pergunta isto vai soltar reserva ou chamar o cliente para confirmar;
+    na dúvida, nenhum dos dois. A próxima varredura pergunta de novo.
+    """
+    from shopman.shop.services import payment
+
+    try:
+        return payment.has_sufficient_captured_payment(order)
+    except Exception:
+        logger.warning("waitlist._is_paid degraded order=%s", order.ref, exc_info=True)
+        return True
+
+
+def is_outside_the_queue(order) -> bool:
+    """True para encomenda ou pedido pago: a fila não chama, não cobra, não solta."""
+    return is_preorder(order) or _is_paid(order)
+
+
 def state_for(order, *, holds=None, quant_available: dict | None = None) -> str:
     """Estado da fila deste pedido.
 
@@ -444,14 +508,21 @@ def state_for(order, *, holds=None, quant_available: dict | None = None) -> str:
     lugares para essa verdade divergirem. Os estados que carregam decisão e
     prazo (``confirming``/``confirmed``/``released``) ficam em
     ``Order.data['waitlist']``, porque deles não dá para derivar o relógio.
+
+    Encomenda e pedido pago (:func:`is_outside_the_queue`) não estão na fila,
+    mesmo com hold planejado ou com uma janela gravada antes desta regra. Os
+    desfechos ``confirmed``/``released`` continuam: são história do pedido.
     """
     stored = ((order.data or {}).get(WAITLIST_KEY) or {}).get("state")
-    if stored in (CONFIRMING, CONFIRMED, RELEASED):
+    if stored in (CONFIRMED, RELEASED):
         return stored
+    if stored == CONFIRMING:
+        return NONE if is_outside_the_queue(order) else stored
     for hold in (_order_holds(order) if holds is None else holds):
         available = quant_available.get(hold.quant_id) if quant_available is not None else None
         if _is_waiting_hold(hold, available=available):
-            return FERMATA
+            # A pergunta de pagamento só é feita a quem tem hold de fila.
+            return NONE if is_outside_the_queue(order) else FERMATA
     return NONE
 
 
@@ -556,7 +627,7 @@ def _materialized_queue_for(sku: str, target_date: date | None = None) -> list:
     if target_date is not None:
         holds = holds.filter(target_date__lte=target_date)
     holds = [hold for hold in holds.order_by("created_at") if _is_materialized_hold(hold)]
-    return _orders_from_holds(holds)
+    return [order for order in _orders_from_holds(holds) if not is_outside_the_queue(order)]
 
 
 def _orders_from_holds(holds, *, require_state: str | None = None) -> list:
@@ -597,7 +668,7 @@ def _materialized_holds_for_order(order, sku: str, *, for_update: bool = False) 
 
     Uma linha pode ter sido coberta por mais de um hold e um pedido pode esperar
     mais de um SKU. A CTA confirma o PEDIDO inteiro; portanto, abrir a janela
-    quando apenas o SKU que disparou esta chamada saiu do forno prometeria os
+    quando apenas o SKU que disparou esta chamada ficou pronto prometeria os
     demais sem reserva física. Qualquer hold marcado como fila mas
     legado/inválido também bloqueia fechado.
     """
@@ -682,7 +753,7 @@ def open_window(
             break
         with transaction.atomic():
             order = Order.objects.select_for_update().get(pk=candidate.pk)
-            if state_for(order) != NONE:
+            if state_for(order) != NONE or is_outside_the_queue(order):
                 continue
             materialized = _materialized_holds_for_order(
                 order,
@@ -843,6 +914,14 @@ def _release_locked(order, *, reason: str) -> list[str]:
     from django.db import transaction
     from django.utils import timezone
 
+    if is_outside_the_queue(order):
+        # Encomenda e pedido pago não estão na fila: soltar a reserva deles seria
+        # devolver à gôndola o pão que já tem dono. Nem estado nem aviso mudam.
+        logger.warning(
+            "waitlist.release refused order=%s reason=%s: encomenda ou pedido pago",
+            order.ref, reason,
+        )
+        return []
     current_state = state_for(order)
     if current_state == RELEASED:
         return []
@@ -1041,6 +1120,10 @@ def sweep_expired() -> int:
         data__waitlist__state=CONFIRMING,
     ).exclude(status__in=("cancelled", "rejected", "returned"))
     for order in candidates:
+        if is_outside_the_queue(order):
+            # Janela gravada numa encomenda ou num pedido pago antes da regra de
+            # 09/11: não é fila, e o prazo dela não solta reserva nenhuma.
+            continue
         deadline = _parse_iso(((order.data or {}).get(WAITLIST_KEY) or {}).get("deadline"))
         if deadline is not None and now > deadline:
             release(order, reason="confirmation_timeout")

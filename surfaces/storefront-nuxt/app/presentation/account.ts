@@ -123,6 +123,18 @@ export function orderStatusDotClass (tone: string | null | undefined): string {
   }
 }
 
+// O botão que abre o pedido. "Acompanhar" é para o que ainda está andando; no
+// pedido encerrado (entregue, cancelado) não há o que acompanhar: "Ver pedido".
+export function orderOpenLabel (order: { is_active?: boolean }): string {
+  return order.is_active ? 'Acompanhar' : 'Ver pedido'
+}
+
+export function orderOpenIcon (order: { is_active?: boolean }): string {
+  return order.is_active ? 'lucide:radar' : 'lucide:receipt-text'
+}
+
+// O gesto de repetir tem um nome só na loja inteira ("Repetir pedido"), e ele vem
+// do servidor, no rótulo da ação.
 export function reorderActionFrom (order: Pick<OrderHistoryItem, 'actions'>): Action | null {
   return order.actions?.find(action => action.ref === 'reorder' && action.enabled) || null
 }
@@ -303,3 +315,10 @@ export function profileIssueFrom (
 export function profileActionIsExternal (action: Pick<Action, 'kind' | 'href'>): boolean {
   return action.kind === 'external' || /^https?:\/\//.test(action.href || '')
 }
+
+// A conta excluída (#3242): o fim do gesto mais grave da conta não é silêncio. Repete o que a
+// Política de Privacidade promete (seção "Por quanto tempo"), nada a mais: o que se apaga, e
+// que pedidos e notas ficam pelo prazo da lei fiscal sem apontar para a pessoa.
+export const ACCOUNT_DELETED_MESSAGE =
+  'Pronto, sua conta foi excluída. Apagamos seu nome, telefone, e-mail, endereços e preferências. ' +
+  'Os pedidos já feitos ficam guardados pelo prazo da lei fiscal, sem nenhum dado seu.'

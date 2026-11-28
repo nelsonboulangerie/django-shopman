@@ -507,6 +507,31 @@ def test_operator_poll_expires_dead_lease_and_late_identical_ack_reconciles(
     assert print_jobs.acknowledge_job(**late_ack).status == PrintJob.Status.SPOOLED
 
 
+def test_operator_poll_reads_the_clock_verdict_and_only_the_command_writes_it(weighing, actor):
+    """O poll (GET) mostra "expirado" sem gravar; o "repetir" grava e repete."""
+    job = _create(weighing, actor)
+    PrintJob.objects.filter(pk=job.pk).update(expires_at=timezone.now() - timedelta(seconds=1))
+    persisted_status = PrintJob.objects.get(pk=job.pk).status
+    client = APIClient()
+    client.force_authenticate(actor)
+
+    polled = client.get(reverse("api-backstage-production-print-job", args=[job.ref]))
+
+    assert polled.status_code == 200
+    assert polled.json()["print_job"]["status"] == PrintJob.Status.EXPIRED
+    assert polled.json()["print_job"]["can_retry"] is True
+    assert PrintJob.objects.get(pk=job.pk).status == persisted_status
+
+    retried = client.post(
+        reverse("api-backstage-production-print-job-retry", args=[job.ref]),
+        {"idempotency_key": "retry-after-expiry"},
+        format="json",
+    )
+
+    assert retried.status_code == 200, retried.json()
+    assert PrintJob.objects.get(pk=job.pk).status == PrintJob.Status.PREPARED
+
+
 def test_reprint_uses_frozen_document_and_marks_the_copy(weighing, actor):
     original = _create(weighing, actor, mode="explicit")
     original.status = PrintJob.Status.CONFIRMED

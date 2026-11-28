@@ -29,6 +29,8 @@ from django.test import TestCase, override_settings
 from shopman.orderman.models import Order
 from shopman.payman import PaymentService
 
+pytestmark = pytest.mark.channels("web")
+
 # Configuração ERRADA de propósito: cartão apontado para o simulador. É o que o
 # alpha tinha no dia do E54, e o que estes testes existem para tornar impossível.
 MOCK_ADAPTERS = {

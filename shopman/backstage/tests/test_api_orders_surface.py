@@ -19,6 +19,8 @@ from shopman.backstage.tests._order_intent import advance_payload, context_paylo
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import cash_settlement_revision, operational_revision
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 
 def _manage_orders_perm() -> Permission:
     return Permission.objects.get(
@@ -104,6 +106,8 @@ def test_all_action_endpoints_require_permission(client, plain_staff, order):
         reverse("api-backstage-order-unassign", args=[ref]),
         reverse("api-backstage-order-comment", args=[ref]),
         reverse("api-backstage-order-reschedule", args=[ref]),
+        reverse("api-backstage-order-customer-notice", args=[ref]),
+        reverse("api-backstage-order-customer-notice-preview", args=[ref]),
     ]
     for url in action_urls:
         assert client.post(url).status_code == 403, url
@@ -213,7 +217,7 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
     client.force_login(operator)
     response = client.post(
         reverse("api-backstage-order-reject", args=[order.ref]),
-        data={"reason": "Sem estoque", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "reject-auto-confirmed"},
+        data={"reason_key": "out_of_stock", "expected_actor_id": operator.pk, "base_revision": operational_revision(order), "idempotency_key": "reject-auto-confirmed"},
         content_type="application/json",
     )
     assert response.status_code == 409

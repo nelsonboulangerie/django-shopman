@@ -73,8 +73,8 @@ const dismissLabel = computed(() => (failed.value || props.state === "uncertain"
       </li>
     </ol>
 
-    <UiButton
-      size="lg"
+    <NuxtButton
+      size="xl"
       class="h-12 w-full gap-2 text-base"
       :disabled="sending || done"
       :aria-busy="sending ? 'true' : undefined"
@@ -83,7 +83,7 @@ const dismissLabel = computed(() => (failed.value || props.state === "uncertain"
     >
       <Icon :name="sending ? 'lucide:loader-circle' : 'lucide:archive'" class="size-5" :class="sending ? 'animate-spin' : ''" />
       {{ failed ? `Tentar de novo: ${label}` : label }}
-    </UiButton>
+    </NuxtButton>
     <p class="text-center text-xs text-muted-foreground">{{ OPEN_DRAWER_HINT }}</p>
 
     <p
@@ -110,16 +110,16 @@ const dismissLabel = computed(() => (failed.value || props.state === "uncertain"
         Sem energia, abra com a chave.
       </p>
     </div>
-    <UiButton
+    <NuxtButton
       v-if="!done"
-      variant="ghost"
-      size="sm"
+      color="neutral" variant="ghost"
+      size="md"
       class="justify-self-center text-muted-foreground"
       :disabled="sending"
       data-drawer-dismiss
       @click="emit('dismiss')"
     >
       {{ dismissLabel }}
-    </UiButton>
+    </NuxtButton>
   </section>
 </template>

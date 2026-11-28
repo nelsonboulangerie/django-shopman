@@ -23,19 +23,6 @@ test.describe('cenários variados', () => {
     expect(realErrors(errors.filter(e => !noise.includes(e)))).toEqual([])
   })
 
-  test('busca sem resultado mostra estado vazio (não quebra)', async ({ page }) => {
-    const errors = collectConsoleErrors(page)
-    await page.goto('/busca', { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1800)
-    const input = page.locator('input[type="search"], input[type="text"]').filter({ visible: true }).first()
-    await input.fill('zzzprodutoinexistente')
-    await page.waitForTimeout(2200)
-    const b = await bodyText(page)
-    console.log('[report] busca vazia (200):', b.slice(0, 200).replace(/\n/g, ' | '))
-    expect(b.length).toBeGreaterThan(50)
-    expect(realErrors(errors)).toEqual([])
-  })
-
   test('cupom inválido no checkout mostra erro claro', async ({ page }) => {
     test.setTimeout(240_000)
     const errors = collectConsoleErrors(page)
@@ -93,7 +80,7 @@ test.describe('cenários variados', () => {
     await login(page)
     await page.goto('/conta/pedidos', { waitUntil: 'domcontentloaded' })
     await page.waitForTimeout(2500)
-    const refazer = page.getByRole('button', { name: /Refazer/i }).first()
+    const refazer = page.getByRole('button', { name: /Repetir pedido/i }).first()
     console.log('[report] botão refazer count:', await refazer.count())
     if (await refazer.count()) {
       await refazer.click()

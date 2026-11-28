@@ -18,6 +18,10 @@ describe('storefront security boundaries', () => {
     expect(isStorefrontApiPathAllowed('storefront/site')).toBe(true)
     expect(isStorefrontApiPathAllowed('auth/session/')).toBe(true)
     expect(isStorefrontApiPathAllowed('stock-alert/manage/')).toBe(true)
+    // A página do entregador da casa (/rota, DEV-2026-030).
+    expect(isStorefrontApiPathAllowed('courier/rides/tok/')).toBe(true)
+    expect(isStorefrontApiPathAllowed('courier/rides/tok/events/')).toBe(true)
+    expect(isStorefrontApiPathAllowed('courierX/rides/')).toBe(false)
     expect(isStorefrontApiPathAllowed('backstage/orders/')).toBe(false)
     expect(isStorefrontApiPathAllowed('/backstage/kds/')).toBe(false)
   })

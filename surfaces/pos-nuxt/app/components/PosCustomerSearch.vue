@@ -17,9 +17,11 @@
 import type { POSCustomerSearchResult } from "~/types/pos";
 import {
   cpfHint,
+  customerSearchPlaceholder,
   enterAction,
   enterActionCaveat,
   enterActionLabel,
+  formatPhoneDisplay,
   maskQueryIfCpf,
   moveHighlight,
 } from "~/presentation/customerSearch";
@@ -27,6 +29,10 @@ import {
 const props = defineProps<{
   results: POSCustomerSearchResult[];
   busy: boolean;
+  /** A busca falhou: a frase vem pronta (`customerSearchErrorMessage`). Vazio
+   *  quando a última busca respondeu. Com erro, a tela NUNCA diz "nenhum
+   *  cadastro" nem oferece cadastrar: não buscar não é não existir (P1-8). */
+  error?: string;
   /** Já existe cadastro ASSOCIADO (com ref): Enter com o campo vazio conclui. */
   hasCustomerRef?: boolean;
   /** Nome já no formulário e ainda sem cadastro — a criação pendente, que o
@@ -52,6 +58,11 @@ const highlighted = ref(0);
 // Enter durante a busca apenas antecipa o pedido. Um resultado que ainda não
 // estava visível precisa de uma nova escolha quando chegar.
 let timer: ReturnType<typeof setTimeout> | null = null;
+// O termo mudou e a busca dele ainda não voltou. Enquanto isso, a lista na tela
+// é de OUTRO termo: mostrá-la (com o Enter pronto) colava o cliente errado, e o
+// "Nenhum cadastro" oferecia cadastrar quem existe (beta test de 05/11/2026).
+const debouncing = ref(false);
+const searching = computed(() => debouncing.value || props.busy);
 
 watch(query, (q) => {
   const masked = maskQueryIfCpf(q);
@@ -62,8 +73,10 @@ watch(query, (q) => {
   }
   highlighted.value = 0;
   if (timer) clearTimeout(timer);
+  debouncing.value = q.trim().length >= 2;
   timer = setTimeout(() => {
     timer = null;
+    debouncing.value = false;
     emit("search", q);
   }, 350);
 });
@@ -114,11 +127,18 @@ function onEnter(event: KeyboardEvent) {
   if (timer) {
     clearTimeout(timer);
     timer = null;
+    debouncing.value = false;
     emit("search", query.value);
     if (query.value.trim().length >= 2) {
       return;
     }
   } else if (props.busy) {
+    return;
+  }
+  // A busca falhou: o Enter busca de novo (o botão visível faz o mesmo). Nunca
+  // decide sobre uma lista que não veio, nem cadastra quem pode já existir.
+  if (props.error && query.value.trim().length >= 2) {
+    emit("search", query.value);
     return;
   }
   decide();
@@ -148,6 +168,9 @@ const inputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 function reset() {
   query.value = "";
 }
+function resultContact(result: POSCustomerSearchResult): string {
+  return [result.phone ? formatPhoneDisplay(result.phone) : "", result.document, result.email].filter(Boolean).join(" · ");
+}
 function focus() {
   inputRef.value?.inputRef?.focus();
 }
@@ -156,6 +179,11 @@ function focus() {
 function seed(value: string) {
   query.value = value;
 }
+// O convite pelo espaço que o campo tem (#2885): no celular a frase longa saía
+// cortada ("Buscar por nome, telefone, CPF ou e…").
+const fieldRef = useTemplateRef<HTMLElement>("fieldRef");
+const { width: fieldWidth } = useElementSize(fieldRef);
+const placeholder = computed(() => customerSearchPlaceholder(fieldWidth.value));
 defineExpose({ reset, focus, seed });
 onBeforeUnmount(() => {
   if (timer) clearTimeout(timer);
@@ -164,17 +192,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="grid gap-3">
-    <div class="relative">
+    <div ref="fieldRef" class="relative">
       <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
       <UiInput
         ref="inputRef"
         v-model="query"
         class="h-8 pl-10 text-base"
-        placeholder="Buscar por nome, telefone, CPF ou e-mail"
+        :placeholder="placeholder"
         role="combobox"
         aria-expanded="true"
         aria-controls="pos-customer-search-listbox"
-        :aria-activedescendant="results.length ? optionId(highlighted) : undefined"
+        :aria-activedescendant="results.length && !searching ? optionId(highlighted) : undefined"
         aria-label="Buscar cliente"
         @keydown.enter="onEnter"
         @keydown.down="onArrow($event, 1)"
@@ -191,8 +219,36 @@ onBeforeUnmount(() => {
       CPF inválido: confira os dígitos.
     </p>
 
+    <p
+      v-if="searching && query.trim().length >= 2"
+      class="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground"
+      role="status"
+    >
+      <Icon name="lucide:loader-circle" class="size-3.5 shrink-0 animate-spin" />
+      Buscando…
+    </p>
     <div
-      v-if="results.length"
+      v-else-if="error && query.trim().length >= 2"
+      class="grid gap-2"
+      data-customer-search-error
+    >
+      <p class="flex items-start justify-center gap-1.5 text-center text-xs text-destructive" role="alert">
+        <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+        <span class="min-w-0">{{ error }}</span>
+      </p>
+      <NuxtButton
+        type="button"
+        color="neutral" variant="outline"
+        class="h-8 w-full justify-center gap-2 text-sm"
+        @click="emit('search', query)"
+      >
+        <Icon name="lucide:rotate-cw" class="size-4 shrink-0" />
+        Buscar de novo
+        <OperatorKbd aria-hidden="true">Enter</OperatorKbd>
+      </NuxtButton>
+    </div>
+    <div
+      v-else-if="results.length"
       id="pos-customer-search-listbox"
       role="listbox"
       aria-label="Clientes encontrados"
@@ -214,7 +270,7 @@ onBeforeUnmount(() => {
       >
         <span class="min-w-0">
           <span class="block truncate text-sm font-medium">{{ result.name || "Sem nome" }}</span>
-          <span class="block truncate text-xs tabular-nums text-muted-foreground">{{ [result.phone, result.document, result.email].filter(Boolean).join(" · ") }}</span>
+          <span class="block truncate text-xs tabular-nums text-muted-foreground">{{ resultContact(result) }}</span>
         </span>
         <span class="flex shrink-0 items-center gap-1.5">
           <OperatorKbd v-if="index === highlighted"  aria-hidden="true">Enter</OperatorKbd>
@@ -225,21 +281,21 @@ onBeforeUnmount(() => {
     <!-- SEM RESULTADO: o que fazer agora vira BOTÃO, com o resultado no rótulo.
          O `<kbd>` é affordance da mesma ação — a tecla nunca promete outra
          coisa, porque as duas leem o mesmo `pendingAction`. -->
-    <div v-else-if="query.trim().length >= 2 && !busy" class="grid gap-2">
+    <div v-else-if="query.trim().length >= 2" class="grid gap-2">
       <p class="text-center text-xs text-muted-foreground">
         {{ hint === "valid" ? "Nenhum cadastro com este CPF." : "Nenhum cadastro encontrado." }}
       </p>
-      <UiButton
+      <NuxtButton
         v-if="emptyStateLabel"
         type="button"
-        variant="outline"
+        color="neutral" variant="outline"
         class="h-8 w-full justify-center gap-2 whitespace-normal text-sm"
         @click="run(pendingAction)"
       >
         <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />
         <span class="min-w-0">{{ emptyStateLabel }}</span>
         <OperatorKbd aria-hidden="true">Enter</OperatorKbd>
-      </UiButton>
+      </NuxtButton>
       <p v-if="emptyStateCaveat" class="flex items-start gap-1.5 text-center text-xs text-muted-foreground">
         <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
         <span class="min-w-0 text-left">{{ emptyStateCaveat }}</span>

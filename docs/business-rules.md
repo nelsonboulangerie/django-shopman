@@ -71,8 +71,19 @@ opening_hours:
   monday:    { open: "HH:MM", close: "HH:MM" }
   tuesday:   { open: "HH:MM", close: "HH:MM" }
   ...
-  sunday:    null  # null = fechado
+  sunday:    { open: "09:00", close: "23:00",
+               breaks: [{ start: "12:00", end: "13:00" }, { start: "16:00", end: "17:00" }] }
+  # dia ausente = fechado
 ```
+
+`breaks` (opcional) parte o dia em turnos: domingo acima vende das 9h às 12h, das 13h às
+16h e das 17h às 23h. `open`/`close` continuam sendo o começo e o fim do dia, e quem só
+precisa do dia (produção, B.I., cozinha) segue lendo esses dois. A loja, o checkout, a
+regra de horário e o iFood leem os turnos (`business_calendar.shifts_for` /
+`weekly_shifts`): no intervalo a loja está fechada ("Fechado. Voltamos às 13h"), não há
+janela de entrega, e o iFood recebe um turno por turno da casa. Cada intervalo fica dentro
+do dia, sem encostar na abertura nem no fechamento e sem sobrepor outro (o Admin recusa;
+o iFood recusaria com 400).
 
 ---
 
@@ -91,7 +102,6 @@ product:
   availability_policy:  "stock_only" | "planned_ok" | "demand_ok"
   is_published:         bool              # Visível no catálogo
   is_sellable:          bool              # Elegível para venda (false = insumo)
-  is_batch_produced:    bool              # Produzido em lote (Crafting)
   image_url:            url
   metadata:             json              # Extensível (ex: allows_next_day_sale)
 ```
@@ -245,6 +255,7 @@ confirmation:
     # auto_cancel:  auto-cancela após timeout se operador não confirma
     # manual:       aguarda aprovação explícita do operador
   timeout_minutes: int  # Só para mode=auto_confirm ou auto_cancel (default: 5)
+  preorder_timeout_minutes: int | null  # Prazo da encomenda para outro dia; sem chave = timeout_minutes
 ```
 
 ### 4.2 Pagamento
@@ -519,7 +530,7 @@ business_hours:
   fallback: 06:00 – 20:00 (se Shop indisponível)
   checa:
     1. Dia da semana presente em opening_hours? Não → "Não aceitamos pedidos {dia}."
-    2. Horário dentro de open/close do dia? Não → "Pedidos aceitos apenas entre HH:MM e HH:MM."
+    2. Horário dentro de um turno do dia (open/close menos breaks)? Não → "Pedidos aceitos apenas entre HH:MM e HH:MM."
 ```
 
 ### 7.2 Pedido Mínimo
@@ -704,6 +715,14 @@ customer_address:
   delivery_instructions: text
   is_default:            bool          # Um por cliente
 ```
+
+**Endereço sem etiqueta** é `label="other"` com `label_custom` vazio: o que o pedido de
+entrega grava sozinho no cadastro (`shop/services/customer.py`, `persist_new_address` do
+checkout) e o que a loja cria antes de o cliente etiquetar. "Outro" sem nome não é
+etiqueta, e nenhuma tela o mostra como se fosse: a loja, o PDV, o Gestor e a Concierge
+mostram o próprio endereço no lugar (#2775). Até 19/11/2026 esse endereço nascia com
+`label_custom="Entrega"`, que repetia o canal em todos; a migração `shop.0123` tirou essa
+etiqueta dos que já existiam.
 
 ---
 

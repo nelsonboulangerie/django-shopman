@@ -19,15 +19,46 @@ export function isHighlighted(n: Pick<UserNotification, "action_data">): boolean
   return Boolean((n.action_data as { highlight?: boolean } | null)?.highlight);
 }
 
-/** Os códigos de anomalia que o backend já traduziu, prontos para a linha. */
-export function anomalyLabels(n: Pick<UserNotification, "action_data">): string[] {
-  const raw = (n.action_data as { anomalies?: unknown } | null)?.anomalies;
-  return Array.isArray(raw) ? raw.map(String) : [];
-}
 
 /** Um aviso de acesso aponta para o log; os demais, para a tela do assunto. */
 export function isSignIn(n: Pick<UserNotification, "category">): boolean {
   return n.category === "sign_in";
+}
+
+/**
+ * A ordem da caixa pessoal (beta 05/11, CEN-01): o que pede gesto da operação (o lote na
+ * Qualidade) vem antes dos acessos, e não depois de 28 deles. Os acessos continuam na
+ * MESMA lista (realce, nunca silo): o suspeito aparece inteiro, um por um; os de rotina,
+ * quando passam de `groupFrom`, viram UMA linha que se abre ali mesmo ("5 acessos seus
+ * sem nada fora do comum"). Nada some: só deixa de empurrar o resto para baixo.
+ */
+export interface InboxLayout {
+  /** Avisos da operação e da casa, na ordem do servidor (mais novo primeiro). */
+  operation: UserNotification[];
+  /** Acessos mostrados um por um: os destacados, ou todos se forem poucos. */
+  signIns: UserNotification[];
+  /** Acessos de rotina agrupados numa linha só (vazio quando são poucos). */
+  routine: UserNotification[];
+}
+
+export function inboxLayout(items: readonly UserNotification[], groupFrom = 3): InboxLayout {
+  const operation = items.filter((item) => !isSignIn(item));
+  const access = items.filter(isSignIn);
+  const routine = access.filter((item) => !isHighlighted(item));
+  if (routine.length < groupFrom) return { operation, signIns: access, routine: [] };
+  return { operation, signIns: access.filter(isHighlighted), routine };
+}
+
+/** A linha dos acessos de rotina agrupados. */
+export function routineSignInsLabel(count: number): string {
+  return count === 1
+    ? "1 acesso seu sem nada fora do comum"
+    : `${count} acessos seus sem nada fora do comum`;
+}
+
+/** "Não fui eu" só existe sobre um acesso que aconteceu (o servidor diz `is_actionable`). */
+export function canReportNotMe(n: Pick<UserNotification, "category" | "is_actionable">): boolean {
+  return isSignIn(n) && n.is_actionable;
 }
 
 /** Resumo de uma linha de acesso, para a lista dentro do painel. */

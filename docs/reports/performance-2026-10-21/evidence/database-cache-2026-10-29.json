@@ -1,0 +1,45 @@
+{
+  "captured_at_utc": "2026-10-29T17:12:04.581806+00:00",
+  "method": "Console web-storefront. Postgres: transaction.atomic, SET TRANSACTION READ ONLY, SET LOCAL statement_timeout=5s, SELECT agregados, rollback. Valkey: INFO e cinco PING. Sem consulta de dados pessoais, configuração ou reset.",
+  "postgres": {
+    "temp_files": 3306,
+    "temp_bytes": 18174813932,
+    "blks_hit": 428982840,
+    "blks_read": 23682,
+    "deadlocks": 0,
+    "numbackends": 3,
+    "stats_reset": null,
+    "buffer_hit_ratio_percent": 99.99447980420214,
+    "work_mem_kb": 2048,
+    "max_connections": 25,
+    "default_transaction_isolation": "read committed",
+    "pg_stat_statements_installed": false,
+    "global_activity_counts": {
+      "state_null": 10,
+      "active": 1,
+      "idle": 2
+    }
+  },
+  "valkey": {
+    "keyspace_hits": 7031903,
+    "keyspace_misses": 108036,
+    "keyspace_hit_ratio_percent": 98.48687782906829,
+    "evicted_keys": 0,
+    "total_connections_received": 705615,
+    "total_commands_processed": 24144047,
+    "used_memory": 5317576,
+    "maxmemory": 438304768,
+    "used_memory_peak": 11453304,
+    "mem_fragmentation_ratio": 0.8,
+    "connected_clients": 11,
+    "blocked_clients": 0,
+    "get_usec_per_call": 9.95,
+    "ping_ms": [
+      6.154,
+      6.949,
+      3.259,
+      4.033,
+      5.657
+    ]
+  }
+}

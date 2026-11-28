@@ -31,6 +31,7 @@ from unittest.mock import patch
 
 import pytest
 from django.utils import timezone
+from shopman.orderman.tests.commit_support import seal_for
 
 pytestmark = pytest.mark.django_db
 
@@ -510,7 +511,7 @@ def _open_cart(channel_ref, session_key, sku, qty, *, data=None):
         state="open",
         rev=1,
         items=[{"line_id": f"L-{session_key}", "sku": sku, "name": sku, "qty": qty, "unit_price_q": 1000}],
-        data=data or {},
+        data={"payment": {"method": "cash"}, **(data or {})},
     )
 
 
@@ -518,7 +519,9 @@ def _commit(session_key, channel_ref, idem):
     from shopman.orderman.services.commit import CommitService
 
     return CommitService.commit(
-        session_key=session_key, channel_ref=channel_ref, idempotency_key=idem
+        session_key=session_key, channel_ref=channel_ref, idempotency_key=idem,
+                                                          seal=seal_for(session_key, channel_ref),
+                                                          channel_config={},
     )
 
 
@@ -539,7 +542,7 @@ class TestStockExactAndShortfall:
         _open_cart(ch.ref, "SS-B", "EX-SKU", 1)
         with pytest.raises(ValidationError) as exc:
             _commit("SS-B", ch.ref, "K-B")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 1
 
 
@@ -589,7 +592,7 @@ class TestNoStockNoProduction:
         _open_cart(ch.ref, "NO-SS", "SEM-SKU", 2)
         with pytest.raises(ValidationError) as exc:
             _commit("NO-SS", ch.ref, "NO-K")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 0
 
 
@@ -670,7 +673,7 @@ class TestPerishableVsShelfStable:
 
         with pytest.raises(ValidationError) as exc:
             _commit("PER-SS", ch.ref, "PER-K")
-        assert exc.value.code == "insufficient_stock"
+        assert exc.value.code == "insufficient_supply"
         assert Order.objects.filter(channel_ref=ch.ref).count() == 0
 
     def test_shelf_stable_can_use_today_stock_for_future(self):
@@ -700,61 +703,57 @@ class TestPerishableVsShelfStable:
 # ═════════════════════════════════════════════════════════════════════════════
 
 
-_FAKE_SLOTS = [
-    {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
-    {"ref": "slot-12", "label": "A partir das 12h", "starts_at": "12:00"},
-    {"ref": "slot-15", "label": "A partir das 15h", "starts_at": "15:00"},
-]
-
-
 class TestPickupSlots:
-    """15. Slots de retirada respeitam o expediente; slot no passado é rejeitado."""
+    """15. Horário de retirada respeita o expediente e o agora; o que passou é recusado."""
 
-    def _validate(self, slot, *, delivery_date="", now=None, closes_at):
+    def _validate(self, slot, *, hour, minute=0, close="19:00"):
+        from datetime import datetime
+
         from shopman.storefront.services import pickup_slots
 
-        with patch.object(pickup_slots, "get_slots", return_value=_FAKE_SLOTS):
-            return pickup_slots.validate_pickup_slot_selection(
-                slot, delivery_date=delivery_date, now=now, closes_at=closes_at
-            )
+        shop = _shop()
+        shop.opening_hours = {
+            day: {"open": "07:00", "close": close}
+            for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        }
+        shop.save(update_fields=["opening_hours"])
+        now = timezone.make_aware(datetime.combine(timezone.localdate(), time(hour, minute)))
+        return pickup_slots.validate_pickup_slot_selection(slot, now=now)
 
     def test_past_slot_today_rejected(self):
-        # 15h: slot-09 já foi superado.
-        err = self._validate("slot-09", now=time(15, 0), closes_at=time(19, 0))
+        err = self._validate("09:00-09:30", hour=15)
         assert err and "passou" in err.lower()
 
     def test_future_slot_today_ok(self):
-        err = self._validate("slot-15", now=time(10, 0), closes_at=time(19, 0))
-        assert err is None
+        assert self._validate("15:00-15:30", hour=10) is None
 
     def test_after_close_no_pickup_today(self):
-        """Depois do fechamento não há retirada hoje, mesmo no último slot."""
-        err = self._validate("slot-15", now=time(19, 30), closes_at=time(19, 0))
-        assert err and "fechou" in err.lower()
+        """Depois do fechamento não há retirada hoje, nem na última meia hora."""
+        err = self._validate("18:30-19:00", hour=19, minute=30)
+        assert err and "hoje" in err.lower()
 
     def test_slot_starting_after_close_is_unreachable(self):
-        # Fecha 11h: slot-12/15 começam depois do fechamento → inalcançáveis hoje.
-        err = self._validate("slot-15", now=time(10, 0), closes_at=time(11, 0))
-        assert err is not None
+        # Fecha 11h: meia hora depois do fechamento não está na grade do dia.
+        assert self._validate("12:00-12:30", hour=10, close="11:00") is not None
 
 
 class TestDeliveryDate:
     """16. Data de entrega no passado é rejeitada."""
 
     def test_past_delivery_date_rejected(self):
-        from shopman.storefront.intents.checkout import _validate_preorder
+        from shopman.shop.policies.preorder_date import preorder_date_errors
 
         yesterday = (timezone.localdate() - timedelta(days=1)).isoformat()
-        errors = _validate_preorder(yesterday)
+        errors = preorder_date_errors(yesterday)
         assert "delivery_date" in errors
         assert "passada" in errors["delivery_date"].lower()
 
     def test_today_delivery_date_ok(self):
-        from shopman.storefront.intents.checkout import _validate_preorder
+        from shopman.shop.policies.preorder_date import preorder_date_errors
 
         _shop()
         today = timezone.localdate().isoformat()
-        errors = _validate_preorder(today)
+        errors = preorder_date_errors(today)
         assert errors.get("delivery_date") is None
 
 

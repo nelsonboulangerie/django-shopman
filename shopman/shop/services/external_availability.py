@@ -38,12 +38,9 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
+from shopman.stockman.protocols.sku import PromiseReasonCode
+
 logger = logging.getLogger(__name__)
-
-# Motivos do portão que significam "acabou". Os demais (pausa, fora da listagem)
-# já são lidos por outras flags e não são assunto deste módulo.
-STOCK_SHORTAGE_REASONS = frozenset({"insufficient_supply", "insufficient_stock"})
-
 
 def stock_channel_ref(channel_ref: str) -> str:
     """O canal cujo estoque responde por ``channel_ref``.
@@ -81,7 +78,7 @@ def in_stock(sku: str, *, channel_ref: str) -> bool:
         return True
     if decision.get("approved"):
         return True
-    return decision.get("reason_code") not in STOCK_SHORTAGE_REASONS
+    return decision.get("reason_code") != PromiseReasonCode.INSUFFICIENT_SUPPLY
 
 
 def in_stock_map(skus: list[str], *, channel_ref: str) -> dict[str, bool]:

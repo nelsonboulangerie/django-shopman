@@ -35,7 +35,7 @@ class ChannelForm(forms.ModelForm):
         label="Confirmação",
         widget=_aspect_widget(4),
         required=False,
-        help_text=f"Como o pedido é aceito. JSON: mode (immediate/auto_confirm/auto_cancel/manual), timeout_minutes. {_INHERIT}",
+        help_text=f"Como o pedido é aceito. JSON: mode (immediate/auto_confirm/auto_cancel/manual), timeout_minutes, preorder_timeout_minutes (prazo da encomenda para outro dia). {_INHERIT}",
     )
     payment = forms.CharField(
         label="Pagamento",

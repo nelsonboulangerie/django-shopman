@@ -17,6 +17,11 @@ npm run test:e2e
   (Sem teste de 404: `pages/[ref].vue` torna todo path de um segmento um ref de estação
   válido — não há 404 genérico, análogo ao POS view-única.)
 - **resilience.spec** — `OfflineBanner` aparece/some com a rede.
+- **overlap.spec** — a trava da sobreposição (`expectNoOperatorOverlap` do kit) nas seis
+  larguras da régua (1440, 1360, 1280, 1024, 768, 390): Estações, as estações da prévia
+  (Bancada e Cafés cheias; Lanches, Separação e Saída vazias), a Bancada sem ticket, o
+  login e o `/pickup`. As estações cheias usam o cookie `e2e_kds=preview`, que liga os
+  quadros da prévia só para aquela requisição, sem trocar o modo do mock.
 
 ## O que fica para o reviewer local (Django real)
 
@@ -55,5 +60,5 @@ Abre Estações, a bancada e o Painel de retirada na carga direta, reprova erro 
 e aviso de hidratação, e anexa as capturas ao relatório (sem baseline: retrato só pelo
 browser da CI). Duas travas de desenho moram lá: na mesa a ordem visual dos tickets é a
 ordem da fila (sem mosaico), e no celular o ato do pedido em foco está na ação na base.
-Portas próprias (33019/38797), trocáveis por `KDS_VISUAL_APP_PORT`/`KDS_VISUAL_BACKEND_PORT`
+Portas próprias (23019/28797), trocáveis por `KDS_VISUAL_APP_PORT`/`KDS_VISUAL_BACKEND_PORT`
 (o e2e aceita `KDS_E2E_APP_PORT`/`KDS_E2E_MOCK_PORT`).

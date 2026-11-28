@@ -31,6 +31,29 @@ function writeDismissed(): void {
   }
 }
 
+/**
+ * Pedir a oferta de vincular de novo, de qualquer tela (o aviso "Vincular a um caixa"
+ * do PDV). Vence o "Usar sem vincular" lembrado e um posto que não serve àquela tela.
+ */
+export function useStationSetupRequest() {
+  const requested = useState<boolean>("station-setup-requested", () => false);
+  return {
+    requested,
+    request: () => {
+      requested.value = true;
+    },
+  };
+}
+
+/**
+ * A oferta de vincular está na tela agora? O convite de instalar espera por ela:
+ * dois diálogos de primeira entrada empilhados misturavam os textos no celular
+ * (beta test de 05/11/2026, PDV2-25). Primeiro o vínculo, depois o convite.
+ */
+export function useStationSetupOfferOpen() {
+  return useState<boolean>("station-setup-offer-open", () => false);
+}
+
 export function useStationSetupOffer(state: {
   canIdentify: Ref<boolean>;
   locked: Ref<boolean>;
@@ -43,18 +66,24 @@ export function useStationSetupOffer(state: {
     dismissed.value = readDismissed();
   });
 
+  const { requested } = useStationSetupRequest();
   const offer = computed(() =>
     shouldOfferStationSetup({
       canIdentify: state.canIdentify.value,
       locked: state.locked.value,
       stationRef: state.stationRef.value,
       dismissed: dismissed.value,
-    }),
+    }) || (requested.value && state.canIdentify.value && !state.locked.value),
   );
+
+  const offerOpen = useStationSetupOfferOpen();
+  watch(offer, (value) => { offerOpen.value = value; }, { immediate: true });
+  onBeforeUnmount(() => { offerOpen.value = false; });
 
   /** "Usar sem vincular" (ou sem permissão para vincular): some, e fica lembrado aqui. */
   function dismiss(options: { remember?: boolean } = { remember: true }): void {
     dismissed.value = true;
+    requested.value = false;
     if (options.remember) writeDismissed();
   }
 

@@ -12,7 +12,7 @@
 import type { KDSIndexResponse, KDSStationSettingsResponse } from "~/types/kds";
 import type { KDSDensity } from "~/presentation/board";
 import { EXIT_STATION_TYPE, gestorExitUrl } from "~/presentation/exitStation";
-import { kdsSections, kdsShellSections, stationSectionKey } from "~/presentation/sections";
+import { kdsSections, kdsShellSections, kdsSwitcherSections, stationSectionKey } from "~/presentation/sections";
 
 export interface KdsStationMemory {
   ref: string;
@@ -181,10 +181,12 @@ export function useKdsSections() {
   }));
   // A lista do shell (as duas ordens numa só) e, para quem lê uma barra só, cada ordem.
   const sections = computed(() => kdsShellSections(input.value));
+  // O trocador e a barra de baixo do chão (modelo de navegação, 31/10/2026).
+  const switcherSections = computed(() => kdsSwitcherSections(input.value));
   const rail = computed(() => kdsSections({ ...input.value, place: "rail" }));
   const bar = computed(() => kdsSections({ ...input.value, place: "bar" }));
   // A estação da rota é a atual. Fora de uma bancada (a tela de escolher a estação),
   // nenhum item é o atual: "" (não `undefined`) para a barra não adivinhar pela rota.
   const current = computed(() => (routeStation.value ? stationSectionKey(routeStation.value) : ""));
-  return { sections, rail, bar, current };
+  return { sections, switcherSections, rail, bar, current };
 }

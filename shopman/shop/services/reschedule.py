@@ -114,7 +114,7 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
 
         today = timezone.localdate()
         date_changes = from_day != new_day
-        if date_changes and _physical_work_started(locked):
+        if date_changes and physical_work_started(locked):
             raise RescheduleRefused(
                 "Este pedido já está em preparo: a data não muda mais. "
                 "Para outro dia, cancele e registre uma nova encomenda.",
@@ -134,7 +134,9 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
         data.update({
             "delivery_date": to_date,
             "delivery_time_slot": new_slot,
-            "is_preorder": new_day > today,
+            # O carimbo segue a régua única (#3163): feito antes do dia combinado.
+            # "Depois de hoje" tirava a encomenda trazida para hoje da encomenda.
+            "is_preorder": timezone.localdate(locked.created_at) < new_day,
             HISTORY_KEY: history,
         })
         locked.data = data
@@ -147,7 +149,10 @@ def reschedule(order, *, date, slot, actor: str, reason: str = "", notify: bool 
             _replace_reminder(locked, new_day, today=today)
             _relink_production(locked)
         else:
-            # Só a janela mudou: o lembrete congela a janela no texto.
+            # Só a janela mudou: o lembrete congela a janela no texto, e o
+            # despertador acompanha a hora (chegada à Cozinha = hora combinada −
+            # preparo − antecedência).
+            activated_now = _move_activation(locked, new_day, today=today)
             _replace_reminder(locked, new_day, today=today)
 
         event_payload = {
@@ -256,8 +261,12 @@ def _validate(order, day: date_type, slot: str) -> None:
         raise RescheduleRefused(error, code="invalid_slot", field="slot")
 
 
-def _physical_work_started(order) -> bool:
-    """O pedido já foi para a cozinha ou já baixou estoque?"""
+def physical_work_started(order) -> bool:
+    """O pedido já foi para a cozinha ou já baixou estoque? Aí a data não muda mais.
+
+    Público para o fechamento do dia, que diz a cada pedido aberto o seu caminho
+    (remarcar só vale antes da cozinha).
+    """
     if order.status == Order.Status.PREPARING:
         return True
     if order.session_key:
@@ -302,12 +311,14 @@ def _move_holds(order, day: date_type) -> None:
     try:
         stock.hold(order, require_all=True)
     except ValidationError as exc:
-        raise RescheduleRefused(_stock_refusal(order, exc, day), code=exc.code, field="date") from None
+        raise RescheduleRefused(stock_refusal(order, exc, day), code=exc.code, field="date") from None
 
 
-def _stock_refusal(order, exc, day: date_type) -> str:
+def stock_refusal(order, exc, day: date_type) -> str:
+    from shopman.stockman.protocols.sku import PromiseReasonCode
+
     context = getattr(exc, "context", None) or {}
-    if exc.code == "insufficient_stock":
+    if exc.code == PromiseReasonCode.INSUFFICIENT_SUPPLY.value:
         sku = context.get("sku") or context.get("component_sku") or ""
         name = next(
             (item.name for item in order_composition.effective_items(order) if item.sku == sku),
@@ -357,6 +368,14 @@ def _move_activation(order, day: date_type, *, today: date_type) -> bool:
     # Data nova é hoje. Só há o que ativar quando o despertador existia: é ele
     # que prova que o pedido estava aceito, pago e esperando o dia.
     if live is None:
+        return False
+    # Hoje ainda tem hora: o card chega à Cozinha em hora combinada − preparo −
+    # antecedência. O despertador vai para lá; passada a hora, ativa agora.
+    available_at, target = lifecycle.preorder_activation_at(order)
+    if available_at is not None and available_at > timezone.now():
+        live.available_at = available_at
+        live.payload = {**(live.payload or {}), "delivery_date": target.isoformat()}
+        live.save(update_fields=["available_at", "payload", "updated_at"])
         return False
     live.status = "done"
     live.last_error = ""

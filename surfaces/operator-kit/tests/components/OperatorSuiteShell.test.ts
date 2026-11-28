@@ -14,6 +14,7 @@ import { defineComponent, h, nextTick, type VueWrapper } from "vue";
 
 import DashboardSidebar from "@nuxt/ui/components/DashboardSidebar.vue";
 import NavigationMenu from "@nuxt/ui/components/NavigationMenu.vue";
+import Popover from "@nuxt/ui/components/Popover.vue";
 import OperatorPageHeader from "../../app/components/OperatorPageHeader.vue";
 import OperatorSuiteShell from "../../app/components/OperatorSuiteShell.vue";
 import type { OperatorSection } from "../../app/presentation/appBar";
@@ -36,6 +37,12 @@ const stubs = {
   OperatorInbox: { props: ["placement"], template: '<div data-inbox-stub :data-placement="placement" />' },
   OperatorUrgentAlert: true,
   OperatorSuiteSearch: true,
+  OperatorSwitcher: {
+    props: ["sections", "current"],
+    emits: ["select", "lock"],
+    template:
+      '<div data-switcher-stub :data-current="current" :data-sections="sections.map((s) => s.key).join(\',\')"><button data-switcher-pick-board @click="$emit(\'select\', \'board\')" /></div>',
+  },
 };
 
 const mounted: VueWrapper[] = [];
@@ -245,6 +252,38 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     expect(footer.find("[data-suite-rail-menu]").exists()).toBe(true);
   });
 
+  it("o menu do operador cabe na tela do celular (beta 05/11, CEN-08)", async () => {
+    // Na mesa: ao lado do rail.
+    const desk = await mountShell();
+    const deskMenu = desk
+      .findAllComponents(Popover)
+      .find((popover) => popover.find("[data-suite-rail-menu]").exists())!;
+    expect(deskMenu.props("content")).toMatchObject({ side: "right", collisionPadding: 16 });
+
+    // No celular (gaveta): para cima, dentro da tela, nunca mais largo que ela.
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: /max-width/.test(query),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }));
+    const phone = await mountShell();
+    await settle();
+    const phoneMenu = phone
+      .findAllComponents(Popover)
+      .find((popover) => popover.find("[data-suite-rail-menu]").exists())!;
+    expect(phoneMenu.props("content")).toMatchObject({ side: "top", collisionPadding: 16 });
+    await phone.get("[data-suite-rail-menu]").trigger("click");
+    await settle();
+    const content = document.querySelector<HTMLElement>("[data-suite-rail-menu-content]");
+    expect(content, "o menu do operador abriu").not.toBeNull();
+    expect(content!.className).toContain("max-w-[calc(100vw-2rem)]");
+  });
+
   it("sem operador, sem Bloquear e sem menu do operador", async () => {
     const wrapper = await mountShell({ operatorName: undefined });
     expect(wrapper.find("[data-rail-lock]").exists()).toBe(false);
@@ -259,6 +298,13 @@ describe("OperatorSuiteShell: o que o shell já fazia", () => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "?", code: "Slash", shiftKey: true, cancelable: true }));
     expect(useOperatorShortcuts().open.value).toBe(true);
     useOperatorShortcuts().open.value = false;
+  });
+
+  it("seção com endereço de fora (a Saída da Cozinha, no Gestor) vai como link de fora", async () => {
+    const outside = { key: "exit", label: "Saída", icon: "lucide:package-check", to: "https://gestor.example/?columns=expedition" };
+    await mountShell({ sections: [SECTIONS[0], outside] });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "2", code: "Digit2", altKey: true, cancelable: true }));
+    expect(navigate).toHaveBeenCalledWith(outside.to, { external: true });
   });
 
 });
@@ -346,5 +392,102 @@ describe("OperatorSuiteShell: a barra inferior (o menu rápido)", () => {
     const wrapper = await mountShell({ sections });
     expect(quickLinks(wrapper).map((link) => link.attributes("data-section"))).toEqual(["orders", "exit", "history", "feeds", "settings"]);
     expect(wrapper.find("[data-quick-bar-more]").exists()).toBe(false);
+  });
+});
+
+// O modelo de navegação (dono, 31/10/2026) entra por app: só o shell que recebe
+// `switcherSections` troca o ☰ e a barra de baixo pelo trocador. Os outros apps ficam
+// exatamente como estavam (a barra inferior acima prova isso sem a prop).
+describe("OperatorSuiteShell: o trocador (opt-in por app)", () => {
+  const FORMS: OperatorSection[] = SECTIONS.map((section) => ({
+    ...section,
+    form: section.key === "orders" || section.key === "exit" ? "floor" : "office",
+  }));
+
+  function switcherOpen() {
+    return useState<boolean>("suite-switcher-open").value;
+  }
+
+  it("sem switcherSections: nem trocador, e o selo da barra lateral volta à Central", async () => {
+    const wrapper = await mountShell();
+    expect(wrapper.find("[data-switcher-stub]").exists()).toBe(false);
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label")).toMatch(/voltar/);
+    expect(seal.attributes("aria-haspopup")).toBeUndefined();
+  });
+
+  it("tela do chão: sem barra de seções embaixo; o selo abre o trocador", async () => {
+    useState("suite-switcher-open").value = false;
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders" });
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(false);
+    expect(wrapper.get("[data-switcher-stub]").attributes("data-sections")).toBe(
+      "orders,exit,history,feeds,catalog,settings",
+    );
+    const seal = wrapper.get("[data-suite-rail] [data-page-header-app]");
+    expect(seal.attributes("aria-label")).toMatch(/trocar de seção ou de app/);
+    expect(seal.attributes("aria-haspopup")).toBe("dialog");
+    expect(seal.attributes("href")).toBeUndefined();
+    await seal.trigger("click");
+    expect(switcherOpen()).toBe(true);
+  });
+
+  it("tela do escritório: a barra de baixo tem só o escritório", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "history" });
+    expect(
+      wrapper.findAll("[data-operator-quick-bar] [data-section]").map((link) => link.attributes("data-section")),
+    ).toEqual(["history", "feeds", "catalog", "settings"]);
+  });
+
+  it("com floorBar, a tela do chão leva a barra de baixo só com o chão", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders", floorBar: true });
+    const links = wrapper.findAll("[data-operator-quick-bar] [data-section]");
+    expect(links.map((link) => link.attributes("data-section"))).toEqual(["orders", "exit"]);
+    expect(links[0]!.attributes("aria-current")).toBe("page");
+  });
+
+  it("tela do escritório com floorBar, sem officeUsesFloorBar: segue a do escritório", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "history", floorBar: true });
+    expect(
+      wrapper.findAll("[data-operator-quick-bar] [data-section]").map((link) => link.attributes("data-section")),
+    ).toEqual(["history", "feeds", "catalog", "settings"]);
+  });
+
+  // O Compras (dono, 04/11/2026): a Base é o escritório inteiro, uma seção só. Com a
+  // opção, ela leva a barra do chão, sem nenhuma acesa.
+  it("com officeUsesFloorBar, a tela do escritório leva a barra do chão, nenhuma acesa", async () => {
+    const wrapper = await mountShell({
+      switcherSections: FORMS,
+      current: "history",
+      floorBar: true,
+      officeUsesFloorBar: true,
+    });
+    const links = wrapper.findAll("[data-operator-quick-bar] [data-section]");
+    expect(links.map((link) => link.attributes("data-section"))).toEqual(["orders", "exit"]);
+    expect(links.some((link) => link.attributes("aria-current") === "page")).toBe(false);
+  });
+
+  it("escritório com mais seções do que cabem: 'Mais' abre o trocador, não a gaveta", async () => {
+    useState("suite-switcher-open").value = false;
+    const extra: OperatorSection[] = [
+      ...FORMS,
+      { key: "customers", label: "Clientes", icon: "i-lucide-users", to: "/customers", form: "office" },
+      { key: "channels", label: "Postos", icon: "i-lucide-monitor", to: "/stations", form: "office" },
+    ];
+    const wrapper = await mountShell({ sections: extra, switcherSections: extra, current: "history" });
+    await wrapper.get("[data-operator-quick-bar] [data-quick-bar-more]").trigger("click");
+    await settle();
+    expect(switcherOpen()).toBe(true);
+    expect(wrapper.findComponent(DashboardSidebar).props("open")).toBe(false);
+  });
+
+  it("seção sem rota escolhida no trocador chega ao app como select (gesto do app)", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "orders" });
+    await wrapper.get("[data-switcher-pick-board]").trigger("click");
+    expect(wrapper.findComponent(OperatorSuiteShell).emitted("select")?.at(-1)).toEqual(["board"]);
+  });
+
+  it("tela fora das seções (o item aberto) usa a forma declarada pelo app", async () => {
+    const wrapper = await mountShell({ switcherSections: FORMS, current: "unknown", defaultForm: "floor" });
+    expect(wrapper.find("[data-operator-quick-bar]").exists()).toBe(false);
   });
 });

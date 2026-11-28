@@ -10,7 +10,7 @@
 > (**Estado da revisão**) registra o que foi resolvido (WP-1..11) e o que de fato resta em aberto.
 >
 > Data: 2026-06-18. Base: `main` (WP-1..11 + WP-9/WP-10 mergeados, `5a2a0ed7`; deployado no staging).
-> Os WPs e decisões estão em [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/STOREFRONT-GAPS-ACTION-PLAN.md).
+> Os WPs e decisões estão em [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/completed/STOREFRONT-GAPS-ACTION-PLAN.md).
 
 ---
 
@@ -38,7 +38,7 @@ projeções do Django via BFF).
 |---|---|---|
 | `/` (index) | Home: hero, vitrine (6 itens), "como funciona", CTA WhatsApp, banner de pedido ativo, gancho de recompra do último pedido | `GET /api/v1/storefront/home/` |
 | `/menu` | Catálogo: seções com pills sticky (scroll-spy), badge happy hour, contagem por seção | `GET /api/v1/storefront/menu/` (+ `/menu/<collection>/`) |
-| `/busca` | Busca + filtros (chips dietéticos/categóricos), deep-link `?q=&filtro=` | reusa `/storefront/menu/` (filtra client-side) |
+| busca (overlay `SearchOverlay`, sem rota própria) | Busca + filtros (chips dietéticos/categóricos), abre por cima do início, do cardápio e da coleção; filtro leva a `/menu?filtro=` | reusa `/storefront/menu/` (filtra client-side) |
 | `/product/[sku]` | PDP: galeria, preço (com riscado), disponibilidade, badges, acordeões (combo/ingredientes/nutricional/conservação), "veja também", add-to-cart sticky no mobile, JSON-LD | `GET /api/v1/storefront/products/<sku>/` |
 | `/cart` | Carrinho: linhas, descontos, progresso de mínimo, upsell, **estados de hold** (aguardando confirmação → pronto p/ confirmar, countdown), alerta de estoque com substitutos | `GET /api/v1/storefront/cart/`; `PUT /api/v1/cart/skus/<sku>/`; cupom `POST/DELETE /api/v1/cart/coupon/` |
 | `/checkout` | Checkout multi-step: contato → retirada/entrega → endereço (Google Places + taxa por distância, "a X km") → data/hora (slots) → pagamento (método, cupom, loyalty, presente, observações) → revisão | `GET /api/v1/storefront/checkout/`; `PATCH /api/v1/checkout/draft/` (zona); `PATCH /api/v1/checkout/loyalty/`; `POST /api/v1/checkout/` (commit) |
@@ -49,7 +49,7 @@ projeções do Django via BFF).
 | `/account/enderecos` | CRUD de endereços (criar/editar via AddressPicker, default, excluir) | `GET/POST /api/v1/account/addresses/`, `PATCH/DELETE/POST /api/v1/account/addresses/<id>/` |
 | `/account/perfil` | Nome/sobrenome/email/aniversário (telefone read-only) | `GET/PATCH /api/v1/account/profile/` |
 | `/account/preferencias` | Preferências alimentares + canais de notificação (toggles) | `POST /api/v1/account/preferences/{food,notifications}/` |
-| `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `GET /api/v1/account/export/`, `POST /api/v1/account/delete/` |
+| `/account/seguranca` | Dispositivos confiáveis (revogar 1/todos), exportar dados, excluir conta | `GET/DELETE /api/v1/account/devices/…`, `POST /api/v1/account/export/`, `POST /api/v1/account/delete/` |
 | `/login` | Auth sem senha: telefone → OTP (WhatsApp/SMS) → (nome, se novo); device-trust 30d | `POST /api/auth/{device-check,request-code,verify-code,trust-device}/` |
 | `/a` | Bridge de magic link: lê `?t=`, troca por sessão, navega ao destino derivado | `POST /api/auth/access/` |
 
@@ -109,8 +109,10 @@ a presentation via `projection_data()`.
 
 **`Action` é o contrato canônico de toda afordância** (`shop/projections/types.py`):
 `ref, kind ("link"|"mutation"|"external"|"copy"), label (pt-BR), priority, enabled, reason, href,
-method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation`. O Nuxt renderiza
-por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard).
+method, payload_schema, idempotency ("required"|"recommended"|"none"), confirmation, value`. O Nuxt renderiza
+por `kind` (link→navega; mutation→POST com schema+confirm; external→nova aba; copy→clipboard). `value` é o
+texto que a ação `copy` copia (o copia-e-cola do Pix em `copy_pix`): a conversa, que não tem clipboard,
+entrega esse texto em mensagem própria, nunca um link com o rótulo da cópia (OC-05).
 
 **Máquinas de estado de promessa** (emitem `Action` + tom + deadline): **pagamento**
 (`payment_status.py`: pix_*/card_*/paid/expired/cancelled/intent_error) e **tracking**
@@ -123,7 +125,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 
 ## 4. Regras de negócio (o que o sistema enforça)
 
-- **Commit do checkout:** `intents/checkout.py` → `shop/services/checkout.py:process()` → `CommitService`
+- **Commit do checkout:** `api/views.py` (`CheckoutView`) → `shop/services/checkout.py:process()` → `CommitService`
   (idempotente). Propaga chaves explícitas de `session.data`→`order.data` (customer, fulfillment_type,
   delivery_address[_structured], saved_address_id, delivery_date/time_slot, payment, loyalty, gift…).
   Pedido nasce `status=new`.
@@ -145,11 +147,14 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   expira por tempo; só muda quando o operador sinaliza o planejado como realizado (ou uma confirmação
   negativa). Estados `is_awaiting_confirmation`→`is_ready_for_confirmation`. Web: `check_on_commit=False`
   (confia nos holds); POS/marketplace re-verifica.
-- **Slots de retirada:** mediana do `WorkOrder.finished_at` por SKU (30d, arredonda p/ 30min) → gargalo
-  define o slot mais cedo. **Fallback p/ pouca/nenhuma amostra:** SKU sem histórico é omitido (não
-  distorce o gargalo); se NENHUM SKU do carrinho tem histórico, usa o `fallback_slot` configurável em
-  `Shop.defaults["pickup_slot_config"]` (ou o 1º slot), sempre respeitando o relógio de hoje. **Regra de
-  hora:** não vende retirada/entrega HOJE após o fechamento; slot passado é rejeitado. Preorder:
+- **Horários de retirada:** a grade é a de `shop/services/fulfillment_window` (a mesma da entrega, da
+  concierge e do PDV), e a DATA decide qual. **Hoje** → as meias horas do expediente que ainda dão (agora
+  + `DELIVERY_SLOT_LEAD_MINUTES` até o fechamento); sem nenhuma sobrando, hoje não tem horário e a tela
+  manda escolher outra data. **Encomenda** → os turnos de `Shop.defaults["pickup_slots"]` que cabem no
+  expediente do dia. A prontidão (`product_readiness`: declarada em `ready_from` e/ou mediana do
+  `WorkOrder.finished_at`; histórico e arredondamento em `Shop.defaults["pickup_slot_config"]`, 30d e 30min por padrão, valendo para toda superfície) risca as janelas que começam antes de o item ficar
+  pronto, com o produto e a hora no motivo. O commit recusa horário fora da grade do dia (passou, ou não
+  existe) e horário antes da prontidão (`validate_pickup_slot_selection`). Preorder:
   `today ≤ data ≤ today+max_preorder_days`, fora de `closed_dates`.
 - **Pagamento:** timing `at_commit`/`post_commit`/`external` por `ChannelConfig`. PIX (QR+copia-cola,
   `expires_at`) / cartão (intent + captura na confirmação). Expiry → cancela + libera holds.
@@ -171,8 +176,8 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 ## 5. Auth & cross-cutting
 
 - **OTP:** request-code (HMAC, nunca plaintext; TTL ~10min; entrega WhatsApp via ManyChat → SMS → email)
-  → verify-code → sessão Django (bridge doorman→Guestman). Debug OTP exposto só em dev/staging
-  (`SHOPMAN_EXPOSE_DEBUG_OTP`).
+  → verify-code → sessão Django (bridge doorman→Guestman). O código raw só é
+  visível em sender explícito de desenvolvimento, nunca no contrato HTTP.
 - **Device trust:** cookie HttpOnly (HMAC), 30d; `device-check` pula OTP.
 - **Magic link:** link da LOJA `…/a?t=<token>` (sem `next` na query — destino derivado da metadata
   server-side → zero open-redirect); `POST /api/auth/access/` troca token→sessão (cookie host-only via
@@ -231,7 +236,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
 
 > A revisão às avessas foi **executada**. Abaixo: o que foi resolvido (com o WP/commit), o que ainda
 > está em aberto (com o porquê), e as limpezas. Detalhe e decisões em
-> [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/STOREFRONT-GAPS-ACTION-PLAN.md).
+> [`STOREFRONT-GAPS-ACTION-PLAN.md`](../plans/completed/STOREFRONT-GAPS-ACTION-PLAN.md).
 
 ### ✅ Resolvido (loja)
 - **WP-1 — Checkout persiste endereço/cliente/defaults.** Os 3 efeitos pós-commit
@@ -248,7 +253,7 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   devolvem `is_notify_subscribed` e `stock_alert_noted`; falha de leitura (disponibilidade,
   consentimento, inscrição) salva o favorito, não cria aviso e é relatada em `logger.warning`.
 - **WP-5 — Preferência alimentar.** Aviso dietético (badge) + filtro "só compatível"; conservador.
-- **WP-6 — "Talvez você também goste".** cross_sell via `related_skus` (já existia).
+- **WP-6 — "Talvez você também goste".** cross_sell via `related_products` (já existia).
 - **WP-7 — Alérgenos/dieta via Recipe/BOM.** Derivados da receita (`aggregate_dietary_from_recipe`),
   não digitados; ADR-008 destravado.
 - **WP-8 — Gate browser-QA Omotenashi** (loja Nuxt + operador Django) de volta no CI (workflow dedicado).
@@ -281,9 +286,11 @@ order_confirmation, account (profile/loyalty), order_history, shop/shop_status, 
   (`1 ponto/R$1` em `shop/handlers/loyalty.py`); os **tier thresholds** são via `settings.GUESTMAN_LOYALTY`
   (env/código, **não** admin); `stamps_target` é campo por-conta. Caminho limpo: mover earn rate +
   thresholds + stamps p/ `Shop.defaults` dataclass-driven (como `pickup_slots`), editável no admin.
-- **AccessLink `audience` não enforçado na troca** — validado na criação, não no exchange. **Decisão de
-  design:** o `/a` é uma ponte genérica (destino vem da metadata, não da audience); enforçar exigiria
-  definir qual audience o exchange genérico requer. Débito de defense-in-depth, baixo risco.
+- **AccessLink `audience` aplicada na troca (OC-09):** o `/a` troca só as audiências da loja
+  (`web_general`, `web_checkout`, `web_account`; `shop/services/access.STORE_ENTRY_AUDIENCES`) e recusa
+  as outras sem gastar o token. A API S2S (`api/auth/access/create/`, `shop/views/access_link.py`)
+  recusa audiência fora da loja e prazo acima de 24 h (`S2S_LINK_MAX_TTL_MINUTES`). O destino continua
+  vindo da metadata; a audiência diz só qual porta o link abre.
 - **Agendamento de cleanups** — o comando `auth_cleanup` (purga device-trust + access links + códigos)
   existe; falta rodá-lo periodicamente. É **infra compartilhada** (nenhum cleanup —`cleanup_stale_planning`,
   `cleanup_stale_sessions`, etc.— está agendado; DO App Platform não tem cron no spec). Resolver junto.

@@ -245,15 +245,6 @@ class SessionResolveSerializer(serializers.Serializer):
     action_id = serializers.CharField(allow_blank=False, max_length=64)
 
 
-class SessionCommitSerializer(serializers.Serializer):
-    """
-    POST /api/sessions/<session_key>/commit
-    """
-
-    channel_ref = serializers.CharField(max_length=64)
-    idempotency_key = serializers.CharField(required=False, allow_blank=False, max_length=128)
-
-
 class OrderSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order

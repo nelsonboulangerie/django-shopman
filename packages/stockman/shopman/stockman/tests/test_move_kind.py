@@ -29,6 +29,24 @@ def test_issue_records_kind(product, vitrine):
     assert Move.objects.latest("timestamp").kind == Move.Kind.SELL
 
 
+def test_issue_records_metadata_when_given(product, vitrine):
+    """A origem dentro do mesmo kind (ADR-040): o MAKE da venda × o da fornada."""
+    quant = stock.receive(quantity=Decimal("5"), sku=product.sku, position=vitrine)
+    stock.issue(
+        quantity=Decimal("2"), quant=quant, kind=Move.Kind.MAKE,
+        metadata={"source": "sale", "order_ref": "ORD-1"},
+    )
+    move = Move.objects.latest("timestamp")
+    assert move.kind == Move.Kind.MAKE
+    assert move.metadata == {"source": "sale", "order_ref": "ORD-1"}
+
+
+def test_issue_without_metadata_keeps_empty_dict(product, vitrine):
+    quant = stock.receive(quantity=Decimal("5"), sku=product.sku, position=vitrine)
+    stock.issue(quantity=Decimal("1"), quant=quant, kind=Move.Kind.SELL)
+    assert Move.objects.latest("timestamp").metadata == {}
+
+
 def test_adjust_is_always_adjust(product, vitrine):
     quant = stock.receive(quantity=Decimal("5"), sku=product.sku, position=vitrine)
     stock.adjust(quant=quant, new_quantity=Decimal("4"), reason="contagem")

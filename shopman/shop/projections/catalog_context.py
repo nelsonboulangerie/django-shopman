@@ -100,7 +100,7 @@ def commercial_identity(product) -> CommercialIdentity:
 def products_queryset():
     from shopman.offerman.models import Product
 
-    return Product.objects.all()
+    return Product.objects.active()
 
 
 def active_collections_queryset():
@@ -140,32 +140,24 @@ def get_sellable_published_product(sku: str):
 
 
 def comes_out_of_the_oven(sku: str) -> bool:
-    """Este SKU nasce de uma fornada, ou chega pronto na prateleira?
+    """Este SKU nasce de um lote, ou chega pronto na prateleira?
 
-    Duas evidências, nesta ordem, porque nenhuma sozinha basta:
-
-    1. ``Product.is_batch_produced`` — a declaração do gestor. É a resposta
-       autoritativa quando alguém a deu.
-    2. Uma ``Recipe`` ativa com ``output_sku`` igual a este SKU — a evidência
-       operacional. Existe porque a declaração NÃO é preenchida na prática: no
-       banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
-       em ``False``, inclusive os pães. Confiar só na flag entregaria uma
-       derivação que nunca dispara, e o defeito voltaria calado.
-
-    A receita ativa é também exatamente o conjunto de SKUs que algum dia vai
-    disparar ``production_changed`` — que é o evento por trás do aviso "saiu do
-    forno". Perguntar por outra coisa prometeria um aviso que nunca chega.
+    A resposta é o modo de produção da ficha vigente (``Recipe.production_mode``,
+    ADR-040), lido pelo adapter de produção: só a ficha "Em lote" tem lote que
+    fica pronto. É também exatamente o conjunto de SKUs que dispara
+    ``production_changed`` (só ficha em lote vira ordem de produção), o evento
+    por trás do aviso de fornada pronta (``production_ready``). Ficha "Na hora"
+    é feita quando vende e revenda não tem ficha: as
+    duas ficam no eixo de prateleira (chegada de estoque).
 
     Falha para ``False``: na dúvida o produto é de prateleira, e o eixo de
-    prateleira (chegada de estoque) tem mais caminhos de chegada.
+    prateleira tem mais caminhos de chegada.
     """
-    product = products_queryset().filter(sku=sku).only("sku", "is_batch_produced").first()
-    if product is not None and product.is_batch_produced:
-        return True
-    try:
-        from shopman.craftsman.models import Recipe
+    from shopman.shop.adapters import get_adapter
 
-        return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    try:
+        production = get_adapter("production")
+        return bool(production) and sku in production.get_batch_produced_skus([sku])
     except Exception:
         logger.debug("catalog_context.comes_out_of_the_oven degraded sku=%s", sku, exc_info=True)
         return False
@@ -253,8 +245,8 @@ def keywords_by_sku(skus: list[str]) -> dict[str, list[str]]:
     return result
 
 
-def related_skus(sku: str, *, limit: int = 6) -> list[str]:
-    """SKUs for lateral discovery ("Você também pode gostar"), keyword-scored.
+def related_products(product, *, limit: int = 6) -> list[Any]:
+    """Products for lateral discovery ("Você também pode gostar"), keyword-scored.
 
     This is **cross-sell**, NOT substitution: it does not restrict to the same
     collection (lateral = across categories) and is shown regardless of the
@@ -264,23 +256,25 @@ def related_skus(sku: str, *, limit: int = 6) -> list[str]:
     """
     from shopman.offerman.service import CatalogService
 
-    product = CatalogService.get(sku)
-    if product is None:
-        return []
     own_keywords = {str(name) for name in product.keywords.names()}
     if not own_keywords:
         return []
 
     candidates = CatalogService.search(keywords=list(own_keywords), limit=limit * 4)
-    scored: list[tuple[int, str]] = []
+    attach_tag_names(candidates)
+    scored: list[tuple[int, Any]] = []
     for candidate in candidates:
-        if candidate.sku == sku:
+        if candidate.sku == product.sku:
             continue
-        shared = len(own_keywords & {str(name) for name in candidate.keywords.names()})
+        shared = len(own_keywords & {str(name) for name in product_tags(candidate)})
         if shared:
-            scored.append((shared, candidate.sku))
+            scored.append((shared, candidate))
     scored.sort(key=lambda pair: pair[0], reverse=True)
-    return [candidate_sku for _, candidate_sku in scored[:limit]]
+    selected = [candidate for _, candidate in scored[:limit]]
+    # Os cards reutilizam os produtos e as tags desta seleção. Só os escolhidos
+    # carregam componentes; não há uma segunda busca do mesmo cadastro por SKU.
+    models.prefetch_related_objects(selected, "components")
+    return selected
 
 
 def image_urls_by_sku(skus) -> dict[str, str | None]:
@@ -435,26 +429,24 @@ def listing_price_map(
     only_published: bool = True,
     only_sellable: bool = True,
 ) -> dict[str, int]:
-    from shopman.offerman.models import ListingItem
+    from shopman.offerman.service import CatalogService
 
-    filters: dict[str, Any] = {
-        "listing__ref": listing_ref,
-        "listing__is_active": True,
-        "product__sku__in": skus,
-    }
-    if only_published:
-        filters["is_published"] = True
-    if only_sellable:
-        filters["is_sellable"] = True
+    if not skus or not listing_ref:
+        return {}
 
-    price_map: dict[str, int] = {}
-    for sku, price_q in (
-        ListingItem.objects.filter(**filters)
-        .order_by("-min_qty")
-        .values_list("product__sku", "price_q")
-    ):
-        price_map.setdefault(sku, price_q)
-    return price_map
+    # Offerman resolves membership, temporal validity, item eligibility and the
+    # qualifying tier in the same canonical batch. ``None`` means the SKU does
+    # not belong to this listing under the requested publication/sellability
+    # filters; a listed SKU with no applicable tier keeps its base fallback.
+    lines = [(sku, Decimal("1")) for sku in skus]
+    prices = CatalogService.unit_prices(
+        lines,
+        listings=(listing_ref,),
+        sellable_only=only_sellable,
+        published_only=only_published,
+        require_listing_match=True,
+    )
+    return {sku: price_q for (sku, _qty), price_q in zip(lines, prices, strict=True) if price_q is not None}
 
 
 def listing_price_for_product(product, listing_ref: str) -> int | None:
@@ -558,6 +550,38 @@ def visible_in_channel(product, channel_ref: str, *, fallback_when_listing_missi
     ).exists()
 
 
+def last_finished_by_sku(skus: list[str], *, window_minutes: int = 60) -> dict[str, Any]:
+    """A hora da fornada mais recente de cada SKU, dentro da janela — leitura em lote.
+
+    O selo "Fornada pronta há 12 min" no card do cardápio (#2807) com uma query para
+    o cardápio inteiro, em vez das ~6 por SKU do ``fomo.context_for_sku``. A janela
+    espelha ``presentation.fomo.FRESH_WINDOW_MINUTES``: fornada mais velha nunca vira
+    selo.
+    """
+    if not skus:
+        return {}
+    from datetime import timedelta
+
+    from django.db.models import Max
+    from django.utils import timezone
+
+    try:
+        from shopman.craftsman.models import WorkOrder
+    except ImportError:
+        return {}
+    cutoff = timezone.now() - timedelta(minutes=window_minutes)
+    rows = (
+        WorkOrder.objects.filter(
+            output_sku__in=list(skus),
+            status=WorkOrder.Status.FINISHED,
+            finished_at__gte=cutoff,
+        )
+        .values("output_sku")
+        .annotate(last=Max("finished_at"))
+    )
+    return {row["output_sku"]: row["last"] for row in rows}
+
+
 def active_promotions(channel_ref: str) -> list[Any]:
     """Promoções automáticas ativas que alcançam ``channel_ref`` — leitura.
 
@@ -588,12 +612,16 @@ def contextual_price(
 ):
     from shopman.offerman.service import CatalogService
 
-    return CatalogService.get_price(
-        sku,
-        qty=Decimal(str(qty)),
-        listing=listing_ref,
-        context=context,
-        list_unit_price_q=list_unit_price_q,
+    from shopman.shop.projections.pricing_quote import project_price_quote
+
+    return project_price_quote(
+        CatalogService.get_price(
+            sku,
+            qty=Decimal(str(qty)),
+            listing=listing_ref,
+            context=context,
+            list_unit_price_q=list_unit_price_q,
+        )
     )
 
 
@@ -614,6 +642,34 @@ def _componentes_do_bundle(sku: str) -> list[dict]:
         return []
 
 
+def session_line_promise(
+    sku: str,
+    qty,
+    reading: dict,
+    own_held=Decimal("0"),
+) -> tuple[bool, Decimal | None]:
+    """A decisão do Stockman para uma linha da sacola, sobre uma leitura já feita.
+
+    A reserva da própria sessão já é dela, e o Stockman a desconta da promessa
+    de todo mundo: pergunta-se só pelo que falta (``qty - own_held``) e o teto
+    devolvido soma a reserva de volta. A regra (``demand_ok``, pausa, SKU sem
+    ledger, teto finito) não é refeita aqui: é ``decision_from_availability``.
+
+    Devolve ``(approved, ceiling)``: ``ceiling`` é o máximo que esta sessão
+    pode ter, ``None`` sem teto finito (sem ledger, ``demand_ok``) e ``0``
+    quando pausado (pausa é decisão do operador: nem a reserva própria reabre).
+    """
+    from shopman.stockman.services.availability import decision_from_availability
+
+    own = Decimal(str(own_held or 0))
+    asked = max(Decimal(str(qty)) - own, Decimal("0"))
+    decision = decision_from_availability(sku, asked, reading)
+    if decision.is_paused:
+        return False, Decimal("0")
+    ceiling = decision.orderable_ceiling
+    return decision.approved, (None if ceiling is None else max(Decimal("0"), ceiling + own))
+
+
 def availability_for_sku(
     sku: str,
     *,
@@ -624,6 +680,7 @@ def availability_for_sku(
         from shopman.stockman.services.availability import availability_for_sku as _availability_for_sku
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.policies.promise_expiry_margin import expiry_margin_for_target
         from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
@@ -636,7 +693,8 @@ def availability_for_sku(
                 safety_margin=scope["safety_margin"],
                 allowed_positions=scope["allowed_positions"],
                 excluded_positions=scope.get("excluded_positions"),
-                expiry_margin_days=scope.get("expiry_margin_days", 0),
+                # A margem é a da DATA lida, como em toda leitura e reserva.
+                expiry_margin_days=expiry_margin_for_target(scope.get("expiry_margin_days", 0), on_date),
                 include_nonconforming=scope.get("sells_nonconforming", True),
                 allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             )
@@ -683,6 +741,7 @@ def availability_for_sku(
         from django.utils import timezone
 
         component_target = explicit_target or timezone.localdate()
+        limitado = False
         for componente in componentes:
             # Bundle não tem Quant/fornada própria para ancorar um hold futuro.
             # Até existir uma promessa multi-componente de data comum, ele falha
@@ -690,6 +749,13 @@ def availability_for_sku(
             parte = leitura(componente["sku"], component_target)
             if parte is None:
                 return None
+            if parte.get("is_paused"):
+                propria["is_paused"] = True
+            if not parte.get("is_tracked"):
+                # Sem ledger não é saldo zero (mesma regra de
+                # ``bundle_availability_from_components``): não limita o pacote.
+                continue
+            limitado = True
             por_pacote = Decimal(str(componente["qty"])) or Decimal("1")
             possiveis.append(
                 Decimal(str(parte.get("total_promisable", 0))) // por_pacote
@@ -701,10 +767,11 @@ def availability_for_sku(
                 Decimal(str(parte.get("ready_physical", 0))) // por_pacote
             )
             propria.setdefault("availability_policy", parte.get("availability_policy"))
-            if parte.get("is_paused"):
-                propria["is_paused"] = True
             if parte.get("is_planned"):
                 propria["is_planned"] = True
+        # O pacote é tão rastreado quanto os componentes que o limitam: sem
+        # nenhum, a promessa não tem teto a dar (e não inventa zero).
+        propria["is_tracked"] = limitado or bool(propria.get("is_tracked"))
         propria["total_promisable"] = min(possiveis) if possiveis else Decimal("0")
         propria["available"] = min(prontos) if prontos else Decimal("0")
         propria["ready_physical"] = (
@@ -904,19 +971,17 @@ def _merge_waitlist_availability(
     planned = Decimal(str(future.get("planned") or 0))
     current_promisable = Decimal(str(current.get("total_promisable") or 0))
     future_promisable = Decimal(str(future.get("total_promisable") or 0))
-    policy = str(current.get("availability_policy") or "planned_ok")
     merged["planned"] = planned
     merged["is_planned"] = bool(future.get("is_planned"))
     merged["is_tracked"] = bool(
         current.get("is_tracked") or future.get("is_tracked")
     )
-    if policy == "stock_only":
-        merged["total_promisable"] = Decimal(str(current.get("available") or 0))
-    else:
-        # Cada hold carrega uma única target_date. O maior destes dois tetos é
-        # reservável inteiro em uma data; a soma não é (pronto que vence hoje e
-        # fornadas de dias diferentes não podem sustentar o mesmo hold).
-        merged["total_promisable"] = max(current_promisable, future_promisable)
+    # Cada leitura já vem com a política aplicada pelo Stockman (``stock_only``
+    # não conta fornada em nenhuma das duas). Cada hold carrega uma única
+    # target_date: o maior destes dois tetos é reservável inteiro em uma data;
+    # a soma não é (pronto que vence hoje e fornadas de dias diferentes não
+    # podem sustentar o mesmo hold).
+    merged["total_promisable"] = max(current_promisable, future_promisable)
     breakdown = dict(current.get("breakdown") or {})
     breakdown["planned"] = planned
     merged["breakdown"] = breakdown
@@ -933,7 +998,8 @@ def bundle_availability_from_components(
     Cada entrada e ``(qty_por_bundle, component_raw_avail)``.
 
     Regras (espelham ``basic_availability`` no nivel do componente):
-    - componente sem dado de estoque (``None``) ou ``demand_ok`` → nao limita;
+    - componente sem ledger (``None`` ou ``is_tracked=false``) ou
+      ``demand_ok`` → nao limita;
     - qualquer componente pausado → bundle pausado (nao ha como montar);
     - senao, o componente que rende menos bundles vira o gargalo, e seus flags
       (``is_planned``) definem se o zero-fisico e PLANNED_OK ou UNAVAILABLE.
@@ -951,20 +1017,20 @@ def bundle_availability_from_components(
             continue
         if raw is None:
             continue  # componente sem tracking de estoque: nao e gargalo
+        # Pausa, ledger e política são da promessa do Stockman, não daqui.
+        _can_order, ceiling = promised_ceiling(raw)
         if raw.get("is_paused", False):
             return {
                 "is_paused": True,
+                "is_tracked": True,
                 "total_promisable": Decimal("0"),
                 "available": Decimal("0"),
                 "ready_physical": Decimal("0"),
             }
-        if raw.get("availability_policy", "planned_ok") == "demand_ok":
-            continue  # ilimitado: nao e gargalo
+        if ceiling is None:
+            continue  # sem ledger ou ``demand_ok``: sem teto, nao e gargalo
         is_planned = is_planned or bool(raw.get("is_planned", False))
-        promisable = raw.get("total_promisable") or Decimal("0")
-        if not isinstance(promisable, Decimal):
-            promisable = Decimal(str(promisable))
-        bundles = int(promisable // qty_per_bundle)
+        bundles = int(ceiling // qty_per_bundle)
         ready_limits.append(
             int(Decimal(str(raw.get("available") or 0)) // qty_per_bundle)
         )
@@ -982,6 +1048,8 @@ def bundle_availability_from_components(
         "availability_policy": "planned_ok",
         "is_planned": is_planned,
         "is_paused": False,
+        # Só chega aqui com um componente de ledger limitando o pacote.
+        "is_tracked": True,
         "available": Decimal(min(ready_limits)) if ready_limits else Decimal("0"),
         "ready_physical": (
             Decimal(min(physical_limits)) if physical_limits else Decimal("0")
@@ -1020,6 +1088,7 @@ def bundle_availability_for_skus(
     channel_ref: str,
     expanded: dict[str, list[dict]] | None = None,
     today_availability: dict[str, dict] | None = None,
+    target_date: date | None = None,
 ) -> dict[str, dict | None]:
     """Availability for bundle SKUs, derived from their components' stock.
 
@@ -1032,6 +1101,10 @@ def bundle_availability_for_skus(
     (o pronto de hoje cru, de :func:`availability_and_today_for_skus`) deixam o
     cardápio reaproveitar o que já leu: componente que já está em
     ``today_availability`` não é lido de novo, e só o que falta vai ao Stockman.
+
+    ``target_date`` é o dia que a cliente escolheu no cardápio (OC-33 B1): os
+    componentes são lidos naquele dia, com a margem de validade dele. Sem ele, hoje.
+    ``today_availability`` é, então, a leitura já feita DAQUELE dia.
     """
     if not bundle_skus:
         return {}
@@ -1049,7 +1122,7 @@ def bundle_availability_for_skus(
             availability_for_skus(
                 missing,
                 channel_ref=channel_ref,
-                target_date=timezone.localdate(),
+                target_date=target_date or timezone.localdate(),
             )
         )
 
@@ -1124,6 +1197,23 @@ def own_holds_by_sku(session_key: str, skus: list[str]) -> dict[str, Decimal]:
     return availability.own_holds_by_sku(session_key, skus)
 
 
+def promised_ceiling(raw_avail: dict) -> tuple[bool, Decimal | None]:
+    """A promessa do Stockman sobre uma leitura já feita: dá para pedir algo, e até quanto.
+
+    Quem pergunta "pode pedir?" sem uma quantidade (selo, botão, falta na
+    prateleira, anúncio) lê o teto da própria ``decision_from_availability``:
+    ``None`` é sem teto (sem ledger, ``demand_ok``), ``0`` é fechado (pausado ou
+    sem oferta). A regra (política, pausa, ledger) não é refeita aqui.
+    """
+    from shopman.stockman.services.availability import decision_from_availability
+
+    decision = decision_from_availability(
+        str(raw_avail.get("sku") or ""), Decimal("1"), raw_avail
+    )
+    ceiling = decision.orderable_ceiling
+    return (ceiling is None or ceiling > 0), ceiling
+
+
 def basic_availability(
     raw_avail: dict | None,
     *,
@@ -1134,35 +1224,24 @@ def basic_availability(
         return BasicAvailability("unavailable", 0, False)
     if raw_avail is None:
         return BasicAvailability("available", None, True)
-    if raw_avail.get("is_paused", False):
+
+    can_order, ceiling = promised_ceiling(raw_avail)
+    if not can_order:
         return BasicAvailability("unavailable", 0, False)
-
-    policy = raw_avail.get("availability_policy", "planned_ok")
-    total_promisable = raw_avail.get("total_promisable") or Decimal("0")
-    if not isinstance(total_promisable, Decimal):
-        total_promisable = Decimal(str(total_promisable))
-
-    if policy == "demand_ok":
+    if ceiling is None:
         return BasicAvailability("available", None, True)
 
-    available_qty = int(total_promisable)
-    if total_promisable <= 0:
-        return BasicAvailability("unavailable", 0, False)
-
+    available_qty = int(ceiling)
     ready_available = Decimal(
         str(raw_avail.get("available", raw_avail.get("ready_physical")) or 0)
     )
-    if (
-        policy == "planned_ok"
-        and raw_avail.get("is_planned", False)
-        and ready_available <= 0
-    ):
-        # A fila é limitada pela quantidade realmente planejada. ``is_planned``
-        # sem saldo prometível não abre o stepper; com saldo, a apresentação
-        # distingue a fornada futura de produto pronto na prateleira.
+    if raw_avail.get("is_planned", False) and ready_available <= 0:
+        # Selo, não decisão: a promessa já abriu (teto > 0, limitado pela
+        # quantidade planejada). Sem pronto na prateleira, o que se promete é a
+        # fornada futura, e a apresentação diz isso.
         return BasicAvailability("planned_ok", available_qty, True)
 
-    if total_promisable <= low_stock_threshold:
+    if ceiling <= low_stock_threshold:
         return BasicAvailability("low_stock", available_qty, True)
 
     return BasicAvailability("available", available_qty, True)
@@ -1175,7 +1254,7 @@ def storefront_availability(raw_avail: dict | None, *, is_sellable: bool) -> dic
     is_paused = raw_avail.get("is_paused", False) or not is_sellable
     policy = raw_avail.get("availability_policy", "planned_ok")
     total_promisable = raw_avail.get("total_promisable", Decimal("0"))
-    can_order = ((policy == "demand_ok") or total_promisable > 0) and not is_paused
+    can_order = promised_ceiling(raw_avail)[0] and not is_paused
     had_stock = can_order or raw_avail.get("is_planned", False) or total_promisable > 0
     if can_order:
         state = "available"
@@ -1221,12 +1300,8 @@ def orderable_ceiling(raw_avail: dict | None, *, can_add: bool) -> int | None:
     """
     if raw_avail is None or raw_avail.get("is_paused", False):
         return None
-    if raw_avail.get("availability_policy", "planned_ok") == "demand_ok":
-        return None
-    total = promisable_int(raw_avail)
-    if total is None:
-        return None
-    return total
+    _can_order, ceiling = promised_ceiling(raw_avail)
+    return None if ceiling is None else int(ceiling)
 
 
 def product_tags(product) -> tuple[str, ...]:
@@ -1310,3 +1385,16 @@ def label_attributes_by_sku(products) -> dict[str, dict]:
 def label_attributes(product) -> dict:
     """A rotulagem de UM produto — a forma singular de :func:`label_attributes_by_sku`."""
     return label_attributes_by_sku([product])[product.sku]
+
+
+def is_beverage(product) -> bool:
+    """O produto é bebida (atributo ``natureza``)? Lado de leitura para a vitrine.
+
+    Bebida não tem peça: o peso que a ficha deriva serve à nutrição e ao
+    substituto, não ao rótulo de quem pede um café (beta 05/11).
+    """
+    from shopman.shop.services import attributes
+
+    if attributes.definition("natureza") is None:
+        return False
+    return attributes.get(product, "natureza") == "bebida"

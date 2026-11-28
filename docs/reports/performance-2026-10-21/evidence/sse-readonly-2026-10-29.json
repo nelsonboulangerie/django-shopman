@@ -1,0 +1,11 @@
+{
+  "started_at_utc": "2026-10-29T17:36:00.097266+00:00",
+  "url": "https://api.boulangerie.com.br/api/v1/fomo/FENDU/events/",
+  "method": "Um GET p\u00fablico SSE, encerrado voluntariamente ap\u00f3s 12 s; nenhum conte\u00fado de evento persistido",
+  "status": 200,
+  "content_type": "text/event-stream",
+  "headers_ms": 678.59,
+  "first_byte_ms": 678.69,
+  "received_first_byte": true,
+  "connection_held_ms": 12681.78
+}

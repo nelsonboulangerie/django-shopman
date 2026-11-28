@@ -12,6 +12,14 @@ class BackstageConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        # Busca sem acento no SQLite (GES-12): o Postgres dobra com TRANSLATE.
+        from django.db.backends.signals import connection_created
+
+        from shopman.backstage.projections.customers import register_sqlite_fold
+
+        connection_created.connect(register_sqlite_fold, weak=False,
+                                   dispatch_uid="backstage.customers.sqlite_fold")
+
         from django.db.models.signals import pre_delete, pre_save
         from shopman.craftsman.models import RecipeVersion
         from shopman.orderman.models import Fulfillment, Order
@@ -55,6 +63,21 @@ class BackstageConfig(AppConfig):
             on_hold_for_shelf_outage,
             sender=Hold,
             dispatch_uid="backstage.shelf_outage.on_hold",
+            weak=False,
+        )
+
+        # Incidentes (DEV-2026-066): alerta com remédio na lista fechada ganha o
+        # acionador (Directive ``incident.act``), que chama o gesto do domínio e confere.
+        from shopman.orderman import registry as directive_registry
+
+        from shopman.backstage.incidents.act import IncidentActHandler, on_alert_saved
+        from shopman.backstage.models import OperatorAlert
+
+        directive_registry.register_directive_handler(IncidentActHandler())
+        post_save.connect(
+            on_alert_saved,
+            sender=OperatorAlert,
+            dispatch_uid="backstage.incidents.on_alert_saved",
             weak=False,
         )
 
@@ -211,3 +234,9 @@ class BackstageConfig(AppConfig):
         install_product_options_admin()
         install_enrichment_review()
         install_material_enrichment_review()
+
+        # "É da equipe: <operador>" no cadastro do cliente (decisão do dono,
+        # 24/11/2026): a coorte interna dos experimentos da loja vem daqui.
+        from shopman.backstage.admin.customer_team import install_customer_team_link
+
+        install_customer_team_link()

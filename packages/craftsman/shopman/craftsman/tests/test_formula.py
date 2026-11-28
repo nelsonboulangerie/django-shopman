@@ -75,16 +75,31 @@ def test_formula_suggest_builds_basis_without_formula_plan(recipe, settings):
     assert "FormulaPlan" not in {model.__name__ for model in Recipe._meta.apps.get_models()}
 
 
+class ProductionCommandsDouble:
+    """Dublê do adaptador de comandos de produção que o host configura.
+
+    O craftsman só conhece o caminho em ``PRODUCTION_COMMAND_BACKEND``; o adaptador
+    canônico mora no host (fora deste pacote), e aqui basta provar que o pedido
+    chega a ele com a base da sugestão.
+    """
+
+    def plan(self, **kwargs):
+        raise NotImplementedError("o teste substitui este método")
+
+
+_PRODUCTION_COMMANDS_DOUBLE = "shopman.craftsman.tests.test_formula.ProductionCommandsDouble"
+
+
 def test_accept_suggestion_routes_explicit_basis_through_canonical_facade(recipe, settings):
     from shopman.craftsman.contrib.formula import accept_suggestion
 
     settings.CRAFTSMAN = {
-        "PRODUCTION_COMMAND_BACKEND": "shopman.shop.adapters.production.CanonicalProductionCommands",
+        "PRODUCTION_COMMAND_BACKEND": _PRODUCTION_COMMANDS_DOUBLE,
     }
     target = date.today() + timedelta(days=1)
     expected_order = craft.plan(recipe, 10, date=target, actor="test:setup")
     with patch(
-        "shopman.shop.adapters.production.CanonicalProductionCommands.plan",
+        f"{_PRODUCTION_COMMANDS_DOUBLE}.plan",
         return_value=(recipe.output_sku, expected_order.ref, Decimal("10"), "created"),
     ) as plan:
         order = accept_suggestion(

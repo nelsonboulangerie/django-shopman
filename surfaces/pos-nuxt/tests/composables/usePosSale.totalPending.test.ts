@@ -194,3 +194,40 @@ describe("usePosSale — total pendente nunca vira total confirmado", () => {
     h.handles.dispose();
   });
 });
+
+// Beta 05/11 (PDV-13): "Exato" em R$ 43,00, desconto depois, total R$ 23,00, e a
+// tela pedia TROCO R$ 20,00 que o cliente nunca deu.
+describe("usePosSale: o valor que o sistema preencheu acompanha o total", () => {
+  it("a linha virgem (Exato ou recém-lançada) se ajusta ao total novo", async () => {
+    const { h, server } = await openCheckout();
+    h.sale.addTender("cash");
+    h.sale.tenderExact();
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+
+    await setDiscount(h, "10");
+    await vi.advanceTimersByTimeAsync(450);
+    server.reviews[1]!.resolve(totalOf(900));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(900);
+    expect(h.sale.paymentChangeQ.value).toBe(0);
+    h.handles.dispose();
+  });
+
+  it("o valor digitado é o que o cliente entregou e não se move", async () => {
+    const { h, server } = await openCheckout();
+    h.sale.addTender("cash");
+    h.sale.tenderDigit("2");
+    h.sale.tenderDigit("0");
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(2000);
+
+    await setDiscount(h, "10");
+    await vi.advanceTimersByTimeAsync(450);
+    server.reviews[1]!.resolve(totalOf(900));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(h.sale.cart.paymentTenders[0]!.amount_q).toBe(2000);
+    expect(h.sale.paymentChangeQ.value).toBe(1100);
+    h.handles.dispose();
+  });
+});

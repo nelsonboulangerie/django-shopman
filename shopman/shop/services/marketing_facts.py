@@ -18,6 +18,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from shopman.shop.policies.promotion import PromotionContext, promotion_matches
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 SCHEMA_VERSION = 1
@@ -283,6 +284,19 @@ def validate_for_dispatch(artifact, *, now: datetime | None = None) -> None:
     """Fail before the provider when a new artifact's factual claim drifted."""
 
     payload = artifact.payload if isinstance(artifact.payload, Mapping) else {}
+    # Link relativo não sai para fora da loja, nem se a aprovação tiver deixado passar.
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        payload.get("content"),
+        payload.get("platform_content"),
+        store_address_configured=bool(storefront_base_url()),
+    )
+    if problem is not None:
+        raise MarketingContractError(
+            code=problem.code, detail=problem.detail, field_errors=problem.field_errors()
+        )
     raw = payload.get("facts")
     if raw is None:
         return  # Explicit compatibility window for pre-MKT-027 approvals.
@@ -414,7 +428,8 @@ def _promotion(ref: str, *, sku: str, scheduled_for: datetime | None, now: datet
             detail="Uma oferta anunciada não pode depender de cupom oculto.",
             field_errors={"promotion_ref": ("Use uma promoção automática.",)},
         )
-    if promotion.customer_segments or promotion.birthday_only:
+    # O visitante anônimo, sem item nem atendimento, só falha por alvo POR CLIENTE.
+    if not promotion_matches(promotion, PromotionContext()):
         raise MarketingContractError(
             code="marketing_promotion_has_private_eligibility",
             detail="A oferta depende de uma condição individual não visível no anúncio.",
@@ -493,9 +508,9 @@ def _availability(product) -> dict[str, Any]:
             retryable=True,
         )
     policy = str(raw.get("availability_policy") or "planned_ok")
-    qty = raw.get("total_promisable")
-    normalized_qty = None if policy == "demand_ok" else int(Decimal(str(qty or 0)))
-    if raw.get("is_paused") or (normalized_qty == 0 and not raw.get("is_planned")):
+    can_order, ceiling = catalog_context.promised_ceiling(raw)
+    normalized_qty = None if ceiling is None else int(ceiling)
+    if not can_order:
         raise MarketingContractError(
             code="marketing_product_unavailable",
             detail="O produto não está disponível para o anúncio.",

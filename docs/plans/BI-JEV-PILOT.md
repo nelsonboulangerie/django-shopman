@@ -2,7 +2,7 @@
 
 > **Status: 🧪 ferramenta de medição pronta; a medição roda no staging.** Aprovado pelo dono em
 > 23/09/2026 ("vamos fazer esse piloto do De-Para do BI"). Nada aqui muda o fluxo do
-> `suggest_aliases`: o piloto só mede. Irmão de [BI-DATA-FOUNDATION-PLAN](BI-DATA-FOUNDATION-PLAN.md) (P1).
+> `suggest_aliases`: o piloto só mede. Irmão de [BI-DATA-FOUNDATION-PLAN](completed/BI-DATA-FOUNDATION-PLAN.md) (P1).
 
 ## Reconciliação factual (2026-09-29)
 
@@ -11,9 +11,9 @@ Base auditada: `origin/main @ ed49a8624`; implementação já integrada pelas PR
 | Entrega | Estado | Evidência / gate |
 |---|---|---|
 | Benchmark fuzzy × Jev × LLM × embeddings | **DONE** | `matcher_benchmark.py` + `benchmark_alias_matchers`, com placar, CSV e testes de parsing/falha segura. |
-| Execução semanal e leitura no Admin | **DONE** | `run_alias_benchmark`, `maintenance_worker` e `AliasBenchmarkReport` somente leitura estão no `main`. |
+| Execução semanal e leitura no Admin | **REVISTO 11/11/2026** | Saiu do `maintenance_worker` depois de gastar cerca de US$ 1.180 de API em loop (28/10 a 11/11). Roda só à mão, com travas de custo; ver "Como roda". |
 | Medição fuzzy/LLM/embeddings no gabarito real | **PENDING EXTERNO** | Gate: corpus com pelo menos 20 de-paras confirmados, staging autorizado e runtime/pacote disponível. Fixture local não vale como resultado. |
-| Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, `JEV_API_KEY` injetada pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
+| Medição Jev | **PENDING EXTERNO** | Gate: cadastro do fornecedor reaberto, chave na conexão de IA `jev` (Admin) posta pelo dono e smoke `--matcher jev --limit 5` validando o contrato; só então rodar o corpus completo. Credencial e chamada externa não são lacuna de código. |
 | Usar vencedor no `suggest_aliases` | **PENDING DECISÃO** | Gate: acerto solo ≥ 50%, zero erro aceito com confiança ≥ 0,9, desempenho superior ao fuzzy, custo por 1.000 itens em centavos, p95 < 1 s e decisão humana registrada. O vencedor apenas propõe; nunca confirma automaticamente. |
 
 Nada foi **SUPERSEDED**: o piloto continua válido. A pendência é produzir
@@ -57,10 +57,18 @@ dá para medir já.
 
 ## Como roda
 
-**Sozinho, toda semana** (`run_alias_benchmark` no `maintenance_worker`): com 20 ou mais de-paras
-confirmados, mede fuzzy, Haiku 4.5 e Opus 5 (e embeddings e Jev quando houver pacote e chave) e
-guarda o placar em Admin → B.I. → **Placar do de-para**. O staging já tem 98 confirmados (registro
-de 22/08), então o primeiro placar sai no primeiro ciclo depois do deploy.
+**Só à mão, com travas de custo** (`manage.py run_alias_benchmark --now`). Até 11/11/2026 o placar
+rodava sozinho no `maintenance_worker`. Entre 28/10 e 11/11 ele consumiu cerca de 30 milhões de tokens
+por dia (Opus 5 e Haiku 4.5) sem ninguém ver, e a recarga automática do Console cobrou cerca de
+US$ 1.180. Hoje:
+
+- as travas são flags do comando, nunca settings: nenhuma variável de ambiente religa o gasto;
+- concorrente pago (Haiku, Opus, Jev) só entra com `--paid`. A credencial presente não liga nada;
+  sem a flag, mede fuzzy e embeddings (custo zero);
+- no máximo `--max-cases` casos (default 60) e teto de gasto estimado `--budget-usd` (default
+  US$ 1) por medição. Ao bater no teto, para e o placar diz isso;
+- a vaga da semana é reservada antes de medir. Uma medição interrompida por deploy ou restart conta
+  para a semana e não recomeça do zero.
 
 ## Rodar à mão (opcional)
 
@@ -71,7 +79,7 @@ de 22/08), então o primeiro placar sai no primeiro ciclo depois do deploy.
    `pip install fastembed` (não está na imagem; some no próximo deploy) e
    `benchmark_alias_matchers --limit 200 --llm-model claude-haiku-4-5 --llm-model claude-opus-5 --csv /tmp/piloto.csv`.
    A primeira rodada do `embed` baixa o modelo (~0,2 GB).
-3. Quando o cadastro reabrir: `JEV_API_KEY` no ambiente (decisão do dono), rodada de fumaça
+3. Quando o cadastro reabrir: chave na conexão de IA `jev` (Admin → Conexões de IA, decisão do dono), rodada de fumaça
    `benchmark_alias_matchers --matcher jev --limit 5` para validar o formato da resposta, e a rodada
    completa de novo com o Jev no placar.
 

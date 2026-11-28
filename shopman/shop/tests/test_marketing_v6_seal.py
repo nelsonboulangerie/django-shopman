@@ -17,6 +17,7 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import RequestFactory
 from django.utils import timezone
 
 from shopman.shop.models import Announcement, AnnouncementStatus, UserNotification
@@ -200,6 +201,50 @@ def test_bystander_cannot_read_the_second_control_summary(customer_base):
         second_control_summary(challenge["ref"], actor=bystander)
 
 
+def test_reading_the_second_control_summary_by_get_never_writes(client, customer_base):
+    """GET do resumo: a recusa sai igual (403 com o código), e nada é gravado."""
+    from shopman.shop.models import MarketingSecurityEvent
+
+    publisher = _actor("seal-get-req", "publish_marketing_announcements")
+    nosy = _actor("seal-get-nosy", "view_marketing")
+    second = _actor("seal-get-second", "approve_marketing_announcements", "view_marketing")
+    challenge = _open(publisher, _context(600))
+    url = f"/api/v1/backstage/marketing/security/second-control/{challenge['ref']}/"
+    events_before = MarketingSecurityEvent.objects.count()
+
+    client.force_login(nosy)
+    refused = client.get(url, HTTP_ORIGIN="http://testserver")
+    assert refused.status_code == 403
+    assert refused.json()["code"] == "dual_control_capability_revoked"
+    missing = client.get(
+        "/api/v1/backstage/marketing/security/second-control/00000000-0000-0000-0000-000000000000/",
+        HTTP_ORIGIN="http://testserver",
+    )
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "dual_control_unavailable"
+    assert MarketingSecurityEvent.objects.count() == events_before
+
+    client.force_login(second)
+    read = client.get(url, HTTP_ORIGIN="http://testserver")
+    assert read.status_code == 200
+    assert read.json()["second_control"]["state"] == "open"
+
+
+def test_reading_the_freeze_state_by_get_does_not_create_it(client):
+    """O estado de segurança nasce no primeiro comando, não na primeira leitura."""
+    from shopman.shop.models import MarketingSafetyState
+
+    MarketingSafetyState.objects.all().delete()
+    viewer = _actor("seal-freeze-viewer", "view_marketing")
+    client.force_login(viewer)
+
+    response = client.get("/api/v1/backstage/marketing/security/freeze/", HTTP_ORIGIN="http://testserver")
+
+    assert response.status_code == 200
+    assert response.json() == {"frozen": False, "version": 1, "generation": 1, "reason": "", "frozen_at": ""}
+    assert not MarketingSafetyState.objects.exists()
+
+
 def test_device_step_up_options_need_a_registered_device(client, customer_base):
     publisher = _actor("seal-api", "publish_marketing_announcements", "view_marketing")
     client.force_login(publisher)
@@ -227,6 +272,63 @@ def test_device_step_up_options_need_a_registered_device(client, customer_base):
     assert options["userVerification"] == "required"
     assert options["allowCredentials"][0]["id"] == "AAAA"
     assert client.session["operator_passkey_assertion"]["confirmation_ref"] == challenge["ref"]
+
+
+def test_operator_passkey_service_registers_and_consumes_a_bound_assertion(client, monkeypatch):
+    from types import SimpleNamespace
+
+    import webauthn
+
+    from shopman.shop.models import OperatorPasskey
+    from shopman.shop.services import operator_passkey
+
+    operator = _actor("seal-service", "publish_marketing_announcements")
+    request = RequestFactory().post("/device", HTTP_ORIGIN="http://testserver")
+    request.session = client.session
+
+    registration = operator_passkey.registration_options(request, user=operator)
+    assert registration["challenge"]
+    monkeypatch.setattr(
+        webauthn,
+        "verify_registration_response",
+        lambda **_kwargs: SimpleNamespace(
+            credential_id=b"credential-1",
+            credential_public_key=b"public-key-1",
+            sign_count=1,
+        ),
+    )
+    credential_id = operator_passkey._b64(b"credential-1")
+    passkey = operator_passkey.verify_registration(
+        request,
+        user=operator,
+        credential={"id": credential_id, "response": {"transports": ["internal"]}},
+        label="Este dispositivo",
+    )
+    assert OperatorPasskey.objects.get() == passkey
+    assert passkey.label == "Este dispositivo"
+
+    assertion = operator_passkey.assertion_options(
+        request,
+        user=operator,
+        confirmation_ref="confirmation-123",
+    )
+    assert assertion["challenge"]
+    monkeypatch.setattr(
+        webauthn,
+        "verify_authentication_response",
+        lambda **_kwargs: SimpleNamespace(new_sign_count=2),
+    )
+    result = operator_passkey.verify_assertion(
+        request,
+        user=operator,
+        credential={"id": credential_id, "response": {}},
+    )
+    assert result == operator_passkey.AssertionResult(
+        credential_id=credential_id,
+        confirmation_ref="confirmation-123",
+    )
+    passkey.refresh_from_db()
+    assert passkey.sign_count == 2
 
 
 # ── A foto do lote ───────────────────────────────────────────────────────────

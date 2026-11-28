@@ -33,6 +33,8 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
     "shopman.shop.handlers.card_authorization.CardAuthorizationWatchHandler",
+    # Vitrine: a reserva que vence avisa no próprio prazo (#2785)
+    "shopman.shop.handlers.shelf_recheck.ShelfRecheckHandler",
     # Production
     "shopman.shop.handlers.production_alerts.ProductionLateCheckHandler",
     # Cozinha (avisos no bolso: pedido novo e atraso)
@@ -108,6 +110,7 @@ def register_all() -> None:
     _register_return_handler()
     _register_fulfillment_handler()
     _register_preorder_handler()
+    _register_made_to_order_handlers()
     _register_delivery_auto_complete_handler()
     _register_courier_handlers()
     _register_loyalty_handler()
@@ -115,11 +118,15 @@ def register_all() -> None:
     _register_validators()
     _register_stock_signals()
     _register_production_alerts()
+    _register_demand_anchor()
+    _register_production_cost()
     _register_kds_alerts()
     _register_production_order_sync()
-    _register_cancellation_request_signals()
     _register_alert_resolution()
     _register_sse_emitters()
+    from shopman.shop.handlers.shelf_recheck import ShelfRecheckHandler
+
+    registry.register_directive_handler(ShelfRecheckHandler())
     _register_catalog_projection_handler()
     _register_catalog_signals()
     _register_ifood_status_callbacks()
@@ -133,16 +140,14 @@ def register_all() -> None:
 # ── Individual registrations ──
 
 
-def _register_cancellation_request_signals() -> None:
-    from shopman.shop.handlers import cancellation_requests
-
-    cancellation_requests.connect()
-
-
 def _register_alert_resolution() -> None:
     from shopman.shop.handlers import alert_resolution
 
     alert_resolution.connect()
+    # Rascunho de pergunta frequente vindo de conversa: aviso no topo do Gestor (WP-15).
+    from shopman.shop.services import faq_drafts
+
+    faq_drafts.connect()
 
 
 def _register_notification_handlers() -> None:
@@ -174,6 +179,15 @@ def _register_confirmation_handler() -> None:
     )
     registry.register_directive_handler(ConfirmationTimeoutHandler())
     registry.register_directive_handler(StaleNewOrderAlertHandler())
+
+
+def _register_made_to_order_handlers() -> None:
+    from shopman.shop.handlers.made_to_order import (
+        MadeToOrderCancellationHandler,
+        MadeToOrderConsumeHandler,
+    )
+    registry.register_directive_handler(MadeToOrderConsumeHandler())
+    registry.register_directive_handler(MadeToOrderCancellationHandler())
 
 
 def _register_preorder_handler() -> None:
@@ -318,6 +332,7 @@ def _register_loyalty_handler() -> None:
 
 
 def _register_pricing_modifiers() -> None:
+    from shopman.shop.discount_spread import SplitLineMergeModifier
     from shopman.shop.handlers.pricing import ItemPricingModifier, OffermanPricingBackend, SessionTotalModifier
     from shopman.shop.modifiers import (
         CustomerPricingModifier,
@@ -334,6 +349,8 @@ def _register_pricing_modifiers() -> None:
         # O cliente vira contexto ANTES do preço: a cascata "faixa do cliente ->
         # listing" do ItemPricingModifier depende dele (ordem 5 < 10).
         CustomerPricingModifier(),
+        # A linha que o rateio partiu volta inteira antes do preço (ordem 8 < 10).
+        SplitLineMergeModifier(),
         ItemPricingModifier(backend=backend),
         LotDiscountModifier(),
         DiscountModifier(),
@@ -347,9 +364,11 @@ def _register_pricing_modifiers() -> None:
 
 
 def _register_validators() -> None:
+    from shopman.shop.policies.order_payment import PaymentMethodRule
     from shopman.shop.rules.validation import DeliveryFiscalIdentityRule, DeliveryZoneRule, PricedItemsRule
     registry.register_validator(DeliveryZoneRule())
     registry.register_validator(PricedItemsRule())
+    registry.register_validator(PaymentMethodRule())
     registry.register_validator(DeliveryFiscalIdentityRule())
 
 
@@ -375,10 +394,24 @@ def _register_stock_signals() -> None:
     try:
         from shopman.craftsman.signals import production_changed
 
-        from shopman.shop.handlers._stock_receivers import on_production_voided
+        from shopman.shop.handlers._stock_receivers import (
+            on_production_adjusted,
+            on_production_finished,
+            on_production_voided,
+        )
         production_changed.connect(on_production_voided, weak=False)
+        production_changed.connect(on_production_adjusted, weak=False)
+        production_changed.connect(on_production_finished, weak=False)
     except ImportError:
         pass
+
+
+def _register_demand_anchor() -> None:
+    """Plano que cresce prende primeiro a demanda sem fornada da data (#2701)."""
+    from shopman.shop.services import demand_anchor
+
+    demand_anchor.connect()
+    logger.info("shopman.handlers: connected demand anchor receiver.")
 
 
 def _register_production_alerts() -> None:
@@ -395,6 +428,13 @@ def _register_kds_alerts() -> None:
     kds_alerts.connect()
     registry.register_directive_handler(kds_alerts.KDSTicketLateHandler())
     logger.info("shopman.handlers: connected kitchen alert receivers.")
+
+
+def _register_production_cost() -> None:
+    """Custo congelado da fornada no ``finish`` (ADR-023 §3)."""
+    from shopman.shop.handlers import production_cost
+
+    production_cost.connect()
 
 
 def _register_production_order_sync() -> None:
@@ -508,6 +548,16 @@ def _register_catalog_signals() -> None:
         product_updated.connect(on_product_updated, weak=False)
         price_changed.connect(on_price_changed, weak=False)
         availability_changed.connect(on_availability_changed, weak=False)
+        # A coleção primária é a categoria no canal: trocar reenvia o item.
+        from django.db.models.signals import post_delete, post_save
+        from shopman.offerman.models import CollectionItem
+
+        from shopman.shop.handlers.catalog_projection import on_collection_membership_changed
+
+        post_save.connect(on_collection_membership_changed, sender=CollectionItem, weak=False,
+                          dispatch_uid="shop.catalog.collection_membership.save")
+        post_delete.connect(on_collection_membership_changed, sender=CollectionItem, weak=False,
+                            dispatch_uid="shop.catalog.collection_membership.delete")
         logger.info("shopman.handlers: connected offerman catalog projection signals.")
     except ImportError:
         pass

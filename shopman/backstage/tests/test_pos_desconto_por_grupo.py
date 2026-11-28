@@ -141,6 +141,7 @@ def test_aluno_identificado_ganha_o_desconto_e_a_linha_diz_qual(balcao):
         "list_price_q": 800,
         # O percentual não fecha limpo (100/800 = 12,5%): a tela mostra o R$.
         "pricing_discount": {"type": "promotion", "label": "Aliança Francesa", "amount_q": 100, "percent": 0},
+        "manual_discount_discarded": False,
     }
 
 
@@ -150,7 +151,9 @@ def test_sem_cliente_a_linha_volta_ao_preco_cheio_e_sem_rotulo(balcao):
     review = _review(balcao["client"]).json()["review"]
 
     assert review["total_q"] == 1600
-    assert review["line_prices"]["L1"] == {"charged_price_q": 800, "list_price_q": 800, "pricing_discount": None}
+    assert review["line_prices"]["L1"] == {
+        "charged_price_q": 800, "list_price_q": 800, "pricing_discount": None, "manual_discount_discarded": False,
+    }
 
 
 def test_cliente_de_outro_grupo_nao_ganha(balcao):
@@ -182,7 +185,9 @@ def test_cortesia_maior_que_o_desconto_do_grupo_vence_a_linha_sem_somar(balcao):
     ).json()["review"]
 
     # 50% de R$ 8,00 = R$ 4,00 por unidade; os 10% do grupo saem da linha (não somam).
-    assert review["line_prices"]["L1"] == {"charged_price_q": 400, "list_price_q": 800, "pricing_discount": None}
+    assert review["line_prices"]["L1"] == {
+        "charged_price_q": 400, "list_price_q": 800, "pricing_discount": None, "manual_discount_discarded": False,
+    }
     assert review["total_q"] == 800
 
 
@@ -218,17 +223,20 @@ def test_comanda_com_o_aluno_mostra_o_desconto_no_eco_do_salvar(balcao):
 def test_o_pedido_registra_o_desconto_do_grupo(balcao):
     _group_discount()
 
+    payload = {
+        "items": _items(),
+        "customer_ref": "ALUNO",
+        "customer_phone": "43999990010",
+        "customer_name": "Louise",
+        "payment_method": "cash",
+        "client_request_id": "grupo-fechar",
+        "cash_shift_id": balcao["shift"].pk,
+    }
+    review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="marina")
+    payload["expected_total_q"] = review.total_q
     result = pos_service.close_sale(
         channel_ref="pdv",
-        payload={
-            "items": _items(),
-            "customer_ref": "ALUNO",
-            "customer_phone": "43999990010",
-            "customer_name": "Louise",
-            "payment_method": "cash",
-            "client_request_id": "grupo-fechar",
-            "cash_shift_id": balcao["shift"].pk,
-        },
+        payload=payload,
         actor="pos:marina",
         operator_username="marina",
     )

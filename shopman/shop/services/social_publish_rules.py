@@ -68,10 +68,5 @@ def _has_promisable_stock(sku: str, platform: str) -> bool:
         return True
     if raw is None:
         return True  # unknown → don't block
-    if raw.get("availability_policy") == "demand_ok" or raw.get("is_planned"):
-        return True
-    total = raw.get("total_promisable") or 0
-    try:
-        return float(total) > 0
-    except (TypeError, ValueError):
-        return True
+    can_order, _ceiling = catalog_context.promised_ceiling(raw)
+    return can_order

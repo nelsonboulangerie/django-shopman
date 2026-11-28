@@ -15,20 +15,17 @@ from shopman.shop.services import customer_orders, operator_orders
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("intervening", ["captured", "preparing"])
-def test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read(intervening):
+def test_self_cancel_revalidates_the_canonical_policy_after_the_surface_read():
+    # Pagamento capturado depois da leitura não barra mais (dono, 06/11/2026: antes
+    # do preparo cancela, pago ou não). O que barra é o preparo começar.
     intent = PaymentService.create_intent("SELF-CANCEL-RACE", 1500, "pix")
     order = Order.objects.create(ref="SELF-CANCEL-RACE", status="accepted", total_q=1500,
         data={"payment": {"method": "pix", "intent_ref": intent.ref}})
     assert customer_orders.can_cancel(order)
-    if intervening == "captured":
-        PaymentService.authorize(intent.ref)
-        PaymentService.capture(intent.ref)
-    else:
-        Order.objects.filter(pk=order.pk).update(status="preparing")
+    Order.objects.filter(pk=order.pk).update(status="preparing")
     customer_orders.cancel(order)
     order.refresh_from_db()
-    assert order.status == ("accepted" if intervening == "captured" else "preparing")
+    assert order.status == "preparing"
     assert not order.events.filter(type="status_changed").exists()
 
 
@@ -89,7 +86,7 @@ def test_successful_operator_confirmation_cannot_be_overruled_by_stale_timeout(m
 
 
 @pytest.mark.django_db
-def test_customer_api_reports_refusal_when_capture_wins_after_its_read(client, monkeypatch):
+def test_customer_api_reports_refusal_when_preparation_wins_after_its_read(client, monkeypatch):
     from shopman.storefront.services import orders as surface_orders
 
     intent = PaymentService.create_intent("CUSTOMER-API-RACE", 1500, "pix")
@@ -100,16 +97,15 @@ def test_customer_api_reports_refusal_when_capture_wins_after_its_read(client, m
     session.save()
     original = surface_orders.can_cancel
 
-    def capture_after_read(current):
+    def kitchen_starts_after_read(current):
         allowed = original(current)
-        PaymentService.authorize(intent.ref)
-        PaymentService.capture(intent.ref)
+        Order.objects.filter(pk=current.pk).update(status="preparing")
         return allowed
 
-    monkeypatch.setattr(surface_orders, "can_cancel", capture_after_read)
+    monkeypatch.setattr(surface_orders, "can_cancel", kitchen_starts_after_read)
     response = client.post(f"/api/v1/orders/{order.ref}/cancel/", {}, content_type="application/json", HTTP_IDEMPOTENCY_KEY="customer-race")
     assert response.status_code == 409, response.content
     assert response.json()["error_code"] == "order_not_cancellable"
     order.refresh_from_db()
-    assert order.status == "accepted"
+    assert order.status == "preparing"
     assert not order.events.filter(type="status_changed").exists()

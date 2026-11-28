@@ -39,9 +39,9 @@ pytestmark = pytest.mark.django_db
 SKU = "FAV-ALERT-PAO"
 URL = f"/api/v1/account/favorites/{SKU}/"
 
-SOLD_OUT = {"availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False}
-AVAILABLE = {"availability_policy": "planned_ok", "total_promisable": Decimal("50"), "is_planned": False}
-PAUSED = {"is_paused": True}
+SOLD_OUT = {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False}
+AVAILABLE = {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("50"), "is_planned": False}
+PAUSED = {"is_tracked": True, "is_paused": True}
 
 
 @pytest.fixture(autouse=True)

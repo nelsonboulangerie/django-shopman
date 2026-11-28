@@ -145,7 +145,7 @@ Total: **59 trabalhos** (28 de pedido, 16 de catálogo, 9 de canal, 5 de cliente
 - Caminho hoje: 1 toque por pedido. Mínimo: 0 para "pronto" (vem do KDS) e "entregue" (cliente/ETA); 1 para "retirado" (o único fato que só o passe vê).
 - Fronteira: KDS ↔ Gestor ↔ Storefront tracking.
 - Padrão: AVANÇAR.
-- Evidência: `operator_orders.py::advance_block/_NEXT_STATUS_MAP/schedule_delivery_auto_complete/confirm_received`, `presentation/board.ts::cardAffordances`.
+- Evidência: `operator_orders.py::advance_block/next_status_for (passo do Orderman)/schedule_delivery_auto_complete/confirm_received`, `presentation/board.ts::cardAffordances`.
 
 **P06 — Assumir / liberar pedido**
 - Quem: qualquer operador. Onde: card/tabela. Gatilho: evitar dois operadores no mesmo pedido.

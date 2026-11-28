@@ -31,6 +31,28 @@ let hideTimer: ReturnType<typeof setTimeout> | null = null
 let watchdogTimer: ReturnType<typeof setTimeout> | null = null
 let revealFrame: number | null = null
 let visibleSince = 0
+// Clique nunca inerte (DEV-2026-094): o link tocado fica marcado no mesmo instante
+// (`aria-busy` + `data-navigation-pending`, desenhado esmaecido no tailwind.css) até a
+// página chegar, e a barra de rota corre no topo desde o toque. Abaixo dos 200 ms, a
+// marca e a barra são o sinal; acima, o aviso. A barra é indeterminada e anda só por
+// `transform`: o compositor a mantém andando mesmo quando a montagem da página prende a
+// thread, e ela não tem fade de entrada (o `NuxtLoadingIndicator` entra com fade de
+// 0,4 s e nasce com largura zero).
+let pendingLink: HTMLAnchorElement | null = null
+
+function markLink (link: HTMLAnchorElement) {
+  clearLink()
+  pendingLink = link
+  link.setAttribute('aria-busy', 'true')
+  link.setAttribute('data-navigation-pending', '')
+}
+
+function clearLink () {
+  if (!pendingLink) return
+  pendingLink.removeAttribute('aria-busy')
+  pendingLink.removeAttribute('data-navigation-pending')
+  pendingLink = null
+}
 
 function copyForDestination (destination?: URL): WaitCopy {
   const path = destination?.pathname || ''
@@ -44,7 +66,7 @@ function copyForDestination (destination?: URL): WaitCopy {
   if (path.startsWith('/conta') || path.startsWith('/entrar') || path.startsWith('/a')) {
     return { title: 'Abrindo sua conta…', detail: 'Só um instante.' }
   }
-  if (path === '/') return { title: 'Abrindo o início…', detail: 'Só um instante.' }
+  if (path === '/') return { title: 'Abrindo a página inicial…', detail: 'Só um instante.' }
   return { title: 'Atualizando a tela…', detail: 'Só um instante.' }
 }
 
@@ -66,6 +88,7 @@ function clearWatchdog () {
 }
 
 function hide () {
+  clearLink()
   visible.value = false
   announcement.value = ''
   visibleSince = 0
@@ -135,6 +158,7 @@ function finish () {
 }
 
 function forceFinish () {
+  clearLink()
   awaitingPageContent = false
   active.value = false
   clearRevealSchedule()
@@ -179,6 +203,7 @@ function navigationIntent (event: MouseEvent) {
   // Começa no gesto, antes do middleware que espera a sacola ficar durável.
   // É estritamente observacional: nunca cancela nem engole o clique. Se uma
   // navegação anterior abortar, o segundo gesto ainda precisa chegar ao Nuxt.
+  markLink(link)
   begin(destination)
 }
 
@@ -190,6 +215,14 @@ watch(() => pageContentPending.value > 0, (pending) => {
   if (!pending && awaitingPageContent) finish()
 })
 
+// O início da navegação (`page:loading:start`, que o roteador do Nuxt chama ANTES do
+// middleware) também começa a espera: a navegação programática (`navigateTo` num
+// botão) ganha a barra desde o início, não só depois do middleware.
+// Na hidratação o roteador também chama o hook; ali não há toque a responder.
+const removeLoadingStart = nuxtApp.hook('page:loading:start', () => {
+  if (!nuxtApp.isHydrating) begin()
+})
+const removeLoadingEnd = nuxtApp.hook('page:loading:end', finish)
 const removePageStart = nuxtApp.hook('page:start', () => begin())
 const removePageFinish = nuxtApp.hook('page:finish', finish)
 const removeAppError = nuxtApp.hook('app:error', forceFinish)
@@ -208,6 +241,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', navigationIntent, true)
   window.removeEventListener('pageshow', forceFinish)
+  removeLoadingStart()
+  removeLoadingEnd()
   removePageStart()
   removePageFinish()
   removeAppError()
@@ -218,6 +253,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <div v-if="active" class="navigation-route-bar" data-navigation-route-bar aria-hidden="true">
+    <span />
+  </div>
+
   <Transition
     enter-active-class="transition-opacity duration-150 ease-out"
     enter-from-class="opacity-0"
@@ -251,6 +290,34 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* Barra de rota, no latão da casa (o vinho sumia sobre o cabeçalho). Só `transform`
+   anima, para o compositor seguir com ela durante tarefa longa. */
+.navigation-route-bar {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 101;
+  height: 3px;
+  overflow: hidden;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--shop-brass) 25%, transparent);
+}
+
+.navigation-route-bar > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  background: var(--shop-brass);
+  animation: navigation-route-bar 1.1s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* Nasce já visível (um terço do segmento dentro da tela): o primeiro quadro depois do
+   toque precisa mostrar a barra, não um trilho vazio. */
+@keyframes navigation-route-bar {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(250%); }
+}
+
 .navigation-wait-scrim {
   background-color: color-mix(in oklab, var(--background) 26%, transparent);
   -webkit-backdrop-filter: blur(4px) saturate(.78) brightness(.96);
@@ -284,6 +351,12 @@ onBeforeUnmount(() => {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* Sem movimento, a barra fica cheia e parada: continua dizendo "carregando". */
+  .navigation-route-bar > span {
+    width: 100%;
+    animation: none;
+  }
+
   .navigation-wait-scrim {
     animation: none;
     -webkit-backdrop-filter: blur(14px) saturate(.76) brightness(.94);

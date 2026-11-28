@@ -11,13 +11,15 @@ let counted: AudienceCount;
 /** As regras que o painel MANDOU contar. É por aqui que se prova o `match`. */
 let lastCountedRules: Record<string, unknown> | null = null;
 let lastCountedSku = "";
+/** A campanha da contagem: campanha exclusiva conta só membros, no servidor. */
+let lastCountedCampaign: unknown = undefined;
 
 function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
   return {
     total: 2,
     match: "any",
     match_label: "Somando as regras",
-    parts: [{ label: "Faixa de preço", count: 2 }],
+    parts: [{ label: "Grupo", count: 2 }],
     vip_count: 0,
     empty_selection: false,
     alerts_pending: -1,
@@ -49,6 +51,7 @@ beforeAll(() => {
           unknown
         > | null;
         lastCountedSku = String(opts?.body?.sku ?? "");
+        lastCountedCampaign = opts?.body?.campaign_id;
         return counted;
       },
     ),
@@ -59,6 +62,7 @@ beforeEach(() => {
   counted = fakeCount();
   lastCountedRules = null;
   lastCountedSku = "";
+  lastCountedCampaign = undefined;
   vi.useFakeTimers();
 });
 
@@ -337,7 +341,7 @@ describe("FireCampaignPanel — postagem pública", () => {
   it("mantém audiência zero bloqueada quando há também WhatsApp", async () => {
     counted = fakeCount({
       total: 0,
-      parts: [{ label: "Faixa de preço", count: 0 }],
+      parts: [{ label: "Grupo", count: 0 }],
     });
     const wrapper = panel(makeRule({ platforms: ["instagram", "whatsapp"] }));
     await settleCount(wrapper);
@@ -370,12 +374,35 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     await settleCount(wrapper);
 
     expect(lastCountedRules).toEqual({ tags: ["clientes-da-casa"] });
+    expect(lastCountedCampaign).toBe(3);
+  });
+
+  it("campanha exclusiva diz quem recebe e o motivo de quem ficou de fora", async () => {
+    counted = fakeCount({
+      total: 1,
+      excluded_by_reason: { outside_exclusive_groups: 2 },
+    });
+    const wrapper = panel(makeRule({ exclusive_price_tiers: ["atacado"] }));
+    await settleCount(wrapper);
+
+    expect(wrapper.get('[data-testid="fire-exclusive-note"]').text()).toBe(
+      "Campanha exclusiva do grupo Atacado: só quem está nele recebe, qualquer que seja o público.",
+    );
+    expect(wrapper.text()).toContain(
+      "2 pessoas fora do grupo que tem esta campanha como exclusiva",
+    );
+  });
+
+  it("campanha comum não fala de exclusividade", async () => {
+    const wrapper = panel();
+    await settleCount(wrapper);
+    expect(wrapper.find('[data-testid="fire-exclusive-note"]').exists()).toBe(false);
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
     counted = fakeCount({
       total: 0,
-      parts: [{ label: "Faixa de preço", count: 0 }],
+      parts: [{ label: "Grupo", count: 0 }],
     });
     const wrapper = panel();
     await wrapper.findAll('[role="radio"]')[1]!.trigger("click");
@@ -526,7 +553,7 @@ describe("FireCampaignPanel — becos sem saída", () => {
     expect(radios[0]!.attributes("aria-checked")).toBe("false");
     expect(radios[1]!.attributes("aria-checked")).toBe("true");
     expect(wrapper.text()).toContain("Esta campanha não tem público salvo");
-    expect(wrapper.text()).toContain("Escolha pelo menos um grupo acima");
+    expect(wrapper.text()).toContain("Marque pelo menos uma opção acima");
   });
 
   it("só 'VIP primeiro' salvo não é público: continua abrindo em 'Escolher agora'", async () => {
@@ -544,7 +571,7 @@ describe("FireCampaignPanel — becos sem saída", () => {
     await settleCount(wrapper);
 
     expect(wrapper.text()).not.toContain("Esta campanha não tem público salvo");
-    expect(wrapper.text()).not.toContain("Escolha pelo menos um grupo acima");
+    expect(wrapper.text()).not.toContain("Marque pelo menos uma opção acima");
   });
 });
 

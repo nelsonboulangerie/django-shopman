@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   dateLabel,
+  firstFittingWindow,
   isScheduled,
   lastBookableDate,
   parseLocalDate,
@@ -105,7 +106,7 @@ describe("isScheduled", () => {
 });
 
 const JANELAS: ScheduleWindow[] = [
-  { ref: "09:00-09:30", label: "09:00 às 09:30", enabled: false, reason: "Baguette de Tradition sai às 12:00." },
+  { ref: "09:00-09:30", label: "9h às 9h30", enabled: false, reason: "Baguette de Tradition sai às 12h." },
   { ref: "12:00-12:30", label: "12:00 às 12:30", enabled: true, reason: "" },
 ];
 
@@ -117,7 +118,7 @@ describe("windowLabel", () => {
   it("ref fora da grade não deixa a tela em branco", () => {
     // O expediente do dia pode ter mudado depois; o ref se lê sozinho.
     // Ref fora da lista NUNCA vira texto cru: o dono viu "Hoje, slot-09".
-    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23:00 às 23:30");
+    expect(windowLabel(JANELAS, "23:00-23:30")).toBe("23h às 23h30");
     expect(windowLabel([], "slot-09")).toBe("a partir das 9h");
     expect(windowLabel([], "slot-15")).toBe("a partir das 15h");
     expect(windowLabel([], "qualquer-coisa")).toBe("horário combinado");
@@ -137,7 +138,7 @@ describe("selectedWindowConflict — a escolha que virou impossível sozinha", (
     // O operador escolheu 09:00 e SÓ DEPOIS lançou a baguete. Descobrir isso na
     // tela de pagamento é tarde: o cliente já ouviu o horário.
     expect(selectedWindowConflict(JANELAS, "09:00-09:30")).toBe(
-      "Baguette de Tradition sai às 12:00.",
+      "Baguette de Tradition sai às 12h.",
     );
   });
 
@@ -155,7 +156,7 @@ describe("selectedWindowConflict — a escolha que virou impossível sozinha", (
 describe("readinessNote", () => {
   it("diz o motivo uma vez, em vez de dez vezes nas janelas apagadas", () => {
     expect(readinessNote("Baguette de Tradition", "12:00")).toBe(
-      "Baguette de Tradition sai às 12:00. Antes disso não dá para prometer.",
+      "Baguette de Tradition sai às 12h. Antes disso não dá para prometer.",
     );
   });
 
@@ -232,5 +233,20 @@ describe("lastBookableDate — o limite de dias da casa, lido da mesma resposta"
   });
   it("sem datas, não há teto", () => {
     expect(lastBookableDate([])).toBe("");
+  });
+});
+
+describe("firstFittingWindow (beta test de 05/11/2026, PDV2-09)", () => {
+  const grid = [
+    { ref: "09:00", label: "A partir das 09h", enabled: false, reason: "Baguete Gergelim sai às 15:00." },
+    { ref: "12:00", label: "A partir das 12h", enabled: false },
+    { ref: "15:00", label: "A partir das 15h", enabled: true },
+    { ref: "18:00", label: "A partir das 18h", enabled: true },
+  ];
+  it("oferece o primeiro horário que cabe depois do escolhido", () => {
+    expect(firstFittingWindow(grid, "09:00")?.ref).toBe("15:00");
+  });
+  it("sem horário que caiba no dia, não oferece nenhum", () => {
+    expect(firstFittingWindow(grid.slice(0, 2), "09:00")).toBeNull();
   });
 });

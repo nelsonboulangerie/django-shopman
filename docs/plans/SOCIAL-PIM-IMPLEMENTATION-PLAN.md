@@ -2,15 +2,15 @@
 
 > **Status:** 🚧 Em execução. **Arcs A, B, C, D ✅ no main** (commits 76ad8c39, 09db84a6,
 > 48c6db86, 3a84ed54) — MVP interno completo, sem credencial. Próximo: Arc E (Meta) ou H (matriz).
-> Deriva de [SOCIAL-PIM-SPECS](SOCIAL-PIM-SPECS.md).
+> Deriva de [SOCIAL-PIM-SPECS](completed/SOCIAL-PIM-SPECS.md).
 > **Data:** 2026-07-18
 > **Regra de ouro:** cada Arc é **fechado, testável e implementável numa sessão**. **Backend e
 > frontend nunca na mesma Arc.** Valor incremental: a primeira Arc já funciona sozinha.
 
-**Cross-refs:** [SOCIAL-PIM-SPECS](SOCIAL-PIM-SPECS.md) ·
-[CROSS-CHANNEL-CATALOG-HUB-PLAN](CROSS-CHANNEL-CATALOG-HUB-PLAN.md) ·
-[CATALOG-FEEDS-GOOGLE-META](CATALOG-FEEDS-GOOGLE-META.md) ·
-[CATALOG-SYNC-EXTERNO-PLAN](CATALOG-SYNC-EXTERNO-PLAN.md) ·
+**Cross-refs:** [SOCIAL-PIM-SPECS](completed/SOCIAL-PIM-SPECS.md) ·
+[CROSS-CHANNEL-CATALOG-HUB-PLAN](completed/CROSS-CHANNEL-CATALOG-HUB-PLAN.md) ·
+[CATALOG-FEEDS-GOOGLE-META](completed/CATALOG-FEEDS-GOOGLE-META.md) ·
+[CATALOG-SYNC-EXTERNO-PLAN](completed/CATALOG-SYNC-EXTERNO-PLAN.md) ·
 [PRODUCT-V1-SCOPE-BACKLOG](PRODUCT-V1-SCOPE-BACKLOG.md) · archive `redesign/PLAN.md` (WP10/WP11) ·
 `redesign/07-spec-backoffice.md` (§2.1, §4.1).
 

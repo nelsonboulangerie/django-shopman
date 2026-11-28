@@ -24,9 +24,12 @@ from unittest.mock import patch
 import pytest
 from django.utils import timezone
 from shopman.orderman.models import Directive, Order
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.services import notification as notification_svc
 from shopman.shop.services.notification import NotificationResendRefused, resend_payment_link
+
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
 
 CHECKOUT_URL = "https://checkout.stripe.com/c/pay/cs_test_resend"
 
@@ -121,6 +124,16 @@ def test_reenvio_sem_envio_original_e_a_primeira_tentativa(db):
     order = _order("PDV-R0")
     created = resend_payment_link(order)
     assert created.dedupe_key.endswith(":resend:1")
+
+
+def test_primeiro_aviso_de_cobranca_usa_a_autoridade_do_gesto(db):
+    order = _order("PDV-SEND-1")
+
+    created = notification_svc.send_or_resend_payment_notice(order, action="send")
+
+    assert created.status == "queued"
+    assert created.payload["template"] == "payment_link_sent"
+    assert created.payload["order_ref"] == order.ref
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -298,12 +311,13 @@ class TestProvaDeEnvio:
         order = _order("PDV-N2")
         notification_svc.send(order, "payment_link_sent")
         (directive,) = _directives(order)
-        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": timezone.now().isoformat()}
+        aceito_em = timezone.now()
+        directive.payload["notification_delivery"] = {"status": "accepted", "recorded_at": aceito_em.isoformat()}
         directive.save(update_fields=["payload"])
         _settled(directive)
-        directive.refresh_from_db()
-        local = timezone.localtime(directive.updated_at)
-        assert self._notice(order) == f"Link aceito pelo provedor às {local.hour}h{local.minute:02d}, sem comprovante de entrega."
+        # A hora é a do aceite gravado, no formato da casa ("14h", "14h05"), como na tela.
+        hora = format_clock(timezone.localtime(aceito_em))
+        assert self._notice(order) == f"Link aceito pelo provedor às {hora}, sem comprovante de entrega."
 
     def test_entregue_so_com_comprovante(self):
         order = _order("PDV-N2B")
@@ -323,7 +337,7 @@ class TestProvaDeEnvio:
         notification_svc.send(order, "payment_link_sent")
         (directive,) = _directives(order)
         _settled(directive, "failed")
-        assert self._notice(order) == "O envio do link falhou. Reenvie ou copie o link."
+        assert self._notice(order) == "O envio do link falhou. Reenvie o link."
 
     def test_a_ultima_directive_manda(self):
         """Depois do reenvio, a prova é do reenvio — não do envio original."""

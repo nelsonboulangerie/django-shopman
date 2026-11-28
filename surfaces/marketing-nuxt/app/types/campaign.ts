@@ -71,7 +71,7 @@ export interface Announcement {
   rejected_reason: string;
   /** Review-only AI suggestion opted in by the template. */
   ai_suggestion_enabled?: boolean;
-  /** O fato do lote que gerou o anúncio (quantas unidades e quando saiu do forno). */
+  /** O fato do lote que gerou o anúncio (quantas unidades e quando ficou pronto). */
   lot_quantity?: string;
   lot_finished_at?: string;
 }
@@ -123,6 +123,10 @@ export interface Campaign {
   template_name: string;
   platforms: string[];
   audience_rules: AudienceRules;
+  /** Grupos (`PriceTier.ref`) que têm a campanha como aviso exclusivo. Vazio =
+   *  não é exclusiva; com grupos, só os membros delas recebem, qualquer que seja o
+   *  público. O servidor grava em `PriceTierAdvantage.config.campaign_refs`. */
+  exclusive_price_tiers: string[];
   /** `ref` da oferta anunciada. Vazio = campanha sem desconto atrás. */
   promotion_ref: string;
   schedule: CampaignSchedule;

@@ -94,11 +94,16 @@ def _seed_planned_bakery(*, planned_qty: int = 2) -> Product:
 
 
 def _customer() -> Customer:
-    return Customer.objects.create(
-        ref="CUST-QA",
-        first_name="Pablo",
-        last_name="QA",
-        phone="5543999990001",
+    from shopman.storefront.tests.identity_fakes import proven
+
+    # Cliente que já provou o número: contato sem prova não abre a conta (OC-08).
+    return proven(
+        Customer.objects.create(
+            ref="CUST-QA",
+            first_name="Pablo",
+            last_name="QA",
+            phone="5543999990001",
+        )
     )
 
 
@@ -139,10 +144,8 @@ def _login_via_access_link(client: Client, customer: Customer, *, metadata: dict
 
 def _checkout_today(client: Client, *, phone: str = "+5543999990001"):
     """Checkout de retirada com a data de HOJE (a data JÁ EXISTE no checkout)."""
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
-    slots = get_slots()
-    assert slots, "esperava slots de retirada configurados por padrão"
     return client.post(
         "/api/v1/checkout/",
         data=json.dumps(
@@ -151,7 +154,7 @@ def _checkout_today(client: Client, *, phone: str = "+5543999990001"):
                 "phone": phone,
                 "fulfillment_type": "pickup",
                 "delivery_date": timezone.localdate().isoformat(),
-                "delivery_time_slot": slots[-1]["ref"],
+                "delivery_time_slot": today_pickup_slot(),
                 "payment_method": "cash",
             })
         ),
@@ -255,25 +258,22 @@ def test_commit_adopts_planned_holds_after_otp_login(client):
 def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(client):
     """Round 1 tenta o checkout e falha; round 2 (mesmo telefone) faz o pedido.
 
-    O cenário real do QA staging: o round de 17:29 (``SESS-P8V2TWA4RAHW``)
-    chegou ao checkout — ``assign_phone_handle`` colou o telefone na sessão —
-    e falhou; os holds planejados dele (eternos, ``expires_at=None``) ficaram
-    ativos. No round seguinte, ``assign_phone_handle(abandon_existing=True)``
-    abandona a Session antiga e tem que LIBERAR os holds dela — senão o
-    cliente compete com o próprio fantasma pela fornada do dia.
+    O cenário real do QA staging: um round falhou após reservar a fornada e
+    manteve seus holds planejados ativos. O pedido do round seguinte sela um
+    corte exato das sessões anteriores do mesmo cliente; a diretiva durável de
+    takeover abandona apenas esse corte e libera seus holds.
     """
     _seed_planned_bakery(planned_qty=4)
     customer = _customer()
 
-    # Round 1: sacola com holds planejados; o checkout falha DEPOIS do
-    # assign_phone_handle (guarda de total: o total exibido "mudou").
+    # Round 1: sacola com holds planejados; a guarda de total recusa o checkout.
     round1 = Client()
     _login_via_access_link(round1, customer)
     round1_key = _add_to_cart(round1, qty=2)
     ghost_ids = _active_hold_ids(round1_key)
     assert ghost_ids
 
-    from shopman.storefront.services.pickup_slots import get_slots
+    from shopman.storefront.tests._pickup_today import today_pickup_slot
 
     resp = round1.post(
         "/api/v1/checkout/",
@@ -283,7 +283,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
                 "phone": "+5543999990001",
                 "fulfillment_type": "pickup",
                 "delivery_date": timezone.localdate().isoformat(),
-                "delivery_time_slot": get_slots()[-1]["ref"],
+                "delivery_time_slot": today_pickup_slot(),
                 "payment_method": "cash",
                 "expected_total_q": 1,
                 "expected_revision": round1.get("/api/v1/storefront/cart/").json()["cart"]["revision"],
@@ -317,8 +317,7 @@ def test_second_round_same_phone_not_blocked_by_abandoned_session_ghost_holds(cl
         status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
     ).count()
     assert still_active == 0, (
-        "sessão abandonada por assign_phone_handle deixou holds planejados "
-        "eternos segurando a fornada do dia"
+        "takeover pós-pedido deixou holds planejados eternos segurando a fornada do dia"
     )
 
 

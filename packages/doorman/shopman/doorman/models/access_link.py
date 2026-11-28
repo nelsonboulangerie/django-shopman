@@ -24,11 +24,6 @@ def _get_hmac_key() -> bytes:
     return settings.SECRET_KEY.encode("utf-8")
 
 
-def generate_token() -> str:
-    """Legacy: kept for migration compatibility. Not used in new code."""
-    return secrets.token_urlsafe(32)
-
-
 def _hash_token(raw_token: str) -> str:
     """Compute HMAC-SHA256 hex digest for an access link token."""
     return hmac.new(
@@ -156,10 +151,11 @@ class AccessLink(models.Model):
 
     def get_customer(self):
         """Fetch customer info via resolver."""
-        from ..conf import get_customer_resolver
+        from ..conf import get_identity_resolver
 
-        resolver = get_customer_resolver()
-        return resolver.get_by_uuid(self.customer_id)
+        resolver = get_identity_resolver()
+        customer = resolver.get(self.customer_id, purpose="access_link")
+        return customer if customer is not None and customer.is_active else None
 
     # ===========================================
     # Class methods for secure token handling

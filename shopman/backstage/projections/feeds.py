@@ -13,6 +13,7 @@ Dataclasses imutáveis convertidas por ``backstage.api.projections``.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from django.db.models import Count, Q
 
@@ -22,7 +23,7 @@ from shopman.shop.projections.types import Action
 # formato preenchido é feed de plataforma (dialeto de terceiro).
 _FORMAT_META = {
     "": {"kind": "menuboard", "label": "Menuboard (TV)", "icon": "tv", "capability": "display"},
-    "google_merchant": {"kind": "google", "label": "Feed Google", "icon": "rss", "capability": "feed"},
+    "google_merchant": {"kind": "google", "label": "Google Merchant", "icon": "rss", "capability": "feed"},
     "meta_catalog": {"kind": "meta", "label": "Feed Meta", "icon": "rss", "capability": "feed"},
 }
 
@@ -35,13 +36,16 @@ def _nonneg_int(value) -> int:
 
 
 def _output_path(ref: str, fmt: str) -> str:
-    """Caminho da saída (abrir/prever).
+    """Caminho da saída (abrir/prever); vazio quando não há o que abrir.
 
     O `?platform=` saiu: o formato é propriedade do CANAL, não parâmetro de query —
-    dois jeitos de dizer a mesma coisa é um jeito a mais de discordarem.
+    dois jeitos de dizer a mesma coisa é um jeito a mais de discordarem. O Google não
+    tem saída: o canal dele é escrito pela Merchant API.
     """
     if not fmt:
         return f"/menuboard/{ref}/"
+    if fmt == "google_merchant":
+        return ""
     return f"/feed/{ref}.xml"
 
 
@@ -352,6 +356,8 @@ def build_feed_board(*, user=None, now=None) -> FeedBoardProjection:
             errors=count.get("errors", 0), retracted=count.get("retracted", 0),
             skipped=count.get("skipped", 0), observed=count.get("observed", 0),
             is_active=effective_active(channel, now=now),
+            # "Ver produtos no Catálogo" abre o Catálogo já recortado neste canal (GES-09).
+            catalog_path=f"/catalog?surface={quote(channel.ref, safe='')}",
             # PDV sem toggle (o balcão fecha pelo caixa, não pelo canal): card informativo.
             switch=_build_switch(channel, user=user, authorized=authorized, is_manager=is_manager,
                                  state=state, now=now) if switches.is_switchable(channel) else None,

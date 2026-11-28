@@ -1,5 +1,5 @@
 // P1-4: cartão da loja online autorizado e ninguém aceita. A reserva vence no Stripe
-// (7 dias) e o dinheiro some do pedido. O cartão do quadro avisa com o prazo e dá os
+// (7 dias) e o dinheiro some do pedido. O cartão do painel avisa com o prazo e dá os
 // dois gestos que resolvem (Aceitar, Recusar), na cor do aviso (D8).
 import { describe, expect, it, vi } from "vitest";
 import { computed, ref } from "vue";
@@ -26,11 +26,10 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     ref: "WEB-20261013-0042",
     status: "new",
     status_label: "Novo",
-    status_color: "",
     channel_ref: "web",
+    channel_name: "Loja online",
     channel_icon: "language",
     customer_name: "Ana",
-    created_at_display: "15:00",
     created_at_iso: "",
     server_now_iso: "",
     elapsed_seconds: 30,
@@ -38,7 +37,6 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     items_summary: "2× Pão",
     items_count: 2,
     total_display: "R$ 15,00",
-    fulfillment_icon: "storefront",
     fulfillment_label: "Retirada",
     fulfillment_type: "pickup",
     payment_method: "card",
@@ -51,7 +49,6 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     card_authorization_expires_iso: "",
     ifood_negotiations: [],
     awaiting_work_orders: [],
-    revisions: {},
     actions: fixtureActions({ can_confirm: true }),
     undo: null,
     kitchen: null,
@@ -72,7 +69,7 @@ describe("cardAuthorizationNotice", () => {
       title: "A autorização do cartão vence em 6 dias",
       expired: false,
     });
-    expect(notice!.description).toContain("Até 19/10 às 16h00");
+    expect(notice!.description).toContain("Até 19/10 às 16h.");
     expect(notice!.description).toContain("Aceite para cobrar ou recuse");
     expect(notice!.description).not.toMatch(/—|–/);
   });

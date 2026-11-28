@@ -194,7 +194,7 @@ const disabledReason = computed(() => {
   if (!form.name.trim()) return "Informe o nome do grupo.";
   if (!isExisting.value && !/^[-a-z0-9_]+$/.test(form.ref.trim())) return "Use letras minúsculas, números e hífen no código.";
   if (form.discountType && !form.discountValue.trim()) return "Informe o valor do desconto.";
-  if (form.discountType && !form.discountKind.trim()) return "Informe o tipo usado pelo B.I.";
+  if (form.discountType && !form.discountKind.trim()) return "Informe a categoria do desconto para os relatórios.";
   return "";
 });
 const messagePreview = computed(() => form.savingsMessage
@@ -254,7 +254,7 @@ function submit() {
         <NuxtFormField label="Descrição" class="sm:col-span-2" :error="fieldErrors.description">
           <NuxtTextarea v-model="form.description" :rows="2" class="w-full" />
         </NuxtFormField>
-        <NuxtFormField label="Prioridade" description="Maior aparece primeiro nas regras comerciais." :error="fieldErrors.priority">
+        <NuxtFormField label="Prioridade do grupo" description="Se o cliente estiver em mais de um grupo, o maior número é avaliado primeiro." :error="fieldErrors.priority">
           <NuxtInput v-model.number="form.priority" type="number" inputmode="numeric" class="w-full" />
         </NuxtFormField>
         <div class="flex items-end pb-2">
@@ -277,7 +277,12 @@ function submit() {
         <NuxtFormField v-if="form.discountType" :label="form.discountType === 'percent' ? 'Percentual' : 'Valor por pedido (R$)'" :error="fieldErrors.discountValue">
           <NuxtInput v-model="form.discountValue" inputmode="decimal" class="w-full" data-testid="customer-group-discount" />
         </NuxtFormField>
-        <NuxtFormField v-if="form.discountType" label="Tipo para o B.I." description="Ex.: equipe, parceiro, convênio." :error="fieldErrors.discountKind">
+        <NuxtFormField
+          v-if="form.discountType"
+          label="Categoria do desconto"
+          description="Nome usado nos relatórios para agrupar este desconto. Ex.: equipe, parceiro ou convênio."
+          :error="fieldErrors.discountKind"
+        >
           <NuxtInput v-model="form.discountKind" class="w-full" data-testid="customer-group-kind" />
         </NuxtFormField>
       </div>
@@ -328,10 +333,19 @@ function submit() {
       >
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
-            <NuxtCheckbox v-model="advantages[kind].isActive" :label="ADVANTAGE_COPY[kind].title" />
+            <NuxtCheckbox
+              v-model="advantages[kind].isActive"
+              :label="ADVANTAGE_COPY[kind].title"
+              :data-testid="`customer-group-advantage-toggle-${kind}`"
+            />
             <p class="mt-1 text-xs text-muted-foreground">{{ ADVANTAGE_COPY[kind].description }}</p>
           </div>
-          <NuxtFormField label="Prioridade" description="Maior vence." class="w-28 shrink-0">
+          <NuxtFormField
+            v-if="advantages[kind].isActive"
+            label="Prioridade"
+            description="Maior vence."
+            class="w-28 shrink-0"
+          >
             <NuxtInput
               v-model.number="advantages[kind].priority"
               type="number"
@@ -343,7 +357,7 @@ function submit() {
         </div>
 
         <NuxtFormField
-          v-if="kind === 'free_shipping'"
+          v-if="advantages[kind].isActive && kind === 'free_shipping'"
           label="Pedido mínimo (R$)"
           description="Em branco, frete grátis em qualquer pedido."
           class="max-w-xs"
@@ -356,7 +370,7 @@ function submit() {
           />
         </NuxtFormField>
 
-        <div v-else-if="kind === 'exclusive_collections'">
+        <div v-else-if="advantages[kind].isActive && kind === 'exclusive_collections'">
           <div v-if="options.collections.length" class="grid gap-2 sm:grid-cols-2">
             <NuxtCheckbox
               v-for="collection in options.collections"

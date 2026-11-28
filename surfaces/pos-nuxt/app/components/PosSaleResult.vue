@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Tela de RESULTADO pós-venda (padrão Odoo/Shopify): tela cheia no fluxo de
 // venda, no lugar do banner de antes. O troco é o herói (tipografia display),
-// a prova digital (QR PIX / link do cartão) tem palco, e o CTA dominante é
+// a prova digital (QR Pix / link do cartão) tem palco, e o CTA dominante é
 // "Nova venda". Comportamento por método:
 //   - dinheiro COM troco → a tela NUNCA some sozinha (confirmação explícita);
-//   - pagamento exato/cartão/PIX confirmado → auto-avanço curto com contagem
+//   - pagamento exato/cartão/Pix confirmado → auto-avanço curto com contagem
 //     visível e cancelável (qualquer toque cancela; reduced-motion desliga);
-//   - PIX aguardando → sair exige toque explícito (o composable transforma a
+//   - Pix aguardando → sair exige toque explícito (o composable transforma a
 //     prova pendente num chip no header, com o polling seguindo).
 import {
   autoAdvanceSeconds,
@@ -19,6 +19,7 @@ import {
   orderTicketLabel,
   paymentFailed,
   pixAwaiting,
+  pixUnpaid,
   type PixPollStatus,
   type PosSaleResultSnapshot,
   saleResultTitle,
@@ -40,8 +41,11 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  /** Sai para o quadro de comandas (F2 também). */
+  /** "Nova venda" (F2 também): a grade da próxima comanda livre. */
   newSale: [];
+  /** Volta ao quadro de comandas: "Voltar às comandas" da encomenda e o fim da
+   *  contagem, que não é toque de ninguém e por isso não abre comanda. */
+  toTabs: [];
   /** ENCOMENDA: abre a próxima encomenda, como a "Nova encomenda" da seção. */
   newOrder: [];
   printReceipt: [];
@@ -70,6 +74,11 @@ const courierChange = computed(() => courierChangeLine(props.result.courierChang
 // A DANFE por EXISTÊNCIA da nota, não por previsão (ver `danfeOffer`).
 const danfe = computed(() => danfeOffer(props.result.fiscalState));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
+// O Pix VENCEU sem pagar. A venda está fechada, então o PDV não gera outro Pix:
+// quem resolve é o pedido no Gestor, e o aviso leva até ELE (nunca um caminho
+// escrito). Um aviso só na tela: o cartão do Pix só diz que o QR não vale mais.
+const pixExpired = computed(() => !offline.value && pixUnpaid(props.result.payment, props.pixStatus));
+const { attrsFor } = useOperatorAppLink();
 const isOrder = computed(() => props.result.salesMode === "order");
 const ctaLabel = computed(() => nextActionLabel(props.result.salesMode, pixPending.value));
 const enterHint = computed(() => enterAdvances({
@@ -107,15 +116,15 @@ onMounted(() => {
     countdown.value -= 1;
     if (countdown.value <= 0) {
       cancelCountdown();
-      emit("newSale");
+      emit("toTabs");
     }
   }, 1000);
 });
 onBeforeUnmount(() => cancelCountdown());
 
-function onNewSale() {
+function onToTabs() {
   cancelCountdown();
-  emit("newSale");
+  emit("toTabs");
 }
 
 function onPrimary() {
@@ -249,11 +258,41 @@ function onPrimary() {
         {{ result.payment?.amountDisplay }} em
         {{ result.payment?.method === 'pix' ? 'Pix' : result.payment?.method === 'link' ? 'link de pagamento' : 'cartão' }}
         segue <strong class="text-foreground">em aberto</strong>. Receba de outra forma e acerte o
-        pedido no gestor. Não trate esta venda como paga.
+        pedido no Gestor. Não trate esta venda como paga.
       </p>
     </div>
 
-    <!-- Prova digital: QR PIX grande + status vivo do polling, ou o link do
+    <!-- Pix VENCIDO: o aviso da tela, com o botão que resolve (o pedido no
+         Gestor, onde o pagamento se acerta). Segura a tela como a cobrança não
+         criada: o auto-avanço e o Enter já não correm com o Pix sem pagar. -->
+    <div
+      v-if="pixExpired"
+      class="grid w-full max-w-md gap-3 rounded-md border border-warning/40 bg-warning/5 p-4 text-left"
+      role="alert"
+      data-sale-result-pix-expired
+    >
+      <div class="grid gap-1">
+        <p class="flex items-center gap-2 text-sm font-semibold">
+          <Icon name="lucide:clock-alert" class="size-4 shrink-0 text-warning" aria-hidden="true" />
+          O Pix não foi confirmado.
+        </p>
+        <p class="text-sm text-muted-foreground">
+          {{ result.payment?.amountDisplay }} segue em aberto. Receba de outra forma e acerte o pagamento no pedido.
+        </p>
+      </div>
+      <NuxtButton
+        v-if="result.nextUrl"
+        color="neutral" variant="outline" size="md"
+        class="justify-self-start gap-1.5"
+        :href="result.nextUrl"
+        v-bind="attrsFor(result.nextUrl)"
+      >
+        <Icon name="lucide:external-link" class="size-4" />
+        Abrir o pedido no Gestor
+      </NuxtButton>
+    </div>
+
+    <!-- Prova digital: QR Pix grande + status vivo do polling, ou o link do
          checkout do cartão (mesmo componente do fluxo de pagamento). -->
     <PosPaymentResult
       v-if="result.payment?.hasProof"
@@ -274,15 +313,15 @@ function onPrimary() {
       <!-- CTA dominante -->
       <!-- Na encomenda o CTA é a próxima encomenda; o F2 (volta às comandas)
            desce para as terciárias, com a tecla à vista. -->
-      <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" data-sale-result-next @click="onPrimary">
+      <NuxtButton size="xl" class="h-14 min-w-64 gap-2 text-base" data-sale-result-next @click="onPrimary">
         {{ ctaLabel }}
         <OperatorKbd v-if="!isOrder" variant="inverse" aria-hidden="true">F2</OperatorKbd>
-      </UiButton>
+      </NuxtButton>
       <p v-if="countdown > 0" class="text-xs text-muted-foreground" role="status">
         Nova venda em {{ countdown }}s · toque em qualquer lugar para ficar
       </p>
       <p v-else-if="pixPending" class="text-xs text-muted-foreground">
-        O PIX segue aguardando: ao sair, ele vira um aviso no topo até confirmar.
+        O Pix segue aguardando: ao sair, ele vira um aviso no topo até confirmar.
       </p>
       <p v-else-if="enterHint" class="text-xs text-muted-foreground">Enter também avança.</p>
 
@@ -293,26 +332,26 @@ function onPrimary() {
            terciárias. -->
       <div class="flex flex-wrap items-center justify-center gap-2">
         <!-- ENCOMENDA: a Via Pedido vem primeiro, é o papel que segue com ela. -->
-        <UiButton
+        <NuxtButton
           v-if="isOrder"
-          variant="outline" size="sm" class="gap-1.5"
+          color="neutral" variant="outline" size="md" class="gap-1.5"
           :disabled="printingTicket"
           data-sale-result-ticket
           @click="emit('printTicket')"
         >
           <Icon name="lucide:printer" class="size-4" />
           {{ orderTicketLabel(Boolean(printingTicket)) }}
-        </UiButton>
-        <UiButton variant="outline" size="sm" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
+        </NuxtButton>
+        <NuxtButton color="neutral" variant="outline" size="md" class="gap-1.5" :disabled="printingReceipt" @click="emit('printReceipt')">
           <Icon name="lucide:printer" class="size-4" />
           Via Recibo
-        </UiButton>
+        </NuxtButton>
         <!-- A DANFE só é botão vivo quando a nota EXISTE. Na fila, o botão
              fica desabilitado e a impressão automática o promove quando o 409
              da bobina vira 200; aguardando pagamento, a frase diz o quando. -->
-        <UiButton
+        <NuxtButton
           v-if="danfe?.kind === 'print' || danfe?.kind === 'queued'"
-          variant="outline" size="sm" class="gap-1.5"
+          color="neutral" variant="outline" size="md" class="gap-1.5"
           :disabled="printingDanfe || danfe.kind === 'queued'"
           :aria-busy="danfe.kind === 'queued' ? 'true' : undefined"
           data-danfe-action
@@ -320,7 +359,7 @@ function onPrimary() {
         >
           <Icon :name="danfe.kind === 'queued' ? 'lucide:loader-circle' : 'lucide:printer'" class="size-4" :class="danfe.kind === 'queued' ? 'animate-spin' : ''" />
           {{ danfe.label }}
-        </UiButton>
+        </NuxtButton>
         <p
           v-else-if="danfe?.kind === 'awaiting_payment' || danfe?.kind === 'awaiting_handoff'"
           class="inline-flex h-8 items-center gap-1.5 px-2 text-xs text-muted-foreground"
@@ -333,51 +372,52 @@ function onPrimary() {
 
       <!-- Terciárias: discretas, alinhadas num único grupo -->
       <div class="flex flex-wrap items-center justify-center gap-2">
-        <UiButton
+        <NuxtButton
           v-if="isOrder"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           data-sale-result-to-tabs
-          @click="onNewSale"
+          @click="onToTabs"
         >
           <Icon name="lucide:layout-grid" class="size-4" />
           Voltar às comandas
           <OperatorKbd aria-hidden="true">F2</OperatorKbd>
-        </UiButton>
-        <UiButton
+        </NuxtButton>
+        <NuxtButton
           v-if="result.salesMode === 'order'"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           :href="result.nextUrl"
+          v-bind="attrsFor(result.nextUrl)"
         >
           <Icon name="lucide:external-link" class="size-4" />
-          Abrir no gestor
-        </UiButton>
-        <UiButton
+          Abrir o pedido no Gestor
+        </NuxtButton>
+        <NuxtButton
           v-if="danfe?.kind === 'print' && danfeScreenUrl"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-foreground"
           :href="danfeScreenUrl"
           target="_blank" rel="noopener"
         >
           <Icon name="lucide:eye" class="size-4" />
           Ver a nota
-        </UiButton>
+        </NuxtButton>
         <!-- Cancelar é EXCEÇÃO, não fluxo: entrada discreta que abre a
              confirmação destrutiva com desafio de PIN gerencial. -->
-        <UiButton
+        <NuxtButton
           v-if="canCancel && !offline"
-          variant="ghost"
-          size="sm"
+          color="neutral" variant="ghost"
+          size="md"
           class="gap-1.5 text-muted-foreground hover:text-destructive"
           @click="emit('cancelSale')"
         >
           <Icon name="lucide:undo-2" class="size-4" />
-          Cancelar venda
-        </UiButton>
+          {{ isOrder ? "Cancelar encomenda" : "Cancelar venda" }}
+        </NuxtButton>
       </div>
     </div>
   </section>

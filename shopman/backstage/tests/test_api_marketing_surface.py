@@ -47,8 +47,20 @@ RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
 OFFERS_URL = "/api/v1/backstage/marketing/offers/"
+
+
+def offer_url(ref: str) -> str:
+    return f"{OFFERS_URL}{ref}/"
+
+
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
 PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
+
+
+# Conteúdo público só aprova com link absoluto (MKT-20): a loja tem endereço de site.
+@pytest.fixture(autouse=True)
+def _loja_com_endereco(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
 
 
 @pytest.fixture
@@ -94,7 +106,7 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
             "body": "Croissant saiu do forno",
             "hashtags": ["padaria"],
             "image_url": "/media/croissant.jpg",
-            "link": "/produto/cro",
+            "link": "https://loja.example.com/produto/cro",
         },
         "platforms": ["instagram", "google_business"],
         "audience": {"favorites": 12, "alerts": 3, "total": 15},
@@ -146,6 +158,7 @@ class TestGate:
     def test_anonymous_cannot_manage_offers(self, client):
         assert client.get(OFFERS_URL).status_code == 401
         assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 401
+        assert client.patch(offer_url("oferta"), data={}, content_type="application/json").status_code == 401
 
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)
@@ -153,6 +166,7 @@ class TestGate:
         assert client.get(BOARD_URL).status_code == 403
         assert client.get(OFFERS_URL).status_code == 403
         assert client.post(OFFERS_URL, data={}, content_type="application/json").status_code == 403
+        assert client.patch(offer_url("oferta"), data={}, content_type="application/json").status_code == 403
 
     def test_manager_with_permission_gets_the_board(self, client, gestor):
         client.force_login(gestor)
@@ -818,7 +832,7 @@ class TestRules:
         assert body["fires_on_its_own"] is True
         assert body["exhausted"] is False
         assert body["updated_at"]
-        assert "17:30" in body["schedule_label"], body["schedule_label"]
+        assert "17h30" in body["schedule_label"], body["schedule_label"]
 
     def test_patching_into_the_impossible_pairing_is_refused(self, client, gestor, rule):
         """Editar também precisa do guarda — senão a regra entra pela porta de trás."""
@@ -1103,6 +1117,45 @@ class TestMarketingOffers:
         assert coupon.promotion_id != automatic.pk
         assert response.json()["offer"]["coupons"][0]["code"] == "PRIMEIRA-10"
 
+    def test_updates_an_existing_offer_without_changing_its_ref(self, client, gestor):
+        client.force_login(gestor)
+        created = client.post(OFFERS_URL, data=self.payload(), content_type="application/json").json()["offer"]
+
+        response = client.patch(
+            offer_url(created["ref"]),
+            data=self.payload(name="Semana prorrogada", value=20, is_active=False),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["offer"]["ref"] == created["ref"]
+        promotion = Promotion.objects.get(ref=created["ref"])
+        assert promotion.name == "Semana prorrogada"
+        assert promotion.value == 20
+        assert promotion.is_active is False
+
+    def test_updates_coupon_without_resetting_usage(self, client, gestor):
+        client.force_login(gestor)
+        created = client.post(
+            OFFERS_URL,
+            data=self.payload(kind="coupon", coupon_code="OUTUBRO", max_uses=30),
+            content_type="application/json",
+        ).json()["offer"]
+        coupon = Coupon.objects.get(code="OUTUBRO")
+        coupon.uses_count = 7
+        coupon.save(update_fields=("uses_count",))
+
+        response = client.patch(
+            offer_url(created["ref"]),
+            data=self.payload(kind="coupon", coupon_code="OUTUBRO", max_uses=50),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        coupon.refresh_from_db()
+        assert coupon.max_uses == 50
+        assert coupon.uses_count == 7
+
     def test_rejects_invalid_period_without_writing(self, client, gestor):
         now = timezone.now()
         client.force_login(gestor)
@@ -1238,9 +1291,9 @@ class TestMarketingOffers:
             qty=Decimal("1"),
             listing=None,
             list_unit_price_q=1000,
-            list_total_price_q=1000,
+            list_line_total_q=1000,
         )
-        assert priced.final_total_price_q == 850
+        assert priced.final_line_total_q == 850
         assert priced.adjustments[0].label == "Automática"
         coupon_promotion = promotion_service.get_coupon_promotion("SO-COM-CODIGO", timezone.now())
         assert coupon_promotion is not None
@@ -1362,6 +1415,38 @@ class TestOptions:
             "catalog_as_of": checked_at.isoformat(),
         }
 
+    def test_form_preview_without_whatsapp_flow_keeps_the_other_platforms(self, client, gestor):
+        """ge:MKT-08 no formulário de campanha: o WhatsApp sem fluxo não derruba o Google."""
+        from shopman.offerman.models import Product
+
+        Product.objects.create(
+            sku="CRO-SEM-FLUXO",
+            name="Croissant sem fluxo",
+            base_price_q=850,
+            is_published=True,
+            is_sellable=True,
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"body": "Saiu {{product_name}}", "platforms": ["google_business", "whatsapp"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert set(payload["previews"]) == {"google_business"}
+        assert payload["platform_problems"]["whatsapp"]["code"] == "whatsapp_flow_not_selected"
+
+        alone = client.post(
+            PREVIEW_URL,
+            data={"body": "Saiu {{product_name}}", "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+        assert alone.status_code == 422
+        assert alone.json()["code"] == "whatsapp_flow_not_selected"
+
     def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(self, client, gestor, monkeypatch):
         from shopman.shop.models import NotificationTemplate
         from shopman.shop.services.manychat_flows import FlowCatalog
@@ -1452,6 +1537,44 @@ class TestAnnouncementReviewPreview:
         assert artifact["link"] == ""
         assert "AGUA-EXEMPLO" not in json.dumps(payload)
 
+    def test_whatsapp_without_flow_does_not_take_down_the_other_previews(self, client, gestor, rule, template):
+        """ge:MKT-08: a prévia é por plataforma; o WhatsApp sem fluxo sai com o motivo."""
+        announcement = _post(
+            rule,
+            template,
+            content={"body": "Ensaio", "hashtags": [], "link": "", "image_url": ""},
+            platforms=["google_business", "whatsapp"],
+            trigger_context={},
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "announcement": announcement.pk,
+                "body": "Ensaio revisado",
+                "hashtags": [],
+                "platforms": ["google_business", "whatsapp"],
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200, response.content
+        payload = response.json()
+        assert set(payload["previews"]) == {"google_business"}
+        assert payload["platform_problems"]["whatsapp"]["code"] == "whatsapp_flow_not_selected"
+
+        alone = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+        assert alone.status_code == 422
+        error = alone.json()
+        flat = json.dumps(error, ensure_ascii=False)
+        # A instrução aparece uma vez só (detail), não duas.
+        assert flat.count("Ajustes › Plataformas") == 1
+
     def test_preview_matches_what_approval_seals(self, client, gestor, rule, template):
         announcement = _post(rule, template, platforms=["instagram"])
         client.force_login(gestor)
@@ -1485,7 +1608,62 @@ class TestAnnouncementReviewPreview:
         ]
         for key in ("body", "link", "hashtags", "image_url"):
             assert preview["artifact"][key] == sealed[key], key
-        assert sealed["link"] == "/produto/cro"
+        assert sealed["link"] == "https://loja.example.com/produto/cro"
+
+    def test_relative_link_shows_in_preview_and_approval_refuses(self, client, gestor, rule, template, settings):
+        """MKT-20 (beta 05/11): conteúdo público nunca sai com "/produto/KUP".
+
+        Sem o endereço do site da loja, o rascunho nasce com caminho relativo. A prévia
+        da revisão continua abrindo e diz o motivo; a aprovação recusa e nada é selado.
+        """
+        settings.SHOPMAN_STOREFRONT_BASE_URL = ""
+        announcement = _post(
+            rule,
+            template,
+            content={
+                "body": "Croissant saiu do forno: /produto/cro",
+                "hashtags": [],
+                "image_url": "/media/croissant.jpg",
+                "link": "/produto/cro",
+            },
+            platforms=["instagram"],
+        )
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+        assert preview.status_code == 200, preview.content
+        blockers = preview.json()["publish_blockers"]
+        assert [b["code"] for b in blockers] == ["marketing_link_store_address_missing"]
+        assert "endereço do site da loja" in blockers[0]["detail"]
+        assert "suporte técnico" in blockers[0]["field_detail"]
+        assert "—" not in json.dumps(blockers, ensure_ascii=False)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": announcement.version, "publish_mode": "now", "platforms": ["instagram"]},
+            key="relative-link-refused",
+        )
+        assert response.status_code == 422, response.content
+        assert "marketing_link_store_address_missing" in json.dumps(response.json())
+        assert not MarketingContentArtifact.objects.filter(announcement=announcement).exists()
+
+    def test_absolute_link_has_no_publish_blocker(self, client, gestor, rule, template):
+        announcement = _post(rule, template, platforms=["instagram"])
+        client.force_login(gestor)
+
+        preview = client.post(
+            PREVIEW_URL,
+            data={"announcement": announcement.pk, "platforms": ["instagram"]},
+            content_type="application/json",
+        )
+
+        assert preview.status_code == 200, preview.content
+        assert preview.json()["publish_blockers"] == []
 
     def test_unknown_announcement_is_404(self, client, gestor):
         client.force_login(gestor)
@@ -2787,7 +2965,7 @@ class TestAudienceCount:
         assert data["match_label"] == "Cruzando as regras"
 
     def test_the_parts_explain_the_total(self, client, gestor):
-        """ ""Faixa de preço 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
+        """ ""Grupo 2, comportamento 2, total 1": a leitura junta ensina o recorte."""
         self._audience()
         client.force_login(gestor)
 
@@ -2804,7 +2982,7 @@ class TestAudienceCount:
         ).json()
 
         parts = {part["label"]: part["count"] for part in data["parts"]}
-        assert parts == {"Faixa de preço": 2, "Comportamento de compra": 2}
+        assert parts == {"Grupo": 2, "Comportamento de compra": 2}
         assert data["total"] == 1
 
     def test_nothing_chosen_is_not_the_same_as_nobody_found(self, client, gestor):

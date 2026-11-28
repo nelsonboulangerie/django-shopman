@@ -17,8 +17,8 @@ import {
   HUB_REFRESH_LABEL,
   readClockLabel,
   staleQueueAlert,
-  tileAriaLabel,
   tileIcon,
+  tileIconStyle,
   tileIconUrl,
   tileLinkAttrs,
 } from "../app/presentation/hub";
@@ -32,7 +32,9 @@ const tile = (over: Partial<HubTileProjection> = {}): HubTileProjection => ({
   url: "http://127.0.0.1:3002/",
   kind: "launch",
   status_attention: "",
+  attention_count: 0,
   status_summary: "",
+  status_positive: "",
   ...over,
 });
 
@@ -54,6 +56,14 @@ describe("presentation/hub", () => {
     expect(tileIconUrl(tile({ kind: "external", url: "https://boulangerie.com.br/" }))).toBe(
       "https://boulangerie.com.br/pwa/pwa-192x192.png?v=3",
     );
+  });
+
+  it("tileIconStyle desenha o ícone de reserva como o PNG: creme sobre a cor do app", () => {
+    expect(tileIconStyle(tile({ ref: "pos" }))).toEqual({ background: OPERATOR_APPS.pos.color, color: "#FCF7EE" });
+    // O tile do Gestor de pedidos se chama `gestor`; a cor é a do app `orders`.
+    expect(tileIconStyle(tile({ ref: "gestor" }))?.background).toBe(OPERATOR_APPS.orders.color);
+    // A Loja não é app de operador: fica no tom da casa.
+    expect(tileIconStyle(tile({ ref: "storefront", kind: "external" }))).toBeNull();
   });
 
   it("tileIconUrl devolve null para URL que não resolve — a tela cai no Lucide", () => {
@@ -210,7 +220,7 @@ function sourceFiles(dir: string): string[] {
 describe("camada da suíte (prévia v4)", () => {
   it("hubDateLine: hora e dia por extenso, com o dia da semana em maiúscula", () => {
     const nowMs = Date.parse("2026-10-03T13:03:00Z");
-    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10:03 · Sábado, 3 de outubro");
+    expect(hubDateLine(nowMs, "America/Sao_Paulo")).toBe("10h03 · Sábado, 3 de outubro");
     expect(hubDateLine(Number.NaN)).toBe("");
   });
 
@@ -274,21 +284,12 @@ describe("selo, aviso e nome acessível do bloco", () => {
   });
 
   it("a releitura que falha diz de quando é a tela, e nunca usa travessão", () => {
-    expect(staleQueueAlert("10:42")).toEqual({
+    expect(staleQueueAlert("10h42")).toEqual({
       title: "Os apps não foram atualizados.",
-      description: "O que está na tela é de 10:42.",
+      description: "O que está na tela é de 10h42.",
     });
     expect(staleQueueAlert("").description).toBe("O que está na tela pode estar desatualizado.");
-    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10:42");
+    expect(readClockLabel(Date.parse("2026-10-03T13:42:00Z"), "America/Sao_Paulo")).toBe("10h42");
     expect(readClockLabel(Number.NaN)).toBe("");
-  });
-
-  it("o nome acessível do bloco leva o estado inteiro, e avisa quando abre fora", () => {
-    expect(tileAriaLabel(tile({ status_positive: "Caixa aberto", status_summary: "2 encomendas" }))).toBe(
-      "PDV: Vender no balcão. Caixa aberto, 2 encomendas",
-    );
-    expect(tileAriaLabel(tile({ label: "Loja online", description: "Abrir a loja", kind: "external" }))).toBe(
-      "Loja online: Abrir a loja. Abre em outra janela",
-    );
   });
 });

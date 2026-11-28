@@ -1,13 +1,16 @@
 """URL configuration for the Shopman project."""
 
+import functools
 import logging
 
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.http import Http404, HttpResponse
+from django.middleware.csrf import get_token
+from django.urls import URLPattern, URLResolver, include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
-from shopman.doorman.views.access_link import AccessLinkCreateView, AccessLinkExchangeView
+from shopman.watchman.release import ReleaseIdentityView
 
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
@@ -20,6 +23,7 @@ from shopman.backstage.admin_console.pos_counter_agent import (
 from shopman.backstage.admin_console.settings_hub import settings_hub_view
 from shopman.backstage.views.admin_login import admin_login
 from shopman.backstage.views.two_factor import admin_2fa_enroll, admin_2fa_verify
+from shopman.shop.views.access_link import StoreAccessLinkCreateView, StoreAccessLinkExchangeView
 from shopman.shop.views.admin_host import admin_host_root
 from shopman.shop.views.health import DatabaseReadyView, HealthCheckView, ReadyCheckView
 
@@ -45,6 +49,8 @@ urlpatterns = [
     path("health/live/", HealthCheckView.as_view(), name="health-live"),
     path("health/ready/", ReadyCheckView.as_view(), name="health-ready"),
     path("health/database/", DatabaseReadyView.as_view(), name="health-database"),
+    # Qual build está no ar (WP-RELEASE-01 R1): constante, sem banco, sem segredo.
+    path("health/release/", ReleaseIdentityView.as_view(), name="health-release"),
     # O ingress público divide os dois processos Django por path. Estes aliases
     # caem no web-storefront (`/api/v1`); as rotas acima caem no web-operator.
     # Assim o monitor externo mede cada processo, não duas URLs do mesmo processo.
@@ -123,6 +129,52 @@ urlpatterns = [
     path("", include("shopman.backstage.urls")),
 ]
 
+
+# ── O Admin só responde no host do Admin ───────────────────────────
+#
+# Um Django serve todos os hosts. Sem esta trava, `/admin/` respondia também em
+# `api.`, e lá a sessão do login sai com `Domain=.boulangerie.com.br` (o
+# `OperatorSessionDomainMiddleware` reescreve o cookie no host da API): a sessão
+# de superusuário viajava para os nove subdomínios de operador (laudo S4, 23/10).
+#
+# Com `SHOPMAN_ADMIN_HOST` configurado, toda rota `admin/…` fora dele é 404. A
+# única exceção é `GET /admin/login/`, que o BFF dos apps de operador usa para
+# inicializar o cookie de CSRF (`operator-kit/server/utils/djangoProxy.ts`): fora
+# do host do Admin ele devolve só o cookie (204), sem formulário e sem aceitar
+# POST. Sem a setting (dev local), nada muda.
+_CSRF_BOOTSTRAP_PATH = "/admin/login/"
+
+
+def _is_admin_host(request) -> bool:
+    canonical = (getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip().lower()
+    if not canonical:
+        return True
+    return request.get_host().split(":")[0].lower() == canonical
+
+
+def _admin_host_only(view):
+    @functools.wraps(view)
+    def guarded(request, *args, **kwargs):
+        if _is_admin_host(request):
+            return view(request, *args, **kwargs)
+        if request.method in ("GET", "HEAD") and request.path_info == _CSRF_BOOTSTRAP_PATH:
+            get_token(request)
+            return HttpResponse(status=204)
+        raise Http404
+
+    return guarded
+
+
+def _confine_to_admin_host(patterns):
+    for pattern in patterns:
+        if isinstance(pattern, URLResolver):
+            _confine_to_admin_host(pattern.url_patterns)
+        elif isinstance(pattern, URLPattern):
+            pattern.callback = _admin_host_only(pattern.callback)
+
+
+_confine_to_admin_host(p for p in urlpatterns if str(p.pattern).startswith("admin/"))
+
 # ── Core APIs ──────────────────────────────────────────────────────
 #
 # Os ViewSets de CRUD dos pacotes do kernel (orderman, offerman, stockman,
@@ -146,11 +198,13 @@ urlpatterns = [
 #
 # - `api/auth/access/create/`: a ponte do ManyChat. O External Request do flow
 #   chama servidor a servidor com `ACCESS_LINK_API_KEY` (docs/guides/
-#   whatsapp-access-link.md).
+#   whatsapp-access-link.md). Montada pela subclasse do orquestrador, que aplica
+#   o teto de prazo e as audiências da loja (`shop/views/access_link.py`, OC-09).
 # - `auth/access/` (`doorman:access-exchange`): a entrada de reserva do
 #   `AccessLinkService._build_url` quando `ACCESS_LINK_ENTRY_URL` está vazio
 #   (suíte de testes, dev local sem loja). Com a loja configurada, como em todo
-#   ambiente vivo, o link emitido é `{loja}/a?t=` e a troca é POST.
+#   ambiente vivo, o link emitido é `{loja}/a?t=` e a troca é POST. A subclasse
+#   do orquestrador aplica a mesma régua de audiência da porta da loja (OC-09).
 #
 # O resto de `shopman.doorman.urls` e `shopman.doorman.api.urls` (OTP por
 # `api/auth/request-code|verify-code` e `auth/code/*`, pedido de link por
@@ -159,12 +213,12 @@ urlpatterns = [
 # e nenhuma superfície a chamava: a loja entra por `api/v1/auth/` (BFF Nuxt).
 # Guardrail: shopman/shop/tests/test_api_perimeter.py.
 urlpatterns += [
-    path("api/auth/access/create/", AccessLinkCreateView.as_view(), name="auth-access-create"),
+    path("api/auth/access/create/", StoreAccessLinkCreateView.as_view(), name="auth-access-create"),
     path(
         "auth/",
         include(
             (
-                [path("access/", AccessLinkExchangeView.as_view(), name="access-exchange")],
+                [path("access/", StoreAccessLinkExchangeView.as_view(), name="access-exchange")],
                 "doorman",
             )
         ),
@@ -172,7 +226,8 @@ urlpatterns += [
 ]
 
 urlpatterns += _include_optional("api/webhooks/", "shopman.shop.webhooks.urls")
-# Concierge de WhatsApp (superfície de cliente): /api/webhooks/manychat/conversation/
+# Concierge de WhatsApp (superfície de cliente): POST /api/webhooks/concierge/<connection_key>/events/
+# (o ManyChat chama a de `manychat-whatsapp-primary`, contrato v3).
 urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.urls")
 # ManyChat inbound webhook (subscriber sync). HMAC + replay gated; without
 # MANYCHAT_WEBHOOK_SECRET it fails CLOSED outside DEBUG (rejects unsigned payloads);
@@ -181,13 +236,15 @@ urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.
 urlpatterns += _include_optional(
     "api/webhooks/manychat/", "shopman.guestman.contrib.manychat.urls"
 )
+# Página do entregador da casa (pública, pelo token do link): DEV-2026-030.
+urlpatterns += _include_optional("api/v1/courier/", "shopman.shop.courier_link_urls")
 urlpatterns += _include_optional("api/v1/", "shopman.storefront.api.urls")
 urlpatterns += _include_optional("api/v1/backstage/", "shopman.backstage.api.urls")
 
 # Menuboard — superfície display pública (quadro-negro numa TV), tempo real via SSE.
 urlpatterns += _include_optional("", "shopman.shop.menuboard_urls")
 
-# Fiscal — DANFE NFC-e (cupom de operador, imprimível). Gated a staff na view.
+# Fiscal — DANFE NFC-e (cupom de operador, imprimível). Gated por permissão de pedidos ou de caixa na view.
 urlpatterns += _include_optional("", "shopman.shop.fiscal_urls")
 
 # ── Media files (dev only) ────────────────────────────────────────

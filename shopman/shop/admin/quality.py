@@ -68,7 +68,9 @@ class QualityDefectAdmin(ModelAdmin):
                 "fields": (("forces_discard", "position"),),
                 "description": (
                     "O defeito registra a causa. Somente risco de segurança alimentar deve "
-                    "obrigar descarte; o grau continua sendo o único eixo de preço."
+                    "obrigar descarte; o grau continua sendo o único eixo de preço. "
+                    "Miolo cru ou outra condição imprópria para consumo exige descarte, "
+                    "não desconto. Confira o veto antes de usar o motivo."
                 ),
             },
         ),
@@ -77,9 +79,9 @@ class QualityDefectAdmin(ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         return ("ref",) if obj else ()
 
-    @display(description="veto", label={"descarta": "danger", "vende com desconto": "success"})
+    @display(description="veto", label={"descarta": "danger", "avaliar pelo grau": "warning"})
     def veto_display(self, obj):
-        return "descarta" if obj.forces_discard else "vende com desconto"
+        return "descarta" if obj.forces_discard else "avaliar pelo grau"
 
     def has_delete_permission(self, request, obj=None):
         # As refs permanecem em itens históricos; o catálogo usa inativação.

@@ -55,7 +55,7 @@ def _shop_form_data(shop):
 
     initial_form = ShopForm(instance=shop)
     data = {}
-    list_fields = {"social_links", "kitchen_note_tags", "cancellation_presets"}  # ArrayWidget → lista de valores
+    list_fields = {"social_links"}  # ArrayWidget → lista de valores
     json_object_fields = {"tracking_copy", "integrations"}
 
     for name, field in initial_form.fields.items():
@@ -121,7 +121,7 @@ class TestAdminRegistration:
 
 
 class TestShopAdminStorefrontPreview:
-    """WP-S4 — iframe preview no change do Shop."""
+    """A loja desacoplada abre fora do Admin sem depender de iframe."""
 
     def test_readonly_fields_include_storefront_preview(self, db):
         from shopman.shop.models import ShopAppearance
@@ -129,111 +129,40 @@ class TestShopAdminStorefrontPreview:
         appearance_admin = admin.site._registry[ShopAppearance]
         assert "storefront_preview" in (appearance_admin.readonly_fields or ())
 
-    def test_change_page_contains_preview_iframe(self, db, admin_user, shop):
+    def test_change_page_opens_public_storefront_without_iframe(self, db, admin_user, shop, settings):
+        settings.SHOPMAN_STOREFRONT_BASE_URL = "https://loja.example.com"
         client = Client()
         client.force_login(admin_user)
         url = reverse("admin:shop_shopappearance_change", args=[shop.pk])
         resp = client.get(url)
         assert resp.status_code == 200
-        assert b'title="Loja"' in resp.content
-        assert b'x-bind:src="src"' in resp.content
-        assert "Atualizar prévia".encode() in resp.content
+        body = resp.content.decode()
+        assert 'href="https://loja.example.com/"' in body
+        assert "Abrir loja em nova aba" in body
+        assert 'target="_blank"' in body
+        assert 'rel="noopener noreferrer"' in body
+        assert '<iframe' not in body
+        assert 'x-bind:src' not in body
+        assert 'Página inicial embutida' not in body
+        assert 'Atualizar prévia' not in body
 
+    @pytest.mark.parametrize("station_type,expected", [
+        ("prep", "https://kds.example.com/cafe"),
+        ("picking", "https://kds.example.com/cafe"),
+        ("expedition", "https://gestor.example.com/?columns=expedition"),
+    ])
+    def test_station_operation_matches_the_runtime_destination(self, db, settings, station_type, expected):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com/"
+        settings.SHOPMAN_ORDERS_BASE_URL = "https://gestor.example.com/"
+        station = KDSInstance(ref="cafe", type=station_type)
+        html = admin.site._registry[KDSInstance].open_display(station)
+        assert f'href="{expected}"' in html
 
-class TestShopAdminCancellationPresets:
-    """Admin → Loja → Motivos de cancelamento e recusa: uma linha por motivo, grupo antes da barra."""
-
-    def test_rows_show_group_before_the_bar(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        shop.cancellation_presets = [
-            {"label": "Item indisponível no momento", "group": "Produto"},
-            "Pedido em duplicidade",
-        ]
-        shop.save(update_fields=["cancellation_presets"])
-
-        form = ShopForm(instance=shop)
-
-        assert form.initial["cancellation_presets"] == [
-            "Produto | Item indisponível no momento",
-            "Pedido em duplicidade",
-        ]
-
-    def test_form_saves_grouped_and_plain_rows(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist(
-            "cancellation_presets",
-            [
-                "Produto | Item indisponível no momento",
-                "  Pagamento |  Pagamento não aprovado ",
-                "Pedido em duplicidade",
-                " | Você pediu o cancelamento",
-                "",
-            ],
-        )
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        saved = form.save()
-        saved.refresh_from_db()
-
-        assert saved.cancellation_presets == [
-            {"label": "Item indisponível no momento", "group": "Produto"},
-            {"label": "Pagamento não aprovado", "group": "Pagamento"},
-            "Pedido em duplicidade",
-            "Você pediu o cancelamento",
-        ]
-
-    def test_form_refuses_preset_ending_in_period(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", ["Produto | Item acabou."])
-
-        form = ShopForm(data=data, instance=shop)
-
-        assert not form.is_valid()
-        message = " ".join(form.errors["cancellation_presets"])
-        assert "Tire a pontuação do fim de “Item acabou.”" in message
-        assert "Motivo: Item acabou.”" in message
-
-    def test_form_refuses_group_without_reason(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", ["Produto | "])
-
-        form = ShopForm(data=data, instance=shop)
-
-        assert not form.is_valid()
-        assert "Falta o motivo depois do grupo" in " ".join(form.errors["cancellation_presets"])
-
-    def test_empty_list_saves_empty(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        shop.cancellation_presets = ["Pedido em duplicidade"]
-        shop.save(update_fields=["cancellation_presets"])
-        data = _shop_form_data(shop)
-        data.setlist("cancellation_presets", [""])
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        assert form.save().cancellation_presets == []
-
-    def test_ordering_page_renders_rows_and_saves_through_the_admin(self, db, admin_user, shop):
-        shop.cancellation_presets = [{"label": "Pagamento não aprovado", "group": "Pagamento"}]
-        shop.save(update_fields=["cancellation_presets"])
-        client = Client()
-        client.force_login(admin_user)
-        url = reverse("admin:shop_shopordering_change", args=[shop.pk])
-
-        resp = client.get(url)
-
-        assert resp.status_code == 200
-        assert 'value="Pagamento | Pagamento não aprovado"'.encode() in resp.content
-        assert b"Motivos de cancelamento e recusa" in resp.content
+    def test_exit_has_no_dead_kds_link_when_orders_is_not_connected(self, db, settings):
+        settings.SHOPMAN_KDS_BASE_URL = "https://kds.example.com"
+        settings.SHOPMAN_ORDERS_BASE_URL = ""
+        station = KDSInstance(ref="saida", type="expedition")
+        assert 'href=' not in admin.site._registry[KDSInstance].open_display(station)
 
 
 class TestShopAdminOpeningHours:
@@ -247,6 +176,35 @@ class TestShopAdminOpeningHours:
         assert b'name="opening_hours_wednesday_open"' in resp.content
         assert b'name="opening_hours_wednesday_close"' in resp.content
         assert b'name="opening_hours"' not in resp.content
+
+    @pytest.mark.parametrize(("name", "shown"), [("Test Shop", "Test Shop"), ("", "Test")])
+    def test_saving_operation_page_names_the_shop_in_success_message(self, db, admin_user, shop, name, shown):
+        """Beta 05/11: salvar o horário dizia 'alterado com sucesso' com o nome vazio ("“”").
+
+        A mensagem do Admin é ``str(obj)``; com o nome fantasia em branco ela saía
+        vazia, e a loja tem outros nomes (marca, nome curto) para dizer de quem é.
+        """
+        from django.contrib.messages import get_messages
+
+        Shop.objects.filter(pk=shop.pk).update(name=name)
+        shop.refresh_from_db()
+        client = Client()
+        client.force_login(admin_user)
+        url = reverse("admin:shop_shopoperation_change", args=[shop.pk])
+        form = client.get(url).context["adminform"].form
+        data = {k: v for k, v in _shop_form_data(shop).lists() if k in form.fields}
+        data = {k: (v if len(v) > 1 else v[0]) for k, v in data.items()}
+        data["_save"] = "Salvar"
+
+        resp = client.post(url, data)
+
+        assert resp.status_code == 302, resp.context["adminform"].form.errors if resp.context else resp
+        texts = [str(m) for m in get_messages(resp.wsgi_request)]
+        assert texts, "sem mensagem de sucesso"
+        assert "“”" not in texts[0]
+        assert f">{shown}<" in texts[0]
+        shop.refresh_from_db()
+        assert shop.name == name
 
     def test_form_saves_opening_hours_from_day_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
@@ -273,33 +231,6 @@ class TestShopAdminOpeningHours:
         assert saved.opening_hours["wednesday"] == {"open": "09:00", "close": "18:00"}
         assert saved.opening_hours["saturday"] == {"open": "09:00", "close": "18:00"}
         assert "sunday" not in saved.opening_hours
-
-    def test_form_saves_kitchen_note_tags_from_array_widget(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        data = _shop_form_data(shop)
-        data.setlist("kitchen_note_tags", ["Bem assado", "Sem cebola", "Cortar ao meio"])
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        saved = form.save()
-
-        assert saved.kitchen_note_tags == ["Bem assado", "Sem cebola", "Cortar ao meio"]
-
-    def test_form_clears_kitchen_note_tags_when_empty(self, shop):
-        from shopman.shop.admin.shop import ShopForm
-
-        shop.kitchen_note_tags = ["Bem assado"]
-        shop.save(update_fields=["kitchen_note_tags"])
-
-        data = _shop_form_data(shop)
-        data.setlist("kitchen_note_tags", [])
-
-        form = ShopForm(data=data, instance=shop)
-        assert form.is_valid(), form.errors
-        saved = form.save()
-
-        assert saved.kitchen_note_tags == []
 
 
 class TestShopAdminDefaults:
@@ -438,13 +369,106 @@ class TestShopAdminCalendar:
             }
         ]
 
+    def _record_decision(self, rf, admin_user, shop, monkeypatch, **fields):
+        from shopman.shop.admin.shop import CalendarDecisionForm
+        from shopman.shop.models import ShopOperation
+
+        data = {
+            "_form_submitted": "1",
+            "ends_on": "",
+            "label": "Feriado",
+            "decision": "closed",
+            "opens_at": "",
+            "closes_at": "",
+            **fields,
+        }
+        request = rf.post("/", data=data)
+        request.user = admin_user
+        form = CalendarDecisionForm(request, shop.pk, data=request.POST)
+        assert form.is_valid(), form.errors
+        model_admin = admin.site._registry[ShopOperation]
+        sent = []
+        monkeypatch.setattr(
+            model_admin,
+            "message_user",
+            lambda _request, message, level=None, **kwargs: sent.append((level, str(message))),
+        )
+        response = model_admin.record_calendar_decision(request, object_id=str(shop.pk))
+        assert response.status_code == 302
+        return sent
+
+    def test_closing_a_day_with_open_orders_warns_and_alerts(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-PAGA", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-24", "payment": {"status": "captured"}},
+        )
+        Order.objects.create(
+            ref="ENC-NOVA", channel_ref="web", status="new", total_q=3000,
+            data={"delivery_date": "2026-12-26"},
+        )
+        Order.objects.create(
+            ref="ENC-CANC", channel_ref="web", status="cancelled", total_q=3000,
+            data={"delivery_date": "2026-12-24"},
+        )
+        Order.objects.create(
+            ref="ENC-FORA", channel_ref="web", status="accepted", total_q=3000,
+            data={"delivery_date": "2026-12-27"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+
+        warnings = [text for level, text in sent if level == messages.WARNING]
+        assert len(warnings) == 1
+        assert "2 pedidos em aberto" in warnings[0]
+        assert "ENC-NOVA" in warnings[0] and "ENC-PAGA" in warnings[0]
+        assert "ENC-CANC" not in warnings[0] and "ENC-FORA" not in warnings[0]
+        assert "—" not in warnings[0]
+        alerts = OperatorAlert.objects.filter(type="order_on_closed_day").order_by("order_ref")
+        assert [a.order_ref for a in alerts] == ["ENC-NOVA", "ENC-PAGA"]
+        assert all(a.audience == "orders" for a in alerts)
+        assert "24/12/2026" in alerts.get(order_ref="ENC-PAGA").message
+        assert "Dedupe" not in alerts[0].message
+        assert Order.objects.get(ref="ENC-PAGA").status == "accepted"
+        assert Order.objects.get(ref="ENC-PAGA").data["delivery_date"] == "2026-12-24"
+
+        # Registrar de novo a mesma decisão não duplica o aviso.
+        self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-24", ends_on="2026-12-26", label="Natal",
+        )
+        assert OperatorAlert.objects.filter(type="order_on_closed_day").count() == 2
+
+    def test_opening_a_day_with_orders_does_not_warn(self, rf, admin_user, shop, monkeypatch):
+        from django.contrib import messages
+        from shopman.orderman.models import Order
+
+        Order.objects.create(
+            ref="ENC-ABERTO", channel_ref="web", status="accepted", total_q=5000,
+            data={"delivery_date": "2026-12-25"},
+        )
+
+        sent = self._record_decision(
+            rf, admin_user, shop, monkeypatch,
+            starts_on="2026-12-25", decision="special", label="Natal aberto",
+            opens_at="09:00", closes_at="13:00",
+        )
+
+        assert [level for level, _ in sent] == [messages.SUCCESS]
+        assert not OperatorAlert.objects.filter(type="order_on_closed_day").exists()
+
     def test_form_saves_defaults_from_structured_fields(self, shop):
         from shopman.shop.admin.shop import ShopForm
 
         shop.defaults = {
             "surface_policy": {"keep": True},
             "menu": {"dynamic_collections": ["featured"]},
-            "notifications": {"backend": "console", "other": "kept"},
+            "notifications": {"backend": "console", "customer_phone": "direct"},
             "pickup_slots": [
                 {"ref": "slot-legacy", "label": "Legado", "starts_at": "07:00"},
                 {"ref": "slot-extra-1", "label": "Extra 1", "starts_at": "19:00"},
@@ -474,7 +498,6 @@ class TestShopAdminCalendar:
         data["defaults_max_preorder_days"] = "21"
         data["defaults_pickup_rounding_minutes"] = "30"
         data["defaults_pickup_history_days"] = "45"
-        data["defaults_pickup_fallback_slot"] = "slot-09"
         data["defaults_pickup_slot_1_ref"] = "slot-09"
         data["defaults_pickup_slot_1_label"] = "A partir das 9h"
         data["defaults_pickup_slot_1_starts_at"] = "09:00"
@@ -499,7 +522,7 @@ class TestShopAdminCalendar:
             "fresh_from_oven",
             "new_arrivals",
         ]
-        assert saved.defaults["notifications"] == {"backend": "manychat", "other": "kept"}
+        assert saved.defaults["notifications"] == {"backend": "manychat", "customer_phone": "direct"}
         assert saved.defaults["max_preorder_days"] == 21
         assert saved.defaults["pickup_slots"][:2] == [
             {"ref": "slot-09", "label": "A partir das 9h", "starts_at": "09:00"},
@@ -514,7 +537,6 @@ class TestShopAdminCalendar:
             "rounding_minutes": 30,
             "history_days": 45,
             "other": "kept",
-            "fallback_slot": "slot-09",
         }
         assert saved.defaults["closed_dates"] == [
             {"date": "2026-12-25", "label": "Natal"},
@@ -528,6 +550,96 @@ class TestShopAdminCalendar:
         }
         assert production_suggestion["high_demand_multiplier"] == "1.30"
         assert production_suggestion["safety_stock_percent"] == "0.15"
+
+
+class TestShopAdminGoogleMerchant:
+    """A conta do envio ao Google entra pelo Admin, num diálogo, sem JSON cru."""
+
+    _DATA = {
+        "_form_submitted": "1",
+        "account_id": "5881119366",
+        "data_source_id": "10786369877",
+        "content_language": "pt",
+        "feed_label": "br",
+    }
+
+    def test_integrations_page_shows_action_and_current_values(self, db, admin_user, shop):
+        from shopman.shop.models import ShopIntegrations
+
+        shop.defaults = {"google_merchant": {"account_id": "5881119366", "data_source_id": "999"}}
+        shop.save(update_fields=["defaults"])
+        client = Client()
+        client.force_login(admin_user)
+        response = client.get(reverse("admin:shop_shopintegrations_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        assert b"google-merchant" in response.content
+        assert b"5881119366" in response.content
+        assert b"google-merchant-register" in response.content
+        assert admin.site._registry[ShopIntegrations].actions_detail == (
+            "set_google_merchant",
+            "register_google_merchant",
+        )
+
+    def test_form_requires_numeric_ids(self, rf, shop):
+        from shopman.shop.admin.shop import GoogleMerchantForm
+
+        form = GoogleMerchantForm(
+            rf.post("/"), shop.pk, data={**self._DATA, "account_id": "58-811", "data_source_id": ""},
+        )
+        assert not form.is_valid()
+        assert set(form.errors) == {"account_id", "data_source_id"}
+
+    def test_form_opens_with_saved_values(self, rf, shop):
+        from shopman.shop.admin.shop import GoogleMerchantForm
+
+        shop.defaults = {"google_merchant": {"account_id": "123", "data_source_id": "456"}}
+        shop.save(update_fields=["defaults"])
+        form = GoogleMerchantForm(rf.get("/"), shop.pk)
+        assert form.fields["account_id"].initial == "123"
+        assert form.fields["data_source_id"].initial == "456"
+        assert form.fields["content_language"].initial == "pt"
+        assert form.fields["feed_label"].initial == "BR"
+
+    def test_store_code_is_saved_and_blank_removes_it(self, rf, admin_user, shop, monkeypatch):
+        from shopman.shop.models import ShopIntegrations
+
+        model_admin = admin.site._registry[ShopIntegrations]
+        monkeypatch.setattr(model_admin, "message_user", lambda *args, **kwargs: None)
+        for code, expected in (("18102236950405822206", "18102236950405822206"), ("", None)):
+            request = rf.post("/", data={**self._DATA, "store_code": code})
+            request.user = admin_user
+            model_admin.set_google_merchant(request, object_id=str(shop.pk))
+            shop.refresh_from_db()
+            assert shop.defaults["google_merchant"].get("store_code") == expected
+
+    def test_action_merges_into_defaults(self, rf, admin_user, shop, monkeypatch):
+        from shopman.shop.adapters.catalog_projection_google import _get_config
+        from shopman.shop.models import ShopIntegrations
+
+        shop.defaults = {"google_merchant": {"extra": "fica"}, "keep": {"yes": True}}
+        shop.save(update_fields=["defaults"])
+        request = rf.post("/", data=self._DATA)
+        request.user = admin_user
+        model_admin = admin.site._registry[ShopIntegrations]
+        monkeypatch.setattr(model_admin, "message_user", lambda *args, **kwargs: None)
+
+        response = model_admin.set_google_merchant(request, object_id=str(shop.pk))
+
+        assert response.status_code == 302
+        shop.refresh_from_db()
+        assert shop.defaults["keep"] == {"yes": True}
+        assert shop.defaults["google_merchant"] == {
+            "extra": "fica",
+            "account_id": "5881119366",
+            "data_source_id": "10786369877",
+            "content_language": "pt",
+            "feed_label": "BR",
+        }
+        # É exatamente o que o envio ao Google lê.
+        config = _get_config()
+        assert config["account_id"] == "5881119366"
+        assert config["data_source_id"] == "10786369877"
 
 
 class TestAddressMapConfirmationAdminToggle:
@@ -726,15 +838,12 @@ class TestShopProductionAdmin:
         assert form.fields["defaults_production_order_match"].initial == "manual"
         assert "herda 240" in form.fields["defaults_production_default_max_started_minutes"].help_text.lower()
 
-    def test_form_saves_every_block_and_preserves_unknown_keys(self, shop):
+    def test_form_saves_every_block_and_preserves_other_domains(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
 
         shop.defaults = {
             "another_domain": {"keep": True},
-            "production": {
-                "future_block": {"keep": True},
-                "alerts": {"future_key": "kept"},
-            },
+            "production": {"alerts": {"low_yield_threshold": "0.60"}},
         }
         shop.save(update_fields=["defaults"])
         form_class = _section_form(_PRODUCTION_FIELDSETS)
@@ -762,14 +871,12 @@ class TestShopProductionAdmin:
         saved = form.save()
         production = saved.defaults["production"]
         assert saved.defaults["another_domain"] == {"keep": True}
-        assert production["future_block"] == {"keep": True}
         assert production["suggestion"] == {
             "seasons": {"hot": [1, 2], "mild": [3, 4], "cold": [6, 7]},
             "high_demand_multiplier": "1.25",
             "safety_stock_percent": "0.10",
         }
         assert production["alerts"] == {
-            "future_key": "kept",
             "low_yield_threshold": "0.75",
             "default_max_started_minutes": 180,
             "late_check_cadence_minutes": 0,
@@ -785,13 +892,13 @@ class TestShopProductionAdmin:
         }
         assert production["order_match"] == "earliest_target"
 
-    def test_blank_fields_remove_only_known_overrides(self, shop):
+    def test_blank_fields_remove_the_overrides(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
         from shopman.shop.production_config import ProductionConfig
 
         shop.defaults = {
             "production": {
-                "alerts": {"low_yield_threshold": "0.50", "future_key": "kept"},
+                "alerts": {"low_yield_threshold": "0.50"},
                 "notifications": {"enabled": True, "severities": ["critical"]},
                 "order_match": "manual",
             }
@@ -800,13 +907,23 @@ class TestShopProductionAdmin:
         form = _section_form(_PRODUCTION_FIELDSETS)(data={}, instance=shop)
 
         assert form.is_valid(), form.errors
-        production = form.save().defaults["production"]
-        assert production == {"alerts": {"future_key": "kept"}}
-        resolved = ProductionConfig.from_dict(production)
+        assert "production" not in form.save().defaults
+        resolved = ProductionConfig.from_dict({})
         resolved.validate()
         assert resolved.alerts.low_yield_threshold == "0.80"
         assert resolved.notifications.enabled is False
         assert resolved.order_match == "first_planned"
+
+    def test_unknown_key_already_stored_is_refused_by_name(self, shop):
+        """Chave que o bloco não declara não passa calada pelo form: o gestor lê o nome."""
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+
+        shop.defaults = {"production": {"alerts": {"low_yeld_threshold": "0.70"}}}
+        shop.save(update_fields=["defaults"])
+        form = _section_form(_PRODUCTION_FIELDSETS)(data={}, instance=shop)
+
+        assert not form.is_valid()
+        assert "low_yeld_threshold" in str(form.non_field_errors())
 
     def test_cross_block_validation_rejects_overlapping_seasons(self, shop):
         from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
@@ -894,6 +1011,229 @@ class TestShopAdminLoyaltyDefaults:
         form = ShopForm(data=data, instance=shop)
         assert not form.is_valid()
         assert "defaults_loyalty_tier_gold_threshold" in form.errors
+
+
+class TestShopAdminPreorderKitchen:
+    """``Shop.defaults["preorder_kitchen"]`` editável na página de Pedidos, sem JSON."""
+
+    def test_change_page_shows_preorder_kitchen_fields(self, db, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+        resp = client.get(reverse("admin:shop_shopordering_change", args=[shop.pk]))
+        assert resp.status_code == 200
+        assert b'name="defaults_preorder_kitchen_lead_minutes"' in resp.content
+        assert b'name="defaults_preorder_kitchen_default_prep_minutes"' in resp.content
+        assert b'name="defaults_preorder_kitchen_prep_minutes_by_sku"' in resp.content
+        assert "Encomenda na Cozinha" in resp.content.decode()
+
+    def test_initial_shows_effective_policy(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"preorder_kitchen": {"lead_minutes": 10, "prep_minutes_by_sku": {"BOLO": 90, "BAGUETE": 20}}}
+        shop.save(update_fields=["defaults"])
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_preorder_kitchen_lead_minutes"].initial == 10
+        # Chave ausente mostra o padrão declarado da política.
+        assert form.fields["defaults_preorder_kitchen_default_prep_minutes"].initial == 30
+        assert form.fields["defaults_preorder_kitchen_prep_minutes_by_sku"].initial == "BAGUETE: 20; BOLO: 90"
+
+    def test_form_saves_policy_into_shop_defaults(self, shop):
+        from shopman.offerman.models import Product
+
+        from shopman.shop.admin.shop import ShopForm
+
+        Product.objects.create(sku="BAGUETE", name="Baguete", unit="un", base_price_q=1000)
+        Product.objects.create(sku="BOLO", name="Bolo", unit="un", base_price_q=5000)
+        shop.defaults = {"preorder_kitchen": {"future_key": "kept"}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "20"
+        data["defaults_preorder_kitchen_default_prep_minutes"] = "40"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "BAGUETE: 25; BOLO: 90"
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["preorder_kitchen"] == {
+            "future_key": "kept",
+            "lead_minutes": 20,
+            "default_prep_minutes": 40,
+            "prep_minutes_by_sku": {"BAGUETE": 25, "BOLO": 90},
+        }
+
+    def test_blank_fields_save_declared_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = ""
+        data["defaults_preorder_kitchen_default_prep_minutes"] = ""
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["preorder_kitchen"] == {
+            "lead_minutes": 15,
+            "default_prep_minutes": 30,
+            "prep_minutes_by_sku": {},
+        }
+
+    def test_invalid_values_are_refused_with_message(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "-5"
+        data["defaults_preorder_kitchen_default_prep_minutes"] = "9999"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "NAO-EXISTE: 20; BAGUETE vinte"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        assert "defaults_preorder_kitchen_lead_minutes" in form.errors
+        assert "defaults_preorder_kitchen_default_prep_minutes" in form.errors
+        errors = " ".join(form.errors["defaults_preorder_kitchen_prep_minutes_by_sku"])
+        assert "BAGUETE vinte" in errors
+        assert "SKU desconhecido: NAO-EXISTE" in errors
+        shop.refresh_from_db()
+        assert "preorder_kitchen" not in (shop.defaults or {})
+
+    def test_saving_moves_the_kitchen_arrival_time(self, shop):
+        """Combinada às 17h: 16h15 com o padrão; 15h30 depois de 80 min de preparo e 10 de antecedência."""
+        from datetime import datetime, timedelta
+
+        from django.core.cache import cache
+        from django.utils import timezone
+        from shopman.offerman.models import Product
+        from shopman.orderman.models import Order, OrderItem
+
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.lifecycle import preorder_activation_at
+
+        day = timezone.localdate() + timedelta(days=3)
+        Product.objects.create(sku="BOLO", name="Bolo", unit="un", base_price_q=5000)
+        order = Order.objects.create(
+            ref="ENC-ADMIN", channel_ref="balcao", session_key="sk-enc-admin", status=Order.Status.ACCEPTED,
+            total_q=5000, data={"delivery_date": day.isoformat(), "is_preorder": True, "delivery_time_slot": "17:00-17:30"},
+        )
+        OrderItem.objects.create(order=order, line_id="L0", sku="BOLO", qty=1, unit_price_q=5000, line_total_q=5000)
+
+        def at(hour, minute):
+            return timezone.make_aware(datetime.combine(day, time(hour, minute)))
+
+        cache.clear()
+        assert preorder_activation_at(order)[0] == at(16, 15)
+
+        data = _shop_form_data(shop)
+        data["defaults_preorder_kitchen_lead_minutes"] = "10"
+        data["defaults_preorder_kitchen_prep_minutes_by_sku"] = "BOLO: 80"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        form.save()
+        cache.clear()
+
+        assert preorder_activation_at(order)[0] == at(15, 30)
+
+
+class TestShopAdminNoShow:
+    """``Shop.defaults["no_show"]`` editável na página de Pedidos, sem JSON."""
+
+    def test_change_page_shows_no_show_fields(self, db, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+        resp = client.get(reverse("admin:shop_shopordering_change", args=[shop.pk]))
+        assert resp.status_code == 200
+        assert b'name="defaults_no_show_tolerance_minutes"' in resp.content
+        assert b'name="defaults_no_show_cutoff_minutes_before_close"' in resp.content
+        assert b'name="defaults_no_show_paid_waits_cutoff"' in resp.content
+        assert "Pedido não retirado" in resp.content.decode()
+
+    def test_initial_shows_effective_policy(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"no_show": {"tolerance_minutes": 30, "paid_waits_cutoff": False}}
+        shop.save(update_fields=["defaults"])
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_no_show_tolerance_minutes"].initial == 30
+        # Chave ausente mostra o padrão declarado da política.
+        assert form.fields["defaults_no_show_cutoff_minutes_before_close"].initial == 0
+        assert form.fields["defaults_no_show_paid_waits_cutoff"].initial is False
+
+    def test_initial_without_the_block_shows_the_house_rule(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        form = ShopForm(instance=shop)
+        assert form.fields["defaults_no_show_tolerance_minutes"].initial == 60
+        assert form.fields["defaults_no_show_cutoff_minutes_before_close"].initial == 0
+        assert form.fields["defaults_no_show_paid_waits_cutoff"].initial is True
+
+    def test_form_saves_policy_into_shop_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        shop.defaults = {"no_show": {"future_key": "kept"}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "45"
+        data["defaults_no_show_cutoff_minutes_before_close"] = "30"
+        data.pop("defaults_no_show_paid_waits_cutoff", None)  # chave desligada não vai no POST
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["no_show"] == {
+            "future_key": "kept",
+            "tolerance_minutes": 45,
+            "cutoff_minutes_before_close": 30,
+            "paid_waits_cutoff": False,
+        }
+
+    def test_blank_fields_save_declared_defaults(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = ""
+        data["defaults_no_show_cutoff_minutes_before_close"] = ""
+
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+
+        assert saved.defaults["no_show"] == {
+            "tolerance_minutes": 60,
+            "cutoff_minutes_before_close": 0,
+            "paid_waits_cutoff": True,
+        }
+
+    def test_invalid_values_are_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "-5"
+        data["defaults_no_show_cutoff_minutes_before_close"] = "99999"
+
+        form = ShopForm(data=data, instance=shop)
+        assert not form.is_valid()
+        assert "defaults_no_show_tolerance_minutes" in form.errors
+        assert "defaults_no_show_cutoff_minutes_before_close" in form.errors
+        shop.refresh_from_db()
+        assert "no_show" not in (shop.defaults or {})
+
+    def test_saving_moves_the_time_the_gesture_releases(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.policies.no_show_policy import resolve_no_show_policy
+
+        assert resolve_no_show_policy().tolerance_minutes == 60
+
+        data = _shop_form_data(shop)
+        data["defaults_no_show_tolerance_minutes"] = "20"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        form.save()
+
+        assert resolve_no_show_policy().tolerance_minutes == 20
 
 
 class TestShopAdminPurchaseDefaults:
@@ -1605,6 +1945,57 @@ class TestPosLateFiscalEmissionPolicy:
 
         fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
         assert "defaults_pos_late_fiscal_emission_days" in fields
+
+
+class TestRunningLowDefault:
+    """Quando o item está acabando (DEV-2026-077): o padrão da loja, no Admin."""
+
+    def test_form_saves_the_percent(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import running_low
+
+        data = _shop_form_data(shop)
+        data["defaults_running_low_percent"] = "30"
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert saved.defaults["running_low"] == {"percent": 30}
+        from django.core.cache import cache
+
+        cache.clear()
+        assert running_low.shop_default_percent() == 30
+
+    def test_blank_falls_back_to_twenty(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+        from shopman.shop.services import running_low
+
+        shop.defaults = {"running_low": {"percent": 50}}
+        shop.save(update_fields=["defaults"])
+        data = _shop_form_data(shop)
+        assert str(data["defaults_running_low_percent"]) == "50"
+        data["defaults_running_low_percent"] = ""
+        form = ShopForm(data=data, instance=shop)
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        assert "running_low" not in saved.defaults
+        from django.core.cache import cache
+
+        cache.clear()
+        assert running_low.shop_default_percent() == 20
+
+    def test_out_of_range_is_refused(self, shop):
+        from shopman.shop.admin.shop import ShopForm
+
+        for raw in ("101", "-1"):
+            data = _shop_form_data(shop)
+            data["defaults_running_low_percent"] = raw
+            assert not ShopForm(data=data, instance=shop).is_valid()
+
+    def test_field_lives_on_the_pos_page(self):
+        from shopman.shop.admin.shop import _POS_FIELDSETS
+
+        fields = [f for _, opts in _POS_FIELDSETS for f in opts["fields"]]
+        assert "defaults_running_low_percent" in fields
 
 
 class TestCashTolerancePolicy:

@@ -26,7 +26,7 @@ from shopman.shop.models import NotificationLifecycle, Shop, UserNotification
 from shopman.shop.services import kds as kds_core
 from shopman.shop.services import kds_alerts
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _perm(model, codename: str) -> Permission:
@@ -82,6 +82,8 @@ def test_venda_do_dia_nao_e_encomenda_e_a_encomenda_diz_a_hora(forno):
             "customer": {"name": "Café Parisiense"},
             "delivery_date": timezone.localdate().isoformat(),
             "delivery_time_slot": "22:30-23:00",
+            # O carimbo que o commit grava na encomenda (#3163).
+            "is_preorder": True,
         },
         created_days_ago=2,
     )
@@ -93,7 +95,7 @@ def test_venda_do_dia_nao_e_encomenda_e_a_encomenda_diz_a_hora(forno):
     assert cards["WEB-1-S84"].due_time_display == ""
     assert cards["POS-1-B52"].is_preorder is True
     assert cards["POS-1-B52"].customer_name == "Café Parisiense"
-    assert cards["POS-1-B52"].due_time_display == "retira das 22:30 às 23:00"
+    assert cards["POS-1-B52"].due_time_display == "retira das 22h30 às 23h"
 
 
 def test_iniciado_por_diz_o_nome_de_chamada_e_a_hora(forno, cozinheiro):

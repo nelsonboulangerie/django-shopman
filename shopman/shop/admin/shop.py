@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import date, time, timedelta
 from decimal import Decimal
@@ -10,12 +9,14 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.utils import flatten_fieldsets
+from django.core.validators import RegexValidator
 from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import escape, format_html, format_html_join
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, format_html_join
 from shopman.utils import unfold_component
+from shopman.utils.formatting import format_local
+from shopman.utils.monetary import format_money
 from unfold.admin import ModelAdmin
 from unfold.contrib.forms.widgets import ArrayWidget
 from unfold.decorators import action
@@ -41,6 +42,7 @@ from shopman.shop.address_location_config import (
     DEFAULT_POLICY_VERSION,
     DEFAULT_THRESHOLD_M,
 )
+from shopman.shop.admin import ai_routes
 from shopman.shop.admin.widgets import FontPreviewWidget
 from shopman.shop.colors import oklch_to_hex
 from shopman.shop.loyalty_config import (
@@ -71,7 +73,6 @@ from shopman.shop.models import (
     ShopPurchase,
     ShopSearch,
 )
-from shopman.shop.models.shop import cancellation_preset_entries, validate_cancellation_presets
 from shopman.shop.operator_capacity_policy import (
     DEFAULT_ATTENTION_PERCENT,
     DEFAULT_CRITICAL_PERCENT,
@@ -80,6 +81,20 @@ from shopman.shop.operator_capacity_policy import (
     PERCENT_FLOOR,
     SUSTAIN_MINUTES_CEILING,
     SUSTAIN_MINUTES_FLOOR,
+)
+from shopman.shop.policies import pickup_window_in_use
+from shopman.shop.policies.no_show_policy import (
+    DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE,
+    DEFAULT_TOLERANCE_MINUTES,
+    NoShowPolicy,
+)
+from shopman.shop.policies.preorder_kitchen_policy import (
+    DEFAULT_LEAD_MINUTES,
+    DEFAULT_PREP_MINUTES,
+    PreorderKitchenPolicy,
+)
+from shopman.shop.policies.preorder_kitchen_policy import (
+    MAX_MINUTES as PREORDER_KITCHEN_MAX_MINUTES,
 )
 from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
@@ -254,34 +269,92 @@ class CalendarRemovalForm(BaseDialogForm):
     )
 
 
-#: No Admin, cada motivo é uma linha; o grupo vem antes, separado por esta barra.
-CANCELLATION_PRESET_GROUP_SEPARATOR = "|"
+#: Chave de ``Shop.defaults`` com a conta do envio do catálogo ao Google (Merchant API).
+GOOGLE_MERCHANT_KEY = "google_merchant"
+GOOGLE_MERCHANT_DEFAULT_LANGUAGE = "pt"
+GOOGLE_MERCHANT_DEFAULT_FEED_LABEL = "BR"
 
 
-def _cancellation_presets_to_rows(raw) -> list[str]:
-    """``Shop.cancellation_presets`` → linhas do ArrayWidget (``"Grupo | Motivo"`` ou ``"Motivo"``)."""
-    rows = []
-    for group, label in cancellation_preset_entries(raw):
-        rows.append(f"{group} {CANCELLATION_PRESET_GROUP_SEPARATOR} {label}" if group else label)
-    return rows
+class GoogleMerchantForm(BaseDialogForm):
+    """Conta e fonte de dados do Merchant Center, gravadas em ``Shop.defaults``.
+
+    São dado da loja (ADR-042): o segredo da service account fica no deployment.
+    O formulário abre com o que já está gravado.
+    """
+
+    account_id = forms.CharField(
+        label="Conta do Merchant Center",
+        max_length=20,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O número da conta, no canto superior direito do Merchant Center.",
+    )
+    data_source_id = forms.CharField(
+        label="Fonte de dados (API)",
+        max_length=20,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O número da fonte de dados do tipo API, em Configurações, Fontes de dados.",
+    )
+    content_language = forms.CharField(
+        label="Idioma dos produtos",
+        max_length=2,
+        initial=GOOGLE_MERCHANT_DEFAULT_LANGUAGE,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="Código de duas letras. Para o Brasil, pt.",
+    )
+    feed_label = forms.CharField(
+        label="Rótulo do feed",
+        max_length=20,
+        initial=GOOGLE_MERCHANT_DEFAULT_FEED_LABEL,
+        widget=UnfoldAdminTextInputWidget,
+        help_text="O mesmo rótulo da fonte de dados. Para o Brasil, BR.",
+    )
+    store_code = forms.CharField(
+        label="Código da loja (retirada)",
+        max_length=64,
+        required=False,
+        widget=UnfoldAdminTextInputWidget,
+        help_text=(
+            "O código da loja no Gerenciador de Perfis de Empresas. Com ele, o Google mostra "
+            "retirada grátis na loja no mesmo dia. Em branco, só a venda online."
+        ),
+    )
+
+    def __init__(self, request, object_id=None, *args, **kwargs):
+        super().__init__(request, object_id, *args, **kwargs)
+        shop = Shop.objects.filter(pk=object_id).first() if object_id else None
+        current = _shop_defaults(shop).get(GOOGLE_MERCHANT_KEY) if shop else None
+        if isinstance(current, dict):
+            for name in ("account_id", "data_source_id", "content_language", "feed_label", "store_code"):
+                if current.get(name):
+                    self.fields[name].initial = str(current[name])
+
+    def _digits(self, name: str) -> str:
+        value = (self.cleaned_data.get(name) or "").strip()
+        if not value.isdigit():
+            raise forms.ValidationError("Use só os números, sem espaço nem traço.")
+        return value
+
+    def clean_account_id(self) -> str:
+        return self._digits("account_id")
+
+    def clean_data_source_id(self) -> str:
+        return self._digits("data_source_id")
+
+    def clean_content_language(self) -> str:
+        value = (self.cleaned_data.get("content_language") or "").strip().lower()
+        if len(value) != 2 or not value.isalpha():
+            raise forms.ValidationError("Use o código de duas letras do idioma, por exemplo pt.")
+        return value
+
+    def clean_feed_label(self) -> str:
+        value = (self.cleaned_data.get("feed_label") or "").strip().upper()
+        if not value or not all(char.isalnum() or char in "-_" for char in value):
+            raise forms.ValidationError("Use letras, números, hífen ou sublinhado, por exemplo BR.")
+        return value
 
 
-def _cancellation_presets_from_rows(rows) -> list:
-    """Linhas do ArrayWidget → ``Shop.cancellation_presets`` (string ou ``{"label", "group"}``)."""
-    presets: list = []
-    for row in rows or []:
-        row = str(row).strip()
-        if not row:
-            continue
-        group, sep, label = row.partition(CANCELLATION_PRESET_GROUP_SEPARATOR)
-        if not sep:
-            presets.append(row)
-            continue
-        group, label = group.strip(), label.strip()
-        if not label:
-            raise forms.ValidationError(f"Falta o motivo depois do grupo em “{row}”.")
-        presets.append({"label": label, "group": group} if group else label)
-    return presets
+class GoogleMerchantRegistrationForm(BaseDialogForm):
+    """Confirmação do registro do envio no Google: não pede nada além do clique."""
 
 
 def _opening_field(day: str, suffix: str) -> str:
@@ -309,9 +382,59 @@ def _dynamic_collection_choices() -> tuple[tuple[str, str], ...]:
     return tuple(choices)
 
 
+OPENING_BREAKS_HELP = (
+    "Intervalos dentro do horário, separados por vírgula (ex.: 12:00-13:00, 16:00-17:00). "
+    "Cada intervalo divide o dia em turnos; a loja, o checkout e o iFood ficam fechados nele."
+)
+
+
+def _format_breaks(entry) -> str:
+    breaks = entry.get("breaks") if isinstance(entry, dict) else None
+    if not isinstance(breaks, list):
+        return ""
+    return ", ".join(
+        f"{_format_admin_time(item.get('start'))}-{_format_admin_time(item.get('end'))}"
+        for item in breaks
+        if isinstance(item, dict)
+    )
+
+
+def _parse_breaks(raw: str, *, opens_at, closes_at, label: str) -> list[dict]:
+    """``"12:00-13:00, 16:00-17:00"`` → ``[{"start": "12:00", "end": "13:00"}, ...]``.
+
+    Recusa o que o iFood recusaria (turno sobreposto) e o que não forma turno:
+    pausa fora do horário do dia, que encosta na abertura ou no fechamento, ou
+    que se sobrepõe a outra.
+    """
+    from datetime import time as time_type
+
+    parsed: list[tuple] = []
+    for chunk in [part.strip() for part in (raw or "").split(",") if part.strip()]:
+        try:
+            start_raw, end_raw = (piece.strip() for piece in chunk.split("-"))
+            start, end = time_type.fromisoformat(start_raw), time_type.fromisoformat(end_raw)
+        except ValueError:
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” não está no formato 12:00-13:00."
+            ) from None
+        if start >= end:
+            raise forms.ValidationError(f"Em {label}, o intervalo “{chunk}” termina antes de começar.")
+        if opens_at and closes_at and not (opens_at < start and end < closes_at):
+            raise forms.ValidationError(
+                f"Em {label}, o intervalo “{chunk}” precisa ficar dentro do horário, "
+                "sem encostar na abertura nem no fechamento."
+            )
+        parsed.append((start, end))
+    parsed.sort()
+    for (_, previous_end), (start, _) in zip(parsed, parsed[1:], strict=False):
+        if start < previous_end:
+            raise forms.ValidationError(f"Em {label}, dois intervalos se sobrepõem.")
+    return [{"start": _format_admin_time(start), "end": _format_admin_time(end)} for start, end in parsed]
+
+
 def _format_admin_time(value) -> str:
     if isinstance(value, time):
-        return value.strftime("%H:%M")
+        return value.strftime("%H:%M")  # hora-ok: valor de campo de formulário e do JSON salvo
     raw = str(value or "").strip()
     if not raw:
         return ""
@@ -436,6 +559,41 @@ def _parse_markup_by_collection(raw: str) -> dict[str, int]:
     return result
 
 
+#: Teto de cada tempo da encomenda na Cozinha: o da política, que o painel do
+#: produto do Gestor também usa.
+MAX_PREORDER_KITCHEN_MINUTES = PREORDER_KITCHEN_MAX_MINUTES
+MAX_NO_SHOW_MINUTES = 1440
+
+
+def _parse_prep_minutes_by_sku(raw: str) -> dict[str, int]:
+    """``"BAGUETE: 20; BOLO-CHOC: 90"`` → ``{"BAGUETE": 20, "BOLO-CHOC": 90}``, conferindo cada SKU."""
+    from shopman.offerman.models import Product
+
+    result: dict[str, int] = {}
+    errors: list[str] = []
+    for chunk in (part.strip() for part in raw.replace("\n", ";").split(";")):
+        if not chunk:
+            continue
+        sku, sep, value = (piece.strip() for piece in chunk.partition(":"))
+        try:
+            minutes = int(value) if sep else None
+        except ValueError:
+            minutes = None
+        if not sku or minutes is None or minutes < 0 or minutes > MAX_PREORDER_KITCHEN_MINUTES:
+            errors.append(
+                f"\"{chunk}\": escreva SKU: minutos, como BAGUETE: 20 "
+                f"(de 0 a {MAX_PREORDER_KITCHEN_MINUTES} minutos)."
+            )
+            continue
+        result[sku] = minutes
+    unknown = sorted(set(result) - set(Product.objects.filter(sku__in=result).values_list("sku", flat=True)))
+    if unknown:
+        errors.append(f"SKU desconhecido: {', '.join(unknown)}. Use o SKU do produto no catálogo.")
+    if errors:
+        raise forms.ValidationError(errors)
+    return result
+
+
 def _defaults_form_fields() -> dict[str, forms.Field]:
     fields: dict[str, forms.Field] = {
         "defaults_notifications_backend": forms.ChoiceField(
@@ -541,7 +699,10 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=1,
             max_value=240,
             widget=UnfoldAdminIntegerFieldWidget,
-            help_text="Em minutos. Ex.: 30 gera janelas arredondadas a cada meia hora.",
+            help_text=(
+                "Em minutos. A hora em que cada produto costuma ficar pronto é arredondada "
+                "para cima nesse passo. Ex.: com 30, 11h07 vira 11h30."
+            ),
         ),
         "defaults_pickup_history_days": forms.IntegerField(
             label="Histórico usado para sugestão",
@@ -549,12 +710,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             min_value=0,
             max_value=365,
             widget=UnfoldAdminIntegerFieldWidget,
-        ),
-        "defaults_pickup_fallback_slot": forms.CharField(
-            label="Horário de retirada padrão",
-            required=False,
-            widget=UnfoldAdminTextInputWidget,
-            help_text="Ref de um dos horários abaixo. Ex.: slot-09.",
+            help_text="Dias de produção considerados para saber a que horas cada produto fica pronto.",
         ),
         "defaults_season_hot_months": forms.MultipleChoiceField(
             label="Meses quentes",
@@ -740,6 +896,40 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             "Conta do início do preparo (o primeiro Iniciar da Cozinha). Em branco = 10."
         ),
     )
+    fields["defaults_delivery_ride_detour_km"] = forms.DecimalField(
+        label="Desvio máximo para juntar (km)",
+        required=False,
+        min_value=0,
+        max_value=20,
+        decimal_places=1,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="Quanto a corrida junta pode andar a mais que a entrega mais longe sozinha. Em branco = 2,5.",
+    )
+    fields["defaults_delivery_ride_saving_min_q"] = forms.DecimalField(
+        label="Economia mínima para sugerir (R$)",
+        required=False,
+        min_value=0,
+        max_value=1000,
+        decimal_places=2,
+        widget=UnfoldAdminDecimalFieldWidget,
+        help_text="A sugestão só vem marcada quando juntar economiza pelo menos isto. Em branco = R$ 3,00.",
+    )
+    fields["defaults_delivery_ride_saving_min_percent"] = forms.IntegerField(
+        label="Economia mínima para sugerir (%)",
+        required=False,
+        min_value=0,
+        max_value=100,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text="Vale junto com o valor em reais: as duas precisam passar. Em branco = 15%.",
+    )
+    fields["defaults_delivery_ride_extra_wait_minutes"] = forms.IntegerField(
+        label="Espera a mais do último cliente (min)",
+        required=False,
+        min_value=1,
+        max_value=60,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text="Quanto o cliente que fica por último pode esperar a mais por ir junto. Em branco = 10.",
+    )
     fields["defaults_stock_alert_cooldown_minutes"] = forms.IntegerField(
         label="Intervalo entre avisos do mesmo alerta (min)",
         required=False,
@@ -804,6 +994,19 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         decimal_places=2,
         widget=UnfoldAdminDecimalFieldWidget,
         help_text="Teto da tolerância, para dia de muito dinheiro. Em branco = padrão (R$ 20,00).",
+    )
+    fields["defaults_running_low_percent"] = forms.IntegerField(
+        label="Avisar que está acabando (%)",
+        required=False,
+        min_value=0,
+        max_value=100,
+        widget=UnfoldAdminIntegerFieldWidget,
+        help_text=(
+            "Quando restar esta parte do que o dia teve, o PDV mostra o saldo no botão do produto "
+            "e a Cozinha avisa as últimas unidades. Ex.: 20% de 30 pães avisa a partir de 6; de 6 "
+            "pães, a partir de 2 (arredonda para cima). Vale para todo produto sem porcentagem "
+            "própria no Catálogo. 0 desliga. Em branco = 20%."
+        ),
     )
     fields["defaults_pos_late_fiscal_emission_days"] = forms.IntegerField(
         label="Emissão avulsa de NFC-e: dias depois da venda",
@@ -899,6 +1102,71 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
         help_text=(
             "Categoria é a coleção principal do produto (use o código da coleção). "
             "Separe por ponto e vírgula. Categoria fora da lista usa o markup padrão."
+        ),
+    )
+    fields["defaults_preorder_kitchen_lead_minutes"] = forms.IntegerField(
+        label="Antecedência da encomenda na Cozinha (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_PREORDER_KITCHEN_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_LEAD_MINUTES)}),
+        help_text=(
+            "Folga somada ao preparo. Com 15 min de antecedência e 30 min de preparo, a encomenda "
+            "combinada para as 17h chega à Cozinha às 16h15. "
+            f"Em branco = {DEFAULT_LEAD_MINUTES} min."
+        ),
+    )
+    fields["defaults_preorder_kitchen_default_prep_minutes"] = forms.IntegerField(
+        label="Preparo padrão da encomenda (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_PREORDER_KITCHEN_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_PREP_MINUTES)}),
+        help_text=(
+            "Vale para todo produto que não tem preparo próprio na lista ao lado. "
+            f"Em branco = {DEFAULT_PREP_MINUTES} min."
+        ),
+    )
+    fields["defaults_preorder_kitchen_prep_minutes_by_sku"] = forms.CharField(
+        label="Preparo por produto (min)",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "BAGUETE: 20; BOLO-CHOC: 90"}),
+        help_text=(
+            "SKU e minutos de preparo, separados por ponto e vírgula. Encomenda com vários produtos "
+            "usa o maior preparo entre eles. Produto fora da lista usa o preparo padrão."
+        ),
+    )
+    fields["defaults_no_show_tolerance_minutes"] = forms.IntegerField(
+        label="Tolerância depois da hora combinada (min)",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_TOLERANCE_MINUTES)}),
+        help_text=(
+            "Quanto a casa espera antes de poder marcar um pedido como não retirado. Com 60 min, a "
+            "retirada combinada para as 17h libera às 18h. Pedido sem hora combinada conta a partir "
+            f"de quando ficou pronto. Em branco = {DEFAULT_TOLERANCE_MINUTES} min."
+        ),
+    )
+    fields["defaults_no_show_cutoff_minutes_before_close"] = forms.IntegerField(
+        label="Corte do pedido pago: minutos antes de fechar",
+        required=False,
+        min_value=0,
+        max_value=MAX_NO_SHOW_MINUTES,
+        widget=UnfoldAdminIntegerFieldWidget(attrs={"placeholder": str(DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE)}),
+        help_text=(
+            "Pedido pago só pode ser marcado como não retirado a partir do corte do dia combinado: "
+            "o fechamento da loja menos estes minutos. "
+            f"Em branco = {DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE} (o corte é o fechamento)."
+        ),
+    )
+    fields["defaults_no_show_paid_waits_cutoff"] = forms.BooleanField(
+        label="Pedido pago espera o corte do dia",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Ligado, o pedido pago só libera no corte do dia combinado, conforme os Termos do serviço "
+            "(\"até o fim do expediente\"). Desligado, o pago segue a mesma tolerância do não pago."
         ),
     )
     fields["defaults_marketing_whatsapp_minimum_audience"] = forms.IntegerField(
@@ -1104,6 +1372,18 @@ def _integrations_form_fields() -> dict[str, forms.Field]:
             widget=UnfoldAdminSelectWidget,
             help_text="Emissor fiscal (NFC-e). Em branco = desligado/padrão do sistema.",
         ),
+        "integrations_manychat_live_chat_account": forms.CharField(
+            label="Conta do ManyChat (Live Chat)",
+            required=False,
+            max_length=64,
+            validators=[RegexValidator(r"^[A-Za-z0-9_-]+$", "Só letras, números, - e _ (ex.: fb486126).")],
+            widget=UnfoldAdminTextInputWidget,
+            help_text=(
+                "O trecho do endereço da Caixa de Entrada do ManyChat logo depois de app.manychat.com/ "
+                "(ex.: fb486126). Com ele, o aviso de atendimento traz o botão Responder no Live Chat, "
+                "que abre a conversa do cliente. Em branco, o aviso traz só Abrir conversa."
+            ),
+        ),
     }
 
 
@@ -1279,6 +1559,48 @@ class ShopForm(forms.ModelForm):
         input_formats=["%H:%M"],
         widget=UnfoldAdminTimeWidget(format="%H:%M"),
     )
+    opening_hours_monday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_tuesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_wednesday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_thursday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_friday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_saturday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
+    opening_hours_sunday_breaks = forms.CharField(
+        label="Intervalos",
+        required=False,
+        widget=UnfoldAdminTextInputWidget(attrs={"placeholder": "Nenhum"}),
+        help_text=OPENING_BREAKS_HELP,
+    )
 
     # Lista de URLs editada como inputs add/remove (ArrayWidget). Declarado
     # explicitamente para entregar a lista crua ao widget — o JSONField default
@@ -1286,13 +1608,10 @@ class ShopForm(forms.ModelForm):
     social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget())
-
-    # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
-    kitchen_note_tags = forms.Field(label="Tags de nota da cozinha", required=False, widget=ArrayWidget())
 
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())
+    locals().update(ai_routes.form_fields())
 
     class Meta:
         model = Shop
@@ -1315,31 +1634,16 @@ class ShopForm(forms.ModelForm):
         self.fields.pop("defaults", None)
         self.fields.pop("integrations", None)
 
+        if "incident_remedies_mode" in self.fields:
+            # Opcional no form: salvar a página sem mexer nele (ou um POST antigo, sem
+            # o campo) mantém o modo gravado. Ver ``clean_incident_remedies_mode``.
+            self.fields["incident_remedies_mode"].required = False
+
         if "social_links" in self.fields:
             self.fields["social_links"].required = False
             self.fields["social_links"].help_text = (
                 "Adicione uma rede por vez (URL completa, ex.: https://instagram.com/sualoja). "
                 "O ícone é detectado automaticamente."
-            )
-
-        if "cancellation_presets" in self.fields:
-            self.fields["cancellation_presets"].required = False
-            self.fields["cancellation_presets"].help_text = (
-                "Um motivo por linha, na ordem da tela. Para mostrar sob um cabeçalho no "
-                f"Gestor, escreva o grupo antes, separado por “{CANCELLATION_PRESET_GROUP_SEPARATOR}” "
-                "(ex.: “Produto | Item indisponível no momento”); sem grupo, só o motivo. "
-                "O cliente lê “Motivo: <motivo>.”: escreva na voz da loja e sem ponto final."
-            )
-            self.initial["cancellation_presets"] = _cancellation_presets_to_rows(
-                self.initial.get("cancellation_presets")
-            )
-
-        if "kitchen_note_tags" in self.fields:
-            self.fields["kitchen_note_tags"].required = False
-            self.fields["kitchen_note_tags"].help_text = (
-                "Adicione uma tag por vez. O operador anexa com um toque à nota da cozinha "
-                "no gestor, e a nota aparece no ticket do KDS para a produção: instruções "
-                "curtas de preparo (ex.: “Bem assado”, “Sem cebola”)."
             )
 
         opening_hours = getattr(self.instance, "opening_hours", None) or {}
@@ -1354,15 +1658,28 @@ class ShopForm(forms.ModelForm):
                 self.fields[_opening_field(day, "status")].initial = "open" if opens_at and closes_at else "closed"
                 self.fields[_opening_field(day, "open")].initial = opens_at
                 self.fields[_opening_field(day, "close")].initial = closes_at
+                self.fields[_opening_field(day, "breaks")].initial = _format_breaks(entry)
 
         self._set_defaults_initial(_shop_defaults(self.instance))
         self._set_integrations_initial(getattr(self.instance, "integrations", None) or {})
+        ai_routes.set_initial(self)
+
+    def clean_incident_remedies_mode(self):
+        """Vazio ou ausente mantém o modo da loja; sem modo gravado, o padrão do modelo ("on")."""
+        value = self.cleaned_data.get("incident_remedies_mode")
+        if value:
+            return value
+        current = getattr(self.instance, "incident_remedies_mode", "") if self.instance.pk else ""
+        return current or Shop._meta.get_field("incident_remedies_mode").default
 
     def _set_integrations_initial(self, integrations: dict) -> None:
-        if not self._has("integrations_payment_pix"):
-            return
         if not isinstance(integrations, dict):
             integrations = {}
+        if self._has("integrations_manychat_live_chat_account"):
+            manychat = integrations.get("manychat") if isinstance(integrations.get("manychat"), dict) else {}
+            self.fields["integrations_manychat_live_chat_account"].initial = manychat.get("live_chat_account") or ""
+        if not self._has("integrations_payment_pix"):
+            return
         payment = integrations.get("payment") if isinstance(integrations.get("payment"), dict) else {}
         notif = integrations.get("notification") if isinstance(integrations.get("notification"), dict) else {}
         mapping = {
@@ -1398,7 +1715,6 @@ class ShopForm(forms.ModelForm):
         if self._has("defaults_pickup_rounding_minutes"):
             self.fields["defaults_pickup_rounding_minutes"].initial = pickup_config.get("rounding_minutes", 30)
             self.fields["defaults_pickup_history_days"].initial = pickup_config.get("history_days", 30)
-            self.fields["defaults_pickup_fallback_slot"].initial = pickup_config.get("fallback_slot", "")
         if self._has("defaults_season_hot_months"):
             self.fields["defaults_season_hot_months"].initial = _months_to_choice(seasons.get("hot"))
             self.fields["defaults_season_mild_months"].initial = _months_to_choice(seasons.get("mild"))
@@ -1498,6 +1814,13 @@ class ShopForm(forms.ModelForm):
                 if isinstance(tolerance.get(key), int):
                     self.fields[field_name].initial = Decimal(int(tolerance[key])) / 100
 
+        if self._has("defaults_running_low_percent"):
+            from shopman.shop.services import running_low
+
+            block = defaults.get(running_low.BLOCK) if isinstance(defaults.get(running_low.BLOCK), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (= 20%, dito na ajuda).
+            self.fields["defaults_running_low_percent"].initial = running_low.coerce_percent(block.get("percent"))
+
         if self._has("defaults_pos_late_fiscal_emission_days"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             # Mostra o GRAVADO; ausente fica em branco (= mesmo dia, dito na ajuda).
@@ -1547,6 +1870,18 @@ class ShopForm(forms.ModelForm):
             # Mostra o GRAVADO; ausente fica em branco (= 10, dito na ajuda).
             self.fields["defaults_delivery_courier_reminder_minutes"].initial = reminder.get("minutes")
 
+        if self._has("defaults_delivery_ride_detour_km"):
+            delivery = defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {}
+            ride = delivery.get("ride_suggestion") if isinstance(delivery.get("ride_suggestion"), dict) else {}
+            # Mostra o GRAVADO; ausente fica em branco (o padrão está na ajuda).
+            self.fields["defaults_delivery_ride_detour_km"].initial = ride.get("detour_km")
+            saving_q = ride.get("saving_min_q")
+            self.fields["defaults_delivery_ride_saving_min_q"].initial = (
+                Decimal(saving_q) / 100 if isinstance(saving_q, int) else None
+            )
+            self.fields["defaults_delivery_ride_saving_min_percent"].initial = ride.get("saving_min_percent")
+            self.fields["defaults_delivery_ride_extra_wait_minutes"].initial = ride.get("extra_wait_minutes")
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             cooldown = stock_alerts.get("cooldown_minutes")
@@ -1578,6 +1913,20 @@ class ShopForm(forms.ModelForm):
                 )]
                 field.initial = str(purchase_block.get(f"receive_position_{key}") or "")
 
+        if self._has("defaults_preorder_kitchen_lead_minutes"):
+            kitchen = PreorderKitchenPolicy.from_defaults(defaults)
+            self.fields["defaults_preorder_kitchen_lead_minutes"].initial = kitchen.lead_minutes
+            self.fields["defaults_preorder_kitchen_default_prep_minutes"].initial = kitchen.default_prep_minutes
+            self.fields["defaults_preorder_kitchen_prep_minutes_by_sku"].initial = "; ".join(
+                f"{sku}: {minutes}" for sku, minutes in sorted(kitchen.prep_minutes_by_sku.items())
+            )
+
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show = NoShowPolicy.from_defaults(defaults)
+            self.fields["defaults_no_show_tolerance_minutes"].initial = no_show.tolerance_minutes
+            self.fields["defaults_no_show_cutoff_minutes_before_close"].initial = no_show.cutoff_minutes_before_close
+            self.fields["defaults_no_show_paid_waits_cutoff"].initial = no_show.paid_waits_cutoff
+
         if self._has("defaults_purchase_resale_markup_pct"):
             markup = ResaleMarkup.from_defaults(defaults)
             self.fields["defaults_purchase_resale_markup_pct"].initial = markup.default_pct
@@ -1601,20 +1950,11 @@ class ShopForm(forms.ModelForm):
             )
             self.fields[_defaults_closed_date_field(index, "label")].initial = closed_date.get("label", "")
 
-    def clean_cancellation_presets(self):
-        presets = _cancellation_presets_from_rows(self.cleaned_data.get("cancellation_presets"))
-        validate_cancellation_presets(presets)
-        return presets
-
     def clean(self):
         cleaned_data = super().clean()
         # ArrayWidget vazio → None; o campo é NOT NULL (default lista).
         if self._has("social_links") and not cleaned_data.get("social_links"):
             cleaned_data["social_links"] = []
-        if self._has("cancellation_presets") and not cleaned_data.get("cancellation_presets"):
-            cleaned_data["cancellation_presets"] = []
-        if self._has("kitchen_note_tags") and not cleaned_data.get("kitchen_note_tags"):
-            cleaned_data["kitchen_note_tags"] = []
         if self._has(_opening_field("monday", "status")):
             for day, label in OPENING_HOUR_DAYS:
                 status = cleaned_data.get(_opening_field(day, "status"))
@@ -1628,7 +1968,14 @@ class ShopForm(forms.ModelForm):
                     raise forms.ValidationError(
                         f"Em {label}, o horário de abertura precisa ser anterior ao fechamento."
                     )
+                cleaned_data[_opening_field(day, "breaks")] = _parse_breaks(
+                    cleaned_data.get(_opening_field(day, "breaks")) or "",
+                    opens_at=opens_at,
+                    closes_at=closes_at,
+                    label=label,
+                )
         self._clean_defaults(cleaned_data)
+        ai_routes.clean(self, cleaned_data)
         return cleaned_data
 
     def _clean_defaults(self, cleaned_data: dict) -> None:
@@ -1662,10 +2009,13 @@ class ShopForm(forms.ModelForm):
                     self.add_error(label_field, "Informe o rótulo do slot.")
                 if not starts_at:
                     self.add_error(starts_at_field, "Informe o horário inicial do slot.")
-
-            fallback_slot = (cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot and fallback_slot not in slot_refs:
-                self.add_error("defaults_pickup_fallback_slot", "Use o ref de um dos slots configurados.")
+            # Janela em uso não sai da grade (#2644): a decisão é da política.
+            refusal = pickup_window_in_use.removal_refusal(
+                previous=_shop_defaults(self.instance).get("pickup_slots"),
+                kept=slot_refs | {str(slot.get("ref") or "") for slot in self._existing_extra_pickup_slots()},
+            )
+            if refusal:
+                self.add_error(None, refusal)
 
         if self._has(_defaults_closed_date_field(1, "date")):
             for index in range(1, DEFAULTS_CLOSED_DATE_ROWS + 1):
@@ -1693,6 +2043,14 @@ class ShopForm(forms.ModelForm):
                 else:
                     previous_threshold = threshold
                     previous_label = TIER_LABELS[name]
+
+        if self._has("defaults_preorder_kitchen_prep_minutes_by_sku"):
+            try:
+                cleaned_data["defaults_preorder_kitchen_prep_minutes_by_sku"] = _parse_prep_minutes_by_sku(
+                    cleaned_data.get("defaults_preorder_kitchen_prep_minutes_by_sku") or ""
+                )
+            except forms.ValidationError as exc:
+                self.add_error("defaults_preorder_kitchen_prep_minutes_by_sku", exc)
 
         if self._has("defaults_purchase_resale_markup_by_collection"):
             try:
@@ -1764,12 +2122,18 @@ class ShopForm(forms.ModelForm):
                 day: {
                     "open": _format_admin_time(self.cleaned_data.get(_opening_field(day, "open"))),
                     "close": _format_admin_time(self.cleaned_data.get(_opening_field(day, "close"))),
+                    **(
+                        {"breaks": self.cleaned_data[_opening_field(day, "breaks")]}
+                        if self.cleaned_data.get(_opening_field(day, "breaks"))
+                        else {}
+                    ),
                 }
                 for day, _label in OPENING_HOUR_DAYS
                 if self.cleaned_data.get(_opening_field(day, "status")) == "open"
             }
         instance.defaults = self._build_defaults()
         instance.integrations = self._build_integrations()
+        instance.ai_routes = ai_routes.build(self)
         if commit:
             instance.save()
             self.save_m2m()
@@ -1777,6 +2141,17 @@ class ShopForm(forms.ModelForm):
 
     def _build_integrations(self) -> dict:
         integrations = dict(getattr(self.instance, "integrations", None) or {})
+        if self._has("integrations_manychat_live_chat_account"):
+            manychat = dict(integrations.get("manychat") or {})
+            account = (self.cleaned_data.get("integrations_manychat_live_chat_account") or "").strip()
+            if account:
+                manychat["live_chat_account"] = account
+            else:
+                manychat.pop("live_chat_account", None)
+            if manychat:
+                integrations["manychat"] = manychat
+            else:
+                integrations.pop("manychat", None)
         if not self._has("integrations_payment_pix"):
             return integrations
 
@@ -1969,11 +2344,6 @@ class ShopForm(forms.ModelForm):
             pickup_config = dict(pickup_config)
             pickup_config["rounding_minutes"] = self.cleaned_data.get("defaults_pickup_rounding_minutes") or 30
             pickup_config["history_days"] = self.cleaned_data.get("defaults_pickup_history_days") or 30
-            fallback_slot = (self.cleaned_data.get("defaults_pickup_fallback_slot") or "").strip()
-            if fallback_slot:
-                pickup_config["fallback_slot"] = fallback_slot
-            else:
-                pickup_config.pop("fallback_slot", None)
             defaults["pickup_slot_config"] = pickup_config
 
         if self._has("defaults_max_preorder_days"):
@@ -2094,6 +2464,20 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("pos", None)
 
+        if self._has("defaults_running_low_percent"):
+            from shopman.shop.services import running_low
+
+            block = dict(defaults.get(running_low.BLOCK) if isinstance(defaults.get(running_low.BLOCK), dict) else {})
+            percent = self.cleaned_data.get("defaults_running_low_percent")
+            if percent is None:
+                block.pop("percent", None)
+            else:
+                block["percent"] = int(percent)
+            if block:
+                defaults[running_low.BLOCK] = block
+            else:
+                defaults.pop(running_low.BLOCK, None)
+
         if self._has("defaults_marketing_whatsapp_minimum_audience"):
             marketing = defaults.get("marketing") if isinstance(defaults.get("marketing"), dict) else {}
             marketing = dict(marketing)
@@ -2170,6 +2554,30 @@ class ShopForm(forms.ModelForm):
             else:
                 defaults.pop("delivery", None)
 
+        if self._has("defaults_delivery_ride_detour_km"):
+            delivery = dict(defaults.get("delivery") if isinstance(defaults.get("delivery"), dict) else {})
+            ride = {}
+            detour = self.cleaned_data.get("defaults_delivery_ride_detour_km")
+            if detour is not None:
+                ride["detour_km"] = float(detour)
+            saving = self.cleaned_data.get("defaults_delivery_ride_saving_min_q")
+            if saving is not None:
+                ride["saving_min_q"] = int((saving * 100).to_integral_value())
+            for field, key in (("defaults_delivery_ride_saving_min_percent", "saving_min_percent"),
+                               ("defaults_delivery_ride_extra_wait_minutes", "extra_wait_minutes")):
+                value = self.cleaned_data.get(field)
+                if value is not None:
+                    ride[key] = int(value)
+            # Tudo em branco é o padrão do dono: não grava nada.
+            if ride:
+                delivery["ride_suggestion"] = ride
+            else:
+                delivery.pop("ride_suggestion", None)
+            if delivery:
+                defaults["delivery"] = delivery
+            else:
+                defaults.pop("delivery", None)
+
         if self._has("defaults_stock_alert_cooldown_minutes"):
             stock_alerts = defaults.get("stock_alerts") if isinstance(defaults.get("stock_alerts"), dict) else {}
             stock_alerts = dict(stock_alerts)
@@ -2224,6 +2632,30 @@ class ShopForm(forms.ModelForm):
                 "defaults_purchase_resale_markup_by_collection"
             ) or {}
             defaults["purchase"] = purchase_cfg
+
+        if self._has("defaults_preorder_kitchen_lead_minutes"):
+            kitchen_cfg = dict(
+                defaults.get("preorder_kitchen") if isinstance(defaults.get("preorder_kitchen"), dict) else {}
+            )
+            lead = self.cleaned_data.get("defaults_preorder_kitchen_lead_minutes")
+            prep = self.cleaned_data.get("defaults_preorder_kitchen_default_prep_minutes")
+            kitchen_cfg["lead_minutes"] = int(lead) if lead is not None else DEFAULT_LEAD_MINUTES
+            kitchen_cfg["default_prep_minutes"] = int(prep) if prep is not None else DEFAULT_PREP_MINUTES
+            kitchen_cfg["prep_minutes_by_sku"] = self.cleaned_data.get(
+                "defaults_preorder_kitchen_prep_minutes_by_sku"
+            ) or {}
+            defaults["preorder_kitchen"] = kitchen_cfg
+
+        if self._has("defaults_no_show_tolerance_minutes"):
+            no_show_cfg = dict(defaults.get("no_show") if isinstance(defaults.get("no_show"), dict) else {})
+            tolerance = self.cleaned_data.get("defaults_no_show_tolerance_minutes")
+            cutoff = self.cleaned_data.get("defaults_no_show_cutoff_minutes_before_close")
+            no_show_cfg["tolerance_minutes"] = int(tolerance) if tolerance is not None else DEFAULT_TOLERANCE_MINUTES
+            no_show_cfg["cutoff_minutes_before_close"] = (
+                int(cutoff) if cutoff is not None else DEFAULT_CUTOFF_MINUTES_BEFORE_CLOSE
+            )
+            no_show_cfg["paid_waits_cutoff"] = bool(self.cleaned_data.get("defaults_no_show_paid_waits_cutoff"))
+            defaults["no_show"] = no_show_cfg
 
         return defaults
 
@@ -2284,7 +2716,7 @@ _IDENTITY_FIELDSETS = (
     (
         "Contato",
         {
-            "fields": ("phone", "email", "default_ddd"),
+            "fields": ("phone", "email", "default_ddd", "storefront_host"),
         },
     ),
 )
@@ -2396,8 +2828,7 @@ _APPEARANCE_FIELDSETS = (
         {
             "fields": ("storefront_preview",),
             "description": (
-                "Página inicial embutida (mesma origem). Salve o formulário e clique em "
-                "<strong>Atualizar prévia</strong> para ver cores e tipografia sem sair do admin."
+                "Salve as alterações antes de abrir a loja em nova aba para conferir cores e tipografia."
             ),
         },
     ),
@@ -2417,15 +2848,19 @@ _OPERATION_FIELDSETS = (
             "fields": (
                 "currency",
                 "timezone",
-                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close"),
-                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close"),
-                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close"),
-                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close"),
-                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
-                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
-                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
+                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close", "opening_hours_monday_breaks"),
+                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close", "opening_hours_tuesday_breaks"),
+                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close", "opening_hours_wednesday_breaks"),
+                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close", "opening_hours_thursday_breaks"),
+                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close", "opening_hours_friday_breaks"),
+                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close", "opening_hours_saturday_breaks"),
+                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close", "opening_hours_sunday_breaks"),
+                ("staff_hours_start", "staff_hours_end"),
             ),
-            "description": "Moeda, fuso e horários de funcionamento, editados como campos por dia.",
+            "description": (
+                "Moeda, fuso, horários de funcionamento por dia e o expediente da equipe. "
+                "Acesso de operador fora do expediente aparece destacado no aviso."
+            ),
         },
     ),
     (
@@ -2488,10 +2923,39 @@ _ORDERING_FIELDSETS = (
         {
             "fields": (
                 ("defaults_max_preorder_days", "defaults_pickup_rounding_minutes", "defaults_pickup_history_days"),
-                "defaults_pickup_fallback_slot",
             )
             + _defaults_pickup_admin_rows(),
-            "description": "Slots padrão de retirada e janela máxima para encomendas.",
+            "description": (
+                "Turnos de retirada das encomendas e janela máxima para encomendar. "
+                "Para hoje, a loja oferece as meias horas do expediente que ainda dão."
+            ),
+        },
+    ),
+    (
+        "Encomenda na Cozinha",
+        {
+            "fields": (
+                ("defaults_preorder_kitchen_lead_minutes", "defaults_preorder_kitchen_default_prep_minutes"),
+                "defaults_preorder_kitchen_prep_minutes_by_sku",
+            ),
+            "description": (
+                "No dia da encomenda, o card chega à Cozinha na hora combinada menos o preparo e a "
+                "antecedência. Chegar não é começar: o posto ainda toca em Iniciar. Encomenda sem "
+                "hora combinada chega na abertura da loja."
+            ),
+        },
+    ),
+    (
+        "Pedido não retirado",
+        {
+            "fields": (
+                ("defaults_no_show_tolerance_minutes", "defaults_no_show_cutoff_minutes_before_close"),
+                "defaults_no_show_paid_waits_cutoff",
+            ),
+            "description": (
+                "Quando o Gestor passa a oferecer Não retirado num pedido de retirada que ficou pronto. "
+                "O que ainda pode voltar à venda é devolvido ao cliente; o que se perdeu fica com a loja."
+            ),
         },
     ),
     (
@@ -2505,22 +2969,16 @@ _ORDERING_FIELDSETS = (
         },
     ),
     (
-        "Motivos de cancelamento e recusa",
+        "Sugestão de juntar corridas",
         {
-            "fields": ("cancellation_presets",),
-            "description": (
-                "Justificativas prontas para o operador recusar ou cancelar um pedido com um "
-                "toque no gestor. O motivo escolhido é enviado ao cliente na notificação."
+            "fields": (
+                ("defaults_delivery_ride_detour_km", "defaults_delivery_ride_extra_wait_minutes"),
+                ("defaults_delivery_ride_saving_min_q", "defaults_delivery_ride_saving_min_percent"),
             ),
-        },
-    ),
-    (
-        "Tags de nota da cozinha",
-        {
-            "fields": ("kitchen_note_tags",),
             "description": (
-                "Etiquetas prontas para o operador anexar com um toque à nota da cozinha de um "
-                "pedido no gestor. A nota é exibida no ticket do KDS para a produção."
+                "Na página Entregas e no Chamar entregador, a casa sugere juntar pedidos prontos "
+                "que ficam perto. A sugestão só vem marcada quando a central cotou e juntar sai "
+                "mais barato pelos dois mínimos. Palpites iniciais, até o B.I. medir."
             ),
         },
     ),
@@ -2636,6 +3094,7 @@ _POS_FIELDSETS = (
                 "defaults_pos_discount_approval_threshold_q",
                 "defaults_pos_fiscal_toggle",
                 "defaults_pos_late_fiscal_emission_days",
+                "defaults_running_low_percent",
                 "defaults_pos_cash_tolerance_percent",
                 ("defaults_pos_cash_tolerance_min", "defaults_pos_cash_tolerance_max"),
             ),
@@ -2646,6 +3105,17 @@ _POS_FIELDSETS = (
                 "A emissão avulsa (nota de venda que não a pediu) sempre exige o gerente. "
                 "A tolerância do caixa decide o que vira alerta no fechamento; o operador nunca "
                 "vê o veredito (fechamento cego), só o relatório do turno."
+            ),
+        },
+    ),
+    (
+        "Venda sem conexão",
+        {
+            "fields": ("pos_offline_sale_enabled",),
+            "description": (
+                "Desligada por padrão. Desligada, o PDV sem rede não cobra nem guarda venda, "
+                "e o servidor recusa a venda guardada de um dispositivo antigo. Ligar depende "
+                "da NFC-e em contingência (tpEmis 9), que ainda não existe."
             ),
         },
     ),
@@ -2667,9 +3137,53 @@ _INTEGRATIONS_FIELDSETS = (
         {
             "fields": ("integrations_payment_pix", "integrations_payment_card"),
             "description": (
-                "Escolha o gateway de cada meio de pagamento. Sobreescreve o padrão do "
-                "deployment (settings). Em branco = herda do sistema."
+                "Escolha o gateway de cada meio de pagamento. Sobrescreve o padrão do "
+                "sistema. Em branco, vale o do sistema."
             ),
+        },
+    ),
+    (
+        "Inteligência artificial: qual IA cada função usa",
+        {
+            "fields": tuple(
+                name for key in ai_routes.ROUTE_KEYS
+                for name in (ai_routes.connection_field(key), ai_routes.model_field(key))
+            ),
+            "description": (
+                "Para cada função, a conexão de IA e o modelo. A lista mostra só as conexões "
+                "ativas; provedor, endereço e chave ficam em Conexões de IA. “O modelo da "
+                "conexão” usa o modelo cadastrado nela. Embaixo de cada função, se ela está "
+                "pronta e, se não estiver, o motivo e o botão que resolve."
+            ),
+        },
+    ),
+    (
+        "Freio de IA",
+        {
+            "fields": ("ai_limits",),
+            "description": "Quanto a IA pode gastar por dia. O gasto de cada dia fica em Gasto de IA.",
+        },
+    ),
+    (
+        "Decisão em sombra da Concierge",
+        {
+            "fields": ("conversational_shadow_enabled", "conversational_shadow_history"),
+        },
+    ),
+    (
+        "Concierge pelo motor do framework",
+        {
+            "fields": ("conversational_live_inform", "conversational_live_handoff", "conversational_live_order"),
+            "description": (
+                "Cada classe passa a sair pelo motor do framework conversacional só onde a casa tem a frase "
+                "de hoje; o resto do turno segue como hoje. Desligar \"pedido na conversa\" é o freio da escrita."
+            ),
+        },
+    ),
+    (
+        "Remédios automáticos de incidente",
+        {
+            "fields": ("incident_remedies_mode",),
         },
     ),
     (
@@ -2677,6 +3191,26 @@ _INTEGRATIONS_FIELDSETS = (
         {
             "fields": ("integrations_notification_default", "integrations_fiscal"),
             "description": ("Canal padrão de notificação ao cliente e emissor fiscal. Em branco = herda do sistema."),
+        },
+    ),
+    (
+        "Atendimento no WhatsApp (ManyChat)",
+        {
+            "fields": ("integrations_manychat_live_chat_account",),
+            "description": (
+                "Onde a equipe responde quando a Concierge chama: a conversa do cliente na Caixa de "
+                "Entrada do ManyChat."
+            ),
+        },
+    ),
+    (
+        "Chat do iFood",
+        {
+            "fields": ("ifood_widget_id",),
+            "description": (
+                "O widget oficial do iFood no Gestor de pedidos: chat com o cliente, "
+                "notificações e rastreio. Vazio, o Gestor não mostra o botão do iFood."
+            ),
         },
     ),
     (
@@ -2730,12 +3264,23 @@ _INTEGRATIONS_FIELDSETS = (
         },
     ),
     (
-        "Canais do sistema (deployment)",
+        "Google Merchant Center",
+        {
+            "fields": ("google_merchant_display",),
+            "description": (
+                "A conta para onde o catálogo do canal do Google é enviado. Para mudar, use "
+                "o botão “Google Merchant Center” no alto da página. A chave de acesso "
+                "do Google fica na instalação do sistema, não aqui."
+            ),
+        },
+    ),
+    (
+        "Canais do sistema",
         {
             "fields": ("channel_refs_display",),
             "description": (
-                "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
-                "deployment (settings/env) e exibidos aqui só para conferência."
+                "Quais canais respondem pela Loja online e pelo PDV. Definidos na "
+                "instalação do sistema e exibidos aqui só para conferência."
             ),
         },
     ),
@@ -2775,6 +3320,71 @@ class _ShopSingletonAdmin(ModelAdmin):
         if obj:
             return self.changeform_view(request, str(obj.pk), extra_context=extra_context)
         return super().changelist_view(request, extra_context=extra_context)
+
+    # ── Modo só leitura (quem vê sem poder editar, como a Gerente) ─────────
+    #
+    # Sem permissão de editar, o Django troca cada campo por um
+    # ``AdminReadonlyField``. Os campos que só existem no form (as chaves de
+    # ``Shop.defaults``/``integrations``) não são campo do modelo nem atributo do
+    # admin: o rótulo caía no ``pretty_name`` do nome ("Integrations payment
+    # pix") e o valor em branco (beta test 05/11/2026, ADM-08). Aqui cada um
+    # desses ganha um leitor com o rótulo do form e o valor que o form mostraria.
+
+    def _form_only_fields(self) -> frozenset[str]:
+        cached = type(self).__dict__.get("_form_only_cache")
+        if cached is not None:
+            return cached
+        names = set()
+        form_class = getattr(type(self), "form", None)
+        base_fields = getattr(form_class, "base_fields", {}) or {}
+        model_fields = {f.name for f in self.model._meta.get_fields()}
+        for name in flatten_fieldsets(getattr(type(self), "fieldsets", None) or ()):
+            if name in base_fields and name not in model_fields:
+                names.add(name)
+        result = frozenset(names)
+        type(self)._form_only_cache = result
+        return result
+
+    def __getattr__(self, name):
+        if name.startswith("_") or name not in self._form_only_fields():
+            raise AttributeError(name)
+        field = type(self).form.base_fields[name]
+
+        def reader(obj):
+            return _readonly_form_value(type(self).form, obj, name)
+
+        reader.short_description = field.label or name
+        return reader
+
+
+def _people(count) -> str:
+    """"1 pessoa", "2 pessoas": a tela dizia "Pela fatia 1 pessoas"."""
+    return f"{count} pessoa" if count == 1 else f"{count} pessoas"
+
+
+def _readonly_form_value(form_class, obj, name: str) -> str:
+    """O valor de um campo só do form, como o form o desenharia, em texto."""
+    if obj is None:
+        return "—"
+    cache = getattr(obj, "_readonly_form_cache", None)
+    if cache is None:
+        cache = form_class(instance=obj)
+        obj._readonly_form_cache = cache
+    if name not in cache.fields:
+        return "—"
+    field = cache.fields[name]
+    value = cache[name].value()
+    if value in (None, "", [], ()):
+        return "—"
+    if isinstance(field, forms.BooleanField):
+        return "Sim" if value else "Não"
+    choices = {str(k): v for k, v in getattr(field, "choices", ()) or () if not isinstance(v, (list, tuple))}
+    if choices:
+        values = value if isinstance(value, (list, tuple)) else [value]
+        return ", ".join(str(choices.get(str(v), v)) for v in values)
+    if isinstance(value, (list, tuple)):
+        return ", ".join(str(v) for v in value)
+    return str(value)
 
 
 @admin.register(Shop)
@@ -2910,61 +3520,27 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
             **{"class": "gap-3 mt-1"},
         )
 
-    @admin.display(description="Prévia ao vivo")
+    @admin.display(description="Prévia da loja")
     def storefront_preview(self, obj):
-        """Iframe da home — requer X-Frame-Options: SAMEORIGIN na HomeView.
-
-        O texto e o botão saem dos componentes do Unfold, renderizados aqui em vez
-        de terem as classes copiadas à mão: o botão tinha nove classes decalcadas
-        do `button.html`, que envelheceriam sozinhas no primeiro upgrade do pacote.
-        O refresh continua via Alpine (padrão DOM do projeto), agora passado ao
-        componente por ``attrs``.
-
-        Sobra um ``style``: a altura mínima do iframe. É ``min(70vh, 640px)``, um
-        cálculo que classe nenhuma do Unfold expressa, e sem ele a prévia nasce
-        rasteira demais para mostrar a loja.
-        """
+        """A loja Nuxt abre na própria origem, sem depender de iframe no Admin."""
         if not obj or not obj.pk:
             return unfold_component(
                 "unfold/components/text.html",
                 children="Salve a loja para carregar a prévia da loja.",
-                **{"class": "text-base-500"},
             )
 
         from shopman.shop.services.storefront_links import home_url
 
-        # Loja desacoplada (Nuxt): o preview aponta para a loja real, não as páginas
-        # Django legadas. Base via SHOPMAN_STOREFRONT_BASE_URL (vazia ⇒ "/").
-        url = home_url() or "/"
-
-        src = json.dumps(url)
-        x_data = escape(
-            f"{{ src: {src}, bust() {{ const u = {src}; "
-            'this.src = u + (u.includes("?") ? "&" : "?") + "__pv=" + Date.now(); } }'
-        )
-        note = unfold_component(
-            "unfold/components/text.html",
-            children="A home pública permite iframe apenas neste site (SAMEORIGIN).",
-            **{"class": "text-xs text-base-500 mb-2"},
-        )
-        refresh = unfold_component(
+        return unfold_component(
             "unfold/components/button.html",
-            children="Atualizar prévia",
+            children="Abrir loja em nova aba",
+            href=home_url() or "/",
             variant="default",
             size="sm",
-            icon="refresh",
-            attrs={"x-on:click": "bust()"},
-            **{"class": "mb-2"},
+            icon="open_in_new",
+            attrs={"target": "_blank", "rel": "noopener noreferrer"},
         )
-        return mark_safe(
-            f'<div class="storefront-admin-preview max-w-full" x-data="{x_data}">'
-            f"{note}{refresh}"
-            '<iframe x-bind:src="src" title="Loja" '
-            'class="w-full rounded-default border border-base-200 '
-            'dark:border-base-700 bg-white" '
-            'style="min-height:min(70vh,640px)"></iframe>'
-            "</div>"
-        )
+
 
 
 @admin.register(ShopSearch)
@@ -3076,7 +3652,31 @@ class ShopOperationAdmin(_ShopSingletonAdmin):
         obj.defaults = defaults
         obj.save(update_fields=["defaults"])
         self.message_user(request, "Calendário atualizado.", level=messages.SUCCESS)
+        if form.cleaned_data["decision"] == "closed":
+            self._warn_orders_on_closed_days(request, form.cleaned_data)
         return HttpResponseRedirect(reverse("admin:shop_shopoperation_change", args=[obj.pk]))
+
+    def _warn_orders_on_closed_days(self, request, cleaned_data):
+        """Fechar um dia não mexe nos pedidos: avisa quem precisa remarcar."""
+        from shopman.shop.services.closed_day_orders import (
+            alert_orders_on_closed_day,
+            open_orders_committed_between,
+        )
+
+        orders = open_orders_committed_between(cleaned_data["starts_on"], cleaned_data.get("ends_on"))
+        if not orders:
+            return
+        alert_orders_on_closed_day(orders, reason=str(cleaned_data.get("label") or "").strip())
+        refs = ", ".join(order.ref for order in orders)
+        count = len(orders)
+        noun = "pedido em aberto está marcado" if count == 1 else "pedidos em aberto estão marcados"
+        self.message_user(
+            request,
+            f"Atenção: {count} {noun} para o período fechado ({refs}). "
+            "Nenhum foi cancelado nem remarcado. O Gestor de pedidos recebeu um aviso "
+            "por pedido para remarcar ou falar com o cliente.",
+            level=messages.WARNING,
+        )
 
     @action(
         description="Remover decisão do calendário",
@@ -3158,7 +3758,144 @@ class ShopPosAdmin(_ShopSingletonAdmin):
 class ShopIntegrationsAdmin(_ShopSingletonAdmin):
     form = _section_form(_INTEGRATIONS_FIELDSETS)
     fieldsets = _INTEGRATIONS_FIELDSETS
-    readonly_fields = ("channel_refs_display", "marketing_ceremony_display")
+    readonly_fields = (
+        "channel_refs_display",
+        "marketing_ceremony_display",
+        "google_merchant_display",
+        "conversational_shadow_history",
+    )
+    actions_detail = ("set_google_merchant", "register_google_merchant")
+    # Rota de IA parada vira aviso no topo, com o botão que resolve (#2843).
+    change_form_before_template = "admin/shop/ai_route_warnings.html"
+
+    def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
+        extra_context = {**(extra_context or {}), "ai_route_warnings": ai_routes.warnings()}
+        return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        """Ligar ou desligar a decisão em sombra fica no histórico, com quem fez (#2842)."""
+        shadow_changed = "conversational_shadow_enabled" in form.changed_data
+        super().save_model(request, obj, form, change)
+        if shadow_changed:
+            ai_routes.record_shadow_change(request, obj, obj.conversational_shadow_enabled)
+
+    @admin.display(description="Quem ligou e desligou")
+    def conversational_shadow_history(self, obj):
+        rows = ai_routes.shadow_history(obj) if obj else []
+        if not rows:
+            return "Nenhuma mudança por esta tela ainda."
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Quando", "Quem", "O quê"], "rows": [list(row) for row in rows]},
+        )
+
+    @admin.display(description="Conta gravada")
+    def google_merchant_display(self, obj):
+        current = _shop_defaults(obj).get(GOOGLE_MERCHANT_KEY) if obj else None
+        if not isinstance(current, dict) or not current.get("account_id"):
+            return "Nenhuma conta gravada. O envio ao Google fica parado até ela existir."
+        registration = current.get("registration") if isinstance(current.get("registration"), dict) else {}
+        if registration.get("gcp_ids"):
+            registered = (
+                f"Registrado em {registration.get('at', '')}, projeto "
+                f"{', '.join(str(gcp) for gcp in registration['gcp_ids'])}"
+            )
+        else:
+            registered = "Ainda não registrado neste Admin. Use “Registrar o envio no Google”."
+        rows = [
+            ["Conta do Merchant Center", str(current.get("account_id") or "")],
+            ["Fonte de dados (API)", str(current.get("data_source_id") or "")],
+            ["Idioma dos produtos", str(current.get("content_language") or GOOGLE_MERCHANT_DEFAULT_LANGUAGE)],
+            ["Rótulo do feed", str(current.get("feed_label") or GOOGLE_MERCHANT_DEFAULT_FEED_LABEL)],
+            ["Código da loja (retirada)", str(current.get("store_code") or "Sem retirada na loja")],
+            ["Registro do envio", registered],
+        ]
+        return unfold_component(
+            "unfold/components/table.html",
+            table={"headers": ["Campo", "Valor"], "rows": rows},
+        )
+
+    @action(
+        description="Google Merchant Center",
+        url_path="google-merchant",
+        icon="storefront",
+        permissions=["change"],
+        dialog={
+            "title": "Google Merchant Center",
+            "description": (
+                "A conta e a fonte de dados para onde o catálogo do canal do Google é enviado. "
+                "O que já está gravado aparece preenchido."
+            ),
+            "form_class": GoogleMerchantForm,
+            "form_submit_text": "Salvar conta",
+        },
+    )
+    def set_google_merchant(self, request, form, object_id):
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_changelist"))
+        defaults = dict(_shop_defaults(obj))
+        current = defaults.get(GOOGLE_MERCHANT_KEY)
+        merged = dict(current) if isinstance(current, dict) else {}
+        merged.update({
+            name: form.cleaned_data[name]
+            for name in ("account_id", "data_source_id", "content_language", "feed_label")
+        })
+        # Em branco tira a retirada na loja; não grava código vazio.
+        if form.cleaned_data.get("store_code"):
+            merged["store_code"] = form.cleaned_data["store_code"]
+        else:
+            merged.pop("store_code", None)
+        defaults[GOOGLE_MERCHANT_KEY] = merged
+        obj.defaults = defaults
+        obj.save(update_fields=["defaults"])
+        self.message_user(request, "Conta do Google Merchant Center salva.", level=messages.SUCCESS)
+        return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
+
+    @action(
+        description="Registrar o envio no Google",
+        url_path="google-merchant-register",
+        icon="how_to_reg",
+        permissions=["change"],
+        dialog={
+            "title": "Registrar o envio no Google",
+            "description": (
+                "Liga, uma vez, o projeto do Google Cloud da chave do sistema à conta do "
+                "Merchant Center. Sem isso, o Google recusa todo envio do catálogo. A chave "
+                "precisa estar em Pessoas e acesso do Merchant Center com acesso de "
+                "Administrador. Registrar de novo não desfaz nada."
+            ),
+            "form_class": GoogleMerchantRegistrationForm,
+            "form_submit_text": "Registrar",
+        },
+    )
+    def register_google_merchant(self, request, form, object_id):
+        from shopman.shop.adapters import catalog_projection_google
+
+        obj = self.get_object(request, object_id)
+        if obj is None:
+            self.message_user(request, "Loja não encontrada.", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_changelist"))
+        result = catalog_projection_google.register_gcp()
+        if not result.ok:
+            self.message_user(request, f"O Google não registrou o envio: {result.error}", level=messages.ERROR)
+            return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
+        defaults = dict(_shop_defaults(obj))
+        current = defaults.get(GOOGLE_MERCHANT_KEY)
+        merged = dict(current) if isinstance(current, dict) else {}
+        merged["registration"] = {
+            "gcp_ids": list(result.gcp_ids),
+            "at": format_local(timezone.localtime(), "%d/%m/%Y {clock}"),
+        }
+        defaults[GOOGLE_MERCHANT_KEY] = merged
+        obj.defaults = defaults
+        obj.save(update_fields=["defaults"])
+        projects = ", ".join(result.gcp_ids) or "sem número informado"
+        self.message_user(
+            request, f"Envio registrado no Google. Projeto vinculado: {projects}.", level=messages.SUCCESS,
+        )
+        return HttpResponseRedirect(reverse("admin:shop_shopintegrations_change", args=[obj.pk]))
 
     @admin.display(description="A conta, com os números de hoje")
     def marketing_ceremony_display(self, obj):
@@ -3184,23 +3921,23 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
             "floor": "o piso (a base ainda é pequena para a fatia)",
         }[threshold.binding]
         spend_row = (
-            f"{threshold.from_spend} pessoas"
+            _people(threshold.from_spend)
             if threshold.from_spend is not None
             else "sem teto (custo por mensagem em branco ou zero)"
         )
         rows = (
-            ("Base de clientes", f"{base} pessoas no cadastro ativo"),
-            ("Pela fatia", f"{threshold.from_percent} pessoas"),
+            ("Base de clientes", f"{_people(base)} no cadastro ativo"),
+            ("Pela fatia", _people(threshold.from_percent)),
             ("Pelo gasto", spend_row),
             ("Vale", binding),
             (
                 "Frase digitada + senha",
-                f"a partir de {threshold.typed} pessoas "
-                f"(≈ R$ {policy.estimated_cost_q(threshold.typed) / 100:.2f} de mensagens)",
+                f"a partir de {_people(threshold.typed)} "
+                f"(≈ R$ {format_money(policy.estimated_cost_q(threshold.typed))} de mensagens)",
             ),
             (
                 "Autenticador + segunda pessoa",
-                f"a partir de {threshold.dual_control} pessoas",
+                f"a partir de {_people(threshold.dual_control)}",
             ),
         )
         body = format_html_join(
@@ -3232,8 +3969,8 @@ class ShopIntegrationsAdmin(_ShopSingletonAdmin):
         from shopman.shop.models import Channel
 
         pairs = (
-            ("Loja online", getattr(dj_settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")),
-            ("PDV", getattr(dj_settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")),
+            ("Loja online", dj_settings.SHOPMAN_STOREFRONT_CHANNEL_REF),
+            ("PDV", dj_settings.SHOPMAN_POS_CHANNEL_REF),
         )
         rows = []
         for label, ref in pairs:

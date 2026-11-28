@@ -35,16 +35,19 @@ pedidos, produção operacional, comandas, caixa, alertas.
 
 | Ref | Canal | Status | Pagamento | Data / dado-chave | Âncora do QA |
 |-----|-------|--------|-----------|-------------------|--------------|
-| `QA-PREORDER-01` | web | `new` | — | `is_preorder=True`, `delivery_date=localdate()+1`, slot `manha` | Encomenda nova aguardando confirmação |
-| `QA-PREORDER-02` | web | `accepted` | — | idem (encomenda amanhã) | Encomenda já confirmada no board |
+| `QA-PREORDER-01` | web | `new` | dinheiro na entrega | `is_preorder=True`, `delivery_date=localdate()+1`, slot `manha` | Encomenda nova aguardando confirmação |
+| `QA-PREORDER-02` | web | `accepted` | dinheiro na entrega | idem (encomenda amanhã) | Encomenda já confirmada no board |
 | `QA-PAID-READY-01` | web | `ready` | PIX **captured** | pickup | Cancelamento tardio / estorno de pedido pago pronto |
 | `QA-PAID-READY-02` | web | `dispatched` | Cartão **captured** | delivery | Pago em rota, cancelamento tardio |
 | `QA-RETURNED-01` | web | `returned` | PIX **refunded** (capture + refund txn) | `return_reason` em `data`; alerta `order_returned` | Fluxo de devolução/estorno |
 | `QA-PIX-PENDING-01` | web | `accepted` | PIX **pending** (`expires_at` futuro) | pickup | Pago × não-pago no card; timeout de pagamento |
 | `QA-IFOOD-01` | ifood | `accepted` | external | `external_ref=IFOOD-QA-0001`, `handle_type=marketplace_order` | Fluxo de cancelamento marketplace |
-| `QA-NOTES-01` | web | `preparing` | — | `order_notes` do cliente preenchido | Propagação da nota do cliente ao Gestor/KDS |
-| `QA-NAMED-ITEMS-01` | pdv | `preparing` | — | `OrderItem.name` preenchido explicitamente | Regressão do bug de SKU cru |
+| `QA-NOTES-01` | web | `preparing` | dinheiro na retirada | `order_notes` do cliente preenchido | Propagação da nota do cliente ao Gestor/KDS |
+| `QA-NAMED-ITEMS-01` | pdv | `preparing` | dinheiro na retirada (`collection: on_delivery`) | `OrderItem.name` preenchido explicitamente | Regressão do bug de SKU cru |
 | `QADH-<SKU>-<1..4>` | pdv | `completed` | (via `_seed_payments`) | 4 semanas atrás, mesmo dia-da-semana | Histórico de demanda p/ sugestão de produção (`craft.suggest`) |
+
+Nenhum pedido nasce sem forma de pagamento (decisão do dono, 06/11/2026): o seed
+se confere no fim (`_assert_every_order_has_payment`) e falha listando o pedido.
 
 Todos os `QA-*` carregam `snapshot={"seed_namespace":"qa","seed_key":<ref>}` para
 filtragem. `QADH-*` carrega `snapshot.source="production_demand_history"`.
@@ -72,9 +75,9 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 | SKU | Estado na loja | Como | Âncora do QA |
 |-----|----------------|------|--------------|
 | `FENDU` | **esgotado + "me avise"** | sem estoque pronto, sem plano hoje | `availability=unavailable`, `is_notifiable=true`, não adiciona |
-| `MELON-PAN` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
-| `PURIN` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
-| `TEA-JELLY` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
+| `MELON` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
+| `TABAT` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
+| `MDLN` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
 
 Âncora do teste: `test_nelson_seed_qa_profile_builds_named_scenarios`
 (`shopman/backstage/tests/test_nelson_seed_operational.py`) afirma cada estado via
@@ -91,10 +94,10 @@ oposto do reseed: arma o cenário **no banco que já está lá**, um SKU de cada
 ```bash
 python manage.py qa_scenarios                     # relatório (não escreve)
 python manage.py qa_scenarios --arm               # arma todos os cenários
-python manage.py qa_scenarios --arm sold_out=BF   # esgota a baguete, e só ela
-python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --arm sold_out=TRADI # esgota a baguete, e só ela
+python manage.py qa_scenarios --restock TRADI     # repõe → dispara o "Avise-me"
 python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
-python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+python manage.py qa_scenarios --reset TRADI       # ... incluindo um SKU pausado à mão
 ```
 
 O comando e o perfil `qa` armam os estados pela **mesma função**

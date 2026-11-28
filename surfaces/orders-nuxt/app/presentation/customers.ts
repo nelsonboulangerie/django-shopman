@@ -1,8 +1,6 @@
 // Presentation — Clientes do Gestor. Transforms puros: a query da lista na URL e a
 // decisão de quem FICA numa unificação. Sem rede e sem DOM.
 
-import { readingCsvText } from "../../../operator-kit/app/presentation/readingChart";
-
 export const CUSTOMER_FILTERS = [
   "all",
   "possible_duplicates",
@@ -18,6 +16,8 @@ export interface CustomerListQuery {
   filter: CustomerFilter;
   page: number;
   sort: CustomerSort;
+  /** O grupo comercial que recorta a lista (`?group=<ref>`); vazio = todos. */
+  group: string;
 }
 
 type RouteQueryValue = string | null | (string | null)[] | undefined;
@@ -38,6 +38,7 @@ export function listQueryFromRoute(
     filter: CUSTOMER_FILTERS.includes(filter) ? filter : "all",
     page: Number.isFinite(page) && page > 1 ? page : 1,
     sort: CUSTOMER_SORTS.includes(sort) ? sort : "recent",
+    group: first(query.group).slice(0, 50),
   };
 }
 
@@ -50,6 +51,7 @@ export function routeQueryFromList(
   if (list.filter !== "all") out.filter = list.filter;
   if (list.page > 1) out.page = String(list.page);
   if (list.sort !== "recent") out.sort = list.sort;
+  if (list.group) out.group = list.group;
   return out;
 }
 
@@ -95,27 +97,52 @@ export function mergePair(
     : { source_ref: currentRef, target_ref: otherRef };
 }
 
-export interface CustomerCsvRow {
-  name: string;
-  ref: string;
-  phone_display: string;
-  document_display: string;
-  orders_label: string;
+// ── Unificação contada com nomes (beta 05/11, GES-14) ─────────────────────────
+// Toast e confirmação falam de gente: "Ana Silva (CUST-1A2B)", nunca só o código.
+// O código fica entre parênteses porque dois cadastros podem ter o mesmo nome.
+
+/** "Ana Silva (CUST-1A2B)"; sem nome, só o código. */
+export function customerLabel(name: string | undefined, ref: string): string {
+  const clean = (name ?? "").trim();
+  return clean ? `${clean} (${ref})` : ref;
+}
+
+/** O aviso depois de unificar. */
+export function mergedNotice(side: {
+  sourceName?: string;
+  sourceRef: string;
+  targetName?: string;
+  targetRef: string;
+}): string {
+  return `${customerLabel(side.sourceName, side.sourceRef)} foi unificado a ${customerLabel(side.targetName, side.targetRef)}. Dá para desfazer em Unificações por 24 horas.`;
+}
+
+/** A confirmação do desfazer: o que volta e o que não volta. */
+export function undoMergeDescription(row: {
+  source_name?: string;
+  source_ref: string;
+  target_name?: string;
+  target_ref: string;
+  moved_label: string;
+  loyalty_merged: boolean;
+}): string {
+  // O que migrou entra no meio da frase: a primeira letra desce ("nada além…").
+  const moved = row.moved_label
+    ? row.moved_label.charAt(0).toLocaleLowerCase("pt-BR") + row.moved_label.slice(1)
+    : "nada além do próprio cadastro";
+  const loyalty = row.loyalty_merged
+    ? ` Os pontos de fidelidade somados ficam com ${customerLabel(row.target_name, row.target_ref)}: o desfazer não os devolve.`
+    : "";
+  return `${customerLabel(row.source_name, row.source_ref)} volta a ser um cadastro separado, com ${moved}.${loyalty}`;
 }
 
 /**
- * O CSV da seleção: as colunas que a lista mostra, com ";" e BOM para a planilha em
- * português ler o acento certo (mesmo contrato de `catalogCsv`).
+ * Descartar a EDIÇÃO de um cadastro que já existe (GES-24): "o cadastro ainda não
+ * foi salvo" dizia que o cliente não existia. O que se perde são as alterações.
  */
-export function customersCsv(rows: readonly CustomerCsvRow[]): string {
-  return readingCsvText({
-    header: ["Cliente", "Referência", "Telefone", "CPF", "Pedidos"],
-    rows: rows.map((row) => [
-      row.name,
-      row.ref,
-      row.phone_display,
-      row.document_display,
-      row.orders_label,
-    ]),
-  });
-}
+export const CUSTOMER_EDIT_DISCARD_COPY = {
+  title: "Descartar as alterações?",
+  description: "As alterações ainda não foram salvas. O cadastro continua como estava.",
+  confirmLabel: "Descartar e sair",
+  cancelLabel: "Continuar editando",
+} as const;

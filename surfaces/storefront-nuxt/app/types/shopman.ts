@@ -31,6 +31,68 @@ export interface ProductOptionSelection {
   ref: string
 }
 
+export interface PriceAdjustment {
+  code: string
+  label: string
+  amount_q: number
+  badge_label: string | null
+}
+
+export interface PriceQuote {
+  qty: string
+  listing_ref: string | null
+  list_unit_price_q: number
+  list_line_total_q: number
+  final_unit_price_q: number
+  final_line_total_q: number
+  adjustments: PriceAdjustment[]
+}
+
+// Quando o item fica pronto, escrito pelo servidor (shopman/storefront/
+// presentation/promise.py): UMA função para o card, o produto e a linha da
+// sacola, lendo a fornada, a hora de pronto e a mesma grade de horários do
+// checkout. A tela mostra `text` como veio e nunca recalcula "hoje" no aparelho.
+// `kind`: 'ready' (pronto agora), 'batch' (espera uma fornada, hoje mais tarde
+// ou num dia planejado), 'preorder' (hoje já não dá: casa fechada, corte do dia
+// ou dia sem expediente; fica para o próximo dia com horário).
+// `date` ISO do dia; `ready_at` "HH:MM" do primeiro horário que o checkout
+// oferece; `day_label` "hoje" | "amanhã, terça" | "quinta, 19/11".
+export interface ReadyPromise {
+  kind: 'ready' | 'batch' | 'preorder'
+  date: string
+  ready_at: string
+  day_label: string
+  text: string
+}
+
+// Dá para pedir agora, e para quando (OC-04), escrito pelo servidor
+// (`presentation/promise.py`, `OrderingProjection`): o resumo das MESMAS promessas
+// dos cards. 'now': algo tem horário hoje; 'preorder': o primeiro horário é de
+// outro dia (`next_date` ISO, `day_label` "amanhã, terça" | "quinta, 19/11");
+// 'none': nenhum item do cardápio pode ir à sacola, e a tela não oferece
+// finalização. A frase da home e da sacola escolhe por aqui, nunca por constante.
+export interface OrderingProjection {
+  state: 'now' | 'preorder' | 'none'
+  next_date: string | null
+  day_label: string
+}
+
+// A loja onde a cliente retira (nome e endereço, da `Shop`). A página do produto
+// a nomeia e o JSON-LD de Offer a declara como local de retirada (#2652).
+export interface PickupStoreProjection {
+  name: string
+  address: string
+}
+
+/** Um selo de urgência como o servidor o deriva (`presentation/fomo.py`). */
+export interface FomoBadgeProjection {
+  type: 'fresh' | 'low_stock' | 'promo_countdown' | 'demand' | 'sold_today' | string
+  label: string
+  priority: number
+  expires_at: string | null
+  meta: Record<string, unknown>
+}
+
 export interface CatalogItemProjection {
   sku: string
   slug: string
@@ -40,11 +102,7 @@ export interface CatalogItemProjection {
   category: string | null
   tags: string[]
   search_terms: string[]
-  base_price_q: number
-  price_display: string
-  has_promotion: boolean
-  original_price_display: string | null
-  promotion_label: string | null
+  quote: PriceQuote
   unit_weight_label: string | null
   availability: 'available' | 'low_stock' | 'planned_ok' | 'unavailable'
   availability_label: string
@@ -80,6 +138,10 @@ export interface CatalogItemProjection {
   // Grupos de opções do produto; [] quando não tem. Com grupos, o card não usa o
   // stepper por SKU: "Adicionar" abre a folha de opções.
   option_groups?: ProductOptionGroup[]
+  // Quando fica pronto (ver ReadyPromise). null = nada a prometer.
+  promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
 }
 
 // O que a API manda: a seção diz QUAIS cards mostra (`skus`, na ordem dela) e o
@@ -115,13 +177,35 @@ export interface CatalogProjection {
   items: CatalogItemProjection[]
   categories: CategoryProjection[]
   sections: CatalogSectionProjection[]
-  featured: CatalogItemProjection[]
   active_category_ref: string | null
   favorite_category_ref: string | null
   has_items: boolean
   // Copy de vitrine vazia / busca sem resultado (backend); opcional + fallback na tela.
   empty_state?: EmptyStateCtaCopy | null
   search_empty_state?: EmptyStateCtaCopy | null
+  // O "Para quando?" (OC-33 B1): os dias que dá para escolher e o escolhido.
+  days?: CatalogDaysProjection | null
+}
+
+// O dia escolhido no cardápio (OC-33 B1). `label` é o dia como a loja o diz
+// ("amanhã, quarta", "quinta, 26/11"); `opens_at` ("HH:MM") é o primeiro horário do dia.
+export interface CatalogDayProjection {
+  date: string
+  label: string
+  opens_at: string
+}
+
+// Os dias que o "Para quando?" pode oferecer (OC-33 B1), lidos do calendário da casa.
+export interface CatalogDaysProjection {
+  today: string
+  // Hoje ainda tem horário (falso: encerrado ou casa fechada).
+  today_open: boolean
+  // Próximos dias em que a casa opera, depois de hoje (ISO).
+  next_days: string[]
+  max_date: string
+  // 0 = segunda.
+  closed_weekdays: number[]
+  selected: CatalogDayProjection | null
 }
 
 export interface ComponentProjection {
@@ -168,11 +252,7 @@ export interface ProductDetailProjection {
   long_description: string
   image_url: string | null
   gallery: string[]
-  base_price_q: number
-  price_display: string
-  has_promotion: boolean
-  original_price_display: string | null
-  promotion_label: string | null
+  quote: PriceQuote
   availability: CatalogItemProjection['availability']
   availability_label: string
   can_add_to_cart: boolean
@@ -210,14 +290,18 @@ export interface ProductDetailProjection {
   mpn: string
   item_condition: string
   breadcrumb_category: CategoryProjection | null
-  cross_sell: CatalogItemProjection[]
-  cross_sell_heading: string
   // Apresentação da coleção primária (Collection.metadata): cor hex da paleta NB
   // e nome de ícone Lucide — vestem o hero-fallback da PDP sem foto.
   category_color: string | null
   category_icon: string | null
   // Grupos de opções do produto; [] quando não tem (ver CatalogItemProjection).
   option_groups?: ProductOptionGroup[]
+  // Quando fica pronto: a mesma promessa do card (ver ReadyPromise).
+  promise?: ReadyPromise | null
+  // Selos de urgência (#2807): até dois, do mais urgente; a tela escreve o tempo.
+  fomo_badges?: FomoBadgeProjection[]
+  // Onde retirar; null quando a casa não tem endereço cadastrado.
+  pickup_store?: PickupStoreProjection | null
 }
 
 export interface MinimumOrderProgressProjection {
@@ -247,10 +331,19 @@ export interface CartItemProjection {
   unit_price_q: number
   total_price_q: number
   price_display: string
-  total_display: string
   image_url: string | null
-  original_price_display: string | null
   discount_label: string | null
+  // Preço por unidade da promoção da linha (o mesmo do cardápio); a linha mostra
+  // price_display riscado e este ao lado. null sem promoção (cupom fica no resumo).
+  promo_price_display: string | null
+  // O total da linha como a cliente paga e o cheio para riscar ao lado (decisão
+  // do dono 1, 16/11/2026). Com promoção do produto: o total com desconto e o
+  // cheio; sem promoção: o total cheio e null. Cupom não entra (mora no resumo).
+  line_total_display: string
+  line_total_struck_display: string | null
+  // Preço de lista por unidade, em centavos: refaz o total da linha enquanto a
+  // resposta da troca de quantidade não chega.
+  list_price_q: number
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
@@ -272,6 +365,9 @@ export interface CartItemProjection {
   confirmation_deadline_display: string | null
   planned_for_date: string | null
   planned_for_notice: string | null
+  // Data anterior à fornada prevista em que a linha inteira já tem saldo
+  // (fornada extra, pão pronto); null = o pedido começa na fornada prevista.
+  earlier_available_date: string | null
   // Observação deste item para a cozinha (`meta.notes` da linha); '' = nenhuma.
   notes: string
   // Escolhas da linha. O `name` já vem com o resumo ("Croque (+ Ovo frito)");
@@ -279,6 +375,15 @@ export interface CartItemProjection {
   // SEMPRE pela `line_id`: duas linhas podem ter o mesmo SKU.
   options_summary?: string
   has_options?: boolean
+  // Quando fica pronto: a mesma promessa do card e do produto (ver ReadyPromise).
+  promise?: ReadyPromise | null
+}
+
+export interface CartDiscountLine {
+  label: string
+  amount_q: number
+  amount_display: string
+  requires_pickup?: boolean
 }
 
 export interface CartProjection {
@@ -293,11 +398,23 @@ export interface CartProjection {
   subtotal_q: number
   subtotal_display: string
   original_subtotal_q: number
-  original_subtotal_display: string
   discount_total_q: number
   discount_total_display: string
   has_discount: boolean
-  discount_lines: Array<{ label: string, amount_q: number, amount_display: string, requires_pickup?: boolean }>
+  // Todo desconto do pedido, um por origem. É o dado (o checkout lê
+  // `requires_pickup` daqui); o que o resumo SUBTRAI é `order_discount_lines`.
+  discount_lines: CartDiscountLine[]
+  // O resumo como a cliente lê (decisão do dono 1, 16/11/2026): a promoção do
+  // produto já abateu na linha. `lines_subtotal_*` é o Subtotal (a soma das
+  // linhas como a tela as mostra); `promo_savings_display` diz quanto as
+  // promoções já abateram (informa, não subtrai; null sem promoção);
+  // `order_discount_lines` são as linhas que o resumo subtrai (cupom, pontos,
+  // desconto de pedido).
+  lines_subtotal_q: number
+  lines_subtotal_display: string
+  promo_savings_q: number
+  promo_savings_display: string | null
+  order_discount_lines: CartDiscountLine[]
   delivery_fee_q: number | null
   delivery_fee_display: string | null
   delivery_is_free: boolean
@@ -313,16 +430,98 @@ export interface CartProjection {
   coupon_code: string | null
   coupon_discount_q: number | null
   coupon_discount_display: string | null
+  // Cupom com desconto zero: o motivo vem do servidor (pricing.coupon.reason).
+  coupon_zero_reason: '' | 'unavailable' | 'customer' | 'fulfillment' | 'minimum' | 'items' | 'already_discounted'
+  coupon_missing_q: number
+  coupon_missing_display: string | null
+  coupon_fulfillment_types: string[]
   has_unavailable_items: boolean
   has_awaiting_confirmation_items: boolean
   has_ready_for_confirmation_items: boolean
   unavailable_banner: string
   awaiting_confirmation_notice: string
+  // Reserva com prazo à vista (WP-L11): até quando a sacola guarda os itens. É o
+  // menor prazo das reservas vivas da sessão; null quando nada tem prazo correndo
+  // (sacola vazia, só item de fornada futura). `reserved_until_display` já vem no
+  // formato da casa ("19h18"). O prazo é contado pelo relógio do servidor, que vem
+  // no envelope da leitura da sacola (`CartResponse.server_now_iso`).
+  reserved_until_iso: string | null
+  reserved_until_display: string | null
+  // A reserva que venceu e não foi renovada (#2767): até quando ela valia, no
+  // formato da casa ("19h18"; de outro dia, "18/11 às 19h18"). É o que diz a
+  // quem abre a sacola depois do prazo que a reserva acabou. null com reserva viva.
+  reservation_lapsed_display: string | null
+  // Sacolas abertas da mesma cliente em outros canais (OC-17, C06): aviso, nunca
+  // sincronização. Ausente ou vazio para visitante e para link encaminhado.
+  open_elsewhere?: CartOpenElsewhere[]
+  // "Continuar pelo WhatsApp" (OC-16): só vem quando a passagem para a conversa é
+  // possível agora (X1). Ausente ou null: a tela não oferece o gesto.
+  continue_in_conversation?: Action | null
+  // O que entrou vindo de outro canal ("Entraram 3 itens da sacola do WhatsApp.") e
+  // o que mudou, só se mudou (#3517).
+  transfer_arrival?: CartTransferArrival | null
+  // Só na sacola vazia (com itens, cada linha já diz quando fica pronta): null
+  // com a sacola cheia. Ver `OrderingProjection`.
+  ordering?: OrderingProjection | null
+  // Para que dia é a sacola, quando é de OUTRO dia (OC-33 B1): o dia em que ela
+  // reserva. null para hoje (o padrão não se anuncia).
+  day?: CartDayProjection | null
   minimum_order_progress: MinimumOrderProgressProjection | null
   delivery_minimum_progress: MinimumOrderProgressProjection | null
   free_delivery_progress: FreeDeliveryProgressProjection | null
   upsell: { sku: string, name: string, unit_price_q: number, price_display: string, image_url: string | null } | null
   actions: Action[]
+}
+
+// O dia da sacola (OC-33 B1): `date` ISO e `label` como a loja diz ("quinta, 26/11").
+export interface CartDayProjection {
+  date: string
+  label: string
+}
+
+// A recusa do "Trocar" (OC-33 B1, 409 `cart_day_change_refused`): nada mudou; cada
+// item que não dá no dia novo vem nomeado, e a frase é a da casa.
+export interface CartDayChangeRefusal {
+  error_code: 'cart_day_change_refused'
+  title: string
+  detail: string
+  date: string
+  date_label: string
+  // `ref`: o que volta em `without` para seguir sem o item (o SKU, ou a linha de lote).
+  items: Array<{ ref: string, sku: string, name: string, requested_qty: number, available_qty: number }>
+}
+
+// A sacola aberta em outro canal (OC-17). `bring` é a ação de trazê-la para cá:
+// nasce desligada (`enabled: false`) até a passagem entre canais existir, e a
+// tela só oferece o gesto com ela ligada (X1).
+export interface CartOpenElsewhere {
+  channel: string
+  channel_label: string
+  items_count: number
+  items_phrase: string
+  subtotal_q: number
+  subtotal_display: string
+  bring: Action
+}
+
+export interface CartTransferArrival {
+  channel: string
+  title: string
+  lines: string[]
+}
+
+// Resposta de "Trazer a sacola do WhatsApp" (`/api/v1/cart/bring/`).
+export interface CartTransferResponse {
+  cart: CartProjection
+  cart_transfer?: { status: 'accepted' | 'refused' | string, code?: string, differences?: unknown[] }
+}
+
+// "Continuar pelo WhatsApp": a mensagem pronta com o código NB.
+export interface CartConversationStart {
+  code: string
+  message: string
+  deep_link: string
+  wa_number: string
 }
 
 export interface SocialLinkProjection {
@@ -378,6 +577,7 @@ export interface ShopDesignTokensProjection {
   bottomnav?: string
   cta?: string
   cta_foreground?: string
+  promotion?: string
   background_hex?: string
   theme_hex?: string
   heading_font?: string
@@ -428,6 +628,9 @@ export interface ShopStatusProjection {
   is_open: boolean
   label: string
   message: string | null
+  // Loja fechada: a próxima abertura em frase ("amanhã às 9h"); null aberta
+  // ou sem abertura conhecida. Mesmo dado do selo da home.
+  next_opening: string | null
   opens_at: string | null
   closes_at: string | null
 }
@@ -595,6 +798,7 @@ export interface AuthCopyProjection {
   wa_why: CopyEntryProjection
   wa_steps: CopyEntryProjection
   wa_waiting: CopyEntryProjection
+  wa_waiting_phone: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection
@@ -664,6 +868,17 @@ export interface HomeProjection {
   featured_items: CatalogItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  ordering?: OrderingProjection
+}
+
+/**
+ * Uma versão que esta sessão vê de um experimento (R4 do release, OC-20).
+ * Quem decide é o servidor, pela coorte configurada no Admin; nada no cliente
+ * escolhe a versão. Experimento ausente da lista = versão padrão.
+ */
+export interface ExperienceProjection {
+  ref: string
+  variant: string
 }
 
 export interface StorefrontShellProjection {
@@ -677,6 +892,29 @@ export interface StorefrontShellProjection {
   faq: FAQItemProjection[]
   origin_channel: string | null
   public_config: PublicConfigProjection
+  /**
+   * Opcional durante a convivência (campo aditivo). A tela lê por `useExperience`;
+   * `useStorefrontShell` torna privado o documento que traz versão fora da padrão.
+   * Ausente ou vazio = todos os experimentos na versão padrão.
+   */
+  experience?: ExperienceProjection[]
+  /**
+   * O selo da versão de teste da equipe (DEV-2026-096). Só vem para quem vê, ou veria sem
+   * ter pedido a versão de sempre, alguma versão fora do padrão por ser da equipe. Cliente
+   * comum e anônimo: ausente.
+   */
+  team_preview?: TeamPreviewProjection
+}
+
+export interface TeamPreviewProjection {
+  /** A pessoa pediu a versão de sempre (vale até sair da conta ou voltar). */
+  opted_out: boolean
+  /** A frase pronta, em linguagem de gente. */
+  message: string
+  /** As novidades em teste, sem código de experimento. */
+  features: string[]
+  /** "Ver a versão de sempre" ou "Voltar à versão de teste". */
+  action_label: string
 }
 
 export interface ShellResponse {
@@ -713,11 +951,14 @@ export interface CatalogResponse {
 
 export interface ProductResponse {
   product: ProductDetailProjection
-  cart: CartProjection
+  // A leitura pública não inclui sacola; o shell continua sendo seu dono.
+  cart?: CartProjection
 }
 
 export interface CartResponse {
   cart: CartProjection
+  // O relógio do servidor na hora da resposta (só na leitura da sacola).
+  server_now_iso?: string
 }
 
 export interface ReorderConflictItemProjection {
@@ -778,6 +1019,9 @@ export interface ProductMutationMeta {
   price_q: number
   price_display: string
   image_url: string | null
+  // O dia do "Para quando?" do cardápio (OC-33 B1, AAAA-MM-DD): vai com o
+  // Adicionar, e a reserva cai nele. Ausente fora do cardápio da variante B.
+  date?: string
 }
 
 // Alternativa em estoque oferecida quando o item escolhido falta. O backend
@@ -870,6 +1114,8 @@ export interface Action {
   payload_schema: Record<string, unknown>
   idempotency: 'none' | 'recommended' | 'required' | string
   confirmation: Record<string, unknown>
+  /** O que a ação `copy` copia (o copia-e-cola do Pix); vazio nas demais. */
+  value?: string
 }
 
 export interface CheckoutCopyProjection {
@@ -901,6 +1147,8 @@ export interface CheckoutProjection {
   has_delivery: boolean
   pickup_slots: PickupSlotProjection[]
   earliest_slot_ref: string | null
+  /** Hoje, as meias horas que ainda dão (`half_hour`); encomenda, os turnos da casa (`canonical`). */
+  pickup_grid: 'half_hour' | 'canonical'
   /** Janelas de entrega da data pedida: a grade da concierge, conferida no commit. */
   delivery_windows: PickupSlotProjection[]
   earliest_delivery_window_ref: string | null
@@ -920,6 +1168,16 @@ export interface CheckoutProjection {
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+  // Hoje é dia de loja aberta e as retiradas e entregas de hoje já acabaram:
+  // "Hoje" não vem em `available_dates` e a tela diz por quê.
+  today_over?: boolean
+  // O "hoje" da loja (ISO), no fuso dela: a tela calcula "hoje", "amanhã" e os
+  // limites do calendário a partir daqui, não do relógio do aparelho.
+  today?: string
+  // A frase do dinheiro de cada forma de pagamento, para a revisão: paga agora,
+  // até quando a loja confirma e o que acontece se não confirmar. Vazio quando
+  // não há prazo a prometer.
+  money_notices?: Array<{ method: string, text: string }>
   // NOTA DA ENTREGA: toda entrega pede CPF/CNPJ. `prefill_tax_id` é o documento
   // que já vem no campo (do cadastro ou da última entrega); `prefill_tax_id_source`
   // diz de onde (`document` | `last_delivery`). Vazios quando a casa não conhece.
@@ -993,6 +1251,9 @@ export interface OrderItemProjection {
   qty: number
   unit_price_display: string
   total_display: string
+  // O valor cheio riscado ao lado, quando a promoção do produto abateu a linha
+  // (dono, 16/11/2026). Vazio sem promoção.
+  full_total_display?: string
 }
 
 export interface TrackingFulfillmentProjection {
@@ -1012,6 +1273,8 @@ export interface PickupInfoProjection {
   opening_hours: string
   directions_label: string
   directions_url: string | null
+  /** O horário combinado ("hoje · 19:30 às 20:00"), ou null sem horário escolhido. */
+  when_display: string | null
 }
 
 export interface TrackingCopyProjection {
@@ -1052,6 +1315,17 @@ export interface TrackingCopyProjection {
   rating_thanks: string
   rating_thanks_title: string
   rating_thanks_celebrate: string
+  rating_contact_title: string
+  rating_contact_message: string
+  rating_contact_done: string
+  cancellation_contact_title: string
+  cancellation_contact_done_title: string
+  cancellation_contact_message: string
+  rating_google_title: string
+  rating_google_share_title: string
+  rating_google_message: string
+  rating_google_cta: string
+  rating_google_copied: string
   page_meta_description: string
   delivery_heading: string
   // Copy estática do bloco de pagamento inline (Pix/cartão).
@@ -1064,14 +1338,11 @@ export interface TrackingCopyProjection {
   pix_auto_update_note: string
   card_intro: string
   card_security_note: string
-  // Cancelamento pelo estabelecimento: rótulos do motivo e do estorno.
+  // Cancelamento pelo estabelecimento: rótulo do motivo.
   cancelled_reason_title: string
-  refund_title: string
   // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
   waitlist_waiting_title: string
   waitlist_waiting_message: string
-  waitlist_confirm_title: string
-  waitlist_confirm_message: string
   waitlist_confirm_cta: string
   waitlist_confirmed_title: string
   waitlist_released_title: string
@@ -1088,6 +1359,23 @@ export interface FiscalNote {
   link_label: string
   // "Nota de teste, sem valor fiscal." / "Esta nota foi cancelada…" / vazio.
   note: string
+}
+
+// O recibo do valor retido de uma encomenda não retirada (#3538). Texto pronto.
+export interface RetentionReceipt {
+  title: string
+  // Razão social (ou nome da loja) e CNPJ.
+  issuer_lines: string[]
+  order_line: string
+  commitment_display: string
+  closed_display: string
+  // "40% de R$ 89,00" em `calculation_display`, e o resultado em `retained_display`.
+  lines: { name: string, qty_display: string, value_display: string, calculation_display: string, retained_display: string }[]
+  money_rows: { label: string, value_display: string }[]
+  retained_label: string
+  retained_display: string
+  nature: string
+  not_fiscal: string
 }
 
 export interface TrackingResponse {
@@ -1126,19 +1414,31 @@ export interface TrackingResponse {
   // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
   // pagamento" dentro do bloco inline.
   mock_payment_enabled: boolean
-  // Cancelamento pelo estabelecimento: o cliente lê o porquê e o estado do
-  // estorno na própria tela, sem depender da notificação.
+  // Cancelamento: o cliente lê o porquê e o destino do dinheiro (nada cobrado,
+  // reserva desfeita, devolvido com valor) na própria tela, sem depender da
+  // notificação.
   cancellation_note: string
-  refund_status_label: string | null
-  cancellation_request: {
-    protocol: string
-    requested_at_display: string
-    title: string
-    message: string
+  cancellation_money_line?: string
+  // Antes de confirmar o cancelamento: o que acontece com o dinheiro.
+  cancel_dialog_money_line?: string
+  // O preparo começou: no lugar do cancelar, falar com o responsável.
+  // `requested`: o cliente já pediu. `null` antes do preparo e no fim.
+  cancellation_contact: {
+    requested: boolean
+  } | null
+  // Depois de avaliar: a ouvidoria (nota até 3) e o convite do Google (toda nota;
+  // a política do Google proíbe convidar só quem gostou). `comment` é o que o
+  // cliente escreveu, copiado no toque do convite. Ausente/`null` antes de avaliar.
+  rating_followup?: {
+    comment: string
+    google_review_url: string
+    contact_offered: boolean
+    contact_requested: boolean
   } | null
   // A NFC-e autorizada, para o cliente abrir (a loja online não imprime nem
   // pede e-mail). Ausente/`null` enquanto não há nota.
   fiscal_note?: FiscalNote | null
+  retention_receipt?: RetentionReceipt | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
   waitlist_state: string
@@ -1150,8 +1450,26 @@ export interface TrackingResponse {
   whatsapp_url: string
   support_url: string
   share_text: string
-  just_placed?: boolean
+  /** O pedido já pode ser comemorado: não deve pagamento e não morreu. */
+  placement_secured?: boolean
+  /** O pedido deve pagamento agora: a tela pede a conferência (POST payment/check). */
+  payment_due?: boolean
   share_cta: string
+  // O Resumo: a conta inteira (subtotal de etiqueta, descontos, entrega, total)
+  // e o que o cliente informou no checkout. `schedule_display` é o combinado
+  // (data e janela) sempre que houve janela, não só na encomenda.
+  subtotal_display?: string
+  discount_lines?: { label: string, amount_display: string }[]
+  schedule_display?: string | null
+  gift?: { recipient_name: string, message: string } | null
+  tax_id_display?: string
+  customer_notes?: string
+  delivery_address?: string
+  // Como a tela foi aberta (DEV-2026-093): `full` ou `capability` (só o link do
+  // aviso). Na capacidade o servidor já abreviou o endereço e tirou cancelar,
+  // avaliar e pedir de novo; `login_invite` é o convite que ocupa o lugar deles.
+  access_mode?: 'full' | 'capability'
+  login_invite?: { message: string, cta_label: string, href: string } | null
   is_debug: boolean
   last_updated_iso: string
   last_updated_display: string
@@ -1219,6 +1537,7 @@ export interface AccountNotificationPreference {
   label: string
   description: string
   enabled: boolean
+  order_notifications_enabled: boolean | null
 }
 
 export interface AccountStockAlertSubscription {
@@ -1393,4 +1712,14 @@ export interface LegalProjection {
   version: string
   updated_at: string
   processors: LegalProcessorProjection[]
+}
+
+export interface ProductRecommendationsProjection {
+  sku: string
+  items: CatalogItemProjection[]
+  heading: string
+}
+
+export interface ProductRecommendationsResponse {
+  recommendations: ProductRecommendationsProjection
 }

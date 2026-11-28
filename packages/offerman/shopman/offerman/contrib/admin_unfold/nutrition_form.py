@@ -16,6 +16,8 @@ from shopman.offerman.nutrition import (
     NUTRIENT_LABELS_PT,
     NutritionFacts,
 )
+from shopman.offerman.protocols import LabelAttributesProvider
+from shopman.utils.contrib.admin_unfold.money import MoneyReaisField
 from unfold.widgets import (
     UnfoldAdminDecimalFieldWidget,
     UnfoldAdminTextInputWidget,
@@ -75,24 +77,29 @@ LABEL_ATTRIBUTE_FIELDS = {
 }
 
 
-def _label_attributes():
-    """O provedor de atributos de rótulo, ou ``None`` se não houver."""
+def _label_attributes() -> LabelAttributesProvider | None:
+    """O provedor de atributos de rótulo, ou ``None`` se não houver.
+
+    O contrato é ``shopman.offerman.protocols.LabelAttributesProvider``. Sem
+    caminho configurado, os campos somem; caminho configurado que não carrega é
+    erro de configuração e grita, em vez de sumir com os campos calado.
+    """
+    from django.core.exceptions import ImproperlyConfigured
+    from django.utils.module_loading import import_string
     from shopman.offerman.conf import get_offerman_settings
 
     path = get_offerman_settings().LABEL_ATTRIBUTES_PROVIDER
     if not path:
         return None
     try:
-        from django.utils.module_loading import import_string
+        provider_class = import_string(path)
+    except ImportError as exc:
+        raise ImproperlyConfigured(
+            f"OFFERMAN['LABEL_ATTRIBUTES_PROVIDER'] não carrega: {path!r} ({exc})"
+        ) from exc
+    return provider_class()
 
-        return import_string(path)()
-    except Exception:  # pragma: no cover — configuração, não fluxo
-        import logging
 
-        logging.getLogger(__name__).warning(
-            "Failed to load OFFERMAN['LABEL_ATTRIBUTES_PROVIDER']: %s", path, exc_info=True,
-        )
-        return None
 REMOTE_PURCHASE_FORM_FIELDS = (
     "allergens_text",
     "dietary_info_text",
@@ -115,6 +122,10 @@ def _join_list(value: object) -> str:
 
 class ProductAdminForm(forms.ModelForm):
     """Form that exposes nutrition_facts as flat per-nutrient fields."""
+
+    # Em reais na tela, centavos no banco: com o inteiro cru, quem digitava 15
+    # publicava o produto a R$ 0,15 (beta test 05/11/2026, ADM-09).
+    base_price_q = MoneyReaisField(label="Preço base", help_text="Em reais. Ex.: 15,00.")
 
     image_url = forms.URLField(
         label="URL da imagem",
@@ -254,7 +265,7 @@ class ProductAdminForm(forms.ModelForm):
             raise forms.ValidationError("Use o formato HH:MM. Ex.: 12:00.") from None
         if not (0 <= hour <= 23 and 0 <= minute <= 59):
             raise forms.ValidationError("Hora fora do dia. Use de 00:00 a 23:59.")
-        return f"{hour:02d}:{minute:02d}"
+        return f"{hour:02d}:{minute:02d}"  # hora-ok: valor de campo de formulário, gravado como HH:MM
 
     def clean(self):
         cleaned = super().clean()

@@ -9,7 +9,7 @@ from django.http import HttpResponseRedirect
 from django.urls import reverse
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
-from shopman.orderman.integrations import get_shop_channel_model
+from shopman.orderman.integrations import get_channel_model
 
 # Unfold is optional - fallback to standard Django admin if not installed
 try:
@@ -100,6 +100,7 @@ from shopman.orderman.models import (
     SessionEvent,
 )
 from shopman.utils import unfold_badge, unfold_component
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,7 @@ class SalesChannelFilter(admin.SimpleListFilter):
     parameter_name = "channel_ref"
 
     def lookups(self, request, model_admin):
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         if Channel is None:
             return []
         qs = Channel.objects.filter(is_active=True).order_by(
@@ -245,7 +246,7 @@ class SessionAdmin(ModelAdmin):
             "</li>",
             (
                 (
-                    created_at.strftime("%d/%m %H:%M:%S") if created_at else "—",
+                    format_local(created_at, "%d/%m %H:%M:%S", empty="—"),
                     unfold_badge(phase, "base"),
                     event_type,
                     actor or "—",
@@ -347,7 +348,7 @@ class SessionAdmin(ModelAdmin):
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         channels = (
             list(
                 Channel.objects.filter(is_active=True).order_by(
@@ -645,7 +646,9 @@ class OrderAdmin(ModelAdmin):
     @display(description=_("total"))
     def total_display(self, obj: Order) -> str:
         if obj.total_q:
-            return f"{obj.currency} {obj.total_q / 100:.2f}"
+            # "BRL 156.00" era o formato do código; a casa lê "R$ 156,00".
+            prefix = "R$" if obj.currency == "BRL" else obj.currency
+            return f"{prefix} {format_money(obj.total_q)}"
         return "-"
 
     @display(description=_("avaliação"))
@@ -703,7 +706,7 @@ class OrderAdmin(ModelAdmin):
         # Supra-filtro por canal (barra rápida) — preserva contexto e mantém intenção do status (tabs).
         extra_context = extra_context or {}
 
-        Channel = get_shop_channel_model()
+        Channel = get_channel_model()
         channels = (
             list(
                 Channel.objects.filter(is_active=True).order_by(
@@ -836,7 +839,8 @@ class DirectiveAdmin(ModelAdmin):
     # Remover não custa capacidade nenhuma, e é por isso que remover foi o caminho:
     #
     #   * a fila roda sozinha — `process_directives` drena `queued` com
-    #     `available_at__lte=now`, e o `maintenance_worker` a chama no ciclo;
+    #     `available_at__lte=now`, num processo próprio (o `directive-worker`),
+    #     fora do `maintenance_worker`;
     #   * directive que esgota tentativas NÃO silencia: `check_directive_health`
     #     vira `OperatorAlert` (a observabilidade que a ADR-003 exige, justamente
     #     porque não há dead-letter queue);

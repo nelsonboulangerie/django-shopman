@@ -22,7 +22,8 @@ from __future__ import annotations
 import unicodedata
 from dataclasses import dataclass, field
 
-from django.urls import NoReverseMatch, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
+from django.utils.module_loading import import_string
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,10 @@ class SettingsEntry:
     description: str
     icon: str
     is_custom_page: bool = False
+    #: Tela custom: caminho da view cujo ``permission_required`` é a porta.
+    #: Vazio numa tela custom = qualquer pessoa da equipe abre (a inscrição no
+    #: autenticador é de cada um).
+    view: str = ""
 
     @property
     def url(self) -> str:
@@ -75,6 +80,14 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Horários e operação", "shop_shopoperation", "Dias e horas de funcionamento, feriados e fechamentos.", "schedule"),
             _model("Cardápio", "shop_shopmenu", "Coleções que aparecem na loja e como o cardápio se monta.", "restaurant_menu"),
             _model("Integrações", "shop_shopintegrations", "Serviços externos: pagamento, mensagens, iFood, o mínimo de público das campanhas de WhatsApp e os limites de capacidade dos apps de operação.", "extension"),
+            _model("Conexões de IA", "shop_aiconnection", "Provedor, endereço, chave e modelo de cada IA: Anthropic, DeepSeek, Jev.", "smart_toy"),
+            _model("Gasto de IA por dia", "shop_aispendday", "Quanto a IA gastou em cada dia, na loja e em cada função, e quantas chamadas o freio recusou. Só leitura.", "savings"),
+            _model("Chamadas de API paga", "shop_paidapicall", "Cada chamada a um serviço pago que não é IA (hoje, a rota do entregador da casa pelo Google): resultado e custo estimado. O teto do dia fica em Integrações. Só leitura.", "route"),
+            _model("Chamadas de IA", "shop_aiinvocation", "Cada chamada a um modelo: função, modelo, resultado, tokens e custo. Não guarda o texto. Só leitura.", "receipt_long"),
+            _model("Decisões em sombra", "shop_conversationaldecision", "O que o framework de conversa faria com cada mensagem da Concierge, sem responder nem mexer em pedido. Não guarda o texto. Só leitura.", "psychology"),
+            _model("Resultados das decisões em sombra", "shop_conversationaloutcome", "Quantos pedidos o cliente fez em 24 horas e em 7 dias depois de cada decisão em sombra. Só leitura.", "insights"),
+            _model("Amostra de aprendizado da Concierge", "storefront_conversationcorpusentry", "Trechos de conversa copiados sem nome, telefone ou endereço, para medir e ensinar a Concierge. Não ligam a ninguém e não vencem.", "school"),
+            _model("Histórico da configuração", "shop_instanceapplyrecord", "Cada vez que a configuração da loja foi aplicada pelo descritor: quem aplicou, quando e o que mudou. Só leitura.", "history"),
         ),
     ),
     SettingsGroup(
@@ -87,7 +100,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Regras de preço", "shop_ruleconfig", "As regras que alteram preço automaticamente.", "price_change"),
             _model("Promoções", "shop_promotion", "Campanhas de desconto por período, produto ou público.", "campaign"),
             _model("Cupons", "shop_coupon", "Códigos que o cliente digita para ganhar desconto.", "confirmation_number"),
-            _model("Faixas de preço", "guestman_pricetier", "Tabelas de preço por tipo de cliente.", "groups"),
+            _model("Grupos de clientes", "guestman_pricetier", "A tabela de preço e as vantagens de cada grupo de clientes.", "groups"),
             _model("Fidelidade", "shop_shoployalty", "Como o cliente acumula e troca pontos.", "loyalty"),
             _model("Atributos de produto", "shop_attributedefinition", "O vocabulário que o catálogo conhece: natureza, sabor, temperatura. É dele que as regras de sugestão falam.", "sell"),
             _model("Papéis de consumo", "backstage_consumptionrole", "O que faz uma cesta indicar consumo no salão: bebida, lanche, prato quente.", "restaurant"),
@@ -103,6 +116,9 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Pedidos e entrega", "shop_shopordering", "Pedido mínimo, frete grátis, prazos e janelas de retirada.", "receipt_long"),
             _model("Zonas de entrega", "shop_deliveryzone", "Bairros e regiões atendidos, com a taxa de cada um.", "pin_drop"),
             _model("Faixas de distância", "shop_deliverydistanceband", "Taxa por quilômetro, quando a cobrança é por distância.", "straighten"),
+            _model("Serviços de entrega", "shop_deliveryservice", "Quem leva as entregas da casa e qual vem marcado ao chamar o entregador.", "two_wheeler"),
+            _model("Entregadores da casa", "shop_courier", "Quem entrega pela casa: nome, WhatsApp e veículo.", "badge"),
+            _model("Valores dos entregadores", "shop_courierrate", "Quanto a casa paga por corrida: a tabela por distância e o combinado com cada um.", "payments"),
         ),
     ),
     SettingsGroup(
@@ -117,6 +133,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
                 description="Toda frase da loja, organizada pela tela onde ela aparece.",
                 icon="format_quote",
                 is_custom_page=True,
+                view="shopman.backstage.admin_console.copy_catalog.CopyCatalogView",
             ),
             _model(
                 "Perguntas frequentes",
@@ -152,6 +169,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
         entries=(
             _model("PDV e alertas", "shop_shoppos", "Comportamento do balcão e quais alertas o operador recebe.", "point_of_sale"),
             _model("Estações KDS", "backstage_kdsinstance", "As telas da cozinha e o que cada uma exibe.", "tv"),
+            _model("Atalhos da nota da cozinha", "shop_kitchennotetag", "Os acréscimos de um toque na nota que vai para a Cozinha, e para que produtos cada um vale.", "sticky_note_2"),
             _model("Comandas do PDV", "backstage_postab", "As comandas fixas do balcão.", "receipt"),
             _model("Lugares do salão", "backstage_seatingspot", "Mesas, balcão e o que só é usado em dia cheio.", "table_restaurant"),
             _model("Maquininhas de entrega", "backstage_deliverydevice", "Identificação e disponibilidade das maquininhas que acompanham entregas.", "credit_card"),
@@ -194,12 +212,41 @@ def _matches(entry: SettingsEntry, group: SettingsGroup, needle: str) -> bool:
     return needle in haystack
 
 
-def build_settings_hub(*, q: str = "", slug: str = "") -> dict:
+def _can_open(entry: SettingsEntry, url: str, request) -> bool:
+    """A pessoa deste request abriria esta tela? A porta é quem responde.
+
+    Para changelist, o ``ModelAdmin`` registrado na URL; para tela custom, o
+    ``permission_required`` da view. Mesma régua do menu e do dashboard
+    (``admin.gates``): um cartão que leva a um 403 é porta trancada com placa de
+    aberto (beta test 05/11/2026, ADM-06).
+    """
+    if request is None:
+        return True
+    from shopman.backstage.admin.gates import can_open_view
+
+    if entry.is_custom_page:
+        if not entry.view:
+            return True
+        return can_open_view(request, import_string(entry.view))
+    try:
+        match = resolve(url)
+    except Resolver404:
+        return False
+    model_admin = getattr(match.func, "model_admin", None)
+    if model_admin is None:
+        return True
+    return model_admin.has_view_or_change_permission(request)
+
+
+def build_settings_hub(*, q: str = "", slug: str = "", request=None) -> dict:
     """Monta a tela de Configuração, opcionalmente filtrada por um termo.
 
     Uma entrada que não resolve é omitida com o motivo — o app pode não estar
     instalado neste deployment, e uma grade com link morto seria pior do que uma
     grade menor (foi assim que cinco telas ficaram inalcançáveis por meses).
+
+    Com ``request``, só entra o que a pessoa consegue abrir: a contagem e os
+    cartões são os dela, não os do superusuário.
     """
     needle = _normalize(q.strip())
     groups: list[dict] = []
@@ -217,6 +264,8 @@ def build_settings_hub(*, q: str = "", slug: str = "") -> dict:
                 unavailable.append(entry.label)
                 continue
             if needle and not _matches(entry, group, needle):
+                continue
+            if not _can_open(entry, url, request):
                 continue
             cards.append(
                 {

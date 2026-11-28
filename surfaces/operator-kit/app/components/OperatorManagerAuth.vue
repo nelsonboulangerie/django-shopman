@@ -16,9 +16,15 @@
 // errada em `Entry.approved_by` — justamente a segunda assinatura que a sangria
 // existe para ter.
 //
-// O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
-// (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
-// deixaria o balcão sem saída no meio de uma sangria.
+// ⚠️ Lista vazia NÃO vira campo de nome digitado. Ele existiu como "porta de
+// saída" e virou o caminho normal (ver `OperatorIdentify`, `emptyTitle`). Sem
+// gerente com PIN, a tela diz isso e o crachá continua valendo. O gerente que
+// está operando aparece na lista (em primeiro) e assina com o próprio PIN.
+//
+// ⚠️ Toda autorização de gerente da suíte passa por ESTE componente. Quem precisa
+// de contexto do ato (o motivo do cancelamento, o prazo) usa o slot `context`,
+// nunca uma moldura própria em volta do `OperatorIdentify` — a trava em
+// `operator-kit/tests/guardrails.managerAuth.test.ts` reprova.
 import type { HouseAccountLimitInput, ManagerAction } from "../presentation/managerAuth";
 import {
   managerAuthReason,
@@ -34,7 +40,7 @@ const props = defineProps<{
    * ⚠️ É a linha que separa autorizar de logar, e é texto — não cor. As duas
    * telas pedem PIN num teclado igual, e o operador pode ler "digite o PIN"
    * como "sua sessão vai trocar". Não vai: `validate_manager_override` resolve o
-   * gerente, confere a permissão, recusa autoassinatura e devolve o objeto —
+   * gerente, confere a permissão e o PIN e devolve o objeto —
    * nunca chama `login()`. Dizer isso na tela é mais barato que consertar a
    * confusão depois, e vale para qualquer autorização (desconto, sangria,
    * destrave), não só a da gaveta.
@@ -43,13 +49,25 @@ const props = defineProps<{
   /** O ato que está sendo autorizado. A copy inteira sai daqui — ver `managerAuth`. */
   action?: ManagerAction;
   thresholdQ?: number;
+  /** O desconto manual da venda, que o gerente assina (motivo `discount_over_threshold`). */
+  discountQ?: number | null;
+  /** O valor que o gerente assina, em centavos (sangria, troco, devolução, estorno). */
+  amountQ?: number | null;
+  /** O complemento do ato (o motivo da sangria, as ordens abertas). */
+  detail?: string;
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
   /** Conta na casa acima do limite (`review.house_account_limit`): o diálogo diz saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
-  /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
+  /** Quem pode assinar (`POSProjection.managers`). Vazio mostra que não há outro gerente. */
   managers?: ManagerOption[];
   busy?: boolean;
+  /**
+   * O que acontece enquanto `busy`, quando a espera é longa por um motivo que
+   * o gerente não vê (o estorno no cartão vai ao gateway dentro do pedido).
+   * Sem isto, eram seis segundos de spinner mudo no botão (beta 06/11, F12).
+   */
+  busyText?: string;
   error?: string;
 }>();
 
@@ -66,8 +84,11 @@ const managers = computed(() => props.managers ?? []);
 const reason = computed(() =>
   managerAuthReason({
     action: props.action,
+    amountQ: props.amountQ,
+    detail: props.detail,
     reasons: props.reasons,
     thresholdQ: props.thresholdQ,
+    discountQ: props.discountQ,
     houseAccountLimit: props.houseAccountLimit,
   }),
 );
@@ -127,14 +148,25 @@ function onBadge(token: string) {
           icon="i-lucide-shield-check"
           :title="`Você continua como ${operatorName}.`"
         />
+        <slot name="context" />
+        <p
+          v-if="busy && busyText"
+          class="flex items-center gap-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+          data-manager-auth-busy
+        >
+          <Icon name="lucide:loader-circle" class="size-4 shrink-0 animate-spin" />
+          {{ busyText }}
+        </p>
         <OperatorIdentify
           ref="identify"
           :people="managers"
           :busy="busy"
           :error="error"
           :badge-enabled="open"
-          allow-typed-name
-          name-label="Nome do gerente"
+          empty-title="Nenhum gerente com PIN"
+          empty-description="Cadastre o PIN de um gerente no Admin, ou chame um gerente com crachá."
           prompt="Quem autoriza?"
           change-label="Trocar gerente"
           @pin="onPin"

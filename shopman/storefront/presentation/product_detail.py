@@ -23,12 +23,17 @@ from shopman.utils.monetary import format_money
 
 from shopman.shop.config import ChannelConfig
 from shopman.shop.projections import catalog_context
+from shopman.shop.projections.pricing_quote import PriceQuoteProjection
+from shopman.shop.projections.ready_promise import read_promise_facts
 from shopman.shop.projections.storefront_context import session_pricing_hints
 from shopman.shop.projections.types import (
     Availability,
     CategoryProjection,
 )
 from shopman.storefront.identity import customer_pricing_hints
+from shopman.storefront.presentation.catalog import ready_now, unit_weight_label, viewer_collection_access
+from shopman.storefront.presentation.fomo import FomoBadge, showcase_badges
+from shopman.storefront.presentation.promise import PromiseProjection, promise_for
 from shopman.storefront.presentation.status import availability_label as resolve_availability_label
 from shopman.storefront.presentation.types import ComponentProjection
 
@@ -38,7 +43,7 @@ from .catalog import (
     _cart_qty_by_sku,
     _favorite_skus,
     _resolve_availability,
-    build_catalog_items_for_skus,
+    build_catalog_items_for_products,
     notify_subscribed_skus,
     pause_and_notifiability,
 )
@@ -117,6 +122,14 @@ class ConservationInfoProjection:
 
 
 @dataclass(frozen=True)
+class PickupStoreProjection:
+    """A loja onde a cliente retira: o nome que ela reconhece e o endereço."""
+
+    name: str
+    address: str
+
+
+@dataclass(frozen=True)
 class ProductDetailProjection:
     """Full projection for the storefront PDP."""
 
@@ -128,12 +141,7 @@ class ProductDetailProjection:
     image_url: str | None
     gallery: tuple[str, ...]
 
-    # Price (dual)
-    base_price_q: int
-    price_display: str
-    has_promotion: bool
-    original_price_display: str | None
-    promotion_label: str | None
+    quote: PriceQuoteProjection
 
     # Availability
     availability: Availability
@@ -203,13 +211,6 @@ class ProductDetailProjection:
     # Breadcrumb
     breadcrumb_category: CategoryProjection | None
 
-    # Cross-sell — lateral discovery via shared keywords, rendered with the
-    # canonical catalog card. Distinct from substitutes (which stay in the
-    # stock-error modal, AVAILABILITY-PLAN §5). Heading comes from the
-    # omotenashi registry (``PRODUCT_CROSS_SELL_HEADING``, admin-editable).
-    cross_sell: tuple[CatalogItemProjection, ...] = ()
-    cross_sell_heading: str = ""
-
     # Apresentação da coleção PRIMÁRIA (Collection.metadata): cor hex da paleta
     # NB e nome de ícone Lucide, para o hero-fallback da PDP sem foto (fundo
     # tintado + ícone + SKU). None sem coleção primária ou sem a chave.
@@ -219,6 +220,24 @@ class ProductDetailProjection:
     # Escolhas no produto (sabor obrigatório, adicionais com preço), no formato
     # público de ``catalog_context.option_groups``. Vazio = adiciona direto.
     option_groups: tuple[dict, ...] = ()
+
+    # Quando fica pronto: a MESMA promessa do card do cardápio
+    # (``presentation/promise``), nunca uma frase montada no aparelho a partir
+    # do estado da loja em cache. ``None`` = nada a prometer.
+    promise: PromiseProjection | None = None
+
+    # Onde retirar: a loja (nome e endereço) que a linha de retirada nomeia e que
+    # o JSON-LD de Offer declara como local (``availableAtOrFrom``). O Google só
+    # libera "retirada no mesmo dia" e "disponibilidade na loja" quando a página
+    # do produto diz, no HTML do servidor, em qual loja o item está e quando fica
+    # pronto (#2652). Vem da ``Shop``, nunca fixo no código. ``None`` quando a
+    # casa não tem endereço cadastrado: sem endereço, a página não nomeia loja.
+    pickup_store: PickupStoreProjection | None = None
+
+    # Os selos de urgência do card do cardápio (#2807), a mesma derivação
+    # (``presentation/fomo.showcase_badges``): fornada pronta há pouco, últimas
+    # unidades, promoção acabando.
+    fomo_badges: tuple[FomoBadge, ...] = ()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -256,9 +275,15 @@ def build_product_detail(
     config = ChannelConfig.for_channel(channel_ref)
     low_stock_threshold = Decimal(str(config.stock.low_stock_threshold))
 
-    base_q = catalog_context.listing_price_for_product(product, channel_ref) or product.base_price_q
+    listed_q = catalog_context.listing_price_for_product(product, channel_ref)
+    base_q = listed_q if listed_q is not None else product.base_price_q
 
     sku_collections = catalog_context.collection_refs_by_sku([product.sku]).get(product.sku, [])
+    # Produto que só existe em coleção exclusiva de grupo: para quem não é do grupo
+    # (anônimo incluído) ele não existe, como a página da coleção (404). A regra é a
+    # do cardápio; o link direto não abre o que o cardápio esconde.
+    if viewer_collection_access(request).hides_product(sku_collections):
+        return None
 
     ft_hint, sub_hint = session_pricing_hints(request)
     tier_hint, segment_hint = customer_pricing_hints(request)
@@ -275,18 +300,6 @@ def build_product_detail(
         },
         list_unit_price_q=base_q,
     )
-
-    has_promo = bool(
-        price.adjustments and price.final_unit_price_q < price.list_unit_price_q,
-    )
-    promotion_label: str | None = None
-    original_price_display: str | None = None
-    if has_promo:
-        adj = price.adjustments[0]
-        promotion_label = adj.metadata.get("badge_label") or adj.label
-        original_price_display = _money(price.list_unit_price_q)
-
-    effective_q = price.final_unit_price_q
 
     # Availability — read raw once, resolve to canonical enum.
     # Session-aware: add the session's own hold back to the promisable qty
@@ -367,13 +380,14 @@ def build_product_detail(
         allergens=allergen.allergens if allergen else (),
     )
 
-    cross_sell = build_catalog_items_for_skus(
-        catalog_context.related_skus(product.sku, limit=6),
-        channel_ref=channel_ref,
-        request=request,
-    )
-
     is_made_to_order = _is_made_to_order(product)
+    promise_facts = read_promise_facts([product.sku], channel_ref=channel_ref, own_holds={product.sku: own_hold})
+    promise = promise_for(
+        product.sku,
+        promise_facts,
+        orderable=can_add_to_cart,
+        made_to_order=is_made_to_order,
+    )
 
     return ProductDetailProjection(
         sku=product.sku,
@@ -383,11 +397,7 @@ def build_product_detail(
         long_description=product.long_description or "",
         image_url=product.image_url or None,
         gallery=gallery,
-        base_price_q=int(effective_q or 0),
-        price_display=_money(effective_q) if effective_q else "",
-        has_promotion=has_promo,
-        original_price_display=original_price_display,
-        promotion_label=promotion_label,
+        quote=price,
         availability=availability,
         availability_label=availability_label,
         can_add_to_cart=can_add_to_cart,
@@ -401,7 +411,7 @@ def build_product_detail(
         qty_in_cart=qty_in_cart,
         is_bundle=product.is_bundle,
         components=components,
-        unit_weight_label=_unit_weight_label(product),
+        unit_weight_label=unit_weight_label(product),
         approx_dimensions_label=_approx_dimensions_label(product),
         is_made_to_order=is_made_to_order,
         made_to_order_label=_made_to_order_label() if is_made_to_order else "",
@@ -417,12 +427,34 @@ def build_product_detail(
         mpn=identity.mpn,
         item_condition=identity.condition,
         breadcrumb_category=breadcrumb_category,
-        cross_sell=cross_sell,
-        cross_sell_heading=_cross_sell_heading(),
         category_color=str(primary_meta.get("color") or "") or None,
         category_icon=str(primary_meta.get("icon") or "") or None,
         option_groups=tuple(catalog_context.option_groups(product)),
+        promise=promise,
+        pickup_store=_pickup_store(),
+        fomo_badges=showcase_badges(
+            product.sku,
+            available_qty=available_qty,
+            finished_at=catalog_context.last_finished_by_sku([product.sku]).get(product.sku),
+            promotions=catalog_context.active_promotions(channel_ref),
+            sku_collections=sku_collections,
+            low_stock_threshold=low_stock_threshold,
+            ready_now=ready_now(availability, promise),
+        ),
     )
+
+
+def _pickup_store() -> PickupStoreProjection | None:
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    if shop is None:
+        return None
+    address = str(shop.full_address or "").replace("\n", ", ").strip()
+    name = str(shop.brand_name or shop.name or "").strip()
+    if not address or not name:
+        return None
+    return PickupStoreProjection(name=name, address=address)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -431,7 +463,10 @@ def build_product_detail(
 
 
 def _availability(sku: str, channel_ref: str) -> dict | None:
-    return catalog_context.availability_for_sku(sku, channel_ref=channel_ref)
+    # Produto simples já identificado acima: usa a mesma leitura em lote do
+    # cardápio. A leitura individual consultava holds uma vez por saldo e
+    # repetia o estoque para as datas futuras da fila de espera.
+    return catalog_context.availability_for_skus([sku], channel_ref=channel_ref).get(sku)
 
 
 def _sku_visible_in_channel(product: Any, channel_ref: str) -> bool:
@@ -595,10 +630,6 @@ def _food_safety_notice() -> str:
         return ""
 
 
-def _unit_weight_label(product: Any) -> str | None:
-    # Ver `catalog._unit_weight_label`: o rótulo diz de quem é o peso, porque ao lado
-    # do preço dois números sem conector admitem "R$ 18,00 POR 500 g".
-    return f"peça de ~{product.unit_weight_g} g" if product.unit_weight_g else None
 
 
 def _is_made_to_order(product: Any) -> bool:
@@ -733,7 +764,7 @@ def _breadcrumb_category(product: Any) -> CategoryProjection | None:
     return CategoryProjection(
         ref=col.ref,
         name=col.name,
-        icon=collection_icon(col.ref),
+        icon=collection_icon(col),
         url=f"/menu#{col.ref}",
     )
 
@@ -756,3 +787,32 @@ def _money(value_q: int | None) -> str:
     if not value_q:
         return "R$ 0,00"
     return f"R$ {format_money(int(value_q))}"
+
+
+@dataclass(frozen=True)
+class ProductRecommendationsProjection:
+    sku: str
+    items: tuple[CatalogItemProjection, ...]
+    heading: str
+
+
+def build_product_recommendations(
+    *, sku: str, channel_ref: str, request: HttpRequest | None = None,
+) -> ProductRecommendationsProjection | None:
+    """Sugestões lidas ao chegar à seção, com o mesmo portão de acesso da PDP."""
+    product = catalog_context.get_published_product(sku)
+    if product is None or not _sku_visible_in_channel(product, channel_ref):
+        return None
+    collections = catalog_context.collection_refs_by_sku([sku]).get(sku, [])
+    if viewer_collection_access(request).hides_product(collections):
+        return None
+    return ProductRecommendationsProjection(
+        sku=sku,
+        items=build_catalog_items_for_products(
+            catalog_context.related_products(product, limit=6),
+            # A loja exibe quatro cards. O corte vem DEPOIS da seleção dos seis
+            # e do portão do canal, exatamente como a apresentação no cliente.
+            channel_ref=channel_ref, request=request, limit=4,
+        ),
+        heading=_cross_sell_heading(),
+    )

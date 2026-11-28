@@ -120,8 +120,15 @@ useSeoMeta({
         </li>
         <li>
           <strong>Para avisar que um produto voltou</strong>, quando você pede. Esse aviso vai mesmo
-          sem o consentimento de novidades, porque o pedido foi seu, e para se você desligar as
-          mensagens.
+          sem o consentimento de novidades e com as mensagens desligadas, porque o pedido foi seu.
+        </li>
+        <li>
+          <strong>Para melhorar o atendimento pelo WhatsApp.</strong> As mensagens que você manda à
+          atendente virtual ganham uma cópia anonimizada: sem nome, telefone, e-mail, endereço,
+          número de documento, data ou hora exata, e sem nada que aponte para a sua conversa. A loja
+          confere uma amostra dessas cópias toda semana e, se encontrar dado pessoal, para de copiar
+          até corrigir. Anonimizada, a cópia não é mais dado pessoal (art. 12 da LGPD) e não é usada
+          para chegar até você.
         </li>
       </ul>
     </LegalSection>
@@ -157,6 +164,10 @@ useSeoMeta({
       <p>
         Hoje nada é apagado sozinho quando esse prazo acaba: o descarte é feito sob pedido. Quando
         passar a ser automático, esta página muda.
+      </p>
+      <p>
+        <strong>A cópia anonimizada das mensagens do WhatsApp</strong> fica sem prazo, porque não diz
+        quem você é. Excluir a conta não a apaga: nela não há nada que leve até você.
       </p>
       <p>
         <strong>Todo o resto:</strong> até você excluir a conta. Aí a loja apaga o seu nome,

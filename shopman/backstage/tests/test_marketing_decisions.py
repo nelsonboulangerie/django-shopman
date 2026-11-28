@@ -241,13 +241,31 @@ def test_endpoint_needs_marketing_capability_and_carries_no_copy(client, rule):
     assert not any(key.endswith("_label") for key in payload["items"][0])
 
 
+def test_queue_tells_whether_the_viewer_can_decide_and_fire(client, rule):
+    """ge:MKT-03/MKT-17: "pede você" e "Preparar disparo" só para quem tem a capacidade."""
+    _pending(rule, minutes=12)
+    gerente = get_user_model().objects.create_user(username="gerente-mkt", password="x", is_staff=True)
+    gerente.user_permissions.add(Permission.objects.get(codename="view_marketing"))
+    client.force_login(gerente)
+    assert client.get(URL).json()["viewer"] == {"can_decide": False, "can_fire": False}
+
+    aprovador = get_user_model().objects.create_user(username="aprovador-mkt", password="x", is_staff=True)
+    aprovador.user_permissions.add(
+        Permission.objects.get(codename="view_marketing"),
+        Permission.objects.get(codename="approve_marketing_announcements"),
+        Permission.objects.get(codename="fire_marketing_campaigns"),
+    )
+    client.force_login(aprovador)
+    assert client.get(URL).json()["viewer"] == {"can_decide": True, "can_fire": True}
+
+
 def test_projection_data_is_json_safe(rule):
     _pending(rule, minutes=12)
     json.dumps(projection_data(build_decision_queue()))
 
 
 def test_review_card_carries_the_lot_fact_and_the_product_photo(rule):
-    """V6-MKT (v4 pinos 2 e 3): "24 un saíram às 10:01" e a foto do produto na miniatura."""
+    """V6-MKT (v4 pinos 2 e 3): "24 un ficaram prontas às 10h01" e a foto do produto na miniatura."""
     from shopman.offerman.models import Product
 
     Product.objects.create(sku="CRO-001", name="Croissant", base_price_q=1200, image_url="https://cdn.example/cro.jpg")

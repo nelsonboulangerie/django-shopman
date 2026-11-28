@@ -5,10 +5,10 @@ Usage::
     python manage.py qa_scenarios                     # relatório (não escreve)
     python manage.py qa_scenarios --arm               # arma todos os cenários
     python manage.py qa_scenarios --arm sold_out      # arma só um
-    python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
-    python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+    python manage.py qa_scenarios --arm sold_out=TRADI # ... num SKU escolhido
+    python manage.py qa_scenarios --restock TRADI     # repõe → dispara o "Avise-me"
     python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
-    python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+    python manage.py qa_scenarios --reset TRADI       # ... incluindo um SKU pausado à mão
 
 **Por que este comando existe.** O perfil ``qa`` do ``seed`` já nasce com um SKU
 em cada estado da vitrine (esgotado, últimas unidades, previsto, pausado), mas
@@ -53,6 +53,7 @@ from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from shopman.utils.formatting import format_local
 
 from config.management.commands.seed import (
     STOCK_VITRINE,
@@ -450,6 +451,6 @@ class Command(BaseCommand):
         for sub in pendentes:
             quem = sub.customer_ref or _mask(sub.contact_phone)
             self.stdout.write(
-                f"  {sub.sku:<6} {sub.alert_type:<17} {quem:<20} desde {sub.subscribed_at:%d/%m %H:%M}"
+                f"  {sub.sku:<6} {sub.alert_type:<17} {quem:<20} desde {format_local(sub.subscribed_at, '%d/%m {clock}')}"
             )
         self.stdout.write("")

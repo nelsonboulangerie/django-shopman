@@ -1,10 +1,10 @@
 # Django Shopman
 
 ![Python](https://img.shields.io/badge/python-≥3.12-blue)
-![Django](https://img.shields.io/badge/django-6.0-green)
-![License](https://img.shields.io/badge/license-MIT-yellow)
-![Release](https://img.shields.io/github/v/release/pablondrina/django-shopman?include_prereleases&label=release)
-![Tests](https://img.shields.io/badge/tests-~5.000-brightgreen)
+![Django](https://img.shields.io/badge/django-6.1-green)
+![License](https://img.shields.io/badge/license-FSL--1.1--ALv2-yellow)
+![Release](https://img.shields.io/github/v/release/nelsonboulangerie/django-shopman?include_prereleases&label=release)
+![Tests](https://img.shields.io/badge/tests-~29.000-brightgreen)
 
 Django Shopman é um framework de commerce operations para pequenos negócios com operação física e remota — padarias, confeitarias, cafés, food service. Não é um e-commerce genérico; é uma base opinativa e modular para casos operacionais densos: catálogo com produção própria, estoque vivo, múltiplos canais (balcão, web, WhatsApp, marketplace), KDS, e gestão integrada.
 
@@ -16,9 +16,9 @@ O Shopman é composto por **3 camadas**:
 
 | Camada | Onde vive | Descrição |
 |--------|-----------|-----------|
-| **Pacotes** | `packages/` | 13 pacotes pip independentes: 12 domínios e o Watchman operacional |
+| **Pacotes** | `packages/` | 13 pacotes pip independentes: 10 kernels de domínio, Utils/Refs compartilhados e Watchman operacional |
 | **Framework** | `shopman/` | Orquestrador (`shop`) + superfícies headless (`storefront`, `backstage`) que servem API JSON e projections |
-| **Superfícies** | `surfaces/` | 9 apps Nuxt 4 SSR + layer `operator-kit` |
+| **Superfícies** | `surfaces/` | 11 apps registrados: 9 de produto, Kitchensink interno e Status externo; mais layer e router |
 
 > **Tenant = config + dados + marca, zero código.** Não há pacote Python de instância.
 > "Nelson Boulangerie" é o `Shop` singleton + dados no DB (via `seed`) + marca + settings do deployment.
@@ -45,6 +45,11 @@ Cada app é um pacote pip independente. Os cores nunca se importam entre si — 
 | **Cashman** | `shopman-cashman` | `shopman.cashman` | Caixa e livro financeiro | Terminal, Shift, Movement |
 | **Watchman** | `shopman-watchman` | `shopman.watchman` | Saúde e supervisão | — |
 
+Fora da família dos cores, `packages/conversational-commerce` (distribuição
+`conversational-commerce`, import `conversational_commerce`) é o núcleo genérico de comércio
+conversacional: Python puro, sem Django e sem dependência nenhuma. O Shopman o instala, e o
+adaptador da Concierge mora no orquestrador ([ADR-049](docs/decisions/adr-049-comercio-conversacional-pacote-puro.md)).
+
 ## Quickstart
 
 O backend Django é **headless**: serve API JSON em `/api/v1/`. As telas vivas são os apps
@@ -53,7 +58,7 @@ sessão e os BFFs dependem disso).
 
 ```bash
 # 1. Clonar, subir Postgres+Redis via docker, instalar deps
-git clone https://github.com/pablondrina/django-shopman.git
+git clone https://github.com/nelsonboulangerie/django-shopman.git
 cd django-shopman
 cp .env.example .env
 make up           # docker compose: postgres:16-alpine + redis:7-alpine
@@ -111,7 +116,7 @@ django-shopman/
 │   ├── storefront/             # Superfície customer HEADLESS: api/, presentation/, intents/
 │   └── backstage/              # Superfícies operador HEADLESS + Admin/Unfold
 │
-├── surfaces/                   # 9 apps Nuxt 4 (SSR) + 1 layer
+├── surfaces/                   # 11 apps registrados + operator-kit + operator-router
 │   ├── storefront-nuxt/        # loja do cliente (apex, :3000)
 │   ├── hub-nuxt/               # Central — a home do operador (:3001)
 │   ├── pos-nuxt/               # PDV (:3002)
@@ -121,7 +126,7 @@ django-shopman/
 │   ├── marketing-nuxt/         # marketing do gestor — campanhas e anúncios (:3006)
 │   ├── bi-nuxt/                # B.I. do gestor (:3007)
 │   ├── purchase-nuxt/          # compras e recebimento (:3008)
-│   ├── kitchensink-nuxt/       # Catálogo do operador (:3009)
+│   ├── kitchensink-nuxt/       # Catálogo interno do operator-kit (:3009)
 │   ├── status-nuxt/            # status público independente (:3010)
 │   └── operator-kit/           # Nuxt layer compartilhada dos apps de operador
 │
@@ -168,7 +173,7 @@ O framework conecta os core apps para cenários de negócio concretos:
 
 ```bash
 make install          # Instala dependências + packages em modo editável
-make test             # Roda todos os ~5.000 testes (cores + framework)
+make test             # Roda todos os ~29.000 testes coletados (cores + framework)
 make test-offerman    # Testes de um core app específico
 make test-framework   # Testes do framework (shop + storefront + backstage)
 make admin            # Gate canônico Admin/Unfold + testes de integração
@@ -194,7 +199,7 @@ make deploy-down      # para containers do deploy local
 
 | Repo | Descrição |
 |------|-----------|
-| [django-shopman](https://github.com/pablondrina/django-shopman) | Monorepo (este repo) |
+| [django-shopman](https://github.com/nelsonboulangerie/django-shopman) | Monorepo (este repo) |
 | [shopman-orderman](https://github.com/pablondrina/shopman-orderman) | Core: Pedidos |
 | [shopman-stockman](https://github.com/pablondrina/shopman-stockman) | Core: Estoque |
 | [shopman-craftsman](https://github.com/pablondrina/shopman-craftsman) | Core: Produção |
@@ -223,11 +228,18 @@ make deploy-down      # para containers do deploy local
 | Requisito | Versão |
 |-----------|--------|
 | Python | ≥ 3.12 |
-| Django | ≥ 6.0, < 6.1 |
+| Django | ≥ 6.1, < 6.2 |
 | Node.js | 22.x (apps Nuxt e buildpack DO) |
 | Banco de dados | PostgreSQL 16+ em dev canônico/staging/prod; SQLite só fallback local |
 | Cache/realtime | Redis 7+ em dev canônico/staging/prod; LocMem só fallback local |
 
 ## Licença
 
-MIT — Pablo Valentini
+[Functional Source License 1.1, licença futura Apache 2.0](LICENSE.md) (`FSL-1.1-ALv2`), Pablo Valentini.
+
+Qualquer empresa pode usar, alterar e redistribuir o Shopman no próprio negócio. O que a
+licença não permite é oferecê-lo a terceiros como produto ou serviço concorrente. Dois anos
+depois de publicada, cada versão passa a valer também sob a Apache License 2.0.
+
+A marca, as fotos, os textos legais e os dados da Nelson Boulangerie ficam fora da licença:
+ver [NOTICE.md](NOTICE.md).

@@ -173,6 +173,30 @@ def test_estacao_sem_terminal_e_recusada():
         station_trust.provision(None, _Resposta(), "")
 
 
+def test_estacao_em_uso_renova_registro_e_cookie(client):
+    """Como cliente e quadro: vence 180 dias depois do ÚLTIMO uso, não da criação.
+
+    A estação não ganha permissão por ser confiável, então renovar com o uso não
+    alarga nada: só poupa o gestor de reprovisionar o balcão que trabalha todo dia.
+    """
+    from django.http import HttpResponse
+    from shopman.doorman.services.device_trust import DeviceTrustService
+
+    nome = _provisiona(client, "balcao")
+    dispositivo = TrustedDevice.objects.get(subject_type=SubjectType.STATION, subject_id="balcao")
+    dispositivo.expires_at = timezone.now() + timedelta(days=2)
+    dispositivo.save(update_fields=["expires_at"])
+
+    requisicao = _req(client)
+    assert station_trust.station_ref(requisicao) == "balcao"
+    resposta = DeviceTrustService.renew_cookies(requisicao, HttpResponse())
+
+    dispositivo.refresh_from_db()
+    assert dispositivo.expires_at > timezone.now() + timedelta(days=179)
+    assert resposta.cookies[nome].value == client.cookies[nome].value
+    assert resposta.cookies[nome]["max-age"] == 180 * 86400
+
+
 def _req(cliente: Client):
     return type("R", (), {"COOKIES": {k: v.value for k, v in cliente.cookies.items()}, "META": {}})()
 
@@ -183,3 +207,35 @@ def _confia_sem_reparar(cliente: Client, ref: str) -> str:
     nome = station_trust.station_cookie_name(ref)
     cliente.cookies[nome] = token
     return nome
+
+
+# ── O PDV pergunta, na chegada, se este dispositivo pode cobrar ──────────────
+# A leitura do quadro escolhe uma gaveta mesmo sem estação; a revisão e o fechamento
+# recusam (`_terminal_do_pedido`). Sem esta resposta o operador montava a comanda
+# inteira e só no Pagamento lia "Vincule este dispositivo a um único terminal ativo".
+
+
+def test_prontidao_sem_vinculo_diz_none(client):
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "none"}
+
+
+def test_prontidao_com_dois_vinculos_diz_ambiguous(client):
+    _confia_sem_reparar(client, "balcao")
+    _confia_sem_reparar(client, "totem")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "ambiguous"}
+
+
+def test_prontidao_com_posto_que_nao_e_caixa_ativo_diz_inactive(client):
+    from shopman.cashman.models import Terminal
+
+    Terminal.objects.create(ref="balcao", label="Balcão", is_active=False)
+    _provisiona(client, "balcao")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": False, "reason": "inactive"}
+
+
+def test_prontidao_com_caixa_ativo_esta_pronta(client):
+    from shopman.cashman.models import Terminal
+
+    Terminal.objects.create(ref="balcao", label="Balcão")
+    _provisiona(client, "balcao")
+    assert station_trust.pos_station_readiness(_req(client)) == {"ready": True, "reason": ""}

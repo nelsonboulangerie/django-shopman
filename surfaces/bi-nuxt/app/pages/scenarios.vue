@@ -16,6 +16,7 @@ const shareItems = useBiShareMenuItems();
 const { actions: readingActions, label: readingLabel } = useReadingPageActions(shareItems);
 const focus = ref("sales");
 const openId = ref<number | null>(null);
+const generationOffDismissed = ref(false);
 
 watch(page, (value) => {
   if (value && openId.value === null && value.reports.length) openId.value = value.reports[0]!.id;
@@ -50,7 +51,16 @@ async function run() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 flex-1 flex-col" data-compact-page>
+    <!-- `data-compact-page`: no celular, a linha do chão (`BiCompactBar`) toma o lugar da
+         barra de cima e da linha de recortes; o tempo da leitura fica na faixa logo abaixo. -->
+    <BiCompactBar title="Cenários" :options="readingActions">
+      <template #primary>
+        <ClientOnly>
+          <ReadFreshness inline :metadata="freshness" :failed="Boolean(error)" />
+        </ClientOnly>
+      </template>
+    </BiCompactBar>
     <OperatorPageHeader title="Que cenários a IA propõe?" :actions="readingActions" :actions-label="readingLabel">
       <!-- Sem período (a IA lê os agregados de sempre): a linha de recortes leva só o
            frescor, no mesmo lugar das outras telas. -->
@@ -94,14 +104,18 @@ async function run() {
                 @click="run"
               />
             </template>
+            <!-- Aviso de tela tem X e volta enquanto a causa durar (dono, 02/11): fechado,
+                 some até a próxima visita; a frase dos relatórios só quando há algum (ge:BI-22). -->
             <NuxtAlert
-              v-else
+              v-else-if="!generationOffDismissed"
               color="info"
               variant="subtle"
               icon="i-lucide-info"
               title="Geração desligada neste ambiente"
-              description="A IA ainda não foi ligada nesta loja. Quem liga é a TI. Os relatórios já gerados seguem abaixo."
+              :description="`A IA ainda não foi ligada nesta loja. Quem liga é a TI.${rounds.length ? ' Os relatórios já gerados seguem abaixo.' : ''}`"
+              close
               data-bi-generate-off
+              @update:open="generationOffDismissed = true"
             />
           </div>
         </OperatorReadingCard>
@@ -130,7 +144,7 @@ async function run() {
                   color="error"
                   variant="subtle"
                   icon="i-lucide-circle-alert"
-                  title="A IA não respondeu no formato esperado"
+                  title="Não foi possível gerar os cenários"
                   :description="item.report.error"
                   :actions="alertActions('error', retryActions)"
                 />

@@ -9,14 +9,20 @@ deixavam o PDV sem cupom.
 from __future__ import annotations
 
 import logging
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
+from django.utils import timezone
 from shopman.orderman.exceptions import SessionError
 from shopman.orderman.models import Session
 
-from shopman.shop.services import availability, lot_pricing
+from shopman.shop.policies.promotion import PromotionContext, Shopper, promotion_matches
+from shopman.shop.protocols import ReserveRefusal
+from shopman.shop.services import availability, lot_pricing, waitlist
 from shopman.shop.services import sessions as session_service
+from shopman.shop.services import substitutes as substitute_suggestions
+from shopman.shop.services.order_helpers import parse_commitment_date
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +41,7 @@ class CartUnavailableError(Exception):
         is_planned: bool = False,
         planned_target_date=None,
         line_qty: int | None = None,
+        line_id: str | None = None,
     ):
         super().__init__(f"unavailable: sku={sku} qty={requested_qty} avail={available_qty}")
         self.sku = sku
@@ -54,6 +61,9 @@ class CartUnavailableError(Exception):
         # Quanto a linha tinha antes do pedido recusado (``None`` = linha nova).
         # A tela só oferece o teto quando ele AVANÇA a linha.
         self.line_qty = line_qty
+        # A linha que JÁ passou do teto (recusa do envio, ``line_shortage``): o
+        # teto encolhe esta linha. ``None`` no 409 da sacola.
+        self.line_id = line_id
 
 
 class CartDateMismatchError(CartUnavailableError):
@@ -76,6 +86,233 @@ class CartDateMismatchError(CartUnavailableError):
         )
         self.cart_date = cart_date
         self.item_date = item_date
+
+
+class CartDateRefused(Exception):
+    """O dia escolhido no cardápio não pode ser combinado: passado, além do máximo, fechado.
+
+    ``message`` é a frase da recusa (``preorder_dates.date_refusal``), para a tela.
+    """
+
+    error_code = "date_refused"
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+def _apply_chosen_date(session: Session, chosen: date, *, sku: str, qty: int) -> None:
+    """O dia do "Para quando?" do cardápio vira o dia da sacola (OC-33 B1).
+
+    É o mesmo ``delivery_date`` que a concierge grava ao combinar o dia, e o que
+    ``_cart_date`` já lê: a reserva cai nesse dia. Escrito na sessão travada, antes
+    da reserva, pela mutação da sacola que já existe.
+
+    - Hoje (ou antes) é o cardápio de sempre (X13): a sacola fica sem data
+      escolhida, e a reserva segue a régua de sempre.
+    - Dia que a casa não combina: recusa com a frase (:class:`CartDateRefused`).
+    - Sacola que já tem reserva para OUTRO dia: um pedido, uma data (decisão do
+      dono, 01/10/2026): o item é de outro pedido (:class:`CartDateMismatchError`),
+      sem reservar nada.
+    """
+    from shopman.shop.services.preorder_dates import date_refusal
+
+    today = timezone.localdate()
+    held = availability.session_hold_dates(session.session_key)
+    data = dict(session.data or {})
+    if chosen <= today:
+        if held and min(held) > today:
+            raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=today)
+        if parse_commitment_date(data.get("delivery_date")) is not None:
+            data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+        return
+    refusal = date_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    if held and min(held) != chosen:
+        raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=min(held), item_date=chosen)
+    if data.get("delivery_date") != chosen.isoformat():
+        data["delivery_date"] = chosen.isoformat()
+        session.data = data
+        session.save(update_fields=["data"])
+
+
+class CartDayChangeRefused(Exception):
+    """A troca de dia deixaria item de fora: nada mudou (OC-33 B1, o "Trocar").
+
+    ``items`` são os que não dão no dia novo, ``[{sku, name, requested_qty,
+    available_qty}]``; ``title``/``detail`` são a frase da casa
+    (``policies.preorder_date.cart_day_change_refusal``).
+    """
+
+    error_code = "cart_day_change_refused"
+
+    def __init__(self, *, day: date, day_label: str, items: list[dict], title: str, detail: str):
+        super().__init__(detail)
+        self.day = day
+        self.day_label = day_label
+        self.items = items
+        self.title = title
+        self.detail = detail
+
+
+def _is_lot_line(item: dict) -> bool:
+    """A linha tem PREÇO de lote: o desconto de lote estampado, ou um lote com desconto.
+
+    É a linha que não muda de dia (a sobra de hoje não lastreia outro dia, e o preço
+    do lote não viaja). Linha que só guarda o lote de onde a reserva saiu, sem
+    desconto nenhum, muda de dia sem ele (:func:`_without_lot`).
+    """
+    meta = item.get("meta") or {}
+    if (meta.get("_disc") or {}).get("type") == "lot_discount":
+        return True
+    batch_ref = str(meta.get("batch_ref") or "")
+    return bool(batch_ref) and lot_pricing.percent_for_lot(batch_ref) > 0
+
+
+def _without_lot(items: list[dict]) -> list[dict] | None:
+    """As linhas sem a marca de lote da reserva antiga; ``None`` quando nenhuma tinha.
+
+    A reserva do dia novo não é a do lote antigo: a linha não leva o ``batch_ref``
+    para o outro dia, e o ``LotDiscountModifier`` nunca o lê lá.
+    """
+    changed = False
+    out: list[dict] = []
+    for item in items:
+        meta = item.get("meta") or {}
+        if meta.get("batch_ref"):
+            item = {**item, "meta": {k: v for k, v in meta.items() if k != "batch_ref"}}
+            changed = True
+        out.append(item)
+    return out if changed else None
+
+
+class _DayChangeRollback(Exception):
+    """Interno: desfaz a troca inteira (savepoint) e leva a recusa para fora."""
+
+    def __init__(self, refusal: CartDayChangeRefused):
+        super().__init__(str(refusal))
+        self.refusal = refusal
+
+
+@transaction.atomic
+def change_cart_day(
+    *,
+    session_key: str,
+    channel_ref: str,
+    chosen: date,
+    without_skus: tuple[str, ...] | list[str] = (),
+) -> Session | None:
+    """Passa a sacola INTEIRA para ``chosen``: um comando, efeito único (OC-33 B1, X4).
+
+    O "Trocar" do cardápio e da sacola. Ou a sacola toda muda de dia (todas as
+    reservas soltas e refeitas no dia novo, ``delivery_date`` regravada), ou nada
+    muda:
+
+    - dia que a casa não combina: :class:`CartDateRefused`, sacola intacta;
+    - item que não dá no dia novo: :class:`CartDayChangeRefused` nomeando cada um,
+      sacola intacta (a transação desfaz o que foi solto e refeito);
+    - ``without_skus``: "seguir sem esse item". Cada referência é o ``ref`` que a
+      recusa devolveu (o SKU, ou a ``line_id`` da linha de lote); esses itens saem
+      da sacola na mesma escrita, e o resto vai para o dia novo;
+    - linha com preço de lote nunca vai para outro dia (a sobra de hoje não
+      lastreia outro dia): ela volta nomeada na recusa, como item que não dá. A
+      que só guarda o lote da reserva antiga vai, sem ele.
+
+    Hoje é a régua de sempre para dizer "dá?" (o pronto e a fornada de hoje), e a
+    escolha de dia sai da sessão. ``None`` = não há sacola aberta.
+    """
+    from shopman.shop.policies.preorder_date import cart_day_change_refusal, cart_day_refusal
+    from shopman.shop.projections.ready_promise import day_label_for
+
+    today = timezone.localdate()
+    refusal = cart_day_refusal(chosen, today=today)
+    if refusal:
+        raise CartDateRefused(refusal)
+    session = Session.objects.select_for_update().filter(
+        session_key=session_key, channel_ref=channel_ref, state="open",
+    ).first()
+    if session is None:
+        return None
+
+    dropped = {str(ref) for ref in without_skus if ref}
+    lines = [
+        item for item in (session.items or [])
+        if item.get("sku") and item.get("sku") != "__DELIVERY_FEE__"
+        and (item.get("meta") or {}).get("type") != "delivery_fee"
+    ]
+
+    def leaves(item) -> bool:
+        return str(item["sku"]) in dropped or str(item.get("line_id") or "") in dropped
+
+    wanted: dict[str, Decimal] = {}
+    names: dict[str, str] = {}
+    # A linha de LOTE (o "Ontem" de balcão, ou qualquer preço ou desconto atrelado a
+    # lote) nunca vai para outro dia: a sobra de hoje não lastreia outro dia (dono,
+    # 18/11/2026), e o preço do lote não viaja. Ela é "não dá nesse dia", nomeada
+    # pela linha, e sai em "Seguir sem esse item".
+    lot_lines: list[dict] = []
+    for item in lines:
+        sku = str(item["sku"])
+        if leaves(item):
+            continue
+        if _is_lot_line(item):
+            lot_lines.append(item)
+            continue
+        wanted[sku] = wanted.get(sku, Decimal("0")) + Decimal(str(item.get("qty") or 0))
+        names.setdefault(sku, str(item.get("name") or sku))
+
+    try:
+        with transaction.atomic():
+            availability.release_session_holds(session_key)
+            missing: list[dict] = [
+                {
+                    "ref": str(item.get("line_id") or item["sku"]),
+                    "sku": str(item["sku"]),
+                    "name": str(item.get("name") or item["sku"]),
+                    "requested_qty": _whole(Decimal(str(item.get("qty") or 0))),
+                    "available_qty": 0,
+                }
+                for item in lot_lines
+            ]
+            for sku, qty in wanted.items():
+                if qty <= 0:
+                    continue
+                result = availability.reserve(
+                    sku, qty, session_key=session_key, channel_ref=channel_ref, target_date=chosen,
+                )
+                if not result["ok"]:
+                    missing.append({
+                        "ref": sku,
+                        "sku": sku,
+                        "name": names[sku],
+                        "requested_qty": _whole(qty),
+                        "available_qty": _whole(Decimal(str(result.get("available_qty") or 0))),
+                    })
+            if missing:
+                label = day_label_for(chosen, today=today)
+                copy = cart_day_change_refusal(day_label=label, names=[m["name"] for m in missing])
+                raise _DayChangeRollback(CartDayChangeRefused(
+                    day=chosen, day_label=label, items=missing, title=copy["title"], detail=copy["detail"],
+                ))
+            data = dict(session.data or {})
+            if chosen > today:
+                data["delivery_date"] = chosen.isoformat()
+            else:
+                data.pop("delivery_date", None)
+            session.data = data
+            session.save(update_fields=["data"])
+            stripped = _without_lot(list(session.items or []))
+            if stripped is not None:
+                session.update_items(stripped)
+    except _DayChangeRollback as rollback:
+        raise rollback.refusal from None
+
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
+    ops = [{"op": "remove_line", "line_id": item["line_id"]} for item in lines if leaves(item)]
+    return session_service.modify_session(session_key=session_key, channel_ref=channel_ref, ops=ops)
 
 
 def _refuse_a_second_date(*, session_key: str, sku: str, requested_qty: int, new_hold_id: str | None) -> None:
@@ -173,8 +410,13 @@ def add_item(
     name: str = "",
     options: list[dict] | None = None,
     product=None,
+    chosen_date: date | None = None,
 ) -> tuple[Session, str]:
     """Reserve stock and add or merge a cart line.
+
+    ``chosen_date`` é o dia que a cliente escolheu no "Para quando?" do cardápio
+    (OC-33 B1): vira o dia da sacola antes da reserva (:func:`_apply_chosen_date`).
+    ``None`` = a superfície não escolheu dia, e nada muda.
 
     ``options`` é a escolha do cliente no produto, ``[{group, ref}]`` e nada
     mais (``shopman.shop.product_options``). Ela é conferida contra o cadastro
@@ -204,6 +446,8 @@ def add_item(
     )
 
     session = _lock_cart_session(session_key=resolved_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=sku, qty=qty)
     existing = next(
         (
             item
@@ -213,14 +457,17 @@ def add_item(
         ),
         None,
     )
-    hold_id = _reserve_or_raise(
+    hold_ids, lot_hold_id = _reserve_or_raise(
         sku=sku,
         qty=qty,
         session_key=resolved_key,
         channel_ref=channel_ref,
+        cart_date=_cart_date(session),
     )
-    _refuse_a_second_date(session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_id)
-    availability.bump_session_hold_expiry(resolved_key)
+    _refuse_a_second_date(
+        session_key=resolved_key, sku=sku, requested_qty=qty, new_hold_id=hold_ids[0] if hold_ids else None,
+    )
+    availability.bump_session_hold_expiry(resolved_key, channel_ref=channel_ref)
 
     if existing:
         new_qty = Decimal(str(existing["qty"])) + Decimal(str(qty))
@@ -247,7 +494,7 @@ def add_item(
     # O lote que a reserva ancorou vira flag durável de linha (``meta``, único
     # lugar que sobrevive ao ``_normalize_items``). É daqui que o
     # LotDiscountModifier lê o desconto congelado no lote — ADR-017 §7.
-    batch_ref = lot_pricing.batch_ref_for_hold(hold_id)
+    batch_ref = lot_pricing.batch_ref_for_hold(lot_hold_id)
     if batch_ref:
         meta["batch_ref"] = batch_ref
     if meta:
@@ -268,7 +515,14 @@ def _catalog_product(sku: str):
     return Product.objects.filter(sku=sku).first()
 
 
-def _other_lines_qty(session: Session, *, sku: str, line_id: str) -> Decimal:
+def _split_parts(session: Session, line_id: str) -> list[str]:
+    """As ``line_id`` das partes em que o rateio partiu ``line_id`` (#3240)."""
+    from shopman.shop.discount_spread import split_siblings
+
+    return [str(i.get("line_id")) for i in split_siblings(list(session.items or []), line_id)]
+
+
+def _other_lines_qty(session: Session, *, sku: str, line_id: str, exclude: tuple[str, ...] = ()) -> Decimal:
     """Quanto as OUTRAS linhas do mesmo SKU seguram na sacola.
 
     A reserva é por (sacola, SKU), não por linha: com escolhas no produto o
@@ -279,7 +533,7 @@ def _other_lines_qty(session: Session, *, sku: str, line_id: str) -> Decimal:
         (
             Decimal(str(item.get("qty") or 0))
             for item in session.items
-            if item.get("sku") == sku and item.get("line_id") != line_id
+            if item.get("sku") == sku and item.get("line_id") != line_id and item.get("line_id") not in exclude
         ),
         Decimal("0"),
     )
@@ -293,20 +547,34 @@ def update_qty(
     line_id: str,
     qty: int,
     sku: str | None = None,
+    whole_product: bool = False,
+    chosen_date: date | None = None,
 ) -> Session:
-    """Reconcile holds and update a cart line quantity in one local commit."""
+    """Reconcile holds and update a cart line quantity in one local commit.
+
+    ``whole_product``: ``qty`` é o total da linha do produto, contando a parte que
+    o rateio do desconto partiu dela (#3240); a parte sai na mesma escrita e o
+    preço a refaz se ainda couber. É a conta do stepper por SKU, que mostra a soma.
+
+    ``chosen_date``: o dia do "Para quando?" (OC-33 B1), como em :func:`add_item`.
+    Quem chama só o passa no acréscimo: tirar da sacola nunca depende do dia.
+    """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    if chosen_date is not None:
+        _apply_chosen_date(session, chosen_date, sku=str(sku or ""), qty=qty)
+    parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
         line_sku = line["sku"] if line is not None else None
     if line_sku is not None:
-        others = _other_lines_qty(session, sku=line_sku, line_id=line_id)
+        others = _other_lines_qty(session, sku=line_sku, line_id=line_id, exclude=parts)
         result = availability.reconcile(
             sku=line_sku,
             new_qty=Decimal(str(qty)) + others,
             session_key=session_key,
             channel_ref=channel_ref,
+            target_date=_cart_date(session),
         )
         if not result["ok"]:
             # A recusa não toca na reserva que existia: o teto da linha é o que
@@ -333,11 +601,14 @@ def update_qty(
                 session_key=session_key, sku=line_sku, requested_qty=qty, new_hold_id=result["hold_ids"][0],
             )
 
-    availability.bump_session_hold_expiry(session_key)
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,
-        ops=[{"op": "set_qty", "line_id": line_id, "qty": qty}],
+        ops=[
+            {"op": "set_qty", "line_id": line_id, "qty": qty},
+            *({"op": "remove_line", "line_id": part} for part in parts),
+        ],
     )
 
 
@@ -348,9 +619,14 @@ def remove_item(
     channel_ref: str,
     line_id: str,
     sku: str | None = None,
+    whole_product: bool = False,
 ) -> Session:
-    """Reconcile holds and remove a cart line in one local commit."""
+    """Reconcile holds and remove a cart line in one local commit.
+
+    ``whole_product``: a parte que o rateio partiu da linha sai junto (#3240).
+    """
     session = _lock_cart_session(session_key=session_key, channel_ref=channel_ref)
+    parts = tuple(_split_parts(session, line_id)) if whole_product else ()
     line_sku = sku
     if line_sku is None:
         line = get_line(session_key=session_key, channel_ref=channel_ref, line_id=line_id)
@@ -358,16 +634,16 @@ def remove_item(
     if line_sku is not None:
         availability.reconcile(
             sku=line_sku,
-            new_qty=_other_lines_qty(session, sku=line_sku, line_id=line_id),
+            new_qty=_other_lines_qty(session, sku=line_sku, line_id=line_id, exclude=parts),
             session_key=session_key,
             channel_ref=channel_ref,
         )
 
-    availability.bump_session_hold_expiry(session_key)
+    availability.bump_session_hold_expiry(session_key, channel_ref=channel_ref)
     return session_service.modify_session(
         session_key=session_key,
         channel_ref=channel_ref,
-        ops=[{"op": "remove_line", "line_id": line_id}],
+        ops=[{"op": "remove_line", "line_id": part} for part in (line_id, *parts)],
     )
 
 
@@ -420,6 +696,50 @@ def _whole(value: Decimal):
     return int(value) if value == value.to_integral_value() else value
 
 
+def line_shortage(*, session_key: str, channel_ref: str, sku: str) -> CartUnavailableError | None:
+    """O que dá para fazer com a linha que o ENVIO do pedido recusou por estoque.
+
+    A recusa do commit (``stock._insufficient_supply_error``) sabe só o SKU e a
+    quantidade; a folha de alternativas da loja precisa do mesmo que a sacola
+    entrega no 409: o teto da linha, os substitutos e se dá para pedir o aviso
+    de volta. Aqui só se LÊ: nada é reservado nem solto, e a sacola fica como a
+    cliente deixou até ela escolher.
+
+    Diferente do 409 da sacola, a linha já existe e passou do teto: o teto aqui
+    ENCOLHE a linha (``line_qty`` sai ``None`` e ``line_id`` diz qual linha
+    muda). Com o SKU em duas linhas (escolhas diferentes), quem muda é a
+    última, e as outras continuam com o que têm. ``None`` quando a sacola ou a
+    linha não existe mais.
+    """
+    session = get_open_session(session_key=session_key, channel_ref=channel_ref)
+    if session is None or not sku:
+        return None
+    lines = [item for item in session.items if item.get("sku") == sku]
+    if not lines:
+        return None
+    line = lines[-1]
+    line_qty = Decimal(str(line.get("qty") or 0))
+    others = sum((Decimal(str(item.get("qty") or 0)) for item in lines[:-1]), Decimal("0"))
+    held = availability.session_line_held_qty(session_key, sku)
+    missing = max(line_qty + others - held, Decimal("1"))
+    cart_date = _cart_date(session)
+    status = availability.check(sku, missing, channel_ref=channel_ref, target_date=cart_date)
+    free = Decimal(str(status.get("available_qty") or 0))
+    ceiling = Decimal("0") if status.get("is_paused") else max(held + free - others, Decimal("0"))
+    error_code = status.get("error_code") or ReserveRefusal.INSUFFICIENT_SUPPLY
+    return CartUnavailableError(
+        sku=sku,
+        requested_qty=_whole(line_qty),
+        available_qty=_whole(min(ceiling, line_qty)),
+        is_paused=bool(status.get("is_paused")),
+        # Na encomenda, a alternativa é a que serve a DATA dela, não o pronto de hoje.
+        substitutes=substitute_suggestions.find(sku, qty=missing, channel=channel_ref, target_date=cart_date),
+        error_code=ReserveRefusal(error_code),
+        is_planned=bool(status.get("is_planned")),
+        line_id=str(line.get("line_id") or "") or None,
+    )
+
+
 def get_line(*, session_key: str, channel_ref: str, line_id: str) -> dict | None:
     """Return the session line dict matching ``line_id``."""
     session = get_open_session(session_key=session_key, channel_ref=channel_ref)
@@ -444,49 +764,92 @@ class CouponRejected(Exception):
         self.code = code
 
 
-def customer_eligible_for_promotion(customer, promotion) -> bool:
-    """``customer`` satisfaz o alvo POR CLIENTE da promoção?
+class CouponNotBetter(CouponRejected):
+    """O cupom é válido, mas não vence o desconto que os itens dele já têm.
 
-    Só valida o que depende de QUEM é o cliente — ``customer_segments`` (grupo/RFM) e
-    ``birthday_only`` —, porque se não batem o desconto seria sempre 0. Restrição por
-    item ou contexto (``skus``, ``collections``, ``fulfillment_types``) NÃO entra: ela
-    decide QUAIS itens recebem desconto, não se o cliente pode usar o cupom. Espelha
-    ``DiscountModifier._matches`` nesses dois eixos.
+    Os descontos não se somam e o maior ganha; no empate, fica o que já valia. O
+    cupom sai da sacola sem ser gasto, e a superfície diz por quê, com o desconto
+    que segue valendo (``standing_label``, ``standing_q``).
+    """
 
-    ``customer`` é o cliente já resolvido (ou ``None`` para visitante anônimo).
+    def __init__(self, *, coupon_code: str, standing_label: str, standing_q: int):
+        super().__init__("coupon_not_better")
+        self.coupon_code = coupon_code
+        self.standing_label = standing_label
+        self.standing_q = standing_q
+
+
+def _line_discounts(session) -> dict[str, dict]:
+    """O desconto vencedor de cada linha (``meta._disc``), por linha.
+
+    ``{chave da linha: {"type", "label", "total_q"}}``. ``amount_q`` é por unidade;
+    a fatia de um desconto de pedido rateado vem em ``line_amount_q``.
+    """
+    from shopman.utils.monetary import monetary_mult
+
+    out: dict[str, dict] = {}
+    for index, item in enumerate(session.items or []):
+        disc = (item.get("meta") or {}).get("_disc") or {}
+        if not disc:
+            continue
+        if disc.get("scope") == "order":
+            total_q = int(disc.get("line_amount_q") or 0)
+        else:
+            total_q = monetary_mult(Decimal(str(item.get("qty") or 0)), int(disc.get("amount_q") or 0))
+        key = str(item.get("line_id") or f"{item.get('sku', '')}:{index}")
+        out[key] = {"type": disc.get("type") or "", "label": str(disc.get("label") or ""), "total_q": int(total_q)}
+    return out
+
+
+def _summarize(discounts: list[dict]) -> tuple[str, int]:
+    """Um rótulo e a soma: o rótulo do maior, que é o que a cliente reconhece."""
+    if not discounts:
+        return "", 0
+    biggest = max(discounts, key=lambda d: d["total_q"])
+    return biggest["label"], sum(d["total_q"] for d in discounts)
+
+
+def promotion_shopper(customer) -> Shopper:
+    """Os eixos de ``customer`` que uma promoção pode exigir: grupo, RFM e aniversário.
+
+    O aniversário é o de HOJE no fuso da loja. Sem insight calculado (OneToOne
+    ausente) o cliente só casa por grupo; o segmento RFM fica vazio.
     """
     from django.core.exceptions import ObjectDoesNotExist
     from django.utils import timezone as tz
 
-    segments = list(getattr(promotion, "customer_segments", None) or [])
-    birthday_only = bool(getattr(promotion, "birthday_only", False))
-    if not segments and not birthday_only:
-        return True  # cupom aberto a todos
+    from shopman.shop.services.promotions import birthday_benefit_available
 
+    try:
+        rfm_segment = customer.insight.rfm_segment or ""
+    except ObjectDoesNotExist:  # silêncio-deliberado: cliente novo ainda sem Insight (RFM roda em lote); casa pelo grupo
+        logger.debug("coupon_eligibility_insight_missing")
+        rfm_segment = ""
+    return Shopper(
+        segment=rfm_segment,
+        tier_refs=frozenset(tier.ref for tier in customer.price_tiers.all()),
+        # Uma vez por ano: o cupom de aniversário segue a mesma régua do desconto.
+        is_birthday=birthday_benefit_available(customer, tz.localdate()),
+    )
+
+
+def customer_eligible_for_promotion(customer, promotion) -> bool:
+    """``customer`` satisfaz o alvo POR CLIENTE da promoção?
+
+    Só pergunta o que depende de QUEM é o cliente (grupo/RFM e aniversário), porque
+    se não bate o desconto seria sempre 0. Restrição por item ou contexto (``skus``,
+    ``collections``, ``fulfillment_types``) fica fora da pergunta: ela decide QUAIS
+    itens recebem desconto, não se o cliente pode usar o cupom. Quem decide é
+    ``promotion_matches``, a mesma regra do carrinho, do PDV e da vitrine.
+
+    ``customer`` é o cliente já resolvido (ou ``None`` para visitante anônimo). O
+    banco só é lido quando a promoção tem alvo por cliente.
+    """
+    if promotion_matches(promotion, PromotionContext()):
+        return True  # cupom aberto a todos
     if customer is None:
         return False  # alvo exige identidade; visitante anônimo não qualifica
-
-    if segments:
-        tier_refs = {tier.ref for tier in customer.price_tiers.all()}
-        try:
-            rfm_segment = customer.insight.rfm_segment or ""
-        except ObjectDoesNotExist:
-            # Sem insight calculado (OneToOne ausente) o cliente só casa por grupo;
-            # segmento RFM fica vazio. Degrada sem bloquear o cupom.
-            logger.debug("coupon_eligibility_insight_missing")
-            rfm_segment = ""
-        if not tier_refs.intersection(segments) and rfm_segment not in segments:
-            return False
-
-    if birthday_only:
-        birthday = getattr(customer, "birthday", None)
-        if not birthday:
-            return False
-        today = tz.localdate()
-        if not (birthday.month == today.month and birthday.day == today.day):
-            return False
-
-    return True
+    return promotion_matches(promotion, PromotionContext(shopper=promotion_shopper(customer)))
 
 
 def validate_and_apply_coupon(
@@ -555,11 +918,36 @@ def validate_and_apply_coupon(
             "price_tiers": [tier.ref for tier in customer.price_tiers.all()],
         }
 
+    before = Session.objects.filter(session_key=session_key, channel_ref=channel_ref, state="open").first()
+    discounts_before = _line_discounts(before) if before is not None else {}
     session = apply_coupon_code(
         session_key=session_key, channel_ref=channel_ref, code=code, customer=payload
     )
     if session is None:
         raise CouponRejected("no_cart")
+
+    # O maior desconto ganha, e os descontos não se somam. O cupom que não vence o
+    # que os itens dele já têm sai da sacola sem ser gasto, e a cliente sabe por quê;
+    # o que vence entra no lugar, e a cliente sabe de quê.
+    coupon_pricing = (session.pricing or {}).get("coupon") or {}
+    discounts_after = _line_discounts(session)
+    if int(coupon_pricing.get("discount_q") or 0) <= 0 and coupon_pricing.get("reason") == "already_discounted":
+        standing = [d for d in discounts_after.values() if d["type"] != "coupon" and d["total_q"] > 0]
+        label, standing_q = _summarize(standing)
+        remove_coupon_code(session_key=session_key, channel_ref=channel_ref)
+        raise CouponNotBetter(coupon_code=code, standing_label=label, standing_q=standing_q)
+    replaced = [
+        discounts_before[key]
+        for key, disc in discounts_after.items()
+        if disc["type"] == "coupon"
+        and key in discounts_before
+        and discounts_before[key]["type"] not in ("", "coupon")
+        and discounts_before[key]["total_q"] > 0
+    ]
+    if replaced:
+        label, replaced_q = _summarize(replaced)
+        # Transitório, para a superfície avisar; não vai para o banco.
+        session.coupon_replaced = {"label": label, "total_q": replaced_q}
     return session, promotion.name
 
 
@@ -737,20 +1125,76 @@ def clear_session(*, session_key: str, channel_ref: str) -> None:
     session_service.abandon_session(session_key=session_key, channel_ref=channel_ref)
 
 
-def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str):
-    """Reserva e devolve o ``hold_id`` — o elo até o LOTE (ADR-017/D1-RETIREMENT).
+def _cart_date(session: Session | None) -> date | None:
+    """A data da sacola: a que as reservas dela já prometem, ou a escolhida.
 
-    O hold ancora em um Quant, e o Quant carrega a ``Batch.ref``; é por aqui que
-    a linha descobre de qual lote saiu, e portanto qual desconto de lote vale.
+    A reserva manda (P2 do WP-DATA-E-PROMESSA: a data da sacola é a que o
+    cliente montou). Sem reserva datada, vale a data que o cliente escolheu e
+    que já está na sessão (``delivery_date``: a concierge grava ao combinar a
+    retirada ou a entrega; a loja, ao tentar fechar). Data que já passou não
+    vale. ``None`` = sacola sem data, e a reserva segue a regra de sempre:
+    pronto de hoje primeiro, depois a fornada.
+    """
+    if session is None:
+        return None
+    held = availability.session_hold_dates(session.session_key)
+    if held:
+        return min(held)
+    chosen = parse_commitment_date((session.data or {}).get("delivery_date"))
+    if chosen is not None and chosen >= timezone.localdate():
+        return chosen
+    return None
+
+
+def _date_that_serves(*, sku: str, qty: int, channel_ref: str) -> date | None:
+    """A data em que o item caberia inteiro pela regra de sempre (só leitura).
+
+    Pronto de hoje primeiro, depois a fornada da fila. ``None`` = nenhuma.
+    """
+    qty_d = Decimal(str(qty))
+    candidate = waitlist.reserve_target_date(sku, qty_d, channel_ref=channel_ref) or timezone.localdate()
+    reading = availability.check(sku, qty_d, channel_ref=channel_ref, target_date=candidate)
+    return candidate if reading["ok"] else None
+
+
+def _reserve_or_raise(*, sku: str, qty: int, session_key: str, channel_ref: str, cart_date: date | None = None):
+    """Reserva e devolve ``(reservas criadas, reserva que ancora o LOTE da linha)``.
+
+    A primeira reserva criada é a fronteira que ``session_hold_dates_around``
+    usa para separar o que a mutação criou do que a sacola já tinha.
+
+    O lote vira flag da linha (ADR-017/D1-RETIREMENT: o hold ancora num Quant, e
+    o Quant carrega a ``Batch.ref``) só quando UMA reserva cobre a linha inteira.
+    Reserva fatiada entre quants pode cair em lotes diferentes, e combo reserva
+    componentes, que não são o SKU da linha: nos dois casos não há lote da linha.
+
+    Sacola com data (``cart_date``) reserva NESSA data: a encomenda de amanhã
+    sai da fornada de amanhã mesmo com o pronto de hoje esgotado, e o pronto de
+    hoje não serve a quem pediu amanhã quando a validade não deixa. Sem nada na
+    data da sacola e com o item inteiro em outra data, a recusa é "outro
+    pedido" sem reserva nenhuma; com um tanto na data, a recusa oferece esse
+    tanto ("Levar N").
     """
     result = availability.reserve(
         sku,
         Decimal(str(qty)),
         session_key=session_key,
         channel_ref=channel_ref,
+        target_date=cart_date,
     )
+    if (
+        not result["ok"]
+        and cart_date is not None
+        and not result["is_paused"]
+        and not result.get("available_qty")
+    ):
+        item_date = _date_that_serves(sku=sku, qty=qty, channel_ref=channel_ref)
+        if item_date is not None and item_date != cart_date:
+            raise CartDateMismatchError(sku=sku, requested_qty=qty, cart_date=cart_date, item_date=item_date)
     if result["ok"]:
-        return result.get("hold_id")
+        hold_ids = result["hold_ids"]
+        lot_hold_id = hold_ids[0] if len(hold_ids) == 1 and not result.get("is_bundle") else None
+        return hold_ids, lot_hold_id
     # No ``add`` o número é o livre; na linha nova (o caso da loja) ele é o
     # teto, porque nada é dela ainda. Inteiro quando é inteiro: o ``Decimal``
     # cru saía como "3.000" no JSON, e a folha da loja, que só aceita número,

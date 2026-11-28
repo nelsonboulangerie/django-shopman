@@ -70,3 +70,7 @@ var/
 !.env.example
 
 .dsh-worktrees/
+.ci-baseline/
+
+# Sondas que o test_runtime_gate escreve e apaga (nome único por chamada)
+scripts/_runtime_gate_*_test.py

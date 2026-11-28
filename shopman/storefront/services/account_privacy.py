@@ -104,6 +104,48 @@ def privacy_requests_available() -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class DeletionBlocker:
+    """Por que a exclusão está recusada, com o que a tela precisa para NOMEAR o motivo.
+
+    ``reason`` é o código de sempre de ``AccountDeletionBlocked``; ``order_ref`` e
+    ``topic`` dizem qual pedido e qual etapa seguram a exclusão, quando o motivo é
+    um pedido. "Ainda existe um pedido em andamento" sem dizer qual deixava o
+    cliente procurando o pedido na lista (beta 06/11).
+    """
+
+    reason: str
+    order_ref: str = ""
+    topic: str = ""
+
+
+def deletion_blocker_details(customer, reason: str) -> DeletionBlocker:
+    """Completa um motivo de recusa com o pedido e a etapa que o causam (só leitura)."""
+    from shopman.shop.services import account as account_service
+
+    order_ref, topic = account_service.privacy_order_deletion_subject(
+        customer.ref, customer.phone or "", reason
+    )
+    return DeletionBlocker(reason=reason, order_ref=order_ref, topic=topic)
+
+
+def deletion_preflight(customer) -> DeletionBlocker | None:
+    """O que já recusaria a exclusão, conferido ANTES do código de confirmação.
+
+    A decisão é a mesma da exclusão (``privacy_order_deletion_blocker``), não um
+    gêmeo que pode divergir; aqui ela roda sem efeito nenhum e só para dizer à
+    tela se vale mandar o SMS. Os bloqueios de envio em curso (aviso, mensagem,
+    código) duram segundos e continuam sendo conferidos só na exclusão.
+    """
+    from shopman.shop.services import account as account_service
+
+    with transaction.atomic():
+        reason = account_service.privacy_order_deletion_blocker(customer.ref, customer.phone or "")
+    if not reason:
+        return None
+    return deletion_blocker_details(customer, reason)
+
+
 def subject_receipt_digests(customer_uuid) -> list[str]:
     """Digests versionados para projetar recibos do próprio titular."""
 

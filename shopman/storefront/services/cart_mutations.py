@@ -12,10 +12,11 @@ from django.http import HttpRequest
 from shopman.utils.monetary import format_money
 
 from shopman.shop import product_options
+from shopman.shop.discount_spread import merged_for_display
 from shopman.shop.product_options import OptionSelectionError
 from shopman.shop.projections import cart_context
 from shopman.shop.projections.cart import build_minimum_order_progress
-from shopman.shop.services.cart import CartUnavailableError
+from shopman.shop.services.cart import CartDateRefused, CartDayChangeRefused, CartUnavailableError
 from shopman.storefront.cart import CartService
 from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.intents.cart import interpret_set_qty
@@ -38,6 +39,22 @@ class CartMutationOptionRefused(Exception):
         self.error = error
 
 
+class CartMutationDateRefused(Exception):
+    """O dia escolhido no cardápio não pode ser combinado (OC-33 B1); ``message`` diz por quê."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+
+class CartMutationDayChangeRefused(Exception):
+    """A troca de dia deixaria item de fora; ``refusal`` nomeia cada um (OC-33 B1)."""
+
+    def __init__(self, refusal: CartDayChangeRefused):
+        super().__init__(refusal.detail)
+        self.refusal = refusal
+
+
 class CartMutationUnavailable(Exception):
     """Raised when the server refuses a cart mutation for stock reasons."""
 
@@ -54,6 +71,44 @@ class CartMutationOutcome:
     intent: SetQtyIntent
     cart: dict[str, Any]
     payload: dict[str, Any]
+
+
+def change_cart_day(request: HttpRequest, *, chosen_date, without_skus: list[str]) -> None:
+    """O "Trocar" do dia (OC-33 B1): a sacola inteira passa para ``chosen_date``, ou nada muda.
+
+    Quem decide é ``shop.services.cart.change_cart_day`` (um comando, efeito
+    único). Sem sacola aberta não há o que mover: a escolha fica só na tela, e o
+    primeiro "Adicionar" leva o dia.
+    """
+    from shopman.shop.services import cart as cart_service
+
+    key = request.session.get("cart_session_key")
+    if not key:
+        return
+    try:
+        cart_service.change_cart_day(
+            session_key=key,
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            chosen=chosen_date,
+            without_skus=without_skus,
+        )
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
+    except CartDayChangeRefused as exc:
+        raise CartMutationDayChangeRefused(exc) from exc
+
+
+def _cart_qty_of(cart: dict, sku: str) -> int:
+    """Quanto do SKU a sacola tem, somando a parte que o rateio partiu da linha (#3240)."""
+    total = 0
+    for item in cart.get("items") or []:
+        if item.get("sku") != sku:
+            continue
+        try:
+            total += int(float(item.get("qty") or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
 def parse_cart_qty(raw, *, minimum: int) -> int | None:
@@ -74,12 +129,17 @@ def set_qty_by_sku(
     sku: str,
     qty: int,
     perf=None,
+    chosen_date=None,
 ) -> CartMutationOutcome:
     """Set absolute cart quantity for one SKU.
 
     This is the canonical cart mutation for product-card, PDP and cart steppers.
     It keeps the server authoritative for price, holds and stock while letting
     different surfaces share the same action semantics.
+
+    ``chosen_date`` é o dia do "Para quando?" do cardápio (OC-33 B1). Vale para
+    o que PÕE na sacola (o primeiro "Adicionar" e o acréscimo); tirar não
+    depende do dia.
     """
     key = request.session.get("cart_session_key")
     if key:
@@ -98,17 +158,23 @@ def set_qty_by_sku(
         with _perf_step(perf, f"mutate_{intent.action}"):
             if intent.action == "remove":
                 if intent.line_id is not None:
+                    # O stepper por SKU mostra a soma da linha com a parte que o
+                    # rateio partiu dela (#3240): a quantidade é do produto inteiro.
                     mutated_session = CartService.remove_item(
                         request,
                         line_id=intent.line_id,
                         sku=intent.sku,
+                        whole_product=True,
                     )
             elif intent.action == "update":
+                adds = intent.qty > _cart_qty_of(cart, intent.sku)
                 mutated_session = CartService.update_qty(
                     request,
                     line_id=intent.line_id,
                     qty=intent.qty,
                     sku=intent.sku,
+                    whole_product=True,
+                    chosen_date=chosen_date if adds else None,
                 )
             else:
                 # O nome do produto tem que viajar JUNTO com a linha. Sem ele o
@@ -125,11 +191,14 @@ def set_qty_by_sku(
                     unit_price_q=intent.unit_price_q,
                     name=str(getattr(intent.product, "name", "") or ""),
                     product=intent.product,
+                    chosen_date=chosen_date,
                 )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=intent.product, stock_error=exc) from exc
     except OptionSelectionError as exc:
         raise CartMutationOptionRefused(product=intent.product, error=exc) from exc
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
 
     with _perf_step(perf, "payload"):
         if mutated_session is not None:
@@ -150,6 +219,7 @@ def add_line_with_options(
     sku: str,
     qty: int,
     options: list[dict],
+    chosen_date=None,
 ) -> CartMutationOutcome:
     """Põe na sacola um item COM escolha no produto (sabor, adicionais).
 
@@ -176,11 +246,14 @@ def add_line_with_options(
             name=str(product_ctx.product.name or ""),
             options=options,
             product=product_ctx.product,
+            chosen_date=chosen_date,
         )
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=product_ctx.product, stock_error=exc) from exc
     except OptionSelectionError as exc:
         raise CartMutationOptionRefused(product=product_ctx.product, error=exc) from exc
+    except CartDateRefused as exc:
+        raise CartMutationDateRefused(exc.message) from exc
     cart = CartService.summary_from_session(session, include_items=True)
     wanted = product_options.signature(options)
     line = next(
@@ -201,7 +274,9 @@ def set_line_qty(request: HttpRequest, *, line_id: str, qty: int) -> CartMutatio
     """Quantidade absoluta de UMA linha (0 remove), pela ``line_id``.
 
     É o caminho da sacola: com escolha no produto o mesmo SKU pode ter duas
-    linhas, e o ajuste por SKU acertaria a linha errada.
+    linhas, e o ajuste por SKU acertaria a linha errada. A linha que o rateio do
+    desconto partiu (#3240) aparece inteira na sacola, então a quantidade é a da
+    linha com a parte (``whole_product``).
     """
     key = request.session.get("cart_session_key")
     if not key:
@@ -221,9 +296,9 @@ def set_line_qty(request: HttpRequest, *, line_id: str, qty: int) -> CartMutatio
     )
     try:
         if qty == 0:
-            session = CartService.remove_item(request, line_id=line_id, sku=sku)
+            session = CartService.remove_item(request, line_id=line_id, sku=sku, whole_product=True)
         else:
-            session = CartService.update_qty(request, line_id=line_id, qty=qty, sku=sku)
+            session = CartService.update_qty(request, line_id=line_id, qty=qty, sku=sku, whole_product=True)
     except CartUnavailableError as exc:
         raise CartMutationUnavailable(product=product, stock_error=exc) from exc
     cart = CartService.summary_from_session(session, include_items=True)
@@ -260,7 +335,7 @@ def cart_line_payload(intent: SetQtyIntent, cart: dict[str, Any]) -> dict[str, A
     Pela ``line_id`` quando a mutação a conhece (o mesmo SKU pode ter duas
     linhas, com escolhas diferentes); senão, a linha do SKU sem escolha.
     """
-    items = cart.get("items") or []
+    items = merged_for_display(cart.get("items") or [])
     line = None
     if intent.line_id:
         line = next((item for item in items if item.get("line_id") == intent.line_id), None)

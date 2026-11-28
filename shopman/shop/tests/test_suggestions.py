@@ -252,6 +252,30 @@ def test_a_cheaper_item_earns_the_price_reason(listing):
     assert "price:below_cart_average" in found[0].reasons
 
 
+def test_an_unpublished_price_tier_does_not_leak_into_a_suggestion(listing):
+    from decimal import Decimal
+
+    _product("PAO", "Pão", price_q=2000, listing=listing)
+    cafe = _product("CAFE", "Café", price_q=500, listing=listing)
+    visible = ListingItem.objects.get(listing=listing, product=cafe)
+    visible.min_qty = Decimal("0")
+    visible.save(update_fields=["min_qty"])
+    ListingItem.objects.create(
+        listing=listing,
+        product=cafe,
+        price_q=1,
+        min_qty=Decimal("1"),
+        is_published=False,
+        is_sellable=True,
+    )
+    _affinity("PAO", "CAFE", 4.0)
+    _rule({"affinity_weight": 3})
+
+    found = suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL)
+
+    assert found[0].unit_price_q == 500
+
+
 # --- por superfície ---------------------------------------------------------
 
 
@@ -489,30 +513,35 @@ def test_the_seeded_pairings_are_the_ones_the_owner_dictated():
     assert params["price"] == "below_cart_average"
 
 
-def test_the_migration_and_the_seed_agree_on_the_defaults():
-    """Os defaults existem em DOIS lugares, e não podem divergir.
+def test_the_migration_and_the_descriptor_agree_on_the_rules():
+    """Os critérios existem em DOIS lugares, e não podem divergir.
 
-    A migração 0030 guarda uma cópia congelada — é o que toda migração deve
-    fazer, porque ela representa um momento do banco e não pode mudar de
-    sentido quando o código muda. O `seed --flush` usa as constantes vivas,
-    porque `_flush` apaga toda `RuleConfig` e precisa reconstruí-las.
+    A migração 0030 guarda uma cópia congelada (uma migração representa um
+    momento do banco). O descritor da Instância (``config/instances/nelson.json``)
+    é a fonte viva que o ``seed`` e o ``instance_descriptor apply`` materializam.
+    O código não guarda terceira cópia.
 
-    Se alguém mudar as constantes sem escrever uma migração nova, é aqui que
-    fica vermelho — e a mensagem diz o que fazer.
+    Se alguém mudar o descritor sem escrever uma migração nova, é aqui que fica
+    vermelho, e a mensagem diz o que fazer.
     """
-    from shopman.shop.rules.suggestion import (
-        DEFAULT_COMPLEMENT_PARAMS,
-        DEFAULT_SUBSTITUTE_PARAMS,
+    import json
+    from pathlib import Path
+
+    descriptor = json.loads(
+        (Path(__file__).resolve().parents[3] / "config/instances/nelson.json").read_text(encoding="utf-8")
     )
+    declared = {
+        item["ref"]: item["config"]["params"] for item in descriptor["bootstrap"]["rule_configs"]
+    }
 
     complement = RuleConfig.objects.get(ref="suggestion.complement")
     substitute = RuleConfig.objects.get(ref="suggestion.substitute")
 
-    assert complement.params == DEFAULT_COMPLEMENT_PARAMS, (
-        "os defaults vivos mudaram e a migração ficou para trás — "
+    assert complement.params == declared["suggestion.complement"], (
+        "o descritor mudou e a migração ficou para trás: "
         "escreva uma migração de dados nova (o banco no ar não re-roda a 0030)"
     )
-    assert substitute.params == DEFAULT_SUBSTITUTE_PARAMS
+    assert substitute.params == declared["suggestion.substitute"]
 
 
 def test_the_seeded_rule_offers_a_drink_to_someone_carrying_bread(listing):

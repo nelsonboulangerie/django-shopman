@@ -239,6 +239,18 @@ def test_custo_ilegivel_grita_em_vez_de_virar_zero(digitado):
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(("digitado", "sugerido"), [("0,055", "0,06"), ("12,345", "12,35")])
+def test_valor_abaixo_do_centavo_e_recusado_em_vez_de_arredondado(digitado, sugerido):
+    """Beta 05/11, CMP-07: 0,055 por g virava R$ 0,06 em silêncio, 9% acima do digitado."""
+    with pytest.raises(purchase_service.PurchaseError) as recusa:
+        purchase_service.parse_money_input(digitado, field="priceInput")
+
+    assert recusa.value.field == "priceInput"
+    assert sugerido in str(recusa.value)
+    assert "\u2014" not in str(recusa.value)
+
+
+@pytest.mark.django_db
 def test_custo_ilegivel_na_linha_nao_grava_entrada_nenhuma(cenario, operador):
     """Ponta a ponta: o erro tem de chegar ANTES de qualquer escrita de estoque."""
     material, _f, _c = cenario

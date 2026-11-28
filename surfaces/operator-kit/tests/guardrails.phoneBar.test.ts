@@ -3,7 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // Barra de cima do celular (56px): trava do Atualizar solto (T-06 da auditoria v4).
 //
@@ -104,18 +104,19 @@ describe("guardrail da barra de cima do celular", () => {
   });
 
   it("a varredura acha as barras dos apps (não passa por estar cega)", () => {
-    const found = OPERATOR_SURFACES.flatMap((app) =>
+    const found = OPERATOR_KIT_SURFACES.flatMap((app) =>
       vueFiles(join(surfacesDir, app, "app")).filter((path) => phoneBarBlocks(readFileSync(path, "utf8")).length),
     );
     const rel = found.map((path) => relative(surfacesDir, path));
-    // A sentinela é um arquivo que monta `#phone-actions` hoje: o pedido do Gestor.
-    // (A página de Campanhas do Marketing, a de antes, mudou de rota no #1586.)
-    expect(rel).toContain("orders-nuxt/app/pages/[ref].vue");
+    // A sentinela é um arquivo que monta `#phone-actions` hoje: o fechamento do PDV.
+    // (A página de Campanhas do Marketing mudou de rota no #1586; o pedido do Gestor
+    // trocou a barra do celular pela linha do chão, `OperatorCompactBar`.)
+    expect(rel).toContain("pos-nuxt/app/pages/session/closing.vue");
   });
 
   it("nenhum app de operador põe Atualizar solto na barra de 56px (mora no ⋯)", () => {
     const offenders: string[] = [];
-    for (const app of OPERATOR_SURFACES) {
+    for (const app of OPERATOR_KIT_SURFACES) {
       for (const path of vueFiles(join(surfacesDir, app, "app"))) {
         const blocks = phoneBarBlocks(readFileSync(path, "utf8"));
         if (blocks.some(looseRefresh)) offenders.push(relative(surfacesDir, path));

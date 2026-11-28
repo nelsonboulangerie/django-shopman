@@ -49,3 +49,35 @@ class CatalogSyncState(models.Model):
 
     def __str__(self) -> str:
         return f"{self.sku}@{self.channel_ref}: {self.status}"
+
+
+class CatalogImageUpload(models.Model):
+    """Caminho remoto de uma imagem imutável já enviada a um canal.
+
+    O hash é do conteúdo, não da URL: a mesma foto servida por outro endereço
+    continua sendo um único upload. O merchant participa da chave porque o
+    ``imagePath`` do iFood pertence à loja que recebeu a imagem.
+    """
+
+    channel_ref = models.CharField(max_length=32, db_index=True)
+    merchant_id = models.CharField(max_length=64)
+    sha256 = models.CharField(max_length=64)
+    image_path = models.CharField(max_length=512, blank=True)
+    content_type = models.CharField(max_length=32, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "shop"
+        verbose_name = "upload de imagem do catálogo"
+        verbose_name_plural = "uploads de imagem do catálogo"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["channel_ref", "merchant_id", "sha256"],
+                name="uniq_catalog_image_channel_merchant_hash",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.channel_ref}:{self.merchant_id}:{self.sha256[:12]}"

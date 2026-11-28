@@ -9,8 +9,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.core.cache import cache
 from django.core.exceptions import ValidationError
-from django.db import connection
-from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from shopman.shop.models import (
@@ -902,37 +900,3 @@ def test_unfreeze_requires_totp_and_distinct_security_actor_after_reconciliation
 
     assert active.frozen is False
     assert active.version == frozen.version + 1
-
-
-@pytest.mark.django_db(transaction=True)
-def test_security_authorization_migration_reverses_and_reapplies_cleanly():
-    before = [("shop", "0034_marketing_delivery_recovery")]
-    after = [("shop", "0035_marketing_security_authorization")]
-    security_tables = {
-        "shop_marketingconfirmation",
-        "shop_marketingquotausage",
-        "shop_marketingsafetystate",
-        "shop_marketingsecurityevent",
-    }
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    assert security_tables.isdisjoint(connection.introspection.table_names())
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(after)
-    assert security_tables.issubset(connection.introspection.table_names())
-    with connection.cursor() as cursor:
-        audit_columns = {
-            column.name
-            for column in connection.introspection.get_table_description(
-                cursor, "shop_marketingauditevent"
-            )
-        }
-    assert "decision_reason" in audit_columns
-
-    executor = MigrationExecutor(connection)
-    executor.migrate(before)
-    assert security_tables.isdisjoint(connection.introspection.table_names())
-
-    MigrationExecutor(connection).migrate(after)

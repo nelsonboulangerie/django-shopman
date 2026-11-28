@@ -15,10 +15,11 @@ import logging
 from dataclasses import dataclass
 
 from django.utils import timezone
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections import customer as customer_projection
-from shopman.storefront.presentation.status import order_status_label, status_color
+from shopman.storefront.presentation.status import customer_status_label, status_color
 from shopman.storefront.presentation.types import OrderSummaryProjection
 
 logger = logging.getLogger(__name__)
@@ -75,16 +76,28 @@ def build_order_history(
 # ──────────────────────────────────────────────────────────────────────
 
 
+# Pedido cancelado cujo dinheiro volta: a linha diz o dinheiro, não o cancelamento,
+# e o valor ao lado é o que volta, não o total do pedido (#2992).
+_REFUND_STATUS_KEYS = {"refunded": "refunded", "refund_requested": "refund_in_progress"}
+
+
 def present_summary(summary) -> OrderSummaryProjection:
     """Render one data order summary into the display projection."""
+    key = summary.display_status_key
+    amount_q = summary.total_q
+    refund_key = _REFUND_STATUS_KEYS.get(summary.refund_outcome)
+    if refund_key:
+        key = refund_key
+        amount_q = summary.refund_q
     return OrderSummaryProjection(
         ref=summary.ref,
         created_at_display=_fmt_datetime(summary.created_at),
         total_q=summary.total_q,
-        total_display=f"R$ {format_money(summary.total_q)}",
+        total_display=f"R$ {format_money(amount_q)}",
         status=summary.status,
-        status_label=order_status_label(summary.status),
-        status_color=status_color(summary.status),
+        display_status_key=key,
+        status_label=customer_status_label(key, summary.status),
+        status_color=status_color(key, summary.status),
         item_count=summary.item_count,
     )
 
@@ -106,7 +119,7 @@ def _fmt_datetime(dt) -> str:
     """Format a datetime as 'DD/MM/AAAA às HH:MM'."""
     try:
         local = timezone.localtime(dt)
-        return local.strftime("%d/%m/%Y às %H:%M")
+        return format_local(local, "%d/%m/%Y às {clock}")
     except Exception:
         logger.debug("order_history_projection_datetime_format_failed dt=%r", dt, exc_info=True)
         return str(dt)

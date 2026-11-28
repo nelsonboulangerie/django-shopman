@@ -9,7 +9,7 @@ import { selectedOperatorViewports } from "../../../operator-kit/visual/matrix";
 // rodar só um estado. Sem baseline de pixel: o gate é o scanner de geometria do kit
 // (nada estoura a largura, nenhum alvo de toque pequeno, nenhum texto cortado).
 
-const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "35021");
+const BACKEND = "http://127.0.0.1:" + (process.env.PURCHASE_VISUAL_BACKEND_PORT || "25021");
 
 const SCREENS = [
   { surface: "purchase-panel", route: "/", scenario: "normal", state: "normal", ready: "[data-purchase-panel]" },
@@ -22,7 +22,7 @@ const SCREENS = [
   { surface: "purchase-base-materials", route: "/base/materials/MANTEIGA-82", scenario: "normal", state: "normal", ready: "[data-material-panel]" },
   { surface: "purchase-base-suppliers", route: "/base/suppliers", scenario: "normal", state: "normal", ready: "[data-base-suppliers-table]" },
   { surface: "purchase-base-costs", route: "/base/costs", scenario: "normal", state: "normal", ready: "[data-cost-batch]" },
-  { surface: "purchase-base-count", route: "/base/count", scenario: "normal", state: "normal", ready: "[data-count-table]" },
+  { surface: "purchase-count", route: "/count", scenario: "normal", state: "normal", ready: "[data-count-table]" },
 ];
 
 const selectedScenario = process.env.OPERATOR_VISUAL_SCENARIO || "";

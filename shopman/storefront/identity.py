@@ -29,7 +29,7 @@ def get_authenticated_customer(request):
     if customer_info is None:
         setattr(request, cache_attr, None)
         return None
-    customer = auth_service.customer_by_uuid(customer_info.uuid)
+    customer = auth_service.customer_by_uuid(customer_info.subject_id)
     setattr(request, cache_attr, customer)
     return customer
 
@@ -68,9 +68,9 @@ def customer_pricing_hints(request) -> tuple[str, str]:
 #
 # Uma pergunta só, e ela decide tudo o que as telas mostram: **este aparelho é conhecido?**
 #
-# ⚠️ Não é a `audience` do `AccessLink`. Ela existe no model e ninguém a aplica
-# (`exchange_token` nunca passa `required_audience`), então usá-la como cerca seria confiar
-# num campo que ninguém lê.
+# ⚠️ Não é a `audience` do `AccessLink`. A troca aplica a audiência só para decidir se o
+# link abre sessão NESTA porta (`access.STORE_ENTRY_AUDIENCES`, OC-09); todas as
+# audiências da loja abrem a mesma sessão, então ela não diz quanto sabemos da pessoa.
 
 #: O cookie de confiança deste navegador já provou identidade por OTP algum dia
 #: (`DeviceTrustService`). Sabemos que é a pessoa: nada é reduzido.
@@ -108,7 +108,7 @@ def checkout_draft_context(request, session_key: str | None) -> str:
     from django.utils.crypto import salted_hmac
     if not session_key:
         return ""
-    principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+    principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
     owner = f"customer:{principal}" if principal else f"browser:{request.session.session_key}"
     strength = request.session.get(IDENTITY_SESSION_KEY, "")
     return salted_hmac("storefront.checkout-draft.v2", f"{owner}:{strength}:{session_key}").hexdigest()

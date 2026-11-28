@@ -7,6 +7,7 @@ intent before the Orderman/cashman services expand it into domain writes.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 POS_SALE_INTENT_VERSION = "pos.sale-intent.v1"
 
@@ -34,6 +35,7 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "delivery_time_slot",
     "delivery_fee_override_q",
     "order_notes",
+    "counter_service",
     "payment_method",
     "payment_collection",
     "payment_tenders",
@@ -88,6 +90,14 @@ POS_SALE_INTENT_PAYLOAD_KEYS = tuple(sorted(_ALLOWED_TOP_LEVEL_KEYS))
 POS_SALE_INTENT_PAYMENT_METHODS = tuple(sorted(_ALLOWED_PAYMENT_METHODS))
 POS_SALE_INTENT_PAYMENT_COLLECTIONS = tuple(sorted(_ALLOWED_PAYMENT_COLLECTIONS))
 POS_SALE_INTENT_RECEIPT_CHANNELS = tuple(sorted(_ALLOWED_RECEIPT_CHANNELS))
+
+
+# O limite da observação do pedido. A tela do PDV usa o mesmo número.
+ORDER_NOTES_LIMIT = 500
+
+#: Como a venda de balcão sai (#3193): comer aqui ("here") ou levar ("to_go").
+#: A tela tem os dois chips; ausente = o balcão não disse (venda anterior a isto).
+COUNTER_SERVICES: tuple[str, ...] = ("here", "to_go")
 
 
 @dataclass(eq=False)
@@ -217,7 +227,30 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     payload["delivery_address"] = _text(payload.get("delivery_address"), limit=400)
     payload["delivery_time_slot"] = _text(payload.get("delivery_time_slot"), limit=80)
     payload["delivery_date"] = _text(payload.get("delivery_date"), limit=32)
-    payload["order_notes"] = _text(payload.get("order_notes"), limit=500)
+    # Acima do limite RECUSA com o campo, em vez de cortar em silêncio: o
+    # detalhe da encomenda terminava no meio da frase e ninguém sabia (beta
+    # test de 05/11/2026, PDV2-08). O campo da tela já para no mesmo limite.
+    order_notes = str(payload.get("order_notes") or "").strip()
+    if len(order_notes) > ORDER_NOTES_LIMIT:
+        raise PosIntentError(
+            code="order_notes_too_long",
+            message=f"A observação passou de {ORDER_NOTES_LIMIT} caracteres.",
+            field="order_notes",
+            focus="order_notes",
+            recovery="Encurte a observação e tente de novo.",
+        )
+    payload["order_notes"] = order_notes
+    # Balcão: comer aqui ou levar (#3193, opção A do dono). Só existe no modo
+    # balcão; na encomenda quem diz como o pedido sai é o recebimento.
+    counter_service = str(payload.get("counter_service") or "").strip()
+    if counter_service and counter_service not in COUNTER_SERVICES:
+        raise PosIntentError(
+            code="invalid_counter_service",
+            message="Escolha Consumir aqui ou Para levar.",
+            field="counter_service",
+            focus="fulfillment",
+        )
+    payload["counter_service"] = counter_service if payload.get("sales_mode") != "order" else ""
     # A taxa NÃO vem daqui: quem a resolve é o motor de entrega (zona/faixa),
     # em `pos._resolve_delivery_fee`. O que atravessa o intent é só a EXCEÇÃO
     # que o operador assume — e ela é opcional de verdade: ausente significa
@@ -229,7 +262,7 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     if for_commit and fulfillment_type == "delivery" and not payload["delivery_address"]:
         raise PosIntentError(
             code="delivery_address_required",
-            message="Informe o endereço de entrega antes de finalizar.",
+            message="Informe o endereço de entrega antes de validar.",
             field="delivery_address",
             focus="delivery_address",
             recovery="Preencha endereço, referência e horário prometido.",
@@ -337,7 +370,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         if for_commit:
             raise PosIntentError(
                 code="cart_empty",
-                message="Carrinho vazio. Adicione produtos antes de fechar.",
+                message="A venda está vazia. Lance um produto antes de validar.",
                 field="items",
                 focus="search",
             )
@@ -346,17 +379,17 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
     seen_line_ids: set[str] = set()
     for idx, item in enumerate(raw):
         if not isinstance(item, dict):
-            raise PosIntentError("invalid_item", "Item inválido no carrinho.", field=f"items.{idx}", focus="search")
+            raise PosIntentError("invalid_item", "Item inválido na venda.", field=f"items.{idx}", focus="search")
         sku = _text(item.get("sku"), limit=120)
         if not sku:
-            raise PosIntentError("item_sku_required", "Item sem SKU no carrinho.", field=f"items.{idx}.sku", focus="search")
+            raise PosIntentError("item_sku_required", "Item sem SKU na venda.", field=f"items.{idx}.sku", focus="search")
         weighed = _weighed(item.get("weighed"), f"items.{idx}.weighed")
         # Linha pesada: a quantidade NÃO vem do navegador. Ela sai do que o
         # operador tem em mãos (valor da etiqueta ou peso), convertido pelo preço
         # do quilo do catálogo em ``weighed_sale.apply_to_payload`` — que precisa
         # do banco e por isso roda no service, logo depois deste parser.
         qty = 1 if weighed else _positive_int(item.get("qty", 1), f"items.{idx}.qty")
-        unit_price_q = _nonnegative_int(item.get("unit_price_q", item.get("price_q", 0)), f"items.{idx}.unit_price_q")
+        unit_price_q = _nonnegative_int(item.get("unit_price_q", 0), f"items.{idx}.unit_price_q")
         entry = {
             "sku": sku,
             "name": _text(item.get("name"), limit=180),
@@ -379,7 +412,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             if line_id in seen_line_ids:
                 raise PosIntentError(
                     code="duplicate_line_id",
-                    message="Duas linhas do carrinho têm a mesma identidade.",
+                    message="Duas linhas da venda estão registradas como o mesmo item.",
                     field=f"items.{idx}.line_id",
                     focus="cart",
                 )
@@ -676,6 +709,16 @@ def _manual_discount(raw) -> dict | None:
         discount_type = "percent"
     value = raw.get("value", "")
     value_text = _text(value, limit=40)
+    if discount_type == "percent" and value_text:
+        try:
+            percent = Decimal(value_text.replace(",", "."))
+        except InvalidOperation:
+            percent = Decimal("NaN")
+        if not percent.is_finite() or percent < 0 or percent > 100:
+            raise PosIntentError(
+                "invalid_discount", "Informe um percentual de desconto entre 0 e 100.",
+                field="manual_discount.value", focus="payment",
+            )
     if discount_q <= 0 and not value_text:
         return None
     return {
@@ -699,9 +742,12 @@ def _manager_approval(raw) -> dict | None:
     username = _text(raw.get("username"), limit=150)
     pin = str(raw.get("pin") or "")
     badge = _text(raw.get("badge"), limit=150)
-    if not username and not pin and not badge:
+    # O carimbo assinado que o diálogo do gerente devolve na venda (#2558): é
+    # ele, e não o PIN, que o fechamento resgata. Ver ``issue_sale_approval``.
+    token = str(raw.get("token") or "").strip()[:1024]
+    if not username and not pin and not badge and not token:
         return None
-    return {"username": username, "pin": pin, "badge": badge}
+    return {"username": username, "pin": pin, "badge": badge, "token": token}
 
 
 def _fulfillment_type(value) -> str:

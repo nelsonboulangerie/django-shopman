@@ -245,24 +245,3 @@ def generate_neutral_scale(
             step_C = chroma * max(0.05, 1.0 - dist_from_mid * 0.9)
         scale[i] = oklch_to_raw(max(0.0, min(1.0, step_L)), step_C, hue)
     return scale
-
-
-# ── Token Generation ─────────────────────────────────────────────────
-
-
-def generate_design_tokens(
-    primary_hex: str = "",
-    secondary_hex: str = "",
-    accent_hex: str = "",
-    neutral_hex: str = "",
-    neutral_dark_hex: str = "",
-    color_mode: str = "light",
-) -> dict:
-    """Tokens do storefront: paleta da marca (`brand_tokens.build_storefront_design_tokens`).
-
-    Os argumentos de cor são ignorados; mantidos só por compatibilidade de assinatura.
-    Use `Shop.design_tokens` ou `build_storefront_design_tokens` com fontes.
-    """
-    from shopman.shop.brand_tokens import build_storefront_design_tokens
-
-    return build_storefront_design_tokens(color_mode=color_mode)

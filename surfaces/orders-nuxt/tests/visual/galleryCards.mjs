@@ -1,5 +1,5 @@
 // Cenário `gallery` do mock visual: um cartão por combinação de estado que o
-// quadro sabe desenhar. As fixtures capturadas do seed só trazem preparo
+// painel sabe desenhar. As fixtures capturadas do seed só trazem preparo
 // bloqueado; aqui cada cartão parte de um deles e troca apenas os campos que a
 // projeção real preencheria naquele estado (mesmos nomes do contrato gerado).
 // Serve para inspeção visual, não para afirmar regra de domínio.
@@ -49,7 +49,7 @@ export function galleryQueue(base) {
     attention: "",
     attention_since_iso: iso(-420),
     goal_minutes: 10,
-    goal_label: "meta 10",
+    goal_label: "meta 10 min",
     ...over,
   });
 
@@ -61,15 +61,32 @@ export function galleryQueue(base) {
       actions: [action("confirm", "Aceitar"), action("reject", "Recusar", { priority: "danger" }), ...menu],
     }),
     make("I02", { attention: "confirm",
-      status: "new", status_label: "Novo", can_confirm: true, channel_ref: "ifood",
+      status: "new", status_label: "Novo", can_confirm: true, channel_ref: "ifood", channel_name: "iFood",
       channel_display_id: "8841", customer_name: "Bruno",
       test_order_label: "Pedido de teste do iFood",
       test_order_notice: "Homologação: não produza nem entregue. Aceite ou recuse para o iFood registrar.",
       ifood_schedule_label: "Agendado pelo iFood para 18:30",
-      ifood_pickup_code: "4821",
       confirmation_deadline_iso: iso(40), confirmation_action: "cancel",
       payment_method_label: "Pago no iFood", payment_tone: "success",
       actions: [action("confirm", "Aceitar"), action("reject", "Recusar", { priority: "danger" })],
+    }),
+    // #3177: a reserva da fila no Painel de mesa, com o selo e o aceite que diz o
+    // que espera (nada foi cobrado), antes e depois de o lote ficar pronto.
+    make("W07", { attention: "",
+      status: "new", status_label: "Novo", can_confirm: false, customer_name: "Lívia",
+      payment_status: "pending", payment_tone: "neutral", payment_status_label: "",
+      items_summary: "10x Kuro Pan", items_count: 10,
+      waitlist_label: "Na fila de espera", waitlist_state: "fermata",
+      actions: [action("confirm", "Aceitar", { enabled: false,
+        reason: "Na fila de espera: o pedido espera o lote ficar pronto. Nada foi cobrado do cliente." })],
+    }),
+    make("W08", { attention: "",
+      status: "new", status_label: "Novo", can_confirm: false, customer_name: "Marta",
+      payment_status: "pending", payment_tone: "neutral", payment_status_label: "",
+      items_summary: "6x Kuro Pan", items_count: 6,
+      waitlist_label: "Aguardando o cliente confirmar", waitlist_state: "confirming",
+      actions: [action("confirm", "Aceitar", { enabled: false,
+        reason: "O lote ficou pronto e a vez é do cliente: ele tem até 12h15 para confirmar a vaga. Nada foi cobrado ainda." })],
     }),
   ];
 
@@ -103,12 +120,14 @@ export function galleryQueue(base) {
     }),
     make("W06", { attention: "start",
       status: "accepted", status_label: "Aceito", customer_name: "Elisa",
-      waitlist_label: "Esperando o lote das 16:00", waitlist_state: "confirming",
+      waitlist_label: "Confirmado pelo cliente", waitlist_state: "confirmed",
       awaiting_work_orders: [
-        { ref: "WO-101", output_sku: "BAGUETE", status_label: "no forno", progress_pct: 60 },
-        { ref: "WO-102", output_sku: "CROISSANT-MANTEIGA-TRADICIONAL", status_label: "fermentando", progress_pct: 20 },
+        { ref: "WO-101", status: "started", status_label: "Iniciada", output_sku: "BAGUETE", recipe_name: "Baguete",
+          planned_qty: "20", finished_qty: "", progress_pct: 60 },
+        { ref: "WO-102", status: "planned", status_label: "Planejada", output_sku: "CRO", recipe_name: "Croissant",
+          planned_qty: "42", finished_qty: "", progress_pct: 0 },
       ],
-      fiscal_status: "failed", fiscal_status_label: "NFC-e rejeitada",
+      fiscal_status: "failed",
       actions: [action("advance", "Iniciar preparo"), ...menu],
     }),
     make("ERR07", { attention: "start",
@@ -125,8 +144,8 @@ export function galleryQueue(base) {
       actions: [action("advance", "Entregar a Gabriela"), action("settle-delivery-cash", "Receber", { priority: "secondary" }), ...menu],
     }),
     make("T11", { attention: "handoff", goal_label: "no balcão",
-      status: "ready", status_label: "Pronto", channel_ref: "ifood", customer_name: "Larissa",
-      ready_at_iso: iso(-60), ifood_schedule_label: "Retirada às 19:40", ifood_pickup_code: "5170",
+      status: "ready", status_label: "Pronto", channel_ref: "ifood", channel_name: "iFood", customer_name: "Larissa",
+      ready_at_iso: iso(-60), ifood_schedule_label: "Retirada às 19:40",
       payment_method_label: "Pago no iFood", payment_tone: "success",
       actions: [action("advance", "Entregar a Larissa"), ...menu],
     }),
@@ -141,7 +160,7 @@ export function galleryQueue(base) {
   const expedition_delivery = [
     make("D10", { attention: "dispatch", attention_since_iso: iso(-780),
       status: "ready", status_label: "Pronto", customer_name: "Isabela Monteiro de Albuquerque",
-      fulfillment_type: "delivery", fulfillment_label: "Entrega", fulfillment_icon: "delivery",
+      fulfillment_type: "delivery", fulfillment_label: "Entrega",
       delivery_address: "Rua Professor João Cândido, 1234, apto 1802, bloco B, Jardim Higienópolis, Londrina",
       change_label: "Troco para R$ 50,00: levar R$ 24,00", payment_method: "cash",
       payment_method_label: "Dinheiro na entrega", payment_tone: "neutral",
@@ -152,7 +171,7 @@ export function galleryQueue(base) {
     }),
     make("D11", { attention: "dispatch",
       status: "ready", status_label: "Pronto", customer_name: "João",
-      fulfillment_type: "delivery", fulfillment_label: "Entrega", fulfillment_icon: "delivery",
+      fulfillment_type: "delivery", fulfillment_label: "Entrega",
       delivery_address: "Av. Higienópolis, 900", danfe_printable: true, danfe_printed: true,
       danfe_state: "printed", equipment_back_pending: true, can_settle_delivery_cash: true,
       payment_method: "card", payment_method_label: "Cartão na entrega", payment_tone: "warning",
@@ -164,7 +183,7 @@ export function galleryQueue(base) {
   const expedition_delivery_transit = [
     make("T12", { attention: "courier_back",
       status: "dispatched", status_label: "Saiu", customer_name: "Karina",
-      fulfillment_type: "delivery", fulfillment_label: "Entrega", fulfillment_icon: "delivery",
+      fulfillment_type: "delivery", fulfillment_label: "Entrega",
       delivery_address: "Rua Pará, 456", dispatched_at_iso: iso(-900),
       courier_status_label: "Entregador a 5 min do cliente",
       equipment_label: "Maquininha Stone 2", trip_with: ["WEB-261007-T13"],
@@ -183,7 +202,7 @@ export function galleryQueue(base) {
 
   const ifood_negotiation_orders = [
     make("I15", {
-      channel_ref: "ifood", channel_display_id: "9921",
+      channel_ref: "ifood", channel_name: "iFood", channel_display_id: "9921",
       customer_name: "Marina",
       status: "completed", status_label: "Concluído",
       attention: "negotiation", attention_since_iso: iso(-180), goal_minutes: 10,
@@ -193,7 +212,7 @@ export function galleryQueue(base) {
         id: "neg-1", type: "AFTER_DELIVERY", action: "CANCELLATION", message: "Cliente diz que o pedido chegou frio.",
         expires_at: iso(420), timeout_action: "ACCEPT", state: "open", can_respond: true, response_notice: "",
         items: ["1x Croissant de manteiga"], evidence_urls: [], accept_reasons: [], reject_reasons: ["Pedido entregue conforme combinado"],
-        alternatives_available: false,
+        alternatives_available: false, alternatives: [],
         actions: [action("accept", "Aceitar solicitação"), action("reject", "Rejeitar solicitação")],
       }],
       ifood_cancellation_notice: "O cliente pediu cancelamento no iFood. Responda até 15:10.",

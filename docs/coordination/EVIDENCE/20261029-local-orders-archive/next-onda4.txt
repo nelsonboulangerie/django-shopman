@@ -1,0 +1,121 @@
+# ORDEM — 2026-10-20, turno 5: CRUD turbo, o que falta (frente 7) — coordenação DSH
+
+> Canal: este arquivo (next-onda4.md). Base: origin/main = 65b658d31.
+> Antes de começar: git fetch origin, git log --oneline -1 origin/main, gh pr list --state open.
+
+## Contexto (medido em 20/10 20:40 UTC, contra origin/main)
+
+Já está no main: kit de import/export genérico (#1895), Compras paginando/filtrando no servidor
+(#1900), criar/editar/duplicar das seis entidades, e toda a onda ARQUIVAR (#1944, #1945, #1946,
+#1947, #1948). Esta ordem cobre o que SOBRA da frente 7.
+
+Fora do seu alcance nesta ordem, porque outra coordenação tem agentes vivos lá:
+surfaces/orders-nuxt/**/customers/** (inclusive tabelão de clientes e o import/export de cliente),
+surfaces/production-nuxt/** (inclusive lote de receitas), shopman/backstage/api/recipe_book.py,
+shopman/shop/projections/catalog_context.py, shopman/shop/services/kds.py, packages/craftsman/**,
+packages/orderman/**, docs/plans/**. Precisou? Pare e escreva no relatório ao dono.
+
+## Regras comuns
+
+1. Uma fatia = um worktree = um branch = um PR. Esteira no mesmo turno: commit → push → PR →
+   gh pr merge <N>. Vermelho: causa lida no log.
+2. git add só arquivo nomeado; nunca git stash puro; scratchpad com nome único.
+3. Copy sem travessão; vocabulário de docs/reference/suite-vocabulary.md; "dispositivo" nunca
+   "aparelho"; arquivado se chama Arquivado (não "inativo").
+4. Desempenho é requisito: medir antes e depois (Server-Timing + contagem de consultas, padrão de
+   shopman/backstage/tests/test_catalog_server_list.py) e pôr o número no PR. Teste que reprova se
+   a consulta crescer com as linhas.
+5. Toda tela: D1 a D12 item a item, capturas antes/depois claro/escuro com nome único, prévia em
+   navegador de verdade sem 4xx/5xx.
+6. Migração: o main já tem 0104 (fichas na hora). Se precisar de migração em shop, comece em 0105,
+   e rode ls <app>/migrations | sed 's/_.*//' | sort | uniq -d antes do push.
+7. Registro: linha no docs/coordination/BOARD.md e ROUNDS/<id>-<slug>.md por frente.
+
+## Checklist D1 a D12 (item a item no PR)
+
+D1 cartão de topo outline, cartão dentro de cartão soft sem borda, selo soft · D2 cards sem
+cabeçalho/rodapé destacado · D3 botões do conjunto mínimo, conteúdo centrado, sem esticar ·
+D4 borda a borda · D5 peças irmãs de altura igual · D6 rótulo completo, depois curto, depois ícone
+com aria e tooltip · D7 campo não maior que botão · D8 ação na cor do aviso, aviso acionável e
+dispensável · D9 ajuste inline com Aplicar/Cancelar, escolha fora em modal, destruir = confirmar +
+Desfazer · D10 copy da casa · D11 Nuxt UI canônico · D12 abrir as próprias capturas.
+
+Conjunto mínimo do kit: selo SEM variant escrito (o tema dá soft); em orders-nuxt o teto de
+badgeVariant é zero. Foi o que derrubou a #1931 e a #1948.
+
+---
+
+# Frente 1 — Produto: os vínculos que só o Admin edita  [maior valor, primeiro]
+
+**Tamanho:** M/G. **Branch:** codex/produto-vinculos.
+
+Hoje o painel do produto diz, no cabeçalho: "Fora do escopo (segue no Admin): componentes de
+bundle, coleções e listings" (surfaces/orders-nuxt/app/components/CatalogProductPanel.vue:11).
+
+1. **Listings por produto**: para cada superfície (Channel de venda), mostrar e editar preço,
+   quantidade mínima, publicado e vendável. O caminho de gravação já existe e não se duplica:
+   POST /api/v1/backstage/catalog/cell/ (uma célula, com intenção e revisão) e catalog/cells/
+   (lote). Nada de PATCH novo por campo; reuse a intenção, a revisão e o recibo.
+2. **Coleções do produto**: incluir/retirar, marcar a primária e ordenar, com o mesmo rigor
+   (coleção é curadoria: salvar coleção não publica em canal).
+3. Tudo dentro de um bloco "Vínculos" no painel, com o editor inline (D9) e o aviso de que a
+   mudança vale por canal. ID técnico só em detalhe recolhido.
+4. Testes de API (intenção/revisão/conflito), teste de componente, D1 a D12, capturas.
+
+# Frente 2 — Preço com vigência, visível e filtrável por data
+
+**Tamanho:** M. **Branch:** codex/preco-vigencia.
+
+Listing.valid_from/valid_until existem no modelo e não aparecem em lugar nenhum do Gestor.
+1. Levar valid_from/valid_until à projeção da matriz e ao tipo do contrato (regenerar com
+   shopman/backstage/management/commands/export_orders_schema.py se o contrato do Gestor mudar).
+2. Mostrar a vigência na linha/célula (selo "Vale de … até …" só quando houver) e permitir filtrar
+   por data com os atalhos de período do kit (OperatorFilterPanel periodPresets).
+3. Lista sensível a data abre ordenada e filtrada pela data, como o §7.2 pede.
+4. Teste de projeção + teste de filtro + contagem de consultas; capturas.
+
+# Frente 3 — Tabelão de insumos: colar planilha, desfazer, salvar em lote
+
+**Tamanho:** M. **Branch:** codex/tabelao-insumos.
+
+O kit já tem a grade (operator-kit/app/composables/useGridEdit.ts + presentation/gridEdit.ts,
+usada hoje só no CatalogBulkGrid do catálogo). costs.vue salva em lote e não cola nem desfaz.
+1. Ligar a grade ao custo/mínimo de insumo: colar TSV/CSV, desfazer uma a uma, salvar tudo numa ida
+   no endpoint de lote que já existe (purchase/costs/batch/ e purchase/materials/min-stock/).
+2. Erro por linha antes de gravar; nada de N PATCHes.
+3. Teste de componente + teste de que o salvamento é uma transação; capturas.
+
+# Frente 4 — Lote em fornecedores
+
+**Tamanho:** S. **Branch:** codex/lote-fornecedores.
+
+OperatorBulkBar na lista de fornecedores com arquivar/desarquivar (is_active) em endpoint de lote
+numa ida, com confirmação e Desfazer (OperatorTimedButton) e auditoria. Texto: "Arquivar",
+"Arquivado", "Desarquivar". Teste de componente + lote em transação; capturas.
+
+# Frente 5 — Import/export ligado a insumo e fornecedor
+
+**Tamanho:** M. **Branch:** codex/import-export-base.
+
+O kit já tem OperatorCsvImport/OperatorCsvExportButton e a regra pt-BR (vírgula decimal). Hoje só o
+catálogo usa.
+1. Backend: prévia e aplicação para Material e Supplier, no molde do
+   POST /api/v1/backstage/catalog/product/import/ (prévia sem gravar, revisão, erro por linha,
+   idempotência).
+2. Telas de Compras usam as peças do kit, e o import antigo de cada app morre se existir.
+3. Teste de prévia/aplicação/erro por linha no backend; teste de componente; capturas.
+
+# Frente 6 — Componentes de combo no painel do produto
+
+**Tamanho:** M. **Branch:** codex/produto-combo.
+
+Produto composto (ProductComponent: componente + quantidade) editável no painel, com busca de
+produto, validação de ciclo e aviso de impacto no estoque. Reuse o caminho canônico de gravação do
+detalhe do produto (não crie fluxo paralelo). Testes + capturas.
+
+## Ordem e por quê
+
+1 e 2 primeiro: é o que corrige o catálogo do Dia 1 (B5), que é pré-requisito da carga.
+3 e 4 em seguida: Compras é onde o gerente passa o dia.
+5 depois: o kit já está pronto, só falta ligar.
+6 por último: depende do mesmo painel da frente 1.

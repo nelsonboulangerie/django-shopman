@@ -1,7 +1,7 @@
 """A comanda virtual da edição de encomenda — a tela de venda do PDV em modo edição.
 
 Decisão do dono (28/09/2026): o editor de itens É a própria tela de venda
-(carrinho, grade, F7 recebimento, F8 data, cliente), não um editor novo. Para a
+(carrinho, grade, F7 data, F8 recebimento, cliente), não um editor novo. Para a
 tela funcionar como funciona — autosave, prévia de taxa, chips de recebimento e
 data —, ela precisa de uma sessão aberta; esta é ela.
 
@@ -101,6 +101,7 @@ def open_edit_session(order, *, channel_ref: str, actor: str, operator_username:
         # que já estava volta com o peso e o preço VENDIDOS, e só a nova se resolve.
         pinned = pin_kept_lines(order, payload)
         weighed_sale.apply_to_payload(payload, channel=channel, skip_line_ids=pinned)
+        pos_service._stamp_discounts_left_to_the_save(payload)
         ops = pos_service._replace_session_ops(session, payload, operator_username)
         ops.append({"op": "set_data", "path": DATA_KEY, "value": edit_info(session)})
         session_service.modify_session(
@@ -121,7 +122,7 @@ def cart_payload(order) -> dict:
     Os itens são os VIGENTES (``order_composition``), com o ``line_id`` do pedido
     — é por ele que a edição reconhece "o que já estava" e mantém o preço
     vendido. A taxa de entrega não entra como item: na tela ela sai do
-    recebimento (F7), como na venda.
+    recebimento (F8), como na venda.
     """
     from shopman.shop.services import order_composition
     from shopman.shop.services.order_helpers import json_quantity
@@ -371,7 +372,7 @@ def _piece_value_q(order, line: dict) -> int:
     return int(monetary_mult(Decimal(str(line.get("qty") or 0)), int(line.get("unit_price_q") or 0)))
 
 
-def _schedule_refusal(payload: dict) -> str:
+def schedule_refusal(payload: dict) -> str:
     """A frase com que a régua da venda (``pos._validate_schedule``) recusa a data — ou ""."""
     from shopman.shop.services import pos as pos_service
 
@@ -395,23 +396,23 @@ def _fit_schedule(payload: dict) -> str:
     from shopman.shop.services import preorder_dates
     from shopman.shop.services.pos_intent import PosIntentError
 
-    reason = _schedule_refusal(payload)
+    reason = schedule_refusal(payload)
     if not reason:
         return ""
     if payload.get("delivery_time_slot") and payload.get("delivery_date"):
-        if not _schedule_refusal({**payload, "delivery_time_slot": ""}):
+        if not schedule_refusal({**payload, "delivery_time_slot": ""}):
             payload["delivery_time_slot"] = ""
-            return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F8)."
+            return f"{reason} A comanda veio sem horário: confirme a janela com o cliente (F7)."
     today = timezone.localdate()
     for offset in range(preorder_dates.max_preorder_days() + 1):
         day = today + timedelta(days=offset)
-        if _schedule_refusal({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""}):
+        if schedule_refusal({**payload, "delivery_date": day.isoformat(), "delivery_time_slot": ""}):
             continue
         payload["delivery_date"] = day.isoformat()
         payload["delivery_time_slot"] = ""
         return (
             f"{reason} A comanda veio para {day.strftime('%d/%m')}, sem horário: "
-            "confirme a data com o cliente (F8)."
+            "confirme a data com o cliente (F7)."
         )
     raise PosIntentError(
         code="no_preorder_date",

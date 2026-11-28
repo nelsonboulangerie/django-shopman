@@ -1,0 +1,79 @@
+# Auditoria por script da prévia #2778/#2815 (PDV de verdade: Django semeado + PDV compilado, a Caixa com PIN)
+# Para cada captura: transbordo lateral, contraste mínimo de texto ativo, letras usadas, textos com problema
+# (contraste < 4,5, cortado, fora da tela ou coberto), o foco (quem, à vista, com anel) e os dois cartões
+# Retirada/Entrega (papel, aria-checked, altura, topo, borda, fundo, miolo do rádio).
+# O dia escolhido do grupo de dias do kit (Amanhã, 4,35:1) aparece à parte: é igual no antes e no depois.
+
+==================== DEPOIS ====================
+CLIENTE depois: F6, telefone, seta e Enter; 11 Tab até o Concluir
+FOCO depois chegando na data, no dia: OK (radio "Hoje, Qui 19/11")
+FOCO depois escolhido o horário, no Continuar: OK (button "Continuar")
+AUDITORIA depois foco no Continuar | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [('Amanhã', 4.35)] | foco ('button "Continuar"', 'à vista', 'com anel')
+FOCO depois chegando no recebimento, na Retirada: OK (radio "Retirada")
+AUDITORIA depois recebimento sem escolha | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "Retirada"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 130, topo 359, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 130, topo 359, borda rgb(222, 201, 187), fundo rgb(246, 239, 231), miolo vazio
+FOCO depois escolhida a Retirada, em Montar encomenda: OK (button "Montar encomenda")
+AUDITORIA depois retirada escolhida | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('button "Montar encomenda"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked true, altura 130, topo 359, borda rgb(139, 107, 46), fundo rgb(241, 232, 221), miolo rgb(139, 107, 46)
+    Entrega: papel radio, aria-checked false, altura 130, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+FOCO depois escolhida a Entrega, no endereço padrão: OK (radio "Rua Belo Horizonte, 540, Apto 12")
+FOCO depois de volta ao recebimento, na Entrega marcada: OK (radio "Entrega")
+AUDITORIA depois entrega escolhida | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "Entrega"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 130, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked true, altura 130, topo 359, borda rgb(139, 107, 46), fundo rgb(241, 232, 221), miolo rgb(139, 107, 46)
+FOCO depois de novo a Retirada, em Montar encomenda: OK (button "Montar encomenda")
+CLIENTE depois: F6, telefone, seta e Enter; 11 Tab até o Concluir
+FOCO depois chegando na data, no dia: OK (radio "Hoje, Qui 19/11")
+FOCO depois escolhido o horário, no Continuar: OK (button "Continuar")
+AUDITORIA depois foco no Continuar | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [('Amanhã', 4.35)] | foco ('button "Continuar"', 'à vista', 'com anel')
+FOCO depois chegando no recebimento, na Retirada: OK (radio "Retirada")
+AUDITORIA depois recebimento sem escolha | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "Retirada"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 90, topo 345, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 90, topo 345, borda rgb(193, 172, 159), fundo rgb(246, 235, 226), miolo vazio
+FOCO depois escolhida a Retirada, em Montar encomenda: OK (button "Montar encomenda")
+AUDITORIA depois retirada escolhida | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('button "Montar encomenda"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked true, altura 90, topo 345, borda rgb(139, 107, 46), fundo rgb(241, 232, 221), miolo rgb(139, 107, 46)
+    Entrega: papel radio, aria-checked false, altura 90, topo 345, borda rgb(193, 172, 159), fundo rgb(249, 238, 231), miolo vazio
+FOCO depois escolhida a Entrega, no endereço padrão: OK (radio "Rua Belo Horizonte, 540, Apto 12")
+FOCO depois de volta ao recebimento, na Entrega marcada: OK (radio "Entrega")
+AUDITORIA depois entrega escolhida | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "Entrega"', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 90, topo 345, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked true, altura 90, topo 345, borda rgb(139, 107, 46), fundo rgb(241, 232, 221), miolo rgb(139, 107, 46)
+FOCO depois de novo a Retirada, em Montar encomenda: OK (button "Montar encomenda")
+
+==================== ANTES ====================
+CLIENTE antes: F6, telefone, seta e Enter; 11 Tab até o Concluir
+FOCO antes chegando na data, no dia: NÃO (div "Para quando?Escolha o dia e o horário: é o que a casa promet")
+FOCO antes escolhido o horário, no Continuar: NÃO (button "A partir das 9h")
+AUDITORIA antes foco no Continuar | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [('Amanhã', 4.35)] | foco ('button "A partir das 9h"', 'à vista', 'com anel')
+FOCO antes chegando no recebimento, na Retirada: OK (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes recebimento sem escolha | 375 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 68, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 68, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+FOCO antes escolhida a Retirada, em Montar encomenda: NÃO (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes retirada escolhida | 375 px | overflowX 0 | contraste mínimo 4.35 | letras [12, 14, 16, 20] | problemas 1 [('Retirada', 4.35)] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked true, altura 68, topo 359, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 68, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+FOCO antes escolhida a Entrega, no endereço padrão: OK (radio "Rua Belo Horizonte, 540, Apto 12")
+FOCO antes de volta ao recebimento, na Entrega marcada: NÃO (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes entrega escolhida | 375 px | overflowX 0 | contraste mínimo 4.35 | letras [12, 14, 16, 20] | problemas 1 [('Entrega', 4.35)] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 68, topo 359, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked true, altura 68, topo 359, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio
+CLIENTE antes: F6, telefone, seta e Enter; 11 Tab até o Concluir
+FOCO antes chegando na data, no dia: NÃO (div "Para quando?Escolha o dia e o horário: é o que a casa promet")
+FOCO antes escolhido o horário, no Continuar: NÃO (button "A partir das 9h")
+AUDITORIA antes foco no Continuar | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [('Amanhã', 4.35)] | foco ('button "A partir das 9h"', 'à vista', 'com anel')
+FOCO antes chegando no recebimento, na Retirada: OK (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes recebimento sem escolha | 1366 px | overflowX 0 | contraste mínimo 4.62 | letras [12, 14, 16, 20] | problemas 0 [] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 52, topo 345, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 52, topo 345, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+FOCO antes escolhida a Retirada, em Montar encomenda: NÃO (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes retirada escolhida | 1366 px | overflowX 0 | contraste mínimo 4.35 | letras [12, 14, 16, 20] | problemas 1 [('Retirada', 4.35)] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked true, altura 52, topo 345, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio
+    Entrega: papel radio, aria-checked false, altura 52, topo 345, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+FOCO antes escolhida a Entrega, no endereço padrão: OK (radio "Rua Belo Horizonte, 540, Apto 12")
+FOCO antes de volta ao recebimento, na Entrega marcada: NÃO (radio "RetiradaO cliente retira no balcão.")
+AUDITORIA antes entrega escolhida | 1366 px | overflowX 0 | contraste mínimo 4.35 | letras [12, 14, 16, 20] | problemas 1 [('Entrega', 4.35)] | grupo de dias do kit [] | foco ('radio "RetiradaO cliente retira no balcão."', 'à vista', 'com anel')
+    Retirada: papel radio, aria-checked false, altura 52, topo 345, borda rgb(222, 201, 187), fundo rgb(252, 246, 241), miolo vazio
+    Entrega: papel radio, aria-checked true, altura 52, topo 345, borda rgb(139, 107, 46), fundo rgb(246, 239, 231), miolo vazio

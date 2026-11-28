@@ -377,7 +377,7 @@ describe("AnnouncementCard", () => {
     // O aviso mora junto da escolha de hora, que é onde ele serve. O envio continua
     // abrindo em Imediato: quem decide é o gestor, a tela só conta o fato.
     expect(wrapper.text()).toContain(
-      "O WhatsApp está em silêncio das 20:00 às 08:00",
+      "O WhatsApp está em silêncio das 20h às 8h",
     );
     expect(
       (wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement)
@@ -438,7 +438,7 @@ describe("AnnouncementCard", () => {
         .disabled,
     ).toBe(true);
     expect(wrapper.text()).toContain(
-      "WhatsApp está em silêncio das 20:00 às 08:00",
+      "WhatsApp está em silêncio das 20h às 8h",
     );
 
     await wrapper.get("[data-testid=delivery-scheduled]").trigger("click");
@@ -866,6 +866,86 @@ describe("AnnouncementCard — decisão montada pela página", () => {
     expect(card.canContinue).toBe(true);
     card.continueDecision();
     expect(wrapper.emitted("approve")![0]![2]).toBe("scheduled");
+  });
+
+  it("silêncio que passa do prazo: diz a saída (tirar o WhatsApp) e ela destrava o agora (ge:MKT-07)", async () => {
+    vi.setSystemTime(new Date("2026-07-18T10:21:00Z")); // 07:21 no relógio da loja.
+    const wrapper = mountCard(
+      makeAnnouncement({
+        platforms: ["instagram", "whatsapp"],
+        expires_at: "2026-07-18T07:45:00-03:00",
+      }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { decisionInPage: true },
+    );
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe(
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Tire o WhatsApp para postar agora.",
+    );
+    const alert = wrapper.get("[data-quiet-outlasts-deadline]");
+    const remove = alert.findAll("button").find((button) => button.text() === "Tirar o WhatsApp");
+    await remove!.trigger("click");
+    expect(card.canContinue).toBe(true);
+    card.continueDecision();
+    const [, edits, mode] = wrapper.emitted("approve")![0]! as [number, { platforms: string[] }, string];
+    expect(mode).toBe("now");
+    expect(edits.platforms).toEqual(["instagram"]);
+  });
+
+  it("silêncio que passa do prazo com só o WhatsApp: a saída é outra plataforma, não tirá-lo (ge:MKT-07)", () => {
+    vi.setSystemTime(new Date("2026-07-18T10:21:00Z")); // 07:21 no relógio da loja.
+    const wrapper = mountCard(
+      makeAnnouncement({
+        platforms: ["whatsapp"],
+        expires_at: "2026-07-18T07:45:00-03:00",
+      }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      false,
+      { decisionInPage: true },
+    );
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe(
+      "O WhatsApp só envia a partir das 8h e este anúncio vence às 7h45. Escolha outra plataforma para postar agora.",
+    );
+    const alert = wrapper.get("[data-quiet-outlasts-deadline]");
+    expect(alert.findAll("button").some((button) => button.text() === "Tirar o WhatsApp")).toBe(false);
+  });
+
+  it("o nome da plataforma é rótulo da chave: a linha inteira é alvo de toque (ge:MKT-26)", () => {
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["instagram"] }));
+    const row = wrapper.get('[data-review-platform="whatsapp"]');
+    const label = row.get("[data-review-platform-label]");
+    const control = row.get('[role="switch"]');
+    expect(label.attributes("for")).toBe("review-platform-7-whatsapp");
+    expect(control.attributes("id")).toBe("review-platform-7-whatsapp");
+  });
+
+  it("sem a capacidade de aprovar, Recusar e Continuar ficam travados com o motivo (ge:MKT-03)", async () => {
+    const reason = "Seu perfil não aprova anúncios. Peça a quem aprova.";
+    const wrapper = mountCard(makeAnnouncement(), "", "America/Sao_Paulo", false, false, {
+      rejectBlockedReason: reason,
+      proceedBlockedReason: reason,
+    });
+    const card = wrapper.vm as unknown as Exposed;
+
+    expect(wrapper.get("[data-review-badge]").text()).toBe("Aguarda quem aprova");
+    expect(card.canContinue).toBe(false);
+    expect(card.continueBlockedReason).toBe(reason);
+    const reject = wrapper.get("[data-review-actions]").findAll("button")[0]!;
+    expect(reject.attributes("disabled")).toBeDefined();
+    card.askToReject();
+    card.continueDecision();
+    expect(wrapper.emitted("reject")).toBeFalsy();
+    expect(wrapper.emitted("approve")).toBeFalsy();
   });
 });
 

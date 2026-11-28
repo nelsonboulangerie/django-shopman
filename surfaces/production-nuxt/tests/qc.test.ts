@@ -15,8 +15,15 @@ import {
   ovenAnchor,
   pendingQuestions,
   reportedTotal,
-  typeBackspace,
-  typeDigit,
+  backspaceQuantityText,
+  formatQcQuantity,
+  isCountUnit,
+  parseQuantityText,
+  quantityDecimals,
+  quantityText,
+  roundQuantity,
+  typeQuantityKey,
+  yieldReasons,
 } from "../app/presentation/qc";
 import type { QCGradeProjection } from "../app/types/production";
 
@@ -78,7 +85,7 @@ describe("a escala", () => {
   });
 });
 
-describe("a âncora do fechamento (o que entrou no forno É o previsto daqui)", () => {
+describe("a âncora da finalização (o que entrou no forno É o previsto daqui)", () => {
   it("sem started, o planejado ancora sozinho", () => {
     expect(ovenAnchor(10, null)).toEqual({ anchor: 10 });
   });
@@ -221,12 +228,81 @@ describe("o payload da partição (contrato do finish)", () => {
 
 describe("entrada tipo calculadora", () => {
   it("primeiro dígito sobre valor pré-preenchido substitui", () => {
-    expect(typeDigit(40, "3", true)).toBe(3);
-    expect(typeDigit(3, "8", false)).toBe(38);
+    expect(typeQuantityKey("40", "3", true, 0)).toEqual({ ok: true, text: "3" });
+    expect(typeQuantityKey("3", "8", false, 0)).toEqual({ ok: true, text: "38" });
+    expect(typeQuantityKey("0", "5", false, 0)).toEqual({ ok: true, text: "5" });
   });
 
-  it("backspace apaga um dígito; o último vira zero", () => {
-    expect(typeBackspace(38)).toBe(3);
-    expect(typeBackspace(3)).toBe(0);
+  it("backspace apaga um caractere; o último vira zero", () => {
+    expect(backspaceQuantityText("38")).toBe("3");
+    expect(backspaceQuantityText("3")).toBe("0");
+    expect(backspaceQuantityText("2,5")).toBe("2,");
+  });
+
+  it("o teto não corta calado: devolve o motivo para a tela dizer", () => {
+    expect(typeQuantityKey("999", "9", false, 0)).toEqual({ ok: true, text: "9999" });
+    expect(typeQuantityKey("9999", "1", false, 0)).toEqual({ ok: false, reason: "max" });
+  });
+});
+
+describe("a unidade do lote (P1-22)", () => {
+  it("peça é inteira; peso aceita vírgula", () => {
+    expect(isCountUnit("un")).toBe(true);
+    expect(isCountUnit("")).toBe(true);
+    expect(isCountUnit("kg")).toBe(false);
+    expect(quantityDecimals("un")).toBe(0);
+    expect(quantityDecimals("kg")).toBe(3);
+  });
+
+  it("digita 2,35 kg com vírgula, uma vez só e até três casas", () => {
+    let text = "0";
+    for (const key of ["2", ",", "3", "5"]) {
+      const result = typeQuantityKey(text, key, text === "0", 3);
+      expect(result.ok).toBe(true);
+      if (result.ok) text = result.text;
+    }
+    expect(text).toBe("2,35");
+    expect(parseQuantityText(text)).toBe(2.35);
+    expect(typeQuantityKey("2,35", ",", false, 3)).toEqual({ ok: true, text: "2,35" });
+    expect(typeQuantityKey("2,355", "1", false, 3)).toEqual({ ok: false, reason: "decimals" });
+    expect(typeQuantityKey("0", ",", true, 3)).toEqual({ ok: true, text: "0," });
+  });
+
+  it("vírgula em lote de peça é recusada", () => {
+    expect(typeQuantityKey("3", ",", false, 0)).toEqual({ ok: false, reason: "no_decimal" });
+  });
+
+  it("escreve a quantidade com a unidade, sem converter a escala", () => {
+    expect(formatQcQuantity(26, "un")).toBe("26 un.");
+    expect(formatQcQuantity(2.5, "kg")).toBe("2,5 kg");
+    expect(formatQcQuantity(1230.77, "g")).toBe("1.230,77 g");
+    expect(quantityText(2.5)).toBe("2,5");
+    expect(roundQuantity(0.1 + 0.2)).toBe(0.3);
+  });
+});
+
+describe("motivos de rendeu menos e rendeu mais (P1-07)", () => {
+  it("cada lista diz uma causa, sem repetir e sem o Outro (que é da tela)", () => {
+    for (const kind of ["shortfall", "overshoot"] as const) {
+      for (const unit of ["un", "kg"]) {
+        const list = yieldReasons(kind, unit);
+        expect(list.length).toBe(3);
+        expect(new Set(list).size).toBe(list.length);
+        expect(list).not.toContain("Outro");
+        // A causa nunca repete a pergunta ("rendeu menos/mais"), e não se chama
+        // "perda": a folha já diz que a diferença é perda; o motivo diz a causa.
+        for (const reason of list) expect(reason).not.toMatch(/rendeu|^perda/i);
+      }
+    }
+  });
+
+  it("lote pesado não fala em peça", () => {
+    for (const kind of ["shortfall", "overshoot"] as const) {
+      for (const reason of yieldReasons(kind, "kg")) {
+        expect(reason).not.toMatch(/peça/i);
+      }
+    }
+    expect(yieldReasons("shortfall", "un")).toContain("Peças maiores que o padrão");
+    expect(yieldReasons("overshoot", "un")).toContain("Peças menores que o padrão");
   });
 });

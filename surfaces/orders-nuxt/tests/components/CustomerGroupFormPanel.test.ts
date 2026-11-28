@@ -91,6 +91,9 @@ describe("CustomerGroupFormPanel", () => {
     const wrapper = panel({ group });
     expect(wrapper.text()).toContain("A melhor vantagem vence");
     expect(wrapper.text()).toContain("Hoje você economizou R$ 12,50 por ser Aliança Francesa");
+    expect(wrapper.text()).toContain("Categoria do desconto");
+    expect(wrapper.text()).toContain("Nome usado nos relatórios para agrupar este desconto");
+    expect(wrapper.text()).not.toContain("Tipo para o B.I.");
   });
 
   it("cria o grupo com código estável e campos comerciais", async () => {
@@ -168,6 +171,40 @@ describe("CustomerGroupFormPanel", () => {
         { kind: "exclusive_notifications", isActive: true, priority: 0 },
       ],
     }));
+  });
+
+  it("mostra configuração somente para vantagens ativas", () => {
+    const wrapper = panel({ group });
+
+    expect(wrapper.find("[data-testid='customer-group-advantage-priority-free_shipping']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='customer-group-advantage-min-order']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='customer-group-advantage-priority-exclusive_notifications']").exists()).toBe(true);
+    expect(wrapper.find("[data-testid='customer-group-advantage-priority-exclusive_collections']").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Finos");
+    expect(wrapper.text()).not.toContain("Torneira");
+  });
+
+  it("preserva a configuração ao desligar e religar uma vantagem", async () => {
+    const wrapper = panel({ group });
+    const vm = wrapper.vm as unknown as {
+      advantages: Record<string, { isActive: boolean; priority: number; minOrderQ: string }>;
+    };
+
+    vm.advantages.free_shipping.isActive = false;
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find("[data-testid='customer-group-advantage-min-order']").exists()).toBe(false);
+    expect(wrapper.find("[data-testid='customer-group-advantage-priority-free_shipping']").exists()).toBe(false);
+    await wrapper.get("[data-testid='customer-group-submit']").trigger("click");
+    expect(wrapper.emitted("save")?.[0]?.[0]).toEqual(expect.objectContaining({
+      advantages: expect.arrayContaining([
+        { kind: "free_shipping", isActive: false, priority: 3, minOrderQ: "80,00" },
+      ]),
+    }));
+
+    vm.advantages.free_shipping.isActive = true;
+    await wrapper.vm.$nextTick();
+    expect((wrapper.get("[data-testid='customer-group-advantage-min-order']").element as HTMLInputElement).value).toBe("80,00");
+    expect((wrapper.get("[data-testid='customer-group-advantage-priority-free_shipping']").element as HTMLInputElement).value).toBe("3");
   });
 
   it("cria com as vantagens desligadas e nenhuma coleção marcada", async () => {

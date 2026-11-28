@@ -16,17 +16,19 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def order():
     customer.create(ref="RECOVERY-CUSTOMER", first_name="", phone="+5543999990019")
+    data = {
+        "customer": {"name": "Ana", "phone": "+5543999990019"},
+        "fulfillment_type": "delivery",
+        "delivery_address": "Rua Sintética, 19",
+        "address_label": {"key": "home", "custom": ""},
+        "payment": {"method": "cash"},
+        "save_as_default": True,
+    }
     return Order.objects.create(
         ref="RECOVERY-ORDER",
         channel_ref="web",
-        data={
-            "customer": {"name": "Ana", "phone": "+5543999990019"},
-            "fulfillment_type": "delivery",
-            "delivery_address": "Rua Sintética, 19",
-            "address_label": {"key": "home", "custom": ""},
-            "payment": {"method": "cash"},
-            "save_as_default": True,
-        },
+        data=data,
+        snapshot={"data": data},
     )
 
 
@@ -97,6 +99,18 @@ def test_new_address_is_remembered_by_canonical_defaults_without_retyping(order)
     defaults = CheckoutDefaultsService.get_defaults("RECOVERY-CUSTOMER", "web")
     assert str(defaults["delivery_address_id"]) == str(saved[0].pk)
     assert Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE).exclude(status="done").count() == 0
+
+
+def test_replay_recreates_directives_missing_after_the_order_was_sealed(order):
+    assert not Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE).exists()
+
+    assert checkout.recover_post_commit_side_effects(order.ref) == []
+
+    assert Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE).count() == 3
+    assert not Directive.objects.filter(topic=directives.CHECKOUT_CONVENIENCE).exclude(status="done").exists()
+    assert customer.get_by_phone("+5543999990019").first_name == "Ana"
+    assert len(address.addresses("RECOVERY-CUSTOMER")) == 1
+    assert CheckoutDefaultsService.get_defaults("RECOVERY-CUSTOMER", "web")["payment_method"] == "cash"
 
 
 def test_address_failure_defers_dependent_defaults_and_recovers_only_missing_effects(order):

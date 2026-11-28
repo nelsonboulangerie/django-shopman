@@ -78,7 +78,7 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
         logger.debug("dietary_from_recipe: %s is a bundle; skipping.", product.sku)
         return False
 
-    if not _is_auto_filled(product):
+    if not recipe_may_overwrite_dietary_attributes(product):
         logger.info(
             "dietary_from_recipe: %s tem valor escrito pelo gestor "
             "(source=manual); não sobrescreve.", product.sku,
@@ -112,7 +112,7 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
         return False
 
     allergens = _union_allergens(profiles)
-    dietary_info = _derive_dietary_info(profiles, allergens)
+    dietary_info = derive_recipe_dietary_claims(profiles, allergens)
 
     from shopman.shop.services import attributes
 
@@ -177,7 +177,7 @@ def dietary_profiles_for_items(items) -> tuple[list[IngredientDietary], list[str
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _is_auto_filled(product) -> bool:
+def recipe_may_overwrite_dietary_attributes(product) -> bool:
     """Se a ficha técnica pode sobrescrever o que está gravado.
 
     Era o sentinela `metadata["dietary_auto_filled"]`; agora é a **proveniência
@@ -205,7 +205,7 @@ def _union_allergens(profiles: list[IngredientDietary]) -> list[str]:
     return seen
 
 
-def _derive_dietary_info(
+def derive_recipe_dietary_claims(
     profiles: list[IngredientDietary], allergens: list[str]
 ) -> list[str]:
     """O que a FÓRMULA permite afirmar — nunca o que o ambiente não garante.

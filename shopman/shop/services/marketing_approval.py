@@ -170,14 +170,29 @@ def approve_command(
                 next_allowed = base_window.next_allowed_at
                 raise RejectCommand(
                     code=("scheduled_in_quiet_hours" if normalized_publish_at is not None else "quiet_hours_active"),
-                    detail=("O WhatsApp fica em silêncio das 20:00 às 08:00. Escolha o próximo horário permitido."),
+                    detail=("O WhatsApp fica em silêncio das 20h às 8h. Escolha o próximo horário permitido."),
                     outcome={
                         "next_allowed_at": next_allowed.isoformat() if next_allowed else "",
                         "publish_timezone": effective_timezone,
                     },
                     field_errors={
-                        "publish_at": ("Escolha um horário entre 08:00 e 20:00.",),
+                        "publish_at": ("Escolha um horário entre 8h e 20h.",),
                     },
+                )
+
+        from shopman.shop.services import campaign_exclusivity
+        from shopman.shop.services.marketing_capabilities import platform_kind
+
+        public = [p for p in safe_platforms if platform_kind(p) == "publication"]
+        if public:
+            # Aviso exclusivo de grupo publicado no mural deixa de ser exclusivo. O CRUD
+            # já recusa o par; aqui fecha a porta para a exclusividade gravada depois e
+            # para a herdada de campanha apagada.
+            if campaign_exclusivity.for_announcement(announcement).is_exclusive:
+                raise RejectCommand(
+                    code="exclusive_campaign_public_post",
+                    detail="Campanha exclusiva de grupo sai só pelo WhatsApp. Desligue as postagens públicas.",
+                    field_errors={"platforms": tuple(public)},
                 )
 
         from shopman.shop.services import marketing_facts
@@ -230,7 +245,9 @@ def approve_command(
                 ) from exc
         rules = _audience_rules(announcement)
         sku = str((announcement.trigger_context or {}).get("sku") or "")
-        resolution = audience_service.resolve(rules, sku=sku, now=now)
+        resolution = audience_service.resolve(
+            rules, sku=sku, now=now, announcement=announcement
+        )
         if resolution.degraded_sources:
             raise RejectCommand(
                 code="audience_degraded",
@@ -418,7 +435,7 @@ def approve_command(
                 detail="Uma etapa do WhatsApp cairia no período de silêncio.",
                 outcome={"quiet_wave_count": len(quiet_rows)},
                 field_errors={
-                    "publish_at": ("Antecipe o horário para concluir antes das 20:00.",),
+                    "publish_at": ("Antecipe o horário para concluir antes das 20h.",),
                 },
             )
 
@@ -768,4 +785,16 @@ def _validate_content(
             code="invalid_platform_content",
             detail="Cada variante de plataforma deve ser um objeto.",
             field_errors={"platform_content": ("Revise as variantes.",)},
+        )
+    # Conteúdo público nunca sai com link relativo ("/produto/KUP" não abre fora da
+    # loja). O rascunho nasce assim quando falta o endereço do site; a aprovação recusa.
+    from shopman.shop.policies.marketing_public_link import public_link_problem
+    from shopman.shop.services.storefront_links import storefront_base_url
+
+    problem = public_link_problem(
+        content, platform_content, store_address_configured=bool(storefront_base_url())
+    )
+    if problem is not None:
+        raise MarketingContractError(
+            code=problem.code, detail=problem.detail, field_errors=problem.field_errors()
         )

@@ -2,7 +2,7 @@
 
 > Varredura verificada no código, no git e no spec LIVE do DigitalOcean. Não é
 > releitura de memória: cada linha abaixo saiu de um comando rodado hoje.
-> Complementa a [ALPHA-READINESS-AUDIT](../plans/ALPHA-READINESS-AUDIT.md), que
+> Complementa a [ALPHA-READINESS-AUDIT](../plans/completed/ALPHA-READINESS-AUDIT.md), que
 > continua factualmente correta — nada do que ela afirma envelheceu.
 
 ## Veredito

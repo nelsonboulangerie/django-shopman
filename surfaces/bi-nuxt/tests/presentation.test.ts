@@ -56,6 +56,8 @@ describe("presentation/bi", () => {
 
   it("quantidades e minutos trocam ponto por vírgula", () => {
     expect(formatQty("38.5")).toBe("38,5");
+    expect(formatQty("2178")).toBe("2.178");
+    expect(formatQty("159758.487")).toBe("159.758,487");
     expect(formatMinutes("23.5")).toBe("23,5 min");
   });
 
@@ -468,7 +470,7 @@ describe("presentation/bi — cenários com IA", () => {
   };
 
   it("o cabeçalho diz foco, quando e a janela que a IA viu", () => {
-    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{2}:\d{2} · janela 23\/07 a 19\/08$/);
+    expect(scenarioReportHeadline(report)).toMatch(/^Vendas · \d{2}\/\d{2} \d{1,2}h(\d{2})? · janela 23\/07 a 19\/08$/);
   });
 
   it("custo e latência ficam declarados; falha é falha, não cenário", () => {

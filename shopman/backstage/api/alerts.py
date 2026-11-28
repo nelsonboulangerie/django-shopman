@@ -219,3 +219,220 @@ class AlertAckView(APIView):
         if not ok:
             return Response({"detail": "Alerta não encontrado."}, status=404)
         return Response({"ok": True, "pk": pk})
+
+
+# ── "Vou verificar" da Concierge (WP-05) ──────────────────────────────
+
+_VERIFY_ALERT_TYPE = "concierge_verify"
+
+#: (status, frase do cartão) de cada desfecho de ``shopman.shop.concierge_verification``.
+_VERIFY_OUTCOMES = {
+    "not_found": (404, "Esta pergunta não está mais na conversa."),
+    "not_open": (409, "Esta pergunta já foi respondida ou assumida."),
+    "with_team": (409, "A conversa já está com a equipe. Continue por lá."),
+    "empty_answer": (422, "Escreva a resposta para o cliente."),
+    "answer_too_long": (422, "A resposta passou de {detail} caracteres. Encurte, ou assuma a conversa."),
+    "house_rule_held": (422, "A resposta não pode sair como está (regra da casa {detail}). Reescreva, ou assuma a conversa."),
+    "not_sent": (409, "A resposta não saiu pelo WhatsApp ({detail}). O texto continua aqui: tente de novo, ou assuma a conversa."),
+    "window_closed": (409, "A janela de 24 horas do WhatsApp fechou: a resposta não sai mais por aqui. Assuma a conversa."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+
+_VERIFY_ANSWER_REQUEST = inline_serializer(
+    name="ConciergeVerificationAnswerRequest",
+    fields={"text": serializers.CharField(allow_blank=True, max_length=2000)},
+)
+_VERIFY_RESPONSE = inline_serializer(
+    name="ConciergeVerificationResponse",
+    fields={"ok": serializers.BooleanField(), "pk": serializers.IntegerField(), "sent_text": serializers.CharField()},
+)
+
+
+def _verify_alert(request, pk: int):
+    """O cartão de verificação aberto que este operador pode ver; ``None`` senão."""
+    from shopman.backstage.models import OperatorAlert
+
+    return (
+        OperatorAlert.objects.filter(
+            pk=pk,
+            type=_VERIFY_ALERT_TYPE,
+            resolved_at__isnull=True,
+            audience__in=alert_service.visible_alert_audiences(request.user),
+        )
+        .only("pk")
+        .first()
+    )
+
+
+def _promote_href(pk: int) -> str:
+    from django.urls import reverse
+
+    return reverse("api-backstage-alert-concierge-verification-promote-faq", args=[pk])
+
+
+def _verify_response(pk: int, result) -> Response:
+    if result.ok and not result.code:
+        # Respondida: o mesmo cartão pode virar pergunta frequente (WP-15), pelo toast.
+        return Response({"ok": True, "pk": pk, "sent_text": result.sent_text, "promote_href": _promote_href(pk)})
+    code = result.code
+    if result.ok:
+        # Assumiu, mas o aviso ao cliente não saiu: a conversa já é da equipe.
+        return Response({"ok": True, "pk": pk, "sent_text": "", "warning": code, "detail": result.detail})
+    key = "window_closed" if code == "not_sent" and result.detail == "window_closed" else code
+    status, detail = _VERIFY_OUTCOMES.get(key, (409, "Não deu para concluir. Atualize os avisos."))
+    body = {"detail": detail.replace("{detail}", result.detail or code), "error": {"code": key}}
+    if status == 422:
+        body["field"] = "text"
+    if result.sent_text:
+        body["error"]["text"] = result.sent_text
+    return Response(body, status=status)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Answer the customer's question the Concierge asked the team",
+        request=_VERIFY_ANSWER_REQUEST,
+        responses={200: _VERIFY_RESPONSE},
+    ),
+)
+class ConciergeVerificationAnswerView(APIView):
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.shop import concierge_verification
+
+        if _verify_alert(request, pk) is None:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        text = str((request.data or {}).get("text") or "")
+        result = concierge_verification.answer(pk, text, actor=alert_service._actor_ref(request.user) or "operador")
+        return _verify_response(pk, result)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Take over the conversation the Concierge is verifying",
+        request=None,
+        responses={200: _VERIFY_RESPONSE},
+    ),
+)
+class ConciergeVerificationTakeOverView(APIView):
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.shop import concierge_verification
+
+        if _verify_alert(request, pk) is None:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.take_over(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        return _verify_response(pk, result)
+
+
+_HANDOFF_ALERT_TYPE = "concierge_handoff"
+_GIVE_BACK_OUTCOMES = {
+    "not_found": (404, "Esta conversa não está mais no aviso."),
+    "not_with_team": (409, "A conversa já voltou para a Concierge."),
+    "not_returned": (409, "Não deu para devolver a conversa agora. Tente de novo."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+_GIVE_BACK_RESPONSE = inline_serializer(
+    name="ConciergeHandoffGiveBackResponse",
+    fields={"ok": serializers.BooleanField(), "pk": serializers.IntegerField()},
+)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Give the conversation with the team back to the Concierge",
+        request=None,
+        responses={200: _GIVE_BACK_RESPONSE},
+    ),
+)
+class ConciergeHandoffGiveBackView(APIView):
+    """O "Devolver à Concierge" do cartão do handoff (#3578): a conversa com a equipe volta à Concierge,
+    e o cartão fecha. A mesma devolução do Admin."""
+
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop import concierge_verification
+
+        visible = OperatorAlert.objects.filter(
+            pk=pk, type=_HANDOFF_ALERT_TYPE, resolved_at__isnull=True,
+            audience__in=alert_service.visible_alert_audiences(request.user),
+        ).exists()
+        if not visible:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.give_back(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        if not result.ok:
+            status, detail = _GIVE_BACK_OUTCOMES.get(result.code, (409, "Não deu para concluir. Atualize os avisos."))
+            return Response({"detail": detail, "error": {"code": result.code}}, status=status)
+        return Response({"ok": True, "pk": pk})
+
+
+_PROMOTE_OUTCOMES = {
+    "not_found": (404, "Esta pergunta não está mais na conversa."),
+    "not_answered": (409, "Só a pergunta respondida vira pergunta frequente, e esta conversa já tem outra pergunta."),
+    "unavailable": (503, "A Concierge não está ligada nesta instalação."),
+}
+_PROMOTE_RESPONSE = inline_serializer(
+    name="ConciergeVerificationPromoteResponse",
+    fields={
+        "ok": serializers.BooleanField(),
+        "pk": serializers.IntegerField(),
+        "already": serializers.BooleanField(),
+        "admin_url": serializers.CharField(),
+        "warning": serializers.CharField(),
+    },
+)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Turn the answered Concierge question into an unpublished FAQ draft",
+        request=None,
+        responses={200: _PROMOTE_RESPONSE},
+    ),
+)
+class ConciergeVerificationPromoteView(APIView):
+    """O cartão respondido vira rascunho de pergunta frequente (WP-15). O cartão já
+    fechou com a resposta; quem o via ainda pode promovê-lo. Publicar é do Admin."""
+
+    permission_classes = [CanViewOperatorAlerts]
+
+    def post(self, request, pk: int):
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop import concierge_verification
+        from shopman.shop.models import FAQEntry
+
+        visible = OperatorAlert.objects.filter(
+            pk=pk, type=_VERIFY_ALERT_TYPE, audience__in=alert_service.visible_alert_audiences(request.user)
+        ).exists()
+        if not visible:
+            return Response({"detail": "Aviso não encontrado.", "error": {"code": "not_found"}}, status=404)
+        result = concierge_verification.promote_faq(pk, actor=alert_service._actor_ref(request.user) or "operador")
+        if not result.ok:
+            status, detail = _PROMOTE_OUTCOMES.get(result.code, (409, "Não deu para concluir. Atualize os avisos."))
+            return Response({"detail": detail, "error": {"code": result.code}}, status=status)
+        entry = FAQEntry.objects.filter(ref=result.detail).only("pk").first()
+        admin_url = _admin_change_url(entry.pk) if entry is not None else ""
+        return Response({
+            "ok": True,
+            "pk": pk,
+            "already": result.code == "already_promoted",
+            "admin_url": admin_url,
+            "warning": result.sent_text,
+        })
+
+
+def _admin_change_url(faq_pk: int) -> str:
+    """O rascunho no Admin, no host do Admin (o Gestor é outro app)."""
+    from django.conf import settings
+    from django.urls import reverse
+
+    host = str(getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip()
+    return f"https://{host}{reverse('admin:shop_faqentry_change', args=[faq_pk])}" if host else ""

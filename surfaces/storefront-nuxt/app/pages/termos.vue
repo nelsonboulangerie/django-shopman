@@ -14,9 +14,8 @@
 //      declarar que é maior de idade e aceitar ESTES termos (`presentation/auth.ts`), e
 //      o servidor carimba isso com IP e versão — mas o documento invocado não tinha a
 //      cláusula que ele materializava;
-//   2. o cancelamento: pedido JÁ PAGO não cancela sozinho, vira solicitação com
-//      protocolo para a loja (`services/cancellation_requests.py`). O texto dizia que
-//      bastava não ter entrado em preparo;
+//   2. o cancelamento seguia o que o código fazia na época (pedido pago virava
+//      solicitação com protocolo). Em 06/11/2026 o dono trocou a regra (abaixo);
 //   3. o iFood: pedido feito lá segue a política do iFood, e o cliente de lá nunca vê
 //      esta página. Dizer isso é mais honesto do que silenciar.
 //
@@ -27,6 +26,26 @@
 // pode conferir o vício e sanear, nunca negar troca/restituição; crédito só se o
 // cliente preferir. "De preferência no mesmo dia" é pedido, não prazo: o prazo legal
 // para reclamar de vício aparente em produto não durável é de 30 dias (art. 26, I).
+//
+// 23/10/2026, decisão do dono: item entregue LACRADO e intacto volta em 7 dias. O
+// art. 49 do CDC não tem exceção escrita para perecível (a da Lei 14.010/2020 venceu
+// em 30/10/2020); a leitura firmada, a mesma do iFood, aceita o arrependimento do
+// produto intacto. É também o que o Merchant Center declara como política de devolução.
+//
+// 06/11/2026, decisão do dono: "Se for antes [do preparo], cancelamos e
+// reembolsamos. Se for depois, o pedido não pode mais ser cancelado, e no máximo é
+// encaminhado para falar com gerente." Antes do preparo o cliente cancela sozinho na
+// tela, pago ou não, e o valor volta inteiro na hora pelo mesmo meio; a solicitação
+// com protocolo deixou de existir. Depois, não há cancelar: há falar com o
+// responsável (`policies/customer_cancellation.py`).
+//
+// 17 e 18/11/2026, decisão do dono (#2613): o pedido pago e não retirado. "Sim, só a
+// perda. Mas isso precisa estar amparado em algum documento do tipo Políticas
+// comerciais, Termos de serviço ou algo que o valha." A cláusula entra em "Retirada e
+// entrega" com o texto que ele aprovou, e o checkout da encomenda repete a mesma frase
+// antes de enviar (`finalizar.vue`; `tests/legalUnclaimedOrder.test.ts` reprova se uma
+// mudar sem a outra). A casa guarda até o fim do expediente do dia combinado; o corte é
+// no fechamento.
 import type { LegalProjection } from '~/types/shopman'
 
 const session = useShopSession()
@@ -136,6 +155,11 @@ useSeoMeta({
         do expediente do dia combinado.
       </p>
       <p>
+        <strong>Pedido não retirado até o fim do expediente do dia combinado:</strong> os itens de
+        revenda voltam inteiros; dos itens feitos para a encomenda, retemos até 40% do valor para
+        cobrir o custo de produção, e o restante volta pelo mesmo meio de pagamento.
+      </p>
+      <p>
         <strong>Entrega:</strong> a taxa depende do endereço e aparece no total antes de você
         confirmar. Endereço fora da área atendida é recusado no checkout, antes de qualquer cobrança.
       </p>
@@ -144,19 +168,21 @@ useSeoMeta({
     <LegalSection id="cancellation">
       <template #title>Cancelamento, troca e devolução</template>
       <p>
-        <strong>Pedido não pago:</strong> você cancela pela tela de acompanhamento, enquanto o botão
-        aparecer.
-      </p>
-      <p>
-        <strong>Pedido pago, antes do preparo:</strong> você pode desistir pela tela de
-        acompanhamento. A desistência vira uma solicitação com número de protocolo, {{ marca }}
-        responde pelo WhatsApp do pedido e devolve o valor inteiro. O dinheiro volta depois que a
-        loja confirma, para que a devolução não aconteça duas vezes.
+        <strong>Antes do preparo:</strong> você cancela na hora, pela tela de acompanhamento, pago
+        ou não. Se já pagou, o valor volta inteiro pelo mesmo meio de pagamento: o Pix para a mesma
+        conta, o cartão estornado na fatura no prazo do seu banco. Cartão só reservado tem a reserva
+        desfeita, e nada é cobrado.
       </p>
       <p>
         <strong>Depois que o preparo começa:</strong> o pedido é alimento perecível, feito para
-        você, e não volta para a prateleira. A partir daí não há desistência sem motivo; produto
-        com problema segue a regra abaixo.
+        você, e não volta para a prateleira. A partir daí ele não pode mais ser cancelado. Se algo
+        não está certo, a tela de acompanhamento oferece falar com o responsável pela casa, que
+        chama você pelo WhatsApp do pedido. Produto com problema segue a regra abaixo.
+      </p>
+      <p>
+        <strong>Item com a embalagem lacrada:</strong> se o lacre e a embalagem estiverem intactos,
+        você pode devolver o item na loja em até 7 dias do recebimento, sem custo, e o valor dele
+        volta inteiro. Embalagem aberta ou produto consumido não têm devolução sem motivo.
       </p>
       <p>
         <strong>Produto errado ou com problema:</strong> avise pelo WhatsApp do pedido, de

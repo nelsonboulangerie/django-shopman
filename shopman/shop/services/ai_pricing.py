@@ -27,7 +27,22 @@ LLM_PRICES = {
     "claude-sonnet-5-5": (2.00, 10.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-5-5": (4.00, 20.00),
+    # DeepSeek no formato Anthropic (api-docs.deepseek.com/quick_start/pricing, lida em
+    # 12/11/2026). Preço de PICO, o dobro do fora de pico: o teto de gasto erra para
+    # o lado seguro.
+    "deepseek-flash": (0.30, 1.20),
+    "deepseek-v4-pro": (1.32, 3.96),
 }
+
+
+def model_prices(model: str) -> tuple[float, float] | None:
+    """(entrada, saída) em US$/M da tabela pública, ou ``None``: custo desconhecido.
+
+    Preço de API é dado público de referência, não configuração da loja: mora aqui,
+    no código, e não na conexão. Modelo fora da tabela tem custo desconhecido, e o
+    teto de gasto dos placares o deixa de fora.
+    """
+    return LLM_PRICES.get(model)
 
 
 @dataclass
@@ -55,7 +70,7 @@ def usage_cost(model: str, usage: Mapping) -> float | None:
     conta zero. Modelo fora da tabela devolve ``None``: custo desconhecido não é
     custo zero.
     """
-    prices = LLM_PRICES.get(model)
+    prices = model_prices(model)
     if prices is None:
         return None
     price_in, price_out = prices

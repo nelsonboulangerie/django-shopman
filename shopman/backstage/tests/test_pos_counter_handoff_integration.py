@@ -18,6 +18,7 @@ from shopman.shop.directives import FISCAL_EMIT_NFCE
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
 from shopman.shop.services import pos as pos_service
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 POS_TRANSITIONS = {
     "new": ["accepted", "cancelled"],
@@ -40,7 +41,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -83,17 +84,20 @@ class CounterHandoffIntegrationTests(TestCase):
         # O lifecycle dispara via transaction.on_commit — dentro de TestCase a
         # transação nunca commita, então capturamos e executamos os callbacks,
         # que é exatamente o que produção faz no fim do request.
+        payload = {
+            "items": [{"sku": "PAO-FR", "name": "Pão Francês", "qty": 2, "unit_price_q": 100}],
+            "fulfillment_type": "pickup",
+            "payment_method": payment_method,
+            "payment_collection": "terminal",
+            "cash_shift_id": self.shift.pk,
+            "client_request_id": request_id,
+        }
+        review = pos_service.review_sale(channel_ref="pdv", payload=payload, operator_username="alice")
+        payload["expected_total_q"] = review.total_q
         with self.captureOnCommitCallbacks(execute=True):
             result = pos_service.close_sale(
                 channel_ref="pdv",
-                payload={
-                    "items": [{"sku": "PAO-FR", "name": "Pão Francês", "qty": 2, "unit_price_q": 100}],
-                    "fulfillment_type": "pickup",
-                    "payment_method": payment_method,
-                    "payment_collection": "terminal",
-                    "cash_shift_id": self.shift.pk,
-                    "client_request_id": request_id,
-                },
+                payload=payload,
                 actor="pos:alice",
                 operator_username="alice",
             )
@@ -127,7 +131,7 @@ class CounterHandoffIntegrationTests(TestCase):
         from shopman.backstage.models import KDSInstance, KDSTicket
 
         # A catch-all de picking que transformava pão vendido em ticket.
-        KDSInstance.objects.create(ref="encomendas", name="Encomendas", type="picking", is_active=True)
+        KDSInstance.objects.create(ref="picking", name="Separação", type="picking", is_active=True)
 
         result = self._close(payment_method="cash", request_id="counter-kds")
 

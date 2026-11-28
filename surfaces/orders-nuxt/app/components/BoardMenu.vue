@@ -20,6 +20,8 @@ const props = withDefaults(
     attentionPending: boolean;
     selecting: boolean;
     full?: boolean;
+    /** No Painel da mesa (D): a ordem mora aqui, não num botão do cabeçalho. */
+    sortInMenu?: boolean;
     canShowAll?: boolean;
     queueAvailable?: boolean;
     mode?: "dropdown" | "panel";
@@ -80,29 +82,7 @@ const items = computed(() => {
           },
         ]
       : []),
-    ...(!props.full
-      ? [
-          {
-            label:
-              props.viewMode === "board"
-                ? props.queueAvailable
-                  ? "Voltar à grade"
-                  : "Voltar à lista"
-                : "Ver em colunas",
-            icon: "i-lucide-columns-3",
-            kbds: ["V"],
-            onSelect: () =>
-              emit(
-                "view",
-                props.viewMode === "board"
-                  ? props.queueAvailable
-                    ? "queue"
-                    : "table"
-                  : "board",
-              ),
-          },
-        ]
-      : []),
+    // A visão (Fila · Painel · Tabela) é o seletor do cabeçalho; aqui só no `full`.
     {
       label: props.selecting ? EXIT_SELECTION_LABEL : "Selecionar pedidos",
       icon: "i-lucide-list-checks",
@@ -110,6 +90,15 @@ const items = computed(() => {
     },
   ];
 
+  const sortGroup = [
+    { type: "label" as const, label: "Ordenar" },
+    ...SORT_OPTIONS.map((option) => ({
+      label: option.label,
+      icon:
+        props.sort === option.key ? "i-lucide-check" : "i-lucide-arrow-up-down",
+      onSelect: () => emit("sort", option.key),
+    })),
+  ];
   const full = props.full
     ? [
         { type: "label" as const, label: "Ordenar" },
@@ -125,17 +114,17 @@ const items = computed(() => {
         ...(props.queueAvailable
           ? [
               {
-                label: "Grade",
+                label: "Fila",
                 icon:
                   props.viewMode === "queue"
                     ? "i-lucide-check"
-                    : "i-lucide-layout-grid",
+                    : "i-lucide-list-ordered",
                 onSelect: () => emit("view", "queue"),
               },
             ]
           : []),
         {
-          label: "Colunas",
+          label: "Painel",
           icon:
             props.viewMode === "board"
               ? "i-lucide-check"
@@ -143,17 +132,17 @@ const items = computed(() => {
           onSelect: () => emit("view", "board"),
         },
         {
-          label: "Lista",
-          icon: props.viewMode === "table" ? "i-lucide-check" : "i-lucide-list",
+          label: "Tabela",
+          icon: props.viewMode === "table" ? "i-lucide-check" : "i-lucide-table",
           onSelect: () => emit("view", "table"),
         },
       ]
     : [];
 
   return [
-    [{ type: "label" as const, slot: "freshness", label: "Leitura da fila" }],
+    [{ type: "label" as const, slot: "freshness", label: "Leitura dos pedidos" }],
     primary,
-    ...(full.length ? [full] : []),
+    ...(full.length ? [full] : props.sortInMenu ? [sortGroup] : []),
     [
       {
         label: "Exportar CSV",
@@ -161,7 +150,7 @@ const items = computed(() => {
         onSelect: () => emit("export"),
       },
       {
-        label: "Imprimir fila",
+        label: "Imprimir pedidos",
         icon: "i-lucide-printer",
         onSelect: () => emit("print"),
       },
@@ -175,7 +164,7 @@ const items = computed(() => {
   <OperatorMoreMenu
     v-if="mode === 'dropdown'"
     :items="items"
-    label="Mais ações da fila"
+    label="Mais ações dos pedidos"
     data-board-more
   >
     <template #freshness>
@@ -185,6 +174,6 @@ const items = computed(() => {
 
   <div v-else data-board-menu>
     <ReadFreshness :metadata="metadata" :failed="failed" />
-    <ActionList :items="items" aria-label="Ações da fila" />
+    <ActionList :items="items" aria-label="Ações dos pedidos" />
   </div>
 </template>

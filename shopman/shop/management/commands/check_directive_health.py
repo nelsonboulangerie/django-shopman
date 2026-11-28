@@ -12,6 +12,13 @@ ciclo do maintenance_worker e vira OperatorAlert (debounce 15min) quando:
                      de chave é "desconhecido" — em dev/CI o cache locmem é
                      por processo e o batimento de outro processo é invisível).
 
+Os dois alertas que falam DA fila (backlog e worker parado) saem por e-mail
+SÍNCRONO, aqui mesmo (``critical_alerts.deliver_now``): o aviso de que o worker
+parou não pode depender do worker para sair. O debounce é o mesmo do alerta e
+do e-mail; o e-mail que falhou de forma transitória é retentado no ciclo
+seguinte (``critical_alerts.deliver_pending``). O failed spike e os demais
+alertas seguem o caminho de sempre (Directive pela fila).
+
 Thresholds via settings (defaults na ADR): SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD,
 SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES, SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD,
 SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES, SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES.
@@ -30,6 +37,24 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
+
+def _resolve(alert_type: str, marker: str, why: str) -> None:
+    """A verificação que acusa também encerra: a condição passou, o aviso fecha com o motivo."""
+    from shopman.shop.adapters import alert as alert_adapter
+
+    try:
+        alert_adapter.resolve_matching(alert_type, message_contains=marker, actor=f"sistema: {why}")
+    except Exception:
+        logger.exception("directive_health.resolve_failed", extra={"alert_type": alert_type})
+
+
+def _tasks(count: int) -> str:
+    """Contagem na língua do operador: tarefa de fundo, nunca "directive(s)"."""
+    return "1 tarefa de fundo" if count == 1 else f"{count} tarefas de fundo"
+
+
+#: Alertas cujo e-mail não pode esperar a fila de directives.
+QUEUE_HEALTH_ALERT_TYPES = ("directive_backlog", "directive_worker_stale")
 
 
 class Command(BaseCommand):
@@ -66,11 +91,22 @@ class Command(BaseCommand):
 
         if failed_recent >= max(1, failed_threshold):
             self._alert_failed_spike(failed_recent, failed_window)
+        else:
+            self._resolve_failed_spike(failed_window)
 
         if backlog_overdue >= max(1, backlog_threshold):
             self._alert_backlog(backlog_overdue, backlog_age)
+        elif backlog_overdue == 0:
+            _resolve("directive_backlog", "Dedupe: directive_backlog", "a fila de tarefas de fundo esvaziou")
 
         self._check_worker_heartbeat(now, heartbeat_stale)
+
+        from shopman.shop.services import critical_alerts
+
+        try:
+            critical_alerts.deliver_pending(QUEUE_HEALTH_ALERT_TYPES)
+        except Exception:
+            logger.exception("directive_health.deliver_pending_failed")
 
         self.stdout.write(
             f"directive_health: failed_recent={failed_recent} backlog_overdue={backlog_overdue}"
@@ -83,27 +119,47 @@ class Command(BaseCommand):
             type="directive_failed_spike",
             severity="error",
             message=(
-                f"{count} directive(s) falharam em definitivo nos últimos "
-                f"{window_minutes} min. Tarefas de fundo (notificação, fiscal, "
-                "estoque) podem ter sido perdidas — conferir no Admin (Diretivas, "
-                "status 'falhou')."
+                f"{_tasks(count)} falharam de vez nos últimos {window_minutes} min e não "
+                "vão ser tentadas de novo sozinhas. Avisos ao cliente, nota fiscal ou "
+                "estoque podem ter ficado para trás. Avise a TI para conferir e reprocessar."
             ),
             dedupe_key="directive_failed_spike",
         )
 
+    def _resolve_failed_spike(self, window_minutes: int) -> None:
+        """Fecha o pico quando nenhuma tarefa que falhou desde ele segue falhada.
+
+        O pico diz que tarefas "não vão ser tentadas de novo sozinhas": a janela
+        passar não resolve nada. O fato é a falha ter sido reprocessada (ou
+        descartada) por alguém. Tarefa que falhou antes do pico não conta.
+        """
+        from shopman.orderman.models import Directive
+
+        from shopman.shop.adapters import alert as alert_adapter
+
+        since = alert_adapter.oldest_open_created_at("directive_failed_spike")
+        if since is None:
+            return
+        still_failed = Directive.objects.filter(
+            status="failed", updated_at__gte=since - timedelta(minutes=max(1, window_minutes))
+        ).exists()
+        if not still_failed:
+            _resolve("directive_failed_spike", "Dedupe: directive_failed_spike", "as tarefas que falharam foram reprocessadas")
+
     def _alert_backlog(self, count: int, age_minutes: int) -> None:
         from shopman.shop.services.observability import create_operator_alert
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type="directive_backlog",
             severity="error",
             message=(
-                f"{count} directive(s) na fila vencidas há mais de {age_minutes} min "
-                "sem processamento. O pipeline de tarefas de fundo pode estar "
-                "parado ou sobrecarregado — conferir o worker de directives."
+                f"{_tasks(count)} esperam há mais de {age_minutes} min para rodar. O "
+                "processo que executa essas tarefas pode estar parado ou sobrecarregado, "
+                "e avisos ao cliente, nota fiscal e estoque atrasam com ele. Avise a TI."
             ),
             dedupe_key="directive_backlog",
         )
+        self._page_now(alert)
 
     def _check_worker_heartbeat(self, now, stale_minutes: int) -> None:
         from shopman.orderman import worker_heartbeat
@@ -120,15 +176,33 @@ class Command(BaseCommand):
 
         age = now - last
         if age < timedelta(minutes=max(1, stale_minutes)):
+            _resolve(
+                "directive_worker_stale",
+                "Dedupe: directive_worker_stale:process_directives",
+                "o processo de tarefas de fundo voltou a terminar rodadas",
+            )
             return
 
-        create_operator_alert(
+        alert = create_operator_alert(
             type="directive_worker_stale",
             severity="critical",
             message=(
-                "O worker de directives (process_directives) não completa um ciclo "
-                f"há {int(age.total_seconds() // 60)} min. Notificações, fiscal e "
-                "demais tarefas de fundo dependem dele — verificar o processo."
+                "O processo que executa as tarefas de fundo não termina uma rodada há "
+                f"{int(age.total_seconds() // 60)} min. Avisos ao cliente, nota fiscal e "
+                "estoque esperam por ele. Avise a TI."
             ),
             dedupe_key="directive_worker_stale:process_directives",
         )
+        self._page_now(alert)
+
+    def _page_now(self, alert) -> None:
+        """E-mail do alerta da fila, enviado aqui e não pela fila."""
+        if alert is None:  # debounced: o e-mail da janela já saiu (ou está saindo)
+            return
+        from shopman.shop.services import critical_alerts
+
+        try:
+            critical_alerts.deliver_now(alert)
+        except Exception:
+            # O alerta já está na tela; o e-mail que não saiu grita no log.
+            logger.exception("directive_health.page_now_failed: %s", alert.type)

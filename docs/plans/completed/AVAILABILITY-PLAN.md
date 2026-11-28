@@ -1,6 +1,6 @@
 # AVAILABILITY-PLAN
 
-**Status:** concluído e validado em 2026-05-05. Todos os WPs WP-AV-01..14 têm implementação e cobertura rastreável; WP-AV-08, WP-AV-09 e WP-AV-12 receberam correções adicionais de robustez na mesma data. Sucessor operativo do [STOCK-UX-PLAN.md](../STOCK-UX-PLAN.md) para o sistema de verificação de disponibilidade e sugestão de substituição no storefront.
+**Status:** concluído e validado em 2026-05-05. Todos os WPs WP-AV-01..14 têm implementação e cobertura rastreável; WP-AV-08, WP-AV-09 e WP-AV-12 receberam correções adicionais de robustez na mesma data. Sucessor operativo do [STOCK-UX-PLAN.md](STOCK-UX-PLAN.md) para o sistema de verificação de disponibilidade e sugestão de substituição no storefront.
 
 **Escopo:** unificar vocabulário, regras de derivação, fluxos canônicos (Ajuste × Substituição), stepper clamp, modal de erro de estoque, fermata (hold indefinido + materialização com notificação ativa), timeouts transparentes, correções dos 7 gaps mapeados, e rename global `alternatives → substitutes`.
 
@@ -158,7 +158,8 @@ Receiver `on_holds_materialized` em [shopman/shop/handlers/_stock_receivers.py](
 2. Resolve Customer pela Session.
 3. Resolve canal preferido via consentimentos ativos de notificação (Guestman).
 4. Chama `notify(event="stock.arrived", recipient=<canal resolvido>, context={sku, product_name, deadline_at, cart_url}, backend=<consentimento ativo ou default>)`.
-5. Continua com o auto-commit já implementado ([ADR-007](../../_archive/decisions/adr-007-crafting-ordering-integration.md)).
+5. Não cria pedido: a materialização notifica e mantém a sessão aberta; uma superfície
+   real precisa reapresentar revisão e total e então emitir `CommitSeal`.
 
 A notificação viaja por WhatsApp (ManyChat), SMS, email, ou canal de origem da sessão — conforme preferência. Nunca apenas toast no storefront.
 

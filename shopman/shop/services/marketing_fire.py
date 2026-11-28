@@ -216,7 +216,7 @@ def fire_campaign_command(
                 # ``alerts``/``bought_within_days`` nem rodam: a tela contava 1 e o
                 # disparo respondia "ninguém elegível" — para toda campanha de evento.
                 resolution = audience_service.resolve(
-                    selected_rules, sku=safe_sku, now=now
+                    selected_rules, sku=safe_sku, now=now, campaign_id=rule.pk
                 )
                 receipt = MarketingCommandReceipt.objects.create(**common)
                 if resolution.degraded_sources:

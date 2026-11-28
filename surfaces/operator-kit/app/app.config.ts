@@ -14,6 +14,13 @@ const RAIL_SCOPE = [
   "[--ui-border:color-mix(in_srgb,var(--rail-foreground)_25%,transparent)]",
 ].join(" ");
 
+// Cabeçalho de diálogo e de gaveta lateral com o X na linha (ver `ui.modal`).
+const OVERLAY_HEADER_WITH_CLOSE = {
+  wrapper: "min-w-0 flex-1",
+  // `ms-auto`: sem título, o X continua na ponta da direita.
+  close: "static ms-auto shrink-0 self-start sm:-me-2",
+};
+
 export default defineAppConfig({
   ui: {
     // O título da barra do topo não se corta ("cópia não se corta"; achado do B.I.,
@@ -31,7 +38,10 @@ export default defineAppConfig({
       slots: {
         root: "bg-card h-auto min-h-(--ui-header-height) py-1",
         left: "max-sm:flex-1 max-sm:flex-wrap max-sm:gap-y-0.5",
-        title: "text-clip whitespace-normal text-pretty min-w-0 max-sm:flex-1 max-sm:basis-0",
+        // `min-w-min`: o título quebra entre palavras, mas nunca fica mais estreito que a
+        // maior delas. Com `min-w-0` a barra cheia da mesa do Gestor espremia "Pedidos"
+        // em 47 px, e o "s" ficava por baixo do selo de atualização (03/11/2026).
+        title: "text-clip whitespace-normal text-pretty min-w-min max-sm:flex-1 max-sm:basis-0",
       },
     },
     dashboardToolbar: { slots: { root: "bg-card" } },
@@ -121,8 +131,16 @@ export default defineAppConfig({
       },
     },
     popover: { slots: { content: "bg-popover" } },
-    slideover: { slots: { content: "bg-card" } },
-    modal: { slots: { content: "bg-card" } },
+    // O X do cabeçalho entra na linha do título, em vez de flutuar por cima dela.
+    // O oficial posiciona o fechar em `absolute top-4 end-4` e não reserva o lugar
+    // dele: título ou descrição que chegam à borda passam por baixo do X (no PDV, a
+    // 375 px, o X cobria uma palavra da frase do Recebimento, #2806). Aqui o fechar
+    // é o último item da linha flexível do cabeçalho, no alto (`self-start`), e o
+    // texto ganha o resto da largura e quebra antes dele. O lugar na tela é o mesmo
+    // do oficial (16 px do topo e da borda; o `sm:-me-2` desfaz os 8 px a mais do
+    // `sm:px-6`). A trava está em `tests/components/OverlayHeader.test.ts`.
+    slideover: { slots: { content: "bg-card", ...OVERLAY_HEADER_WITH_CLOSE } },
+    modal: { slots: { content: "bg-card", ...OVERLAY_HEADER_WITH_CLOSE } },
     drawer: { slots: { content: "bg-card" } },
     tooltip: { slots: { content: "bg-popover text-default" } },
     dropdownMenu: { slots: { content: "bg-popover" } },
@@ -143,9 +161,39 @@ export default defineAppConfig({
     // default: o `text-sm` fica. O `primary` ainda ficaria abaixo no claro (latão
     // sobre latão a 10%, 4,35:1) e usa a tinta `--primary-ink`, como o Badge e o
     // Button `soft`. A trava é `tests/alertContrast.test.ts`.
+    //
+    // Botões que empilham ocupam a largura toda (dono, 27/10/2026): no celular os botões
+    // do aviso vão um por linha, esticados; da tela `sm` para cima, seguem lado a lado no
+    // tamanho do texto. A régua é a tela e não o aviso: `@container` no aviso fixa a
+    // largura dele, e o aviso dentro de um popover (o "Por que espera" do quadro do
+    // Gestor) encolhia a zero e sumia.
+    //
+    // O fechar tem 44 px de área de toque (#2746). O oficial desenha o X com 20 px e
+    // sem preenchimento (`p-0`): medido no navegador, o alvo efetivo era de 18 px, e
+    // no tablet do balcão o toque errava. O ícone continua pequeno; quem cresce é a
+    // área que recebe o toque (`after:-inset-3`: 12 px para cada lado, 20 + 24 = 44).
+    // `ms-1.5` afasta o X da ação vizinha, para a área maior não roubar o toque dela.
+    // Quem desenha o fechar com outro tamanho (`size-8`, 32 px, na faixa do cabeçalho
+    // e no `useAlertDismissals`) ajusta a sobra (`after:-inset-1.5`). A trava é
+    // `tests/alertCloseTarget.test.ts`.
     alert: {
-      slots: { description: "opacity-100" },
+      slots: {
+        description: "opacity-100",
+        root: "max-sm:flex-wrap max-sm:items-start",
+        actions: "max-sm:basis-full max-sm:flex-col max-sm:items-stretch",
+        close: "relative ms-1.5 after:absolute after:-inset-3",
+      },
       compoundVariants: [
+        {
+          // No aviso vertical a ação mora sob o texto (o `actions` dentro do wrapper, que
+          // segue largo no celular), e o `actions` filho direto da raiz só guarda o
+          // fechar: ele fica no canto superior direito também no celular, sem descer
+          // para uma linha própria que gasta altura (dono, 02/11/2026).
+          orientation: "vertical",
+          class: {
+            root: "max-sm:*:data-[slot=actions]:basis-auto max-sm:*:data-[slot=actions]:flex-row",
+          },
+        },
         {
           color: "primary",
           variant: "subtle",
@@ -207,10 +255,14 @@ export default defineAppConfig({
         {
           // Na aba sublinhada a rolagem recorta o que passa da caixa da lista: o traço
           // da aba ativa sobe para dentro dela (antes ficava 1 px sobre a borda).
+          // Dentro de uma `OperatorToolbar` a linha é a da faixa: a lista não desenha a
+          // dela, senão ficam duas linhas com um vão entre elas (dono, 02/11/2026); e
+          // sem o `-mb-px` oficial, que punha o traço da aba ativa sob a borda da faixa,
+          // onde a rolagem da faixa o recortava.
           variant: "link",
           orientation: "horizontal",
           class: {
-            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none]",
+            list: "overflow-x-auto overscroll-x-contain [scrollbar-width:none] in-data-operator-toolbar:mb-0 in-data-operator-toolbar:border-b-0",
             trigger: "shrink-0",
             indicator: "bottom-0",
           },
@@ -253,8 +305,11 @@ export default defineAppConfig({
       // Destaque semântico do item da vez num Card (dono, 08/10/2026): o mesmo traço
       // do `PageCard highlight` (anel de 2 px na primária). O Card oficial não tem a prop;
       // quem usa marca `data-highlight` e o tema desenha, uma vez só para os 9 apps.
+      // `data-highlight="ready"` é o próximo a sair, na anatomia da moldura do KDS (borda
+      // de 2 px, fundo e halo), no dourado da primária (dono, 02/11/2026: o anel fino
+      // deixava dúvida sobre qual era o da vez; a cor é a da casa, não o verde).
       slots: {
-        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary",
+        root: "data-[highlight=true]:ring-2 data-[highlight=true]:ring-primary data-[highlight=ready]:ring-2 data-[highlight=ready]:ring-primary data-[highlight=ready]:bg-primary/8 data-[highlight=ready]:shadow-[0_0_0_6px_color-mix(in_oklab,var(--primary)_15%,transparent)]",
         header: "p-4 sm:p-4",
         body: "p-4 sm:p-4 has-[>[data-slot=root]:only-child>table]:p-0 has-[>[data-slot=root]:only-child>[data-slot=item][data-state]]:py-0",
         footer: "p-4 sm:p-4",

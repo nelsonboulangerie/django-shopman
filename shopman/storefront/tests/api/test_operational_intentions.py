@@ -6,9 +6,9 @@ from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
 
 from shopman.shop.services import remote_mutations
-from shopman.storefront.services.pickup_slots import get_slots
 from shopman.storefront.tests._checkout_auth import authenticate_checkout
 from shopman.storefront.tests._checkout_baseline import with_baseline
+from shopman.storefront.tests._pickup_today import today_pickup_slot
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
@@ -36,7 +36,7 @@ def test_checkout_response_loss_recovers_same_order(client):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "checkout-audit-one",
@@ -56,7 +56,7 @@ def test_new_reorder_intent_changes_real_cart(client):
     OrderItem.objects.create(
         order=o, line_id="1", sku="PAO-FRANCES", name="Pao", qty=1, unit_price_q=100, line_total_q=100
     )
-    with patch("shopman.storefront.services.orders.get_accessible_order", return_value=o):
+    with patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(o, "full")):
         one = client.post(
             f"/api/v1/orders/{o.ref}/reorder/",
             {"mode": "append"},
@@ -89,7 +89,7 @@ def test_post_commit_defaults_failure_is_recoverable(client):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "side-effect",
@@ -150,7 +150,7 @@ def test_stock_notice_checks_global_optout():
 
 def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(client):
     authenticate_checkout(client)
-    from shopman.shop.services import checkout
+    from shopman.orderman.services.commit import CommitService
 
     _seed_surface()
     assert client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 1}, content_type="application/json").status_code == 200
@@ -160,23 +160,23 @@ def test_edit_between_price_check_and_commit_cannot_change_confirmed_total(clien
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": "race-total",
         },
     )
-    original = checkout._ensure_total_matches
+    original = CommitService.validate_expected_total
 
-    def concurrent_edit(session_key, channel_ref, expected):
-        original(session_key, channel_ref, expected)
+    def concurrent_edit(session, expected):
+        original(session, expected)
         changed = client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 2}, content_type="application/json")
         assert changed.status_code == 200, changed.content
 
-    with patch.object(checkout, "_ensure_total_matches", side_effect=concurrent_edit):
+    with patch.object(CommitService, "validate_expected_total", side_effect=concurrent_edit):
         result = client.post("/api/v1/checkout/", payload, content_type="application/json")
-    assert result.status_code == 400, result.content
-    assert result.json()["error_code"] == "total_changed"
+    assert result.status_code == 409, result.content
+    assert result.json()["error_code"] == "revision_changed"
     assert Order.objects.count() == 0
 
 
@@ -190,7 +190,7 @@ def _checkout_payload(client, key="operational-test"):
             "name": "Ana",
             "phone": "+5543999990001",
             "fulfillment_type": "pickup",
-            "delivery_time_slot": get_slots()[-1]["ref"],
+            "delivery_time_slot": today_pickup_slot(),
             "delivery_date": timezone.localdate().isoformat(),
             "payment_method": "cash",
             "idempotency_key": key,
@@ -207,14 +207,81 @@ def test_replay_with_original_cookie_and_read_recovery(client):
     assert first.status_code == 201, first.content
     browser = Client()
     browser.cookies["sessionid"] = original_cookie
-    read = browser.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    read = browser.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
     assert read.json()["order_ref"] == first.json()["order_ref"]
     repeated = browser.post("/api/v1/checkout/", payload, content_type="application/json")
     assert repeated.status_code == 201
     assert repeated.json()["order_ref"] == first.json()["order_ref"]
     stranger = Client()
-    assert stranger.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 204
+    # Do navegador de outra pessoa a tentativa nunca chegou: nada do pedido vaza.
+    refused = stranger.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    assert refused.status_code == 404
+    assert "order_ref" not in refused.json()
     assert Order.objects.count() == 1
+
+
+def test_checkout_recovery_is_a_command_and_get_has_no_effect(client):
+    """Recuperar grava (acesso ao pedido na sessão): só por POST; o GET antigo morreu."""
+    from shopman.shop.services.customer_orders import ORDER_ACCESS_SESSION_KEY
+
+    payload = _checkout_payload(client)
+    first = client.post("/api/v1/checkout/", payload, content_type="application/json")
+    assert first.status_code == 201, first.content
+    order_ref = first.json()["order_ref"]
+    session = client.session
+    session[ORDER_ACCESS_SESSION_KEY] = []
+    session.save()
+
+    assert client.get("/api/v1/checkout/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 405
+    assert client.get("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"]).status_code == 405
+    assert client.session.get(ORDER_ACCESS_SESSION_KEY) == []
+
+    recovered = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY=payload["idempotency_key"])
+    assert recovered.status_code == 200
+    assert recovered.json()["order_ref"] == order_ref
+    assert recovered.json()["next_url"] == f"/pedido/{order_ref}"
+    assert client.session.get(ORDER_ACCESS_SESSION_KEY) == [order_ref]
+    assert Order.objects.count() == 1
+
+
+def test_checkout_recovery_says_when_the_attempt_never_arrived(client):
+    """Beta SMS-17: envio sem rede. A primeira conferência já diz que nada entrou."""
+    _checkout_payload(client)
+    response = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="never-sent-attempt")
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "checkout_attempt_not_received"
+
+
+def test_checkout_recovery_keeps_waiting_while_the_attempt_is_in_progress(client):
+    _checkout_payload(client)
+    with patch("shopman.shop.services.checkout.checkout_attempt_in_flight", return_value=True):
+        response = client.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="slow-attempt")
+    assert response.status_code == 204
+
+
+def test_checkout_attempt_in_flight_only_for_received_unfinished_attempts():
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.shop.services.checkout import checkout_attempt_in_flight, checkout_receipt_scope
+
+    scope = checkout_receipt_scope(browser_session="sess", principal="ana", cart_session="cart", key="k1")
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is False
+    idem = IdempotencyKey.objects.create(scope=scope, key="k1", status="in_progress")
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is True
+    # Outro navegador nunca enxerga a tentativa desta pessoa.
+    assert checkout_attempt_in_flight(browser_session="other", principal="ana", key="k1") is False
+    idem.status = "failed"
+    idem.save(update_fields=["status"])
+    assert checkout_attempt_in_flight(browser_session="sess", principal="ana", key="k1") is False
+
+
+def test_checkout_recovery_requires_csrf_for_signed_in_customer():
+    from django.test import Client
+
+    browser = Client(enforce_csrf_checks=True)
+    authenticate_checkout(browser)
+    refused = browser.post("/api/v1/checkout/recover/", HTTP_IDEMPOTENCY_KEY="any-attempt")
+    assert refused.status_code == 403
 
 
 def test_reused_key_with_different_payload_is_conflict(client):
@@ -272,18 +339,15 @@ def test_malformed_context_is_refused_without_writing(client, route, payload):
 def test_atomic_mutation_receipt_failure_rolls_back_effect():
     from shopman.orderman.models import IdempotencyKey
 
-    original = IdempotencyKey.save
-
-    def crash_after_effect(row, *args, **kwargs):
-        if row.status == "done":
-            raise RuntimeError("fault: receipt write")
-        return original(row, *args, **kwargs)
-
     def effect():
         Order.objects.create(ref="ATOMIC-EFFECT", channel_ref="web")
         return {"ok": True}, 200
 
-    with patch.object(IdempotencyKey, "save", crash_after_effect), pytest.raises(RuntimeError):
+    with patch.object(
+        remote_mutations,
+        "_finish_claim",
+        side_effect=RuntimeError("fault: receipt write"),
+    ), pytest.raises(RuntimeError):
         remote_mutations.run_idempotent_mutation(
             scope="test-local", key="one", execute=effect, local_atomic=True, payload={"qty": 1}
         )
@@ -316,7 +380,7 @@ def test_replace_replay_keeps_the_target_cart_and_does_not_reapply(client):
     )
     client.put("/api/v1/cart/skus/PAO-FRANCES/", {"qty": 2}, content_type="application/json")
     cart_key = client.session["cart_session_key"]
-    with patch("shopman.storefront.services.orders.get_accessible_order", return_value=order):
+    with patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(order, "full")):
         first = client.post(
             f"/api/v1/orders/{order.ref}/reorder/",
             {"mode": "replace"},
@@ -390,7 +454,7 @@ def test_partial_infrastructure_failure_rolls_back_bundle_without_losing_previou
         return original(*args, **kwargs)
 
     with (
-        patch("shopman.storefront.services.orders.get_accessible_order", return_value=order),
+        patch("shopman.storefront.services.orders.get_accessible_order_with_mode", return_value=(order, "full")),
         patch.object(CartService, "add_item", side_effect=failing_add),
         pytest.raises(RuntimeError),
     ):
@@ -446,13 +510,13 @@ def test_draft_context_isolates_identity_strength_and_cart_but_preserves_renewal
         session_key = "browser-A"
 
     session = BrowserSession(identity_strength="device")
-    request = SimpleNamespace(session=session, customer=SimpleNamespace(uuid="customer-A"))
+    request = SimpleNamespace(session=session, customer=SimpleNamespace(subject_id="customer-A"))
     first = checkout_draft_context(request, "cart-A")
     session.session_key = "renewed-browser"
     assert checkout_draft_context(request, "cart-A") == first
-    request.customer.uuid = "customer-B"
+    request.customer.subject_id = "customer-B"
     assert checkout_draft_context(request, "cart-A") != first
-    request.customer.uuid = "customer-A"
+    request.customer.subject_id = "customer-A"
     session["identity_strength"] = "number"
     assert checkout_draft_context(request, "cart-A") != first
     session["identity_strength"] = "device"

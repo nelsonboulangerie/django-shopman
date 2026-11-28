@@ -65,16 +65,15 @@ def _reason_from(info: dict | None) -> str | None:
 
 
 def _is_offerable(info: dict) -> bool:
-    """Disponível de verdade OU com fornada planejada que o canal aceita.
+    """O que a promessa do Stockman diz: pronto, ou fornada planejada com vaga.
 
-    Encomenda para amanhã não é falta: o cliente consegue pedir.
+    Encomenda para amanhã não é falta: o cliente consegue pedir. Fornada já
+    toda reservada é falta, e SKU sem ledger não é (a promessa não tem teto).
     """
-    if (info.get("total_promisable") or 0) > 0:
-        return True
-    policy = info.get("availability_policy", "planned_ok")
-    if policy == "planned_ok" and info.get("is_planned"):
-        return True
-    return policy == "demand_ok"
+    from shopman.shop.projections.catalog_context import promised_ceiling
+
+    can_order, _ceiling = promised_ceiling(info)
+    return can_order
 
 
 def observe(sku: str, *, channels: list[str] | None = None) -> None:

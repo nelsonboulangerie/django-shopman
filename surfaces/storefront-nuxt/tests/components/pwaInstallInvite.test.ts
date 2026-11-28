@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import PwaInstallInvite from '~/components/PwaInstallInvite.vue'
 import { installPlan, type InstallPlan } from '~/utils/installGuide'
@@ -14,6 +14,7 @@ const PROMPT: InstallPlan = { kind: 'prompt', invite: true, steps: [], os: 'andr
 
 const mocks = vi.hoisted(() => ({
   path: '/menu',
+  hasOrdered: true,
   plan: undefined as unknown as InstallPlan,
   markShown: vi.fn(),
   dismiss: vi.fn(),
@@ -32,6 +33,11 @@ mockNuxtImport('usePwaInstall', () => () => ({
     get value () { return mocks.plan }
   },
   isDismissed: { __v_isRef: true, value: false },
+  hasOrdered: {
+    __v_isRef: true,
+    get value () { return mocks.hasOrdered }
+  },
+  refreshHasOrdered: vi.fn(),
   markShown: mocks.markShown,
   dismiss: mocks.dismiss,
   dismissAsDone: mocks.dismissAsDone
@@ -52,8 +58,12 @@ const copy: PwaCopyProjection = {
   update_cta: entry()
 }
 
+// Desmontar entre testes: a vez da visita é zerada no beforeEach, e um convite
+// montado no teste anterior a tomaria (e chamaria `markShown`) no seguinte.
+const mounted: Array<{ unmount: () => void }> = []
+
 async function mountInvite () {
-  return mountSuspended(PwaInstallInvite, {
+  const wrapper = await mountSuspended(PwaInstallInvite, {
     props: { copy },
     global: {
       stubs: {
@@ -64,18 +74,27 @@ async function mountInvite () {
       }
     }
   })
+  mounted.push(wrapper)
+  return wrapper
 }
 
 describe('PwaInstallInvite', () => {
+  afterEach(() => {
+    for (const wrapper of mounted.splice(0)) wrapper.unmount()
+  })
+
   beforeEach(() => {
     mocks.path = '/menu'
+    mocks.hasOrdered = true
+    sessionStorage.removeItem('shopman-invite-shown')
+    useState('shop-invite').value = { open: null, shownThisVisit: false, synced: false }
     mocks.plan = PROMPT
     mocks.markShown.mockClear()
     mocks.dismiss.mockClear()
     mocks.dismissAsDone.mockClear()
   })
 
-  it.each(['/finalizar', '/finalizar/endereco', '/pedido/PED-123'])(
+  it.each(['/produto/croissant', '/sacola', '/finalizar', '/finalizar/endereco', '/entrar', '/pedido/PED-123'])(
     'não renderiza na rota %s',
     async (path) => {
       mocks.path = path
@@ -85,6 +104,15 @@ describe('PwaInstallInvite', () => {
       expect(mocks.markShown).not.toHaveBeenCalled()
     }
   )
+
+  it('antes do pedido enviado nesta visita o convite não abre (decisão 3, 16/11)', async () => {
+    // Abria no primeiro carregamento, antes de qualquer gesto da pessoa.
+    mocks.hasOrdered = false
+    const wrapper = await mountInvite()
+
+    expect(wrapper.find('[data-testid="pwa-install-invite"]').exists()).toBe(false)
+    expect(mocks.markShown).not.toHaveBeenCalled()
+  })
 
   it('abre em rota elegível e registra a janela de sete dias', async () => {
     const wrapper = await mountInvite()
@@ -99,7 +127,6 @@ describe('PwaInstallInvite', () => {
 
     expect(wrapper.get('[data-testid="pwa-install-steps"]').text()).toContain('Compartilhar')
     expect(wrapper.text()).toContain('Adicionar à Tela de Início')
-    expect(wrapper.text()).toContain('barra de baixo')
     expect(wrapper.text()).toContain('Coloque a loja na Tela de Início')
   })
 
@@ -110,7 +137,11 @@ describe('PwaInstallInvite', () => {
     const wrapper = await mountInvite()
 
     const passos = wrapper.get('[data-testid="pwa-install-steps"]').text()
-    expect(passos).toContain('⋯')
+    // O símbolo vem desenhado, uma vez só: o caractere "⋯" ao lado do desenho era
+    // o símbolo repetido (beta 05/11, CEN-07 e LOJA-09).
+    expect(passos).toContain('três pontinhos')
+    expect(passos).not.toContain('⋯')
+    expect(wrapper.findAll('[data-testid="pwa-install-steps"] svg').length).toBeGreaterThan(0)
     expect(passos).toContain('Chrome')
     expect(passos).not.toContain('barra do Safari')
   })

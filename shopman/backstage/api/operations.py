@@ -70,30 +70,39 @@ from shopman.backstage.api._production_filters import (
     validated_query,
 )
 from shopman.backstage.api._production_mutations import (
+    ProductionBlindCodeAllocationSerializer,
     ProductionFinishMutationSerializer,
+    ProductionFormulaDeviationMutationSerializer,
     ProductionMutationValidationError,
+    ProductionOldDoughMutationSerializer,
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
+    ProductionPurchaseRequestSerializer,
     ProductionQualityCorrectionMutationSerializer,
     ProductionQualityReviewBatchMutationSerializer,
     ProductionQualityReviewMutationSerializer,
     ProductionQuickFinishMutationSerializer,
+    ProductionShortageAuthorizationSerializer,
     ProductionStartMutationSerializer,
     ProductionVoidMutationSerializer,
     validated_body,
 )
 from shopman.backstage.api.pos_concurrency import tab_command
 from shopman.backstage.api.production_freshness import (
+    authorized_override_proof,
     override_attempt_digest,
+    override_authorizer,
     override_shortage_snapshot,
     signed_override_proof,
     validate_override_proof,
 )
 from shopman.backstage.api.telemetry import OperationalObservationMixin
+from shopman.backstage.api.throttles import POSCustomerSearchThrottle
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
+from shopman.backstage.permissions import ORDER_BOARD_PERMISSIONS, can_audit_cash
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.hub import purchase_surface_url
@@ -101,6 +110,7 @@ from shopman.backstage.projections.order_queue import build_operator_order, buil
 from shopman.backstage.projections.pos import (
     build_open_tab,
     build_pos,
+    build_pos_availability,
     build_pos_customer_lookup,
     build_pos_customer_lookup_by_ref,
     build_pos_customer_search,
@@ -136,8 +146,10 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
+from shopman.backstage.services.blind_prep_codes import allocate_blind_prep_codes
 from shopman.backstage.services.exceptions import (
     OrderConflict,
+    OrderEditError,
     OrderError,
     POSError,
     POSTerminalAmbiguous,
@@ -146,7 +158,9 @@ from shopman.backstage.services.exceptions import (
     ProductionNotFound,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
+from shopman.shop.api_errors import public_error_detail
 from shopman.shop.observability import ServerTimingMixin
+from shopman.shop.policies import ifood_concluded
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
@@ -161,6 +175,7 @@ from shopman.shop.services.pos_intent import PosIntentError
 from shopman.shop.services.quality import EffectiveQualityPartitionError
 
 from .permissions import (
+    HasAnyBackstagePermission,
     HasBackstagePermission,
     HasOrderBoardAccess,
     HasProductionCapability,
@@ -273,6 +288,51 @@ def _shortage_override_reason(request, *, reason: str) -> str:
     return reason
 
 
+def _authorize_shortage_override(request, body: dict) -> None:
+    """Quem responde pela falta de insumo: a assinatura da lista, ou o próprio operador.
+
+    A prova que veio assinada por quem autorizou (``ShortageAuthorizationView``,
+    decisão 3 do dono, D-042) já conferiu o PIN da Gerente ou do Dono; aqui só se
+    confere que essa pessoa ainda pode autorizar, e o motivo deixa de ser texto
+    livre: é o nome dela (P1-24). Sem assinatura, vale a regra de antes: o próprio
+    operador precisa da permissão e de uma justificativa.
+    """
+    from shopman.backstage.services import operator as operator_service
+
+    authorized_by = override_authorizer(str(body.get("override_proof") or ""))
+    if not authorized_by:
+        body["reason"] = _shortage_override_reason(request, reason=body.get("reason", ""))
+        return
+    user = operator_service.shortage_authorizer(authorized_by)
+    if user is None:
+        raise ProductionMutationValidationError(
+            {"override_proof": "Quem assinou não pode mais autorizar falta de insumo. Peça outra assinatura."}
+        )
+    body["reason"] = f"Autorizado por {operator_service.operator_card(user)['name']}, com PIN."
+    body["_authorized_by"] = user.get_username()
+
+
+def _require_material_shortage_proof(body: dict) -> None:
+    """A abertura "assim mesmo" só vale como a continuação que a recusa ofereceu."""
+    proof = str(body.get("material_shortage_proof") or "")
+    if not proof:
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError({"material_shortage_proof": next(iter(errors.values()))})
+    snapshot = override_shortage_snapshot(proof)
+    if not snapshot or snapshot.get("kind") != "material_shortage":
+        raise ProductionMutationValidationError(
+            {"material_shortage_proof": "A confirmação pertence a outra falta. Atualize o painel."}
+        )
+    body["_approved_material_shortage_snapshot"] = snapshot
+
+
 def _require_shortage_override_proof(body: dict) -> None:
     """Accept force only as the signed continuation of a shortage response."""
     proof = str(body.get("override_proof") or "")
@@ -291,6 +351,22 @@ def _require_shortage_override_proof(body: dict) -> None:
     body["_approved_shortage_snapshot"] = override_shortage_snapshot(proof)
 
 
+def _require_short_lot_proof(body: dict) -> None:
+    """Accept the short-lot confirmation only as the continuation it was offered as."""
+    proof = str(body.get("short_lot_proof") or "")
+    if not proof:
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError({"short_lot_proof": next(iter(errors.values()))})
+    body["_approved_short_lot_snapshot"] = override_shortage_snapshot(proof)
+
+
 def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     snapshot = production_service.production_shortage_snapshot(exc)
     if snapshot is None:
@@ -303,6 +379,56 @@ def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
     )
 
 
+PURCHASE_REQUEST_SALT = "shopman.backstage.production.purchase_request"
+#: A prova da solicitação vale o tempo de alguém ler o aviso e tocar no botão.
+PURCHASE_REQUEST_MAX_AGE_SECONDS = 60 * 60
+
+
+def _purchase_request_proof(exc, produced_here: set[str]) -> str:
+    """Assina o que a recusa mediu: o lote e quanto falta de cada insumo comprado.
+
+    A solicitação grava exatamente isto. Insumo sem cadastro de compra não entra
+    (não há onde o Compras vê-lo); sem nenhum, não há solicitação a oferecer.
+    """
+    from django.apps import apps
+    from django.core import signing
+
+    Material = apps.get_model("buyman", "Material")
+    bought = [item for item in exc.missing if item.sku not in produced_here and item.shortage > 0]
+    known = set(Material.objects.filter(sku__in={item.sku for item in bought}).values_list("sku", flat=True))
+    items = [
+        {
+            "sku": item.sku,
+            "quantity": format(item.shortage.quantize(Decimal("0.001")).normalize(), "f"),
+            "unit": item.unit,
+        }
+        for item in bought
+        if item.sku in known
+    ]
+    if not items:
+        return ""
+    return signing.dumps({"work_order_ref": exc.work_order_ref, "items": items}, salt=PURCHASE_REQUEST_SALT)
+
+
+def _material_display_names(skus: set[str]) -> dict[str, str]:
+    """Nome legível de cada insumo em falta: catálogo, compras ou ficha."""
+    from shopman.craftsman.models import Recipe
+
+    from shopman.backstage.projections.production import _product_names
+
+    names = _product_names(skus)
+    missing = skus - names.keys()
+    if missing:
+        names.update(
+            (sku, name)
+            for sku, name in Recipe.objects.filter(output_sku__in=missing, is_active=True).values_list(
+                "output_sku", "name"
+            )
+            if str(name or "").strip()
+        )
+    return names
+
+
 def _production_error_response(
     exc: ProductionError,
     *,
@@ -310,8 +436,14 @@ def _production_error_response(
     can_override_shortage: bool = False,
     projection_generated_at=None,
     override_proof: str = "",
+    short_lot_action: str = "",
+    purchase_url: str = "",
 ) -> Response | None:
     """Structured error envelope for production error states.
+
+    ``short_lot_action`` ("start" ou "finish"): a recusa de encomenda dessa ação
+    oferece "confirmar" (o lote curto segue com o número verdadeiro), assinada com
+    o mesmo impacto. Sem ela, só "Revisar quantidade".
 
     The floor app reproduces the material/order shortage modals from this
     payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``),
@@ -376,21 +508,77 @@ def _production_error_response(
             status=404,
         )
     if isinstance(exc, ProductionStockShortError):
+        from shopman.craftsman.models import Recipe
+
+        from shopman.backstage.projections.production import _preparation_measure
+        from shopman.backstage.services import operator as operator_service
+
+        material_names = _material_display_names({item.sku for item in exc.missing})
+        # O que a casa produz (massa, recheio) não se pede ao Compras: o link e a frase
+        # do Compras só valem quando falta algo comprado.
+        produced_here = set(
+            Recipe.objects.filter(
+                output_sku__in={item.sku for item in exc.missing}, is_active=True
+            ).values_list("output_sku", flat=True)
+        )
+        bought_missing = any(item.sku not in produced_here for item in exc.missing)
+        # A próxima ação está no envelope (WP-F11): na abertura a falta é aviso, e
+        # o padeiro escolhe entre pedir no Compras e abrir assim mesmo; no
+        # fechamento é trava, e a saída é a assinatura de quem pode autorizar,
+        # escolhido da lista (decisão 3 do dono, D-042).
+        opening = exc.stage == "start"
+        authorizers = [] if opening else operator_service.shortage_authorizers()
         possibilities = [
             {
                 "kind": "retry",
-                "label": "Tentar novamente",
+                "label": "Revisar quantidade" if opening else "Tentar novamente",
                 "enabled": True,
                 "proof": "",
+                "href": "",
             },
         ]
-        if can_override_shortage:
+        if purchase_url and bought_missing:
+            possibilities.append(
+                {
+                    "kind": "purchase",
+                    "label": "Pedir no Compras",
+                    "enabled": True,
+                    "proof": "",
+                    "href": purchase_url,
+                }
+            )
+        elif bought_missing:
+            # Quem não opera o Compras não pede ao fornecedor: deixa a solicitação,
+            # que o "Comprar" mostra a quem opera (decisão do dono, 26/11/2026).
+            request_proof = _purchase_request_proof(exc, produced_here)
+            if request_proof:
+                possibilities.append(
+                    {
+                        "kind": "request_purchase",
+                        "label": "Solicitar ao Compras",
+                        "enabled": True,
+                        "proof": request_proof,
+                        "href": "",
+                    }
+                )
+        if opening and override_proof:
+            possibilities.append(
+                {
+                    "kind": "confirm",
+                    "label": "Abrir assim mesmo",
+                    "enabled": True,
+                    "proof": override_proof,
+                    "href": "",
+                }
+            )
+        elif not opening and override_proof and (authorizers or can_override_shortage):
             possibilities.append(
                 {
                     "kind": "force",
-                    "label": "Concluir com justificativa",
-                    "enabled": True,
+                    "label": "Fechar com autorização",
+                    "enabled": bool(authorizers),
                     "proof": override_proof,
+                    "href": "",
                 }
             )
         return Response(
@@ -398,15 +586,29 @@ def _production_error_response(
                 "detail": str(exc),
                 "error": {
                     "code": "material_shortage",
+                    "stage": "start" if opening else "finish",
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
+                    "authorizers": authorizers,
+                    # Nome e unidade para a tela escrever "Massa de croissant:
+                    # precisa 336 kg", nunca o SKU cru com três casas (beta 05/11).
                     "missing": [
                         {
                             "sku": item.sku,
-                            "needed": str(item.needed),
-                            "available": str(item.available),
-                            "shortage": str(item.shortage),
+                            "name": material_names.get(item.sku, item.sku),
+                            "unit": item.unit,
+                            # Três casas, sem zero à direita: a bruta vezes o
+                            # coeficiente dava "0.300000000000000" na tela.
+                            "needed": _production_quantity(item.needed.quantize(Decimal("0.001"))),
+                            "available": _production_quantity(item.available.quantize(Decimal("0.001"))),
+                            "shortage": _production_quantity(item.shortage.quantize(Decimal("0.001"))),
+                            # A medida da bancada ("300 g", nunca "0,3 kg"), a
+                            # mesma do aviso da sugestão no Planejamento.
+                            "shortage_display": _preparation_measure(item.shortage, item.unit),
+                            "needed_display": _preparation_measure(item.needed, item.unit),
+                            "available_display": _preparation_measure(item.available, item.unit),
+                            "produced_here": item.sku in produced_here,
                         }
                         for item in exc.missing
                     ],
@@ -421,6 +623,7 @@ def _production_error_response(
                 "label": "Revisar quantidade",
                 "enabled": True,
                 "proof": "",
+                "href": "",
             },
         ]
         if can_override_shortage and exc.allow_override:
@@ -430,6 +633,24 @@ def _production_error_response(
                     "label": "Salvar com justificativa",
                     "enabled": True,
                     "proof": override_proof,
+                    "href": "",
+                }
+            )
+        if short_lot_action and exc.confirmable and override_proof:
+            requested = _production_quantity(exc.requested)
+            possibilities.append(
+                {
+                    "kind": "confirm",
+                    "label": (
+                        # Sem prometer o aviso ao Gestor enquanto a lista daqui e o aviso de lá
+                        # saem de réguas diferentes (#3457); o WP-F08 devolve a promessa exata.
+                        f"Fechar com {requested}"
+                        if short_lot_action == "finish"
+                        else f"Abrir com {requested}"
+                    ),
+                    "enabled": True,
+                    "proof": override_proof,
+                    "href": "",
                 }
             )
         return Response(
@@ -440,9 +661,10 @@ def _production_error_response(
                     "work_order_ref": exc.work_order_ref,
                     "idempotency_key": idempotency_key,
                     "possibilities": possibilities,
-                    "required": str(exc.required),
-                    "requested": str(exc.requested),
+                    "required": _production_quantity(exc.required),
+                    "requested": _production_quantity(exc.requested),
                     "order_refs": list(exc.order_refs),
+                    "orders": [{"ref": ref, "qty": _production_quantity(quantity)} for ref, quantity in exc.orders],
                 },
             },
             status=409,
@@ -458,21 +680,11 @@ def _production_validation_error_response(
     *,
     fallback: str,
 ) -> Response:
+    from shopman.backstage.api._production_mutations import validation_error_body
+
     message = str(exc) or fallback
     return Response(
-        {
-            "detail": message,
-            "error": {
-                "code": "validation_error",
-                "issues": [
-                    {
-                        "field": "non_field_errors",
-                        "code": "invalid",
-                        "message": message,
-                    }
-                ],
-            },
-        },
+        validation_error_body([{"field": "non_field_errors", "code": "invalid", "message": message}]),
         status=400,
     )
 
@@ -551,10 +763,10 @@ def _open_cash_shift_for_request(request):
 def _cash_shift_required_response() -> Response:
     return Response(
         {
-            "detail": "Abra o caixa antes de revisar ou finalizar uma venda.",
+            "detail": "Abra o caixa antes de revisar ou validar uma venda.",
             "error": {
                 "code": "cash_shift_required",
-                "message": "Abra o caixa antes de revisar ou finalizar uma venda.",
+                "message": "Abra o caixa antes de revisar ou validar uma venda.",
                 "field": "cash_shift_id",
                 "focus": "cash",
                 "recovery": "Abra um turno de caixa neste terminal e tente novamente.",
@@ -571,6 +783,22 @@ def _delivery_fee_waiver_payload(waiver: dict | None) -> dict | None:
         **waiver,
         "threshold_display": f"R$ {format_money(int(waiver.get('threshold_q') or 0))}",
         "base_fee_display": f"R$ {format_money(int(waiver.get('base_fee_q') or 0))}",
+    }
+
+
+def _qty_number(value) -> int | float:
+    number = Decimal(str(value or 0))
+    return int(number) if number == number.to_integral_value() else float(number)
+
+
+def _over_plan_line_payload(line: dict) -> dict:
+    return {
+        "sku": line["sku"],
+        "name": line["name"],
+        "date": line["date"],
+        "requested_qty": _qty_number(line["requested_qty"]),
+        "planned_qty": _qty_number(line["planned_qty"]),
+        "unclaimed_qty": _qty_number(line["unclaimed_qty"]),
     }
 
 
@@ -607,6 +835,9 @@ def _pos_sale_review_payload(review) -> dict:
         # Conta na casa acima do limite: saldo de hoje, limite e quanto passa,
         # para o aviso e o diálogo do gerente dizerem o que ele assina.
         "house_account_limit": review.house_account_limit,
+        # Encomenda acima do plano da data (D-041): por linha, o pedido, a fornada
+        # planejada e o que dela segue sem encomenda, para o Validar travar e o gerente ver os números.
+        "preorder_over_plan": [_over_plan_line_payload(line) for line in review.preorder_over_plan],
         "receipt_channels": list(review.receipt_channels),
         "fiscal_tax_id_requested": review.fiscal_tax_id_requested,
         "warnings": list(review.warnings),
@@ -620,9 +851,9 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
         "delivery_earliest_slot": review.delivery_earliest_slot,
-        # Venda sem comanda: o que cada linha cobra e o desconto automático que a
-        # venceu ("Aliança Francesa −10%"), no formato do eco do salvar da comanda.
-        # Com comanda vem vazio: quem diz é o salvar.
+        # O que cada linha cobra e o desconto que a venceu ("Aliança Francesa
+        # −10%"), no formato do eco do salvar da comanda, com o aviso de desconto
+        # manual descartado. Todas as linhas voltam também ao remover o desconto.
         "line_prices": review_line_prices(getattr(review, "priced_lines", ())),
     }
 
@@ -652,6 +883,12 @@ class POSView(ServerTimingMixin, APIView):
         # segundos de CPU no servidor, na frente da próxima ida dele.
         if request.query_params.get("only") == "tabs":
             return Response({"tabs": projection_data(build_pos_tabs(query=request.query_params.get("q", "")))})
+        # ``?only=availability``: só os selos da grade. É o que o aviso de estoque
+        # (SSE ``stock-update`` do canal do PDV) relê: outro balcão vendeu a
+        # última unidade e o tile vira "Esgotado" sem ninguém tocar. Preço,
+        # coleção e comandas não mudam com o estoque.
+        if request.query_params.get("only") == "availability":
+            return Response({"availability": build_pos_availability()})
 
         # A ESTAÇÃO diz qual gaveta é esta — o cookie de confiança carrega o ref. É o
         # que permite a loja de duas gavetas ler o quadro certo em cada balcão, em vez
@@ -669,6 +906,8 @@ class POSView(ServerTimingMixin, APIView):
                 "tabs": projection_data(tabs),
                 "operator": operator_card(request.user),
                 "pin_must_change": pin_must_change(request.user),
+                # Este dispositivo pode calcular e cobrar? (a régua das mutações)
+                "station": station_trust.pos_station_readiness(request),
             }
         )
 
@@ -690,21 +929,15 @@ class POSPaymentStatusView(APIView):
         from shopman.orderman.models import Order
 
         from shopman.shop.projections.payment_status import build_payment_status
-        from shopman.shop.services import customer_orders
 
         try:
             order = Order.objects.get(ref=ref)
         except Order.DoesNotExist as exc:
             raise Http404("Order not found") from exc
 
-        # Resolve timers vencidos (auto-cancel de PIX / confirmação) antes de
-        # reportar. Camada shop — backstage NUNCA importa storefront (CLAUDE.md).
-        try:
-            customer_orders.resolve_payment_timeout_if_due(order)
-            customer_orders.resolve_confirmation_timeout_if_due(order)
-        except Exception:
-            logger.warning("pos.payment_status: resolve_timeouts falhou order=%s", ref, exc_info=True)
-
+        # Leitura não produz efeito: o prazo vencido (auto-cancel do Pix,
+        # confirmação) é a directive do worker, que roda a cada segundo e
+        # pergunta ao gateway antes de cancelar. O balcão vê pelo próximo poll.
         payload = projection_data(build_payment_status(order))
         payload["payment_delivery"] = build_pos_payment_delivery(order)
         return Response(payload)
@@ -725,6 +958,9 @@ _OPERATOR_UNLOCK_PERMS = {
     "backstage.operate_production",
     "backstage.operate_purchase",
     "shop.manage_orders",
+    # Catálogo diário mora no Gestor. Este grant abre só a persona de catálogo;
+    # os endpoints de pedidos/clientes continuam com seus próprios gates.
+    "shop.manage_catalog",
     # Campanha (surfaces/marketing-nuxt): sem esta entrada a tela de destravar
     # rejeita a permissão e o app fica trancado para sempre com o gate ligado.
     "shop.view_marketing",
@@ -739,6 +975,9 @@ _OPERATOR_UNLOCK_PERMS = {
     # Postos do Gestor: mesma lógica de Clientes. A barra pergunta para mostrar a aba
     # só a quem gere operadores (quem vincula dispositivos e cadastra postos).
     "cashman.manage_operators",
+    # Rotinas do Gestor: a entrada em Ajustes só aparece para quem pode executar
+    # tarefas operacionais; supervisão continua conferida na mutation própria.
+    "backstage.perform_operation_task",
 }
 
 
@@ -785,7 +1024,12 @@ class OperatorSessionView(APIView):
         required_perm, valid_perm = _validated_unlock_perm(request.query_params.get("perm"))
         if not valid_perm:
             return Response({"detail": "Permissão desconhecida."}, status=400)
-        from shopman.backstage.permissions import has_surface_perm
+        from shopman.backstage.permissions import (
+            GESTOR_SURFACE_PERMISSIONS,
+            gestor_surface_role,
+            has_surface_perm,
+            surface_perm_codes,
+        )
         from shopman.backstage.services import operator_session
 
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
@@ -798,6 +1042,16 @@ class OperatorSessionView(APIView):
                 and operator_session.is_capability_locked(request, lock_key)
             )
         )
+        is_gestor = surface_perm_codes(required_perm) == GESTOR_SURFACE_PERMISSIONS
+        surface_role = gestor_surface_role(operador) if is_gestor and operador and not locked else None
+        if required_perm == "backstage.view_bi" and operador and not locked:
+            # O B.I. é do Dono (dono, 21/11/2026). Quem lê sem auditar o caixa (o
+            # superusuário de suporte, uma concessão avulsa) segue sem a seção do
+            # Caixa: o rail a esconde em vez de abrir uma tela que só sabe dizer
+            # "tentar de novo" (beta 05/11, ge:BI-07).
+            from shopman.backstage.permissions import can_audit_cash
+
+            surface_role = "cash_auditor" if can_audit_cash(operador) else "reader"
         return Response({
             # `station` substituiu `device_user`: o que a tela precisa saber é de
             # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
@@ -816,6 +1070,9 @@ class OperatorSessionView(APIView):
                 and not locked
                 and has_surface_perm(operador, required_perm)
             ),
+            # O shell usa isto só para landing/navegação; role não é grant.
+            "surface_role": surface_role,
+            "landing_path": "/catalog" if surface_role == "catalog" else "/",
         })
 
 
@@ -835,8 +1092,62 @@ def _login_username_key(group, request):
     return (str(username or "").strip().lower()) or "anon"
 
 
+#: Falhas de senha por conta-alvo: 5 por minuto. Só a FALHA conta (beta 05/11,
+#: BI-08/MKT-19): o decorator contava todo POST, e a Gerente que abria seis
+#: dispositivos de manhã travava a própria conta com a senha certa.
+_LOGIN_FAILURE_GROUP = "operator-login-failure"
+_LOGIN_FAILURE_RATE = "5/m"
+
+
+def _login_failures(request, *, increment: bool) -> dict | None:
+    """O balde de falhas de senha da conta-alvo (``get_usage`` do django-ratelimit).
+
+    ``get_usage`` não lê ``RATELIMIT_ENABLE`` (só o decorator lê): sem a guarda,
+    desligar os freios deixava este ligado, e o balde em cache atravessava testes.
+    """
+    from django.conf import settings
+    from django_ratelimit.core import get_usage
+
+    if not getattr(settings, "RATELIMIT_ENABLE", True):
+        return None
+    return get_usage(
+        request,
+        group=_LOGIN_FAILURE_GROUP,
+        key=_login_username_key,
+        rate=_LOGIN_FAILURE_RATE,
+        method="POST",
+        increment=increment,
+    )
+
+
+def _login_rate_limited_response(usage: dict | None) -> Response:
+    # `time_left` vem -1 quando o cache falhou: aí não se sabe, e o teto é a janela.
+    restante = int((usage or {}).get("time_left") or 0)
+    segundos = restante if 0 < restante <= 60 else 60
+    if segundos >= 60:
+        espera = "um minuto"
+    elif segundos == 1:
+        espera = "1 segundo"
+    else:
+        espera = f"{segundos} segundos"
+    return Response(
+        {
+            "detail": f"Muitas senhas erradas para este usuário. Tente de novo em {espera}.",
+            "error": {"code": "operator_login_rate_limited", "retry_after": segundos},
+        },
+        status=429,
+        headers={"Retry-After": str(segundos)},
+    )
+
+
+def _password_opens_station(user) -> bool:
+    """Num posto vinculado, a senha entra só para quem vincula postos e para o Dono."""
+    from shopman.backstage.permissions import can_audit_cash
+
+    return user.has_perm(station_trust.PROVISION_PERM) or can_audit_cash(user)
+
+
 @method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
-@method_decorator(ratelimit(key=_login_username_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
 
@@ -850,9 +1161,11 @@ class OperatorLoginView(APIView):
     que sai daqui é a mesma coisa, a identidade de uma pessoa. Não existe login
     "do dispositivo": o dispositivo é reconhecido por confiança de dispositivo.
 
-    Freio contra brute-force de senha staff: limite por-username (ataque a uma conta)
-    de 5/min e teto por-IP de 30/min — generoso porque os dispositivos da loja
-    compartilham o IP (NAT). Ambos `block=False`: o handler devolve 429 amigável.
+    Freio contra brute-force de senha staff: 5 FALHAS por minuto por username
+    (ataque a uma conta) e teto por-IP de 30/min, generoso porque os dispositivos da
+    loja compartilham o IP (NAT). O balde por conta conta só a senha errada: login
+    certo não gasta tentativa de ninguém. Estourado, nem a senha certa entra até a
+    janela virar (o 429 diz quanto falta).
     """
 
     permission_classes = [AllowAny]
@@ -863,6 +1176,7 @@ class OperatorLoginView(APIView):
         from shopman.backstage.services.operator import operator_card
 
         if getattr(request, "limited", False):
+            # O teto por IP (a loja inteira atrás do mesmo NAT), não a conta.
             return Response(
                 {
                     "detail": "Muitas tentativas de login. Aguarde um minuto e tente de novo.",
@@ -877,18 +1191,49 @@ class OperatorLoginView(APIView):
         if not username or not password:
             return Response({"detail": "Informe usuário e senha."}, status=400)
 
+        falhas = _login_failures(request, increment=False)
+        if falhas and falhas.get("should_limit"):
+            return _login_rate_limited_response(falhas)
+
         user = authenticate(request, username=username, password=password)
         if user is None or not user.is_staff:
+            falhas = _login_failures(request, increment=True)
+            if falhas and falhas.get("should_limit"):
+                return _login_rate_limited_response(falhas)
             return Response(
                 {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
                 status=403,
             )
+        # Num posto vinculado a senha não é a porta de quem opera (#2334): ali se
+        # entra pelo PIN ou pelo crachá, que têm bloqueio progressivo e aviso ao
+        # gerente. Até aqui qualquer staff com senha abria sessão num posto pela API,
+        # pulando a régua que a trava já cobra (``OperatorUnlockPasswordView``).
+        # Ficam com a senha: quem vincula postos (o reparo do posto é com a senha
+        # dela) e o Dono, que não tem PIN (a mesma exceção da trava, 06/11/2026).
+        # A senha está certa daqui para baixo: a recusa é da porta e não conta como
+        # senha errada; fica na trilha, como toda recusa.
+        if station_trust.is_trusted_station(request) and not _password_opens_station(user):
+            codigo = "operator_password_station_pin_only"
+            sign_in_audit.record(
+                user=user,
+                method=SignInMethod.PASSWORD,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason=codigo,
+            )
+            frase = "Neste posto, entre pelo PIN ou pelo crachá. Sem PIN, peça um ao gerente."
+            return Response({"detail": frase, "error": {"code": codigo}}, status=403)
         # Quem sabe por qual porta a pessoa entrou é quem abre a porta: o
         # backend de autenticação não distingue senha de PIN nem de crachá. A
         # linha da trilha quem grava é o receiver do `user_logged_in`.
         sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
         operator_session.start(request)
+        # A senha prova a pessoa mais do que o PIN: as travas desta sessão caem.
+        # Sem isto, quem travou e entrava com a PRÓPRIA senha ("Entrar com senha",
+        # na trava) continuava travado: o `login()` da mesma pessoa só cicla a
+        # chave e guarda as travas, e a tela não saía do lugar (beta 05/11, BI-09).
+        operator_session.unlock_capability(request, None)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
         return Response({"ok": True, "operator": operator_card(user)})
@@ -908,6 +1253,94 @@ class OperatorEligibleView(APIView):
         return Response({"operators": [operator_card(u) for u in eligible_operators(perm=perm)]})
 
 
+def _unlock_target_key(group, request):
+    """Chave de rate-limit pela conta-alvo do PIN (destrave, crachá perdido, troca).
+
+    Mesma forma do ``_login_username_key``: lê form e JSON (o BFF manda JSON).
+    Crachá não nomeia conta, então o balde é o da ESTAÇÃO que leu o crachá: um
+    balde global deixava qualquer dispositivo esgotar o crachá da loja inteira
+    (laudo S6). Sem ``operator_id``, a conta-alvo é quem está operando (a troca
+    de PIN depois do destrave), para que esse fluxo não divida um balde anônimo.
+    """
+    data = request.POST
+    if not data and "json" in (request.content_type or ""):
+        try:
+            data = json.loads(request.body or b"{}") or {}
+        except (ValueError, TypeError):
+            data = {}
+    if not hasattr(data, "get"):
+        data = {}
+    if str(data.get("badge") or "").strip():
+        station = station_trust.station_device_id(request) or station_trust.station_ref(request)
+        return f"badge:{station or 'sem-estacao'}"
+    operator_id = str(data.get("operator_id") or "").strip()
+    if not operator_id:
+        user = getattr(request, "user", None)
+        if user is not None and user.is_authenticated:
+            operator_id = str(user.pk)
+    return f"op:{operator_id or 'anon'}"
+
+
+#: O mesmo par de freios do destrave, para toda view em que errar o PIN conta.
+#: Por IP, 30/min (os dispositivos da loja dividem o IP); por conta-alvo, 5/min.
+_PIN_RATE_LIMITS = (
+    method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"),
+    method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch"),
+)
+
+
+def _pin_rate_limited(cls):
+    for decorator in reversed(_PIN_RATE_LIMITS):
+        cls = decorator(cls)
+    return cls
+
+
+def _pin_rate_limited_response() -> Response:
+    return Response(
+        {
+            "detail": "Muitas tentativas com PIN. Aguarde um minuto e tente de novo.",
+            "error": {"code": "operator_pin_rate_limited"},
+        },
+        status=429,
+    )
+
+
+def _pin_locked_response(locked_until) -> Response:
+    """423 com a frase do bloqueio e a hora em que ele vence.
+
+    PIN bloqueado não é PIN errado, e as duas recusas não podem ter a mesma cara:
+    com "Identificação inválida." a pessoa acha que errou o dedo e segue tentando,
+    e o bloqueio é progressivo (beta 05/11, CEN-01).
+    """
+    from shopman.backstage.services.operator import pin_locked_message
+
+    return Response(
+        {
+            "detail": pin_locked_message(locked_until),
+            "error": {"code": "pin_locked", "locked_until": locked_until.isoformat()},
+        },
+        status=423,
+    )
+
+
+def _pin_locked_by_this_failure(user):
+    """Se a falha que acabou de acontecer TRAVOU o PIN, avisa e devolve até quando.
+
+    Quem chama já sabe que o PIN NÃO estava bloqueado antes da tentativa (a
+    recusa de bloqueado sai antes de verificar), então achar o bloqueio agora é a
+    transição. É o momento de avisar: o dono da conta e quem pode desbloquear
+    recebem um aviso só, em vez de descobrir pela fila de "Tentativa recusada".
+    """
+    from shopman.backstage.services.operator import pin_locked_until
+
+    ate = pin_locked_until(user)
+    if ate is not None:
+        sign_in_audit.notify_pin_locked(user, ate)
+    return ate
+
+
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+@method_decorator(ratelimit(key=_unlock_target_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorUnlockView(APIView):
     """Establish the active operator by PIN (operator_id + pin) or badge (token).
 
@@ -916,6 +1349,12 @@ class OperatorUnlockView(APIView):
     Gate de ESTAÇÃO, e não de sessão: é AQUI que o balcão travado cria uma, e
     exigir sessão para criar sessão é a porta que não abre de manhã. A
     autorização real deste endpoint não é o gate — é provar o PIN ou o crachá.
+
+    Freio contra adivinhar PIN (4 dígitos = 10 mil combinações): o mesmo par do
+    ``OperatorLoginView``. Por conta-alvo, 5/min (ataque a um operador); teto por
+    IP, 30/min, generoso porque os dispositivos da loja dividem o IP (NAT). Até
+    19/10 este endpoint não tinha limite nenhum, e a estação confiável era o único
+    portão antes dele. Ambos ``block=False``: o handler devolve 429 amigável.
     """
 
     permission_classes = [IsTrustedStation]
@@ -927,6 +1366,23 @@ class OperatorUnlockView(APIView):
 
         body = request.data or {}
         perm, ok = _validated_unlock_perm(body.get("perm"))
+
+        if getattr(request, "limited", False):
+            # O freio por conta e o bloqueio do PIN disparam juntos na quinta
+            # falha. Quando o PIN está bloqueado, é isso que a pessoa precisa
+            # ler (até que horas, e quem resolve), e não "aguarde um minuto",
+            # que vence antes do bloqueio e manda tentar de novo.
+            bloqueado_ate = self._locked_target(body, perm) if ok else None
+            if bloqueado_ate is not None:
+                return _pin_locked_response(bloqueado_ate)
+            return Response(
+                {
+                    "detail": "Muitas tentativas de identificação. Aguarde um minuto e tente de novo.",
+                    "error": {"code": "operator_unlock_rate_limited"},
+                },
+                status=429,
+            )
+
         if not ok:
             return Response({"detail": "Permissão de operador inválida."}, status=400)
 
@@ -949,10 +1405,35 @@ class OperatorUnlockView(APIView):
             # None e some a única referência à conta-alvo — que é justamente
             # quem precisa ser avisado de que alguém errou o PIN dela.
             alvo = operator
+            # PIN bloqueado responde COMO bloqueado, antes de verificar: o
+            # `verify` recusaria até o PIN certo, com a mesma cara de um errado.
+            # Só para quem pode se identificar aqui (a lista da trava já mostra
+            # essas pessoas), e sem gravar falha nova nem avisar de novo: o aviso
+            # do bloqueio já saiu na transição.
+            bloqueado_ate = (
+                operator_service.pin_locked_until(operator)
+                if operator is not None and operator_service.is_eligible_operator(operator, required_perm=perm)
+                else None
+            )
+            if bloqueado_ate is not None:
+                sign_in_audit.record(
+                    user=operator,
+                    method=metodo,
+                    outcome=SignInOutcome.FAILED,
+                    request=request,
+                    reason="operator_pin_locked",
+                    notify_owner=False,
+                )
+                return _pin_locked_response(bloqueado_ate)
             if operator is not None and not operator_service.verify_operator_pin(operator, pin, required_perm=perm):
                 operator = None
 
         if operator is None:
+            travou_ate = (
+                _pin_locked_by_this_failure(alvo)
+                if alvo is not None and operator_service.is_eligible_operator(alvo, required_perm=perm)
+                else None
+            )
             # A recusa de PIN/crachá NÃO passa por `authenticate()`, então não
             # existe `user_login_failed` para ouvir: é aqui, na única view que a
             # produz, que ela vira linha. Mesma função de gravação do sucesso —
@@ -968,9 +1449,24 @@ class OperatorUnlockView(APIView):
                 outcome=SignInOutcome.FAILED,
                 request=request,
                 reason="operator_unlock_invalid",
+                # A falha que travou o PIN avisa pelo aviso do bloqueio, não por
+                # mais um "Tentativa recusada".
+                notify_owner=travou_ate is None,
             )
+            if travou_ate is not None:
+                return _pin_locked_response(travou_ate)
+            # A recusa diz o que houve (beta test de 05/11/2026, PDV-20 e
+            # PDV-24): o "Identificação inválida." não dizia se era o PIN, o
+            # crachá ou o acesso, nem quantas tentativas restam antes da trava.
+            # O acesso só se conta de quem a tela já lista.
+            if metodo != SignInMethod.BADGE and alvo is not None and not operator_service.is_eligible_operator(
+                alvo, required_perm=perm
+            ):
+                detail = "Esta pessoa não tem acesso a este app. Fale com o gerente."
+            else:
+                detail = operator_service.unlock_refusal_detail(alvo, badge=metodo == SignInMethod.BADGE)
             return Response(
-                {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
+                {"detail": detail, "error": {"code": "operator_unlock_invalid"}},
                 status=403,
             )
         # `login()` de verdade, e não um cartão guardado na sessão: a partir daqui
@@ -991,6 +1487,123 @@ class OperatorUnlockView(APIView):
         operator_session.start(request)
         operator_session.unlock_capability(request, _surface_lock_key(perm))
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
+
+    @staticmethod
+    def _locked_target(body, perm):
+        """Até quando está bloqueado o PIN da conta nomeada no corpo, ou ``None``.
+
+        Só para quem pode se identificar nesta superfície, como no caminho normal.
+        """
+        from django.contrib.auth import get_user_model
+
+        from shopman.backstage.services import operator as operator_service
+
+        operator_id = str(body.get("operator_id") or "").strip()
+        if not operator_id or str(body.get("badge") or "").strip():
+            return None
+        alvo = get_user_model().objects.filter(pk=operator_id, is_active=True).first()
+        if alvo is None or not operator_service.is_eligible_operator(alvo, required_perm=perm):
+            return None
+        return operator_service.pin_locked_until(alvo)
+
+
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+class OperatorUnlockPasswordView(APIView):
+    """"Entrar com senha" na trava: a porta de quem NÃO tem PIN.
+
+    Decisão do dono (06/11/2026, beta PDV-21): a Dona, que não tem PIN, destrava
+    o balcão com a senha dela. A trava lista só quem tem PIN, e sem esta porta o
+    Dono não chegava ao relatório de caixa pelo PDV.
+
+    A régua, conferida no servidor (a tela só mostra o botão):
+
+    * **Quem tem PIN entra pelo PIN.** O PIN tem bloqueio progressivo e aviso ao
+      gerente; a senha na trava não pode ser o atalho que pula isso.
+    * **Num posto da loja (estação vinculada), só o Dono** (superusuário ou quem
+      audita o caixa, ``can_audit_cash``). Caixa e Gerente usam PIN no balcão.
+      Fora de posto (o dispositivo pessoal de quem travou, beta BI-09), basta não
+      ter PIN: a pessoa já entrou com senha naquele dispositivo.
+    * **Precisa poder usar a superfície** (o mesmo ``perm`` da lista da trava).
+
+    Mesma trilha e mesmos freios da senha do ``OperatorLoginView``: a recusa de
+    senha vira linha pelo ``user_login_failed`` (o ``authenticate()`` o emite), o
+    acerto pelo ``user_logged_in`` com o método ``password``, e o balde de falhas
+    por conta é o MESMO dos dois caminhos (5 senhas erradas por minuto). Duas
+    portas com baldes separados dobrariam a cota de quem tenta adivinhar.
+    """
+
+    permission_classes = [IsTrustedStation]
+
+    def post(self, request):
+        from django.contrib.auth import authenticate
+        from shopman.doorman.models import PinCredential
+
+        from shopman.backstage.permissions import can_audit_cash
+        from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitas tentativas de login. Aguarde um minuto e tente de novo.",
+                    "error": {"code": "operator_login_rate_limited"},
+                },
+                status=429,
+            )
+
+        body = request.data or {}
+        perm, ok = _validated_unlock_perm(body.get("perm"))
+        if not ok:
+            return Response({"detail": "Permissão de operador inválida."}, status=400)
+        username = str(body.get("username") or "").strip()
+        password = str(body.get("password") or "")
+        if not username or not password:
+            return Response({"detail": "Informe usuário e senha."}, status=400)
+
+        falhas = _login_failures(request, increment=False)
+        if falhas and falhas.get("should_limit"):
+            return _login_rate_limited_response(falhas)
+
+        user = authenticate(request, username=username, password=password)
+        if user is None or not user.is_staff:
+            falhas = _login_failures(request, increment=True)
+            if falhas and falhas.get("should_limit"):
+                return _login_rate_limited_response(falhas)
+            return Response(
+                {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
+                status=403,
+            )
+
+        # A senha está certa daqui para baixo: a recusa é da régua da porta, e
+        # não conta como senha errada. Fica na trilha, como toda recusa.
+        if not operator_service.is_eligible_operator(user, required_perm=perm):
+            recusa = ("operator_unlock_invalid", "Esta pessoa não tem acesso a este app. Fale com o gerente.")
+        elif PinCredential.objects.filter(user=user).exists():
+            recusa = ("operator_password_has_pin", "Você tem PIN: escolha seu nome na lista e digite o PIN.")
+        elif station_trust.is_trusted_station(request) and not can_audit_cash(user):
+            recusa = (
+                "operator_password_owner_only",
+                "Neste posto, só o Dono entra com senha. Peça um PIN ao gerente.",
+            )
+        else:
+            recusa = None
+        if recusa is not None:
+            codigo, frase = recusa
+            sign_in_audit.record(
+                user=user,
+                method=SignInMethod.PASSWORD,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason=codigo,
+            )
+            return Response({"detail": frase, "error": {"code": codigo}}, status=403)
+
+        sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
+        login(request, user)
+        operator_session.start(request)
+        # Como no login com senha (beta BI-09): a senha prova a pessoa mais do
+        # que o PIN, e as travas desta sessão caem.
+        operator_session.unlock_capability(request, None)
+        return Response({"ok": True, "operator": operator_service.operator_card(user)})
 
 
 class OperatorLockView(APIView):
@@ -1016,6 +1629,29 @@ class OperatorLockView(APIView):
         return Response({"ok": True})
 
 
+class OperatorLogoutView(APIView):
+    """Sair deste dispositivo: encerra a sessão da pessoa, e só ela.
+
+    O Bloquear fecha a superfície e deixa a sessão viva para a troca por PIN; num
+    celular pessoal ou num PC de escritório sem posto, isso deixava a lista de
+    operadores à mostra para quem achasse o dispositivo (beta 05/11, CEN-07).
+    Sair derruba a sessão: o dispositivo sem posto volta a pedir senha.
+
+    O vínculo de POSTO não é tocado. Ele é da loja, não de quem saiu, e tem gesto
+    próprio ("Desvincular deste posto"); revogá-lo aqui faria o balcão amanhecer
+    pedindo senha porque alguém tocou em Sair. Num posto, sair é ficar na trava.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        from django.contrib.auth import logout
+
+        logout(request)
+        return Response({"ok": True})
+
+
+@_pin_rate_limited
 class OperatorBadgeLostView(APIView):
     """O operador declara que perdeu o crachá, provando o PIN.
 
@@ -1031,6 +1667,9 @@ class OperatorBadgeLostView(APIView):
 
     def post(self, request):
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         # Confirmação ANTES do PIN: um cliente que esqueceu a flag não pode
@@ -1060,10 +1699,15 @@ class OperatorBadgeLostView(APIView):
                 status=400,
             )
 
+        bloqueado_ate = operator_service.pin_locked_until(alvo)
+        if bloqueado_ate is not None:
+            return _pin_locked_response(bloqueado_ate)
+
         # `required_perm=None`: o crachá é da PESSOA, não da tela. Exigir a
         # permissão desta superfície deixaria quem opera só a Produção sem poder
         # matar o próprio crachá a partir do balcão em que está.
         if not operator_service.verify_operator_pin(alvo, pin, required_perm=None):
+            travou_ate = _pin_locked_by_this_failure(alvo)
             # Errar o PIN aqui é tentar matar o crachá de alguém: vira linha, e o
             # dono é avisado como em qualquer recusa.
             sign_in_audit.record(
@@ -1072,7 +1716,10 @@ class OperatorBadgeLostView(APIView):
                 outcome=SignInOutcome.FAILED,
                 request=request,
                 reason="badge_lost_invalid",
+                notify_owner=travou_ate is None,
             )
+            if travou_ate is not None:
+                return _pin_locked_response(travou_ate)
             return Response(
                 {"detail": "PIN inválido.", "error": {"code": "operator_pin_invalid"}},
                 status=403,
@@ -1092,6 +1739,7 @@ class OperatorBadgeLostView(APIView):
         return Response({"ok": True, **resultado})
 
 
+@_pin_rate_limited
 class OperatorPinChangeView(APIView):
     """Operator changes their OWN PIN, proving the current one.
 
@@ -1107,6 +1755,9 @@ class OperatorPinChangeView(APIView):
         from shopman.doorman.models import PinCredentialError
 
         from shopman.backstage.services import operator as operator_service
+
+        if getattr(request, "limited", False):
+            return _pin_rate_limited_response()
 
         body = request.data or {}
         current_pin = str(body.get("current_pin") or "")
@@ -1124,8 +1775,14 @@ class OperatorPinChangeView(APIView):
         try:
             operator_service.change_own_pin(target, current_pin, new_pin)
         except operator_service.PinChangeError as exc:
-            status = 423 if exc.code == "locked" else 400
-            return Response({"detail": str(exc), "error": {"code": exc.code}}, status=status)
+            bloqueado_ate = operator_service.pin_locked_until(target) if exc.code == "locked" else None
+            if bloqueado_ate is not None:
+                return _pin_locked_response(bloqueado_ate)
+            if exc.code == "invalid_current":
+                travou_ate = _pin_locked_by_this_failure(target)
+                if travou_ate is not None:
+                    return _pin_locked_response(travou_ate)
+            return Response({"detail": str(exc), "error": {"code": exc.code}}, status=400)
         except PinCredentialError as exc:
             return Response({"detail": str(exc), "error": {"code": "pin_policy"}}, status=400)
         return Response({"ok": True})
@@ -1436,6 +2093,7 @@ class ProductionMiseEnPlaceView(APIView):
             selected_date=query.get("date"),
             expand=query["expand"],
             access=access,
+            purchase_url=purchase_surface_url(request.user),
         )
         return Response({"mise_en_place": projection_data(mise_en_place)})
 
@@ -1475,6 +2133,62 @@ class ProductionWeighingView(APIView):
                         weighing.selected_date,
                         f"user:{request.user.pk}",
                     ),
+                )
+            }
+        )
+
+
+class ProductionBlindCodeAllocationView(APIView):
+    """Comando idempotente que prepara os códigos exibidos pela projection."""
+
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_prep"
+
+    def post(self, request):
+        raw_date = request.data.get("selected_date") if hasattr(request.data, "get") else None
+        from django.utils.dateparse import parse_date
+
+        selected_date = parse_date(str(raw_date or ""))
+        if selected_date is None:
+            raise ProductionMutationValidationError({"selected_date": "Informe uma data válida."})
+        action_href = "/api/v1/backstage/production/weighing/blind-codes/"
+        body = validated_body(
+            request,
+            ProductionBlindCodeAllocationSerializer,
+            projection_kind="weighing",
+            action_kind="allocate_blind_codes",
+            action_href=action_href,
+            action_ref=lambda value: (
+                f"allocate_blind_codes:{value['selected_date'].isoformat()}:"
+                f"{value.get('position', '')}:{value.get('base_recipe', '')}"
+            ),
+            selected_date=selected_date,
+        )
+        access = _resolved_production_access(request, selected_date=selected_date)
+        current = build_production_weighing(
+            selected_date=selected_date,
+            position_ref=body.get("position", ""),
+            base_recipe=body.get("base_recipe", ""),
+            access=access,
+        )
+        allocate_blind_prep_codes(
+            recipe_refs=tuple(ticket.recipe_ref for ticket in current.tickets),
+            selected_date=selected_date,
+        )
+        weighing = build_production_weighing(
+            selected_date=selected_date,
+            position_ref=body.get("position", ""),
+            base_recipe=body.get("base_recipe", ""),
+            access=access,
+        )
+        from shopman.backstage.api.print_jobs import destination_projection
+
+        weighing = replace(weighing, print_destination=destination_projection(request=request))
+        return Response(
+            {
+                "weighing": projection_data(
+                    weighing,
+                    freshness_context=("weighing", weighing.selected_date, f"user:{request.user.pk}"),
                 )
             }
         )
@@ -1781,34 +2495,106 @@ class DayClosingView(APIView):
         if closing.already_closed:
             return Response({"detail": "Fechamento de hoje já foi realizado."}, status=409)
 
+        release = request.data.get("production_release") if hasattr(request, "data") else None
+        if release is not None and not isinstance(release, dict):
+            return Response(
+                {"detail": "Envie a liberação como um objeto (motivo e autorização).", "field": "production_release"},
+                status=400,
+            )
         try:
             closing_date = closing_service.perform_day_closing(
                 user=request.user,
                 items=list(closing.items),
                 quantities_by_sku={str(k): str(v) for k, v in quantities.items()},
+                production_release=release,
             )
+        except closing_service.PendingProductionBlocksClosing as exc:
+            # Produção aberta impede selar (decisão do dono, 05/11/2026). 409: o
+            # pedido está certo, o estado do dia é que não deixa.
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente que libera: o mesmo desafio da sangria.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("day_closing_perform_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha no fechamento."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha no fechamento.")}, status=400)
 
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
 
-def _reconcile_payment_if_due(order) -> None:
-    """Pergunta ao gateway (throttled) se este pedido de cartão já foi pago.
+class DayClosingNotPickedUpView(APIView):
+    """O gesto em lote do fechamento: encerrar como não retirado os prontos da lista.
 
-    Mesma função que a volta do Stripe usa na loja — um dono só para a regra,
-    duas portas de entrada. Degrada em silêncio: a tela do operador não pode
-    cair porque o provedor não respondeu.
+    Opcional (decisão da coordenação em 22/11/2026, reversível): fechar o dia não
+    depende dele. Body: ``{"orders": [{"ref", "revision"}], "manager_approval":
+    {"username", "pin"} | {"badge"}}``.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.perform_closing"
+
+    def post(self, request):
+        body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+        try:
+            record = closing_service.resolve_not_picked_up(user=request.user, release=body)
+        except closing_service.NotPickedUpBatchRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "error": {"code": exc.code, "message": str(exc), "field": exc.field},
+                },
+                status=409,
+            )
+        except PosIntentError as exc:
+            # A assinatura do gerente: o mesmo desafio da sangria e da produção aberta.
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({"ok": True, "orders": record["orders"], "approved_by": record["approved_by"]})
+
+
+def _payment_check_due(order) -> bool:
+    """A tela deve pedir a conferência do pagamento (``payment/check/``)? Só LÊ.
+
+    Cartão/link em aberto, sem captura. Degrada para ``False``: a leitura do
+    pedido não pode cair porque o Payman não respondeu.
     """
     try:
         from shopman.shop.services import payment as payment_service
 
-        payment_service.reconcile_with_gateway_if_due(order)
+        return payment_service.gateway_check_applies(order)
+    except Exception:
+        logger.warning("order_detail.payment_check_due degraded ref=%s", order.ref, exc_info=True)
+        return False
+
+
+def _check_payment_with_gateway(order) -> bool:
+    """Pergunta ao gateway (throttled) se este pedido de cartão já foi pago.
+
+    Mesma função que a volta do Stripe usa na loja: um dono só para a regra,
+    duas portas de entrada. Degrada em silêncio (``False``): o gesto do
+    operador não pode cair porque o provedor não respondeu.
+    """
+    try:
+        from shopman.shop.services import payment as payment_service
+
+        return payment_service.reconcile_with_gateway_if_due(order)
     except Exception:
         logger.warning("order_detail.gateway_reconcile degraded ref=%s", order.ref, exc_info=True)
+        return False
+
+
+def _payment_check_response(order) -> Response:
+    changed = _check_payment_with_gateway(order)
+    return Response({"ok": True, "changed": changed, "payment_check_due": _payment_check_due(order)})
 
 
 @extend_schema_view(
@@ -1826,24 +2612,55 @@ class OrderDetailView(OperationalObservationMixin, APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        # ⚠️ O OPERADOR TAMBÉM PRECISA PODER PERGUNTAR AO GATEWAY.
-        #
-        # A reconciliação contra webhook perdido nasceu só no acompanhamento do
-        # cliente, e isso deixou a verdade do Gestor pendurada no navegador de
-        # outra pessoa: cliente que paga e fecha a aba (ou paga em outro
-        # dispositivo) some do circuito, e o card fica em "Aguardando pagamento…"
-        # sem que exista, na loja, um gesto capaz de resolver. O worker resgata
-        # em minutos; abrir o pedido resolve agora.
-        #
-        # Custo: o mesmo throttle de ``GATEWAY_RECHECK_SECONDS`` do cliente, e
-        # só para cartão em aberto. A fila (``OrderQueueView``) segue fora
-        # disto de propósito — ela relê o board inteiro o tempo todo, e uma
-        # chamada por card viraria enxurrada no provedor.
-        _reconcile_payment_if_due(order)
+        # Leitura não produz efeito (A8-1). A pergunta ao gateway é o comando
+        # ``POST orders/<ref>/payment/check/`` (``OrderPaymentCheckView``), que a
+        # tela pede ao abrir o pedido enquanto ``payment_check_due`` diz que ele
+        # deve cartão.
         proj = build_operator_order(order, user=request.user)
         # A impressora desta estação, a mesma que o quadro recebe: o "Imprimir Via
         # Pedido" do detalhe sai por ela (P2-19).
-        return Response(read_data(order=projection_data(proj), device_agent=_station_device_agent(request)))
+        return Response(
+            read_data(
+                order=projection_data(proj),
+                device_agent=_station_device_agent(request),
+                payment_check_due=_payment_check_due(order),
+            )
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the card gateway now whether this order was paid",
+        responses={200: OpenApiResponse(description="Checked; `changed` says the payment moved.")},
+    ),
+)
+class OrderPaymentCheckView(APIView):
+    """⚠️ O OPERADOR TAMBÉM PRECISA PODER PERGUNTAR AO GATEWAY.
+
+    A reconciliação contra webhook perdido nasceu só no acompanhamento do
+    cliente, e isso deixou a verdade do Gestor pendurada no navegador de outra
+    pessoa: cliente que paga e fecha a aba (ou paga em outro dispositivo) some do
+    circuito, e o card fica em "Aguardando pagamento…" sem que exista, na loja,
+    um gesto capaz de resolver. O worker (``reconcile_payments``) resgata em
+    minutos; abrir o pedido resolve agora: a tela do detalhe pede este comando
+    ao abrir, enquanto o detalhe diz ``payment_check_due``.
+
+    Custo: o mesmo throttle de ``GATEWAY_RECHECK_SECONDS`` do cliente, e só para
+    cartão em aberto. A fila (``OrderQueueView``) segue fora disto de propósito:
+    ela relê o board inteiro o tempo todo, e uma chamada por card viraria
+    enxurrada no provedor. Era o GET do detalhe que perguntava, e leitura com
+    efeito perguntava a cada releitura da tela.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return _payment_check_response(order)
 
 
 @extend_schema_view(
@@ -1862,6 +2679,65 @@ class OrderQueueView(OperationalObservationMixin, APIView):
     def get(self, request):
         queue = build_two_zone_queue(user=request.user)
         return Response(read_data(queue=projection_data(queue), device_agent=_station_device_agent(request)))
+
+
+class DeliveriesView(APIView):
+    """A seção Entregas do Gestor: o que aguarda entregador e as corridas vivas
+    da TaOn, com as coordenadas para o mapa (``projections.deliveries``)."""
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.deliveries import build_deliveries
+
+        # ``?plan=0``: sem o plano das corridas (que pergunta à central). É a leitura da
+        # coluna Saída dos Pedidos, que só quer as corridas da casa (M3d, #2937).
+        with_plan = request.GET.get("plan") != "0"
+        return Response(projection_data(build_deliveries(user=request.user, with_plan=with_plan)))
+
+
+class DeliveriesCountView(APIView):
+    """O selo de Entregas no menu e o "Chamar entregador" do cartão Pronto do Painel:
+    ``{waiting, call_refs}`` (entregas do dia sem corrida chamada; os prontos que dá
+    para chamar agora, #2876)."""
+
+    permission_classes = [HasOrderBoardAccess]
+
+    def get(self, request):
+        from shopman.backstage.projections.deliveries import deliveries_waiting_summary
+
+        return Response(deliveries_waiting_summary())
+
+
+class DeliveryDriverPhotoView(APIView):
+    """A foto do entregador de uma corrida VIVA, servida pelo servidor.
+
+    A tela nunca vê o endereço da TaOn (assinado e pessoal). A foto mora só em
+    cache e só enquanto a corrida vive (decisão do dono, LGPD): corrida
+    encerrada responde 404. ``Cache-Control: no-store`` para o navegador também
+    não guardar.
+
+    Quem vê: quem gerencia pedidos ou expede (o Gestor) e quem opera o caixa
+    (o painel da corrida do PDV): decisão do dono, 22/11 (#3150). A foto segue
+    viva só enquanto a corrida vive; nada muda no quanto ela dura.
+    """
+
+    permission_classes = [HasAnyBackstagePermission]
+    any_permission = (*ORDER_BOARD_PERMISSIONS, "cashman.operate_pos")
+
+    def get(self, request, ride: str):
+        from django.http import HttpResponse
+
+        from shopman.shop.services import courier
+
+        photo = courier.driver_photo(ride)
+        if photo is None:
+            response = HttpResponse(status=404)
+        else:
+            body, content_type = photo
+            response = HttpResponse(body, content_type=content_type)
+        response["Cache-Control"] = "no-store"
+        return response
 
 
 class OrderRailCountsView(APIView):
@@ -1946,6 +2822,121 @@ def _station_device_agent(request) -> dict:
 # ── Order action endpoints ────────────────────────────────────────────
 
 
+def _intention_scope(request, operation: str, resource: str) -> str:
+    """O escopo de uma intenção: a pessoa, a operação e o recurso (o pedido, ou "" na corrida em grupo)."""
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    return mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": resource})
+
+
+def _intention_response(request, *, operation, resource, inputs, execute, prepare=None, base=None, finish=None,
+                        where="o pedido"):
+    """O protocolo de intenção das ações de operador, num lugar só.
+
+    Quem age é quem a tela leu (``expected_actor_id``), sobre o que a tela leu
+    (``base``: a ``base_revision`` do corpo, ou o que a view passar, como o mapa
+    de revisões de uma corrida de vários pedidos), uma vez só
+    (``Idempotency-Key``): repetir a mesma chave devolve o mesmo resultado, com
+    ``replayed``. ``execute(base)`` grava e devolve o que acrescentar à resposta;
+    as recusas de negócio viram recibo ``not_applied`` no dialeto canônico.
+    ``prepare`` roda antes de qualquer gravação e só na primeira vez; ``finish``
+    acrescenta leitura fresca à resposta (nunca ao recibo). ``resource`` é o
+    pedido da ação, ou "" quando ela é de vários; ``where`` é como a mensagem
+    chama o que o operador precisa atualizar.
+    """
+    from shopman.shop.services.operator_orders import OrderStateConflict
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        lookup_local_mutation,
+        mutation_fingerprint,
+        run_idempotent_mutation,
+    )
+
+    if request.data.get("expected_actor_id") != request.user.pk:
+        return Response({"detail": f"A identificação mudou. Atualize {where} antes de gravar.", "code": "actor_changed"}, status=409)
+    key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+    if base is None:
+        base = str(request.data.get("base_revision") or "")
+    if not key or len(key) > 128 or not base:
+        return Response({"detail": f"Esta tela está desatualizada. Atualize {where} e tente de novo.", "code": "intention_required"}, status=400)
+    scope = _intention_scope(request, operation, resource)
+    fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
+
+    def apply():
+        try:
+            extra = execute(base) or {}
+        except (OrderStateConflict, OrderConflict) as exc:
+            body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+            # Conflito nomeado (``revision_changed`` da corrida): o código onde as
+            # telas o procuram e, no dialeto canônico, o que mudou em ``errors``.
+            code = getattr(exc, "code", "")
+            if code:
+                body.update({"code": code, "error": {"code": code, "message": str(exc)}})
+            errors = getattr(exc, "errors", None)
+            if errors:
+                body["errors"] = errors
+            return body, 409
+        except notification_service.NotificationResendRefused as exc:
+            return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
+        except OrderError as exc:
+            body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
+            # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
+            # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
+            field = getattr(exc, "field", "")
+            if field:
+                body.update({"field": field, "errors": {field: [str(exc)]}})
+            code = getattr(exc, "code", "")
+            if code:
+                body["code"] = code
+                # O mesmo código onde as telas de operador o procuram
+                # (``httpErrorCode`` lê ``error.code``).
+                body["error"] = {"code": code, "message": str(exc)}
+            return body, 400
+        return {"ok": True, **({"ref": resource} if resource else {}), "outcome": "applied", "intention": key, **extra}, 200
+
+    try:
+        result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
+        if result is None:
+            # Provider reads and approval checks precede the local transaction.
+            # A committed replay never repeats this preparation.
+            if prepare is not None:
+                refusal = prepare()
+                if refusal is not None:
+                    # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
+                    # aplicou nada, e a tela precisa saber disso para liberar a
+                    # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
+                    # motivos) parecia "talvez gravou", o recibo dizia
+                    # "desconhecido" e a tela prendia a intenção até o F5 — foi
+                    # assim que um cancelamento travou na homologação de 21/09.
+                    if isinstance(refusal.data, dict):
+                        refusal.data.setdefault("outcome", "not_applied")
+                        refusal.data.setdefault("intention", key)
+                    return refusal
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
+    except RemoteMutationConflict as exc:
+        return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
+    except RemoteMutationInProgress:
+        return Response({"outcome": "in_progress", "intention": key}, status=202)
+    return Response({**result.response_body, "replayed": result.replayed, **(finish() if finish else {})}, status=result.response_code)
+
+
+def _intention_receipt(request, *, operation, resource):
+    """A consulta pura do resultado de uma intenção (``GET ?idempotency_key=``): nunca executa nada."""
+    from shopman.shop.services.remote_mutations import RemoteMutationInProgress, lookup_local_mutation
+
+    key = str(request.query_params.get("idempotency_key") or "")
+    if not operation or not key or len(key) > 128:
+        return Response({"detail": "Intenção indisponível."}, status=400)
+    try:
+        result = lookup_local_mutation(scope=_intention_scope(request, operation, resource), key=key)
+    except RemoteMutationInProgress:
+        result = None
+    if result is None:
+        return Response({"outcome": "unknown", "intention": key}, status=202)
+    return Response({**result.response_body, "replayed": True}, status=result.response_code)
+
+
 class _OrderActionBase(OperationalObservationMixin, APIView):
     """Shared base for order action endpoints (advance/confirm/reject/cancel)."""
 
@@ -1953,92 +2944,17 @@ class _OrderActionBase(OperationalObservationMixin, APIView):
     required_permission = "shop.manage_orders"
 
     def _context_response(self, request, order, operation, inputs, execute, *, prepare=None):
-        from shopman.shop.services.operator_orders import OrderStateConflict
-        from shopman.shop.services.remote_mutations import (
-            RemoteMutationConflict,
-            RemoteMutationInProgress,
-            lookup_local_mutation,
-            mutation_fingerprint,
-            run_idempotent_mutation,
+        def with_order():
+            order.refresh_from_db()
+            return {"order": projection_data(build_operator_order(order, user=request.user))}
+
+        return _intention_response(
+            request, operation=operation, resource=order.ref, inputs=inputs, execute=execute,
+            prepare=prepare, finish=with_order,
         )
-
-        if request.data.get("expected_actor_id") != request.user.pk:
-            return Response({"detail": "A identificação mudou. Atualize o pedido antes de gravar.", "code": "actor_changed"}, status=409)
-        key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
-        base = str(request.data.get("base_revision") or "")
-        if not key or len(key) > 128 or not base:
-            return Response({"detail": "Esta tela está desatualizada. Atualize o pedido e tente de novo.", "code": "intention_required"}, status=400)
-        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
-        fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
-
-        def apply():
-            try:
-                extra = execute(base) or {}
-            except (OrderStateConflict, OrderConflict) as exc:
-                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
-            except notification_service.NotificationResendRefused as exc:
-                return {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}, "outcome": "not_applied", "intention": key}, exc.status
-            except OrderError as exc:
-                body = {"detail": str(exc), "outcome": "not_applied", "intention": key}
-                # Recusa de campo (reagendar: ``date``/``slot``) sai no dialeto
-                # canônico ``{detail, field, errors}`` para a tela apontar a entrada.
-                field = getattr(exc, "field", "")
-                if field:
-                    body.update({"field": field, "errors": {field: [str(exc)]}})
-                code = getattr(exc, "code", "")
-                if code:
-                    body["code"] = code
-                    # O mesmo código onde as telas de operador o procuram
-                    # (``httpErrorCode`` lê ``error.code``).
-                    body["error"] = {"code": code, "message": str(exc)}
-                return body, 400
-            return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
-
-        try:
-            result = lookup_local_mutation(scope=scope, key=key, fingerprint=fingerprint)
-            if result is None:
-                # Provider reads and approval checks precede the local transaction.
-                # A committed replay never repeats this preparation.
-                if prepare is not None:
-                    refusal = prepare()
-                    if refusal is not None:
-                        # O preparo roda ANTES de qualquer gravação: recusa aqui nunca
-                        # aplicou nada, e a tela precisa saber disso para liberar a
-                        # intenção. Sem o carimbo, um 503 (iFood fora do ar ao ler os
-                        # motivos) parecia "talvez gravou", o recibo dizia
-                        # "desconhecido" e a tela prendia a intenção até o F5 — foi
-                        # assim que um cancelamento travou na homologação de 21/09.
-                        if isinstance(refusal.data, dict):
-                            refusal.data.setdefault("outcome", "not_applied")
-                            refusal.data.setdefault("intention", key)
-                        return refusal
-                result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
-        except RemoteMutationConflict as exc:
-            return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
-        except RemoteMutationInProgress:
-            return Response({"outcome": "in_progress", "intention": key}, status=202)
-        order.refresh_from_db()
-        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
 
     def get(self, request, ref: str):
-        from shopman.shop.services.remote_mutations import (
-            RemoteMutationInProgress,
-            lookup_local_mutation,
-            mutation_fingerprint,
-        )
-
-        operation = getattr(self, "intention_operation", "")
-        key = str(request.query_params.get("idempotency_key") or "")
-        if not operation or not key or len(key) > 128:
-            return Response({"detail": "Intenção indisponível."}, status=400)
-        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": ref})
-        try:
-            result = lookup_local_mutation(scope=scope, key=key)
-        except RemoteMutationInProgress:
-            result = None
-        if result is None:
-            return Response({"outcome": "unknown", "intention": key}, status=202)
-        return Response({**result.response_body, "replayed": True}, status=result.response_code)
+        return _intention_receipt(request, operation=getattr(self, "intention_operation", ""), resource=ref)
 
     def _get_order(self, ref: str):
         order = orders_service.find_order(ref)
@@ -2183,15 +3099,27 @@ class OrderRejectView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        reason = str(request.data.get("reason") or "").strip()
-        if not reason:
-            return Response({"detail": "Motivo da recusa é obrigatório."}, status=400)
-        code = str(request.data.get("cancellation_code") or "").strip()
+        from shopman.shop.services import cancel_reasons
+
+        # A MESMA lista do cancelar (``cancel_reasons``), em qualquer canal: o motivo
+        # é a chave, o cliente lê o texto revisado dela, e a observação livre é
+        # interna. No iFood, o código dele sai da chave (``DEFAULT_REASON_CODES``).
+        reason_key = str(request.data.get("reason_key") or "").strip()
+        internal_note = str(request.data.get("internal_note") or "").strip()
+        problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
+        if problem:
+            return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
+        reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
+            # O iFood já concluiu: não há o que recusar lá, e a leitura dos motivos
+            # falharia com um 503 sem sentido. Recusa de antemão, dizendo o porquê.
+            concluded = ifood_concluded.concluded_refusal(order, verb="recusar")
+            if concluded:
+                return Response({"detail": concluded, "error": {"code": "ifood_concluded", "message": concluded}}, status=409)
             try:
-                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+                prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:
                 return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
             except ValueError as exc:
@@ -2199,10 +3127,15 @@ class OrderRejectView(_OrderActionBase):
 
         def execute(base):
             orders_service.reject_order(order, reason=reason, actor=_actor(request),
-                rejected_by="operator", cancellation_code=code, expected_revision=base,
+                rejected_by="operator", reason_key=reason_key,
+                internal_note=internal_note, expected_revision=base,
                 prepared_identity=prepared["identity"])
 
-        return self._context_response(request, order, "reject", {"reason": reason, "cancellation_code": code}, execute, prepare=prepare)
+        return self._context_response(
+            request, order, "reject",
+            {"reason_key": reason_key, "internal_note": internal_note},
+            execute, prepare=prepare,
+        )
 
 
 class OrderIFoodEvidenceView(OperationalObservationMixin, APIView):
@@ -2247,14 +3180,31 @@ class OrderIFoodHandshakeView(_OrderActionBase):
         if err:
             return err
         inputs = {key: str(request.data.get(key) or "").strip() for key in (
-            "dispute_id", "decision", "reason", "detail_reason",
+            "dispute_id", "decision", "reason", "detail_reason", "alternative_id",
         )}
+        # Contraproposta: valor em centavos (``amount_q``) e tempo em minutos são
+        # inteiros. Vazio é "não informado"; o resto é recusado antes de qualquer
+        # gravação, no dialeto ``{detail, field, errors}``.
+        for field, message in (("amount_q", "Valor inválido. Informe o valor em centavos."),
+                               ("minutes", "Tempo inválido. Escolha um dos tempos oferecidos pelo iFood.")):
+            value = request.data.get(field)
+            if value is None or value == "":
+                inputs[field] = None
+            elif isinstance(value, int) and not isinstance(value, bool):
+                inputs[field] = value
+            elif isinstance(value, str) and value.strip().isascii() and value.strip().isdigit() and len(value.strip()) < 15:
+                inputs[field] = int(value.strip())
+            else:
+                return Response({"detail": message, "field": field, "errors": {field: [message]},
+                                 "outcome": "not_applied"}, status=400)
 
         def execute(base):
             try:
                 ifood_handshake.enqueue_response(order, **inputs, actor=_actor(request), expected_revision=base)
             except ifood_handshake.HandshakeValidationError as exc:
-                raise OrderError(str(exc)) from exc
+                error = OrderError(str(exc))
+                error.field = exc.field  # o ``_context_response`` devolve ``{detail, field, errors}``
+                raise error from exc
             return {"response_queued": True}
 
         return self._context_response(request, order, "ifood-handshake", inputs, execute)
@@ -2290,21 +3240,16 @@ class OrderCancelView(_OrderActionBase):
             return err
         from shopman.shop.services import cancel_reasons
 
-        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``): o
-        # cliente lê o texto revisado da chave, nunca o que o operador digitou.
-        # A observação livre é interna. No iFood o motivo é o código dele
-        # (``cancellation_code`` + a descrição em ``reason``), e a chave é opcional.
+        # O motivo é OBRIGATÓRIO e vem da lista única (``cancel_reasons``), em
+        # qualquer canal: o cliente lê o texto revisado da chave, nunca o que o
+        # operador digitou. A observação livre é interna. No iFood, o código dele
+        # sai da chave (``ifood_callbacks.DEFAULT_REASON_CODES``).
         reason_key = str(request.data.get("reason_key") or "").strip()
         internal_note = str(request.data.get("internal_note") or "").strip()
-        code = str(request.data.get("cancellation_code") or "").strip()
-        marketplace = order.channel_ref == "ifood"
-        problem = cancel_reasons.validation_message(reason_key) if (reason_key or not marketplace) else ""
+        problem = cancel_reasons.validation_message(reason_key, channel_ref=order.channel_ref)
         if problem:
             return Response({"detail": problem, "field": "reason_key", "errors": {"reason_key": [problem]}}, status=400)
-        if marketplace:
-            reason = str(request.data.get("reason") or "").strip() or "Cancelado pelo operador"
-        else:
-            reason = cancel_reasons.cancel_reason(reason_key).label
+        reason = cancel_reasons.cancel_reason(reason_key).label
         prepared = {}
 
         def prepare():
@@ -2338,7 +3283,7 @@ class OrderCancelView(_OrderActionBase):
                     return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
 
             try:
-                prepared["identity"] = orders_service.prepare_cancellation(order, code)
+                prepared["identity"] = orders_service.prepare_cancellation(order, reason_key)
             except operator_orders.CancellationReasonsUnavailable as exc:
                 return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
             except ValueError as exc:
@@ -2346,13 +3291,13 @@ class OrderCancelView(_OrderActionBase):
 
         def execute(base):
             orders_service.cancel_order(order, reason=reason, actor=_actor(request),
-                cancellation_code=code, reason_key=reason_key, internal_note=internal_note, expected_revision=base,
+                reason_key=reason_key, internal_note=internal_note, expected_revision=base,
                 expected_authority_revision=prepared["authority"], prepared_identity=prepared["identity"])
 
         # Credentials are validated transiently; they are never fingerprinted or retained.
         return self._context_response(
             request, order, "cancel",
-            {"reason_key": reason_key, "internal_note": internal_note, "reason": reason, "cancellation_code": code},
+            {"reason_key": reason_key, "internal_note": internal_note},
             execute, prepare=prepare,
         )
 
@@ -2360,20 +3305,398 @@ class OrderCancelView(_OrderActionBase):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="Valid cancellation reasons for an order (marketplace-aware)",
-        responses={200: OpenApiResponse(description="Reason list.")},
+        summary="Return preview: what can still come back, and where the money goes",
+        responses={200: OpenApiResponse(description="Return preview.")},
     ),
 )
-class OrderCancellationReasonsView(_OrderActionBase):
+class OrderReturnPreviewView(OperationalObservationMixin, APIView):
+    """A prévia da devolução (WP-G12): itens que ainda podem voltar, o preço pago de
+    cada um, para onde o dinheiro volta e a ação com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
     def get(self, request, ref: str):
+        from shopman.backstage.projections.order_return import build_order_return
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_return(order, user=request.user))
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Promise at risk: the choices of the \"Resolver\" dialog and the message to the customer",
+        responses={
+            200: OpenApiResponse(description="Facts, choices (swap, reschedule, remove, cancel) and the customer message."),
+            404: OpenApiResponse(description="Order not found."),
+            409: OpenApiResponse(description="The order's promise is not at risk anymore: {detail}."),
+        },
+    ),
+)
+class OrderPromiseResolutionView(OperationalObservationMixin, APIView):
+    """O diálogo "Resolver" da promessa em risco (WP-G08): o fato, as escolhas, o que
+    acontece com o dinheiro e a mensagem ao cliente de cada uma, lidos na hora em que
+    o diálogo abre. Nada é gravado nem enviado."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_promise_resolution import NOT_AT_RISK, build_promise_resolution
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        resolution = build_promise_resolution(order, user=request.user)
+        if resolution is None:
+            return Response({"detail": NOT_AT_RISK}, status=409)
+        return Response(projection_data(resolution))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register a return after the sale (items, reason and the manager's PIN)",
+        responses={200: OpenApiResponse(description="Return registered.")},
+    ),
+)
+class OrderReturnView(_OrderActionBase):
+    """Registrar devolução depois da venda (decisão 2 do dono, 17/11/2026).
+
+    ``POST {items: [{line_id, qty}], reason, base_revision, expected_actor_id,
+    manager_approval}``. Sempre com o PIN de um Gerente escolhido da lista (ou o
+    crachá): devolver é dinheiro saindo da casa. O comando é o
+    ``ReturnService.initiate_return``, que grava o registro e enfileira o estoque e
+    o estorno (``return.process``); o dinheiro volta pelo caminho que já existe para
+    cada meio (gateway sozinho; dinheiro e maquininha pendentes no PDV).
+    """
+
+    intention_operation = "return"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.exceptions import InvalidTransition
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_return import return_block_reason, return_revision
+        from shopman.shop.handlers.returns import ReturnService
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
         order, err = self._get_order(ref)
         if err:
             return err
+        reason = str(request.data.get("reason") or "").strip()
+        if not reason:
+            problem = "Escreva o motivo da devolução."
+            return Response({"detail": problem, "field": "reason", "errors": {"reason": [problem]}}, status=400)
+        raw_items = request.data.get("items")
+        items: list[dict] = []
+        for raw in raw_items if isinstance(raw_items, list) else []:
+            if not isinstance(raw, dict):
+                continue
+            line_id = str(raw.get("line_id") or "").strip()
+            try:
+                qty = Decimal(str(raw.get("qty") or "0"))
+            except (ArithmeticError, ValueError):
+                qty = Decimal("0")
+            if line_id and qty > 0:
+                items.append({"line_id": line_id, "qty": format(qty.normalize(), "f")})
+        if not items:
+            problem = "Escolha ao menos um item e quanto dele volta."
+            return Response({"detail": problem, "field": "items", "errors": {"items": [problem]}}, status=400)
+        prepared: dict = {}
+
+        def prepare():
+            blocked = return_block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "return_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_return",
+                    message="Devolução pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            with transaction.atomic():
+                locked = Order.objects.select_for_update().get(pk=order.pk)
+                if return_revision(locked) != base:
+                    raise OrderStateConflict("O pedido mudou depois que você abriu a devolução. Confira e tente de novo.")
+                blocked = return_block_reason(locked)
+                if blocked:
+                    raise OrderConflict(blocked)
+                try:
+                    result = ReturnService.initiate_return(
+                        locked, items, reason, _actor(request),
+                        approved_by=prepared["approver"].get_username(),
+                    )
+                except InvalidTransition as exc:
+                    raise OrderConflict(str(exc)) from exc
+                if not result.success:
+                    raise OrderError(result.error or "Não foi possível registrar a devolução.")
+            return {"refund_total_q": result.refund_total_q, "return_type": result.return_type}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(
+            request, order, "return", {"items": items, "reason": reason}, execute, prepare=prepare,
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="No-show preview: what goes back on sale, what is lost and where the money goes",
+        responses={200: OpenApiResponse(description="No-show preview.")},
+    ),
+)
+class OrderNoShowPreviewView(OperationalObservationMixin, APIView):
+    """A prévia do "Não retirado" (WP-G11): o destino de cada linha, quanto volta ao
+    cliente e por onde, quanto fica com a loja, o texto que o cliente vai ler e a ação
+    com a base que o comando confere."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections.order_no_show import build_order_no_show
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return Response(build_order_no_show(order, user=request.user))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close a ready pickup order the customer never collected (manager's PIN)",
+        responses={200: OpenApiResponse(description="Order closed as not picked up.")},
+    ),
+)
+class OrderNoShowView(_OrderActionBase):
+    """Encerrar como não retirado (WP-G11): o dinheiro segue o produto.
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Sempre com o PIN de
+    um Gerente escolhido da lista (ou o crachá): o gesto decide dinheiro do cliente e
+    perda de estoque. Não há corpo a escolher: o destino de cada linha é do servidor
+    (``no_show.decide_destiny``), e a base confere que o Gerente assinou o que a prévia
+    mostrou. O comando é ``no_show.mark_not_picked_up``; estoque, estorno e aviso saem
+    do cancelamento de sempre, lendo ``order.data["no_show"]``.
+    """
+
+    intention_operation = "no-show"
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import no_show
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        prepared: dict = {}
+
+        def prepare():
+            blocked = no_show.block_reason(order)
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "no_show_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_no_show",
+                    message="Não retirado pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                block = no_show.mark_not_picked_up(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    expected_revision=base,
+                )
+            except no_show.NoShowStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except no_show.NoShowRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund_q": block["refund_q"], "retained_q": block["retained_q"]}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "no-show", {}, execute, prepare=prepare)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the gateway again for a refund that failed (manager's PIN)",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundRetryView(_OrderActionBase):
+    """Tentar o estorno de novo (WP-G13, decisão 3 do dono, 17/11/2026).
+
+    ``POST {base_revision, expected_actor_id, manager_approval}``. Só existe para o
+    pedido em "Estorno não saiu": o cancelado e, desde a #2727, a devolução, a
+    encomenda editada que ficou mais barata e o pagamento que chegou depois do
+    balcão (``refund_retry.plan``); em qualquer outro estado, 409 com a frase do motivo. Sempre com o PIN de um Gerente escolhido da
+    lista (ou o crachá), a mesma assinatura do cancelamento de pedido pago. O valor
+    e as cobranças são do servidor (``refund_retry.plan``); a tela não escolhe nada.
+
+    A chave da intenção (``Idempotency-Key``) é a chave DA TENTATIVA: repetir a
+    mesma devolve o mesmo recibo sem falar com o gateway de novo, e uma tentativa
+    nova, depois de outra recusada, leva outra chave ao gateway.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.refund_retry`` do pedido, com quem tentou e quem autorizou), e
+    ``refund`` diz o que houve: ``{outcome, amount_q, refunded_q, message}``, com
+    ``outcome`` em ``refunded`` · ``refused`` · ``unconfirmed`` · ``unrecorded`` e
+    ``message`` com o que o gateway respondeu.
+    """
+
+    intention_operation = "refund-retry"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import refund_retry
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        prepared: dict = {}
+
+        def prepare():
+            blocked = refund_retry.plan(order).block_reason
+            if blocked:
+                return Response({"detail": blocked, "error": {"code": "refund_retry_not_allowed"}}, status=409)
+            try:
+                prepared["approver"] = pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="order_refund_retry",
+                    message="Tentar o estorno de novo pede a autorização de um gerente.",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+        def execute(base):
+            try:
+                result = refund_retry.retry(
+                    order,
+                    actor=_actor(request),
+                    approved_by=prepared["approver"].get_username(),
+                    attempt_key=attempt_key,
+                    expected_revision=base,
+                )
+            except refund_retry.RefundRetryStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except refund_retry.RefundRetryRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # A assinatura é conferida e descartada: nunca entra na impressão digital da intenção.
+        return self._context_response(request, order, "refund-retry", {}, execute, prepare=prepare)
+
+
+#: Estornar UM pedido: a exceção financeira do Gerente (#2727, item 5). Pede quem
+#: opera o Gestor E a permissão dedicada; ``payman.*`` nunca entra aqui.
+_ORDER_REFUND_PERMISSIONS = ("shop.manage_orders", "backstage.refund_single_order")
+
+
+class OrderRefundPreviewView(OperationalObservationMixin, APIView):
+    """O que o diálogo "Estornar" mostra: o valor pago naquela cobrança, o que já
+    voltou, o que ainda pode voltar e a ação com a base. Valores de UMA cobrança;
+    com mais de uma no pedido, cada uma com o valor dela, para a escolha
+    (``?intent=<ref>`` lê a escolhida). Nenhuma soma (``order_refund.preview``)."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = _ORDER_REFUND_PERMISSIONS
+
+    def get(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        intent_ref = str(request.query_params.get("intent") or "").strip()
+        return Response(order_refund.preview(order, user=request.user, intent_ref=intent_ref))
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Refund one order's online charge (full or partial), from the order detail",
+        responses={200: OpenApiResponse(description="Attempt recorded; `refund.outcome` says whether the money went back.")},
+    ),
+)
+class OrderRefundView(_OrderActionBase):
+    """Estornar UM pedido no Gestor (#2727, item 5; dono, 21/11/2026).
+
+    ``POST {base_revision, expected_actor_id, intent_ref?, amount_q?, confirm: true}``.
+    ``intent_ref`` é a cobrança escolhida, quando o pedido tem mais de uma (#3134). Só com
+    ``backstage.refund_single_order``: o Gerente estorna partindo do pedido e vê só o
+    valor daquela cobrança, sem ``payman.view_paymentintent`` (o Admin de cobranças
+    lista, e listar é proibido a ele). ``amount_q`` em centavos, até o disponível; sem
+    ele, o disponível inteiro. ``confirm`` é a segunda confirmação, a mesma marca do
+    diálogo do Admin: sem ela, nada é estornado.
+
+    O dinheiro sai por ``payment.refund_intent_at_gateway``, o mesmo caminho do
+    estorno do Admin (``order_refund.refund``). A chave da intenção
+    (``Idempotency-Key``) é a chave da tentativa: repetir a mesma devolve o mesmo
+    recibo sem falar com o gateway de novo.
+
+    A resposta é 200 também quando o gateway recusa: a tentativa FOI gravada (o
+    evento ``payment.order_refund``), e ``refund`` diz o que houve:
+    ``{outcome, amount_q, refunded_q, available_q, message}``, só desta cobrança.
+    """
+
+    required_permission = _ORDER_REFUND_PERMISSIONS
+    intention_operation = "refund"
+
+    def post(self, request, ref: str):
+        from shopman.backstage.services import order_refund
+        from shopman.shop.services.operator_orders import OrderStateConflict
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        attempt_key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        if request.data.get("confirm") is not True:
+            return Response(
+                {"detail": order_refund.CONFIRM_REQUIRED, "field": "confirm",
+                 "errors": {"confirm": [order_refund.CONFIRM_REQUIRED]}},
+                status=400,
+            )
+        intent_ref = str(request.data.get("intent_ref") or "").strip()
         try:
-            reasons = orders_service.cancellation_reasons(order)
-        except operator_orders.CancellationReasonsUnavailable as exc:
-            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
-        return Response({"reasons": reasons})
+            amount_q = order_refund.parse_amount_q(request.data.get("amount_q"))
+        except order_refund.OrderRefundRefused as exc:
+            return Response({"detail": str(exc), "field": "amount_q", "errors": {"amount_q": [str(exc)]}}, status=400)
+
+        def execute(base):
+            try:
+                result = order_refund.refund(
+                    order, actor=_actor(request), amount_q=amount_q, attempt_key=attempt_key,
+                    expected_revision=base, intent_ref=intent_ref,
+                )
+            except order_refund.OrderRefundStale as exc:
+                raise OrderStateConflict(str(exc)) from exc
+            except order_refund.OrderRefundRefused as exc:
+                raise OrderConflict(str(exc)) from exc
+            return {"refund": result}
+
+        # Sem a leitura do pedido na resposta (``_context_response``): o que volta é só o
+        # recibo desta cobrança, e a tela relê o pedido pelo caminho de sempre.
+        return _intention_response(
+            request, operation="refund", resource=order.ref, inputs={"amount_q": amount_q}, execute=execute,
+        )
 
 
 @extend_schema_view(
@@ -2663,6 +3986,112 @@ def _order_edit_preview_data(order, result) -> dict:
     }
 
 
+def _customer_notice_inputs(request) -> tuple[dict | None, Response | None]:
+    """A escolha do "Avisar o cliente": o aviso, a hora nova ou o que vai faltar."""
+    data = request.data
+    kind = str(data.get("kind") or "").strip()
+    eta = str(data.get("eta") or "").strip()
+    raw_lines = data.get("lines") or []
+    if not isinstance(raw_lines, list) or len(raw_lines) > 100 or len(eta) > 64:
+        message = "A escolha dos itens veio num formato que a tela não manda."
+        return None, Response({"detail": message, "field": "lines", "errors": {"lines": [message]}}, status=400)
+    lines = []
+    for entry in raw_lines:
+        if not isinstance(entry, dict):
+            message = "A escolha dos itens veio num formato que a tela não manda."
+            return None, Response({"detail": message, "field": "lines", "errors": {"lines": [message]}}, status=400)
+        lines.append({"line_id": str(entry.get("line_id") or "")[:64], "qty": str(entry.get("qty") or "")[:32]})
+    return {"kind": kind, "eta": eta, "lines": lines}, None
+
+
+def _customer_notice_refusal(exc: OrderError) -> Response:
+    code = getattr(exc, "code", "")
+    field = getattr(exc, "field", "")
+    body = {"detail": str(exc), "code": code, "error": {"code": code, "message": str(exc)}}
+    if field:
+        body.update({"field": field, "errors": {field: [str(exc)]}})
+    return Response(body, status=400)
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="The three 'tell the customer' notices of an order: what each needs and why one is closed",
+        responses={200: OpenApiResponse(description="Options and the base_revision the send must carry.")},
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Preview a 'tell the customer' notice: the message as the customer reads it",
+        responses={
+            200: OpenApiResponse(description="Preview: nothing is written or sent."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+        },
+    ),
+)
+class OrderCustomerNoticePreviewView(APIView):
+    """O "Avisar o cliente" antes de enviar (WP-G07): as escolhas e a mensagem pronta."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        options = orders_service.customer_notice_options(order)
+        # O que o envio exige, no formato das outras ações do Gestor (``payload_schema``).
+        return Response({
+            "ref": order.ref,
+            "notices": options["notices"],
+            "payload_schema": {"base_revision": options["base_revision"], "expected_actor_id": request.user.pk},
+        })
+
+    def post(self, request, ref: str):
+        order = orders_service.find_order(ref)
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        inputs, err = _customer_notice_inputs(request)
+        if err:
+            return err
+        try:
+            preview = orders_service.preview_customer_notice(order, **inputs)
+        except OrderError as exc:
+            return _customer_notice_refusal(exc)
+        return Response({"ok": True, "ref": order.ref, **preview})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Send a 'tell the customer' notice (delayed, item missing, reschedule) through the notification chain",
+        responses={
+            200: OpenApiResponse(description="Notice queued; the receipt shows on the order."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code}."),
+            409: OpenApiResponse(description="The order changed, or the previous notice is still going out / too recent."),
+        },
+    ),
+)
+class OrderCustomerNoticeView(_OrderActionBase):
+    """Avisar o cliente com um toque, pela API (WP-G07; decisão 4 do dono, 17/11/2026)."""
+
+    intention_operation = "customer-notice"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        inputs, err = _customer_notice_inputs(request)
+        if err:
+            return err
+
+        def execute(base):
+            directive, message = orders_service.notify_customer(order, expected_revision=base, **inputs)
+            return {"detail": "Aviso na fila de envio.", "effect_status": "queued", "directive_id": directive.pk,
+                "kind": inputs["kind"], "message": message}
+
+        return self._context_response(request, order, "customer-notice", inputs, execute)
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -2737,38 +4166,56 @@ class OrderEditView(_OrderActionBase):
         inputs, err = _order_edit_inputs(request)
         if err:
             return err
-        prepared: dict = {}
+        return _order_edit_response(self, request, order, inputs)
 
-        def prepare():
-            try:
-                result = orders_service.preview_order_edit(order, **inputs)
-            except OrderError:
-                return None  # a recusa sai no dialeto da gravação, logo abaixo
-            if not result.requires_manager_approval:
-                return None
-            try:
-                prepared["approver"] = pos_tabs_service.validate_manager_override(
-                    request.data.get("manager_approval"),
-                    operator_username=_username(request),
-                    action="order_edit_refund",
-                    message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
-                )
-            except PosIntentError as exc:
-                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
+def _order_edit_response(view, request, order, inputs, *, intention_inputs=None, before_edit=None):
+    """Grava a edição da encomenda pelo protocolo de intenção: a mesma porta do Gestor e do PDV.
+
+    ``inputs`` é o corpo da edição (``lines``, ``notes``, ``fulfillment``,
+    ``schedule``). ``intention_inputs`` é o que identifica o gesto (padrão:
+    ``inputs``). ``before_edit`` roda dentro da gravação, antes de editar, e
+    recusa levantando ``OrderEditError`` (a troca do PDV relê ali as
+    alternativas). O gerente assina quando a prévia diz que a encomenda paga
+    ficou mais barata.
+    """
+    prepared: dict = {}
+
+    def prepare():
+        try:
+            result = orders_service.preview_order_edit(order, **inputs)
+        except OrderError:
+            return None  # a recusa sai no dialeto da gravação, logo abaixo
+        if not result.requires_manager_approval:
             return None
-
-        def execute(base):
-            result = orders_service.edit_order(
-                order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
-                expected_revision=base,
+        try:
+            prepared["approver"] = pos_tabs_service.validate_manager_override(
+                request.data.get("manager_approval"),
+                operator_username=_username(request),
+                action="order_edit_refund",
+                message="A encomenda paga ficou mais barata: um gerente precisa autorizar a devolução.",
             )
-            return {
-                "changed": result.plan.changed,
-                "revision": result.revision,
-                "preview": _order_edit_preview_data(order, result.plan),
-            }
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return None
 
-        return self._context_response(request, order, "edit", inputs, execute, prepare=prepare)
+    def execute(base):
+        if before_edit is not None:
+            before_edit()
+        result = orders_service.edit_order(
+            order, **inputs, actor=_actor(request), approved_by=prepared.get("approver"),
+            expected_revision=base,
+        )
+        return {
+            "changed": result.plan.changed,
+            "revision": result.revision,
+            "preview": _order_edit_preview_data(order, result.plan),
+        }
+
+    return view._context_response(
+        request, order, view.intention_operation, inputs if intention_inputs is None else intention_inputs,
+        execute, prepare=prepare,
+    )
 
 
 def _resend_payment_link_response(order) -> Response:
@@ -2831,6 +4278,60 @@ class OrderResendPaymentLinkView(_OrderActionBase):
         responses={200: OpenApiResponse(description="Available dates and readiness-annotated windows.")},
     ),
 )
+class POSDeliveryFeeView(APIView):
+    """A taxa de entrega na tela de venda, antes do pagamento (#2402).
+
+    ``POST {delivery_address_structured, delivery_address, merchandise_q,
+    customer_ref}``. Responde os mesmos campos de taxa da review, para o
+    Recebimento mostrar o número que a loja calcula, em vez de "calculada no
+    pagamento". A geocodificação de quem chega sem coordenada é por endereço e
+    fica em cache, então perguntar de novo quando a venda muda não sai caro.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        address = body.get("delivery_address_structured")
+        try:
+            merchandise_q = max(0, int(body.get("merchandise_q") or 0))
+        except (TypeError, ValueError):
+            frase = "O valor dos produtos chegou ilegível."
+            return Response(
+                {"detail": frase, "field": "merchandise_q", "errors": {"merchandise_q": [frase]}},
+                status=400,
+            )
+        delivery = pos_tabs_service.resolve_delivery_fee(
+            address_structured=address if isinstance(address, dict) else {},
+            address_text=str(body.get("delivery_address") or ""),
+            merchandise_q=merchandise_q,
+            channel_ref=POS_CHANNEL_REF,
+            customer_ref=str(body.get("customer_ref") or "").strip(),
+        )
+        return Response({"ok": True, **_delivery_fee_quote_payload(delivery)})
+
+
+def _delivery_fee_quote_payload(delivery) -> dict:
+    """Os campos de taxa da review (``_pos_sale_review_payload``), para a mesma tela ler."""
+    waiver = delivery.waiver
+    waiver_review = None
+    if waiver is not None and delivery.source not in ("manual", "blocked"):
+        waiver_review = {
+            "reason": waiver.reason,
+            "promotion_name": waiver.promotion_name,
+            "threshold_q": waiver.threshold_q,
+            "base_fee_q": waiver.base_fee_q,
+            "group_name": waiver.group_name,
+        }
+    return {
+        "delivery_fee_q": delivery.fee_q,
+        "delivery_fee_source": delivery.source,
+        "delivery_distance_km": delivery.distance_km,
+        "delivery_fee_waiver": _delivery_fee_waiver_payload(waiver_review),
+    }
+
+
 class POSScheduleView(APIView):
     """As datas e janelas combináveis — perguntado na ABERTURA, não no pagamento.
 
@@ -2905,7 +4406,11 @@ class POSPreorderListView(APIView):
         date_from, date_to = preorders.parse_range(
             request.GET.get("date_from"), request.GET.get("date_to"), week=request.GET.get("week"),
         )
-        projection = preorders.build_preorder_list(date_from=date_from, date_to=date_to)
+        projection = preorders.build_preorder_list(
+            date_from=date_from,
+            date_to=date_to,
+            show_money_sums=can_audit_cash(request.user),
+        )
         return Response({"ok": True, **asdict(projection)})
 
 
@@ -2967,12 +4472,125 @@ class POSPreorderDetailView(APIView):
         order = preorders.find_preorder(ref)
         if order is None:
             return Response({"detail": "Encomenda não encontrada."}, status=404)
-        # A mesma pergunta ao gateway que o Gestor faz ao abrir o pedido: o
-        # balcão vai receber o saldo, e o cartão pago cujo webhook se perdeu não
-        # pode aparecer como "a pagar" justo aqui.
-        _reconcile_payment_if_due(order)
+        # Leitura não produz efeito (A8-1): a pergunta ao gateway é o comando
+        # ``POST pos/preorders/<ref>/payment/check/``, que a tela pede ao abrir
+        # enquanto ``payment_check_due`` diz que a encomenda deve cartão.
         projection = build_operator_order(order, user=request.user, context="pos")
-        return Response(read_data(order=projection_data(projection)))
+        return Response(
+            read_data(order=projection_data(projection), payment_check_due=_payment_check_due(order))
+        )
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Swap the missing item of a preorder: the alternatives the batch of the date covers, read now",
+        responses={
+            200: OpenApiResponse(description="Items to swap (SKUs not in the order are ignored), alternatives and the price difference."),
+            404: OpenApiResponse(description="Not a preorder."),
+        },
+    ),
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Swap the missing item for an alternative, through the preorder edit",
+        responses={
+            200: OpenApiResponse(description="Swapped."),
+            400: OpenApiResponse(description="Refused: {detail, field, errors, code} (the alternative does not fit anymore, the order is not editable). Nothing changed."),
+            409: OpenApiResponse(description="The order changed since it was read."),
+        },
+    ),
+)
+class POSPreorderSwapView(_OrderActionBase):
+    """Trocar o item que falta da encomenda, no balcão (#2765).
+
+    ``GET ?sku=<sku>&sku=<sku>``: os SKUs do endereço que o Gestor abre
+    (``?swap=``); o que não é item do pedido é ignorado. Para cada um, as
+    alternativas de ``order_promise.alternatives_for`` (a régua do aviso), lidas
+    agora, com a prévia da edição (``projections/pos_preorder_swap``).
+
+    ``POST {sku, offer, base_revision, expected_actor_id, idempotency_key,
+    manager_approval?}``: relê as alternativas e, se ``offer`` ainda cabe, grava
+    pela edição da encomenda (``order_edit``), com a quantidade da linha.
+    Mesmo corte e mesma porta do detalhe da encomenda do PDV.
+    """
+
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+    intention_operation = "preorder-swap"
+
+    def get(self, request, ref: str):
+        from shopman.backstage.projections import preorders
+        from shopman.backstage.projections.pos_preorder_swap import build_preorder_swap
+
+        if request.query_params.get("idempotency_key"):
+            return _intention_receipt(request, operation=self.intention_operation, resource=ref)
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return Response(projection_data(build_preorder_swap(order, request.query_params.getlist("sku"), user=request.user)))
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections import order_promise, preorders
+        from shopman.backstage.projections.pos_preorder_swap import swapped_lines
+
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        sku = str(request.data.get("sku") or "").strip()
+        offer = str(request.data.get("offer") or "").strip()
+        lines = swapped_lines(order, sku, offer) if sku and offer else None
+        if lines is None:
+            field = "offer" if sku and not offer else "sku"
+            message = "Escolha o produto que entra no lugar." if field == "offer" else "Este item não está na encomenda."
+            return Response({"detail": message, "field": field, "errors": {field: [message]}}, status=400)
+        inputs = {"lines": lines, "notes": None, "fulfillment": None, "schedule": None}
+
+        def still_fits():
+            # O lote da data muda entre a leitura e o toque: a troca relê as
+            # alternativas pela MESMA régua e recusa o que deixou de caber.
+            found = order_promise.alternatives_for(order, sku)
+            if found is None:
+                raise OrderEditError(
+                    "Não deu para conferir agora se a troca ainda cabe. Nada mudou: tente de novo.",
+                    code="swap_unverified",
+                )
+            match = next((option for option in found if option.sku == offer), None)
+            if match is None:
+                raise OrderEditError(
+                    "Este produto não está mais livre para a data da encomenda. Nada mudou: escolha outra alternativa.",
+                    code="swap_offer_gone", field="offer",
+                )
+
+        return _order_edit_response(
+            self, request, order, inputs, intention_inputs={"sku": sku, "offer": offer}, before_edit=still_fits,
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Ask the card gateway now whether this preorder was paid",
+        responses={200: OpenApiResponse(description="Checked; `changed` says the payment moved."), 404: OpenApiResponse(description="Not a preorder.")},
+    ),
+)
+class POSPreorderPaymentCheckView(APIView):
+    """A mesma pergunta ao gateway que o Gestor faz ao abrir o pedido, no balcão.
+
+    O balcão vai receber o saldo, e o cartão pago cujo webhook se perdeu não pode
+    aparecer como "a pagar" justo aqui. A tela do detalhe da encomenda pede este
+    comando ao abrir, enquanto o detalhe diz ``payment_check_due``. Mesmo corte
+    e mesma porta do detalhe (``POSPreorderDetailView``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.backstage.projections import preorders
+
+        order = preorders.find_preorder(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        return _payment_check_response(order)
 
 
 @extend_schema_view(
@@ -3084,6 +4702,61 @@ class POSPreorderHandOverView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="POS preorder balance in Pix: the Pix charge (QR) for the balance, without a double charge",
+        responses={200: OpenApiResponse(description="Pix charge (QR)."), 409: OpenApiResponse(description="Changed, paid online or charge not cancelled.")},
+    ),
+)
+class POSPreorderCounterPixView(APIView):
+    """O saldo da encomenda em Pix no balcão (#2897): o QR, do jeito da venda.
+
+    ``POST {base_revision, terminal_ref?, client_request_id?}`` devolve
+    ``{ok, ref, payment}`` com ``payment`` no formato da venda de balcão
+    (``pos._pos_payment_response``): QR, copia e cola, prazo. A confirmação é a
+    de sempre: o PDV acompanha por ``pos/payment/<ref>/status/`` e, pago, entrega
+    pelo ``hand-over``. A régua e a proteção contra cobrança dupla moram em
+    ``counter_pix.start``; idempotente (o Pix do balcão ainda pagável volta como
+    está).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = ("cashman.operate_pos", "shop.manage_orders")
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import counter_pix, counter_takeover, operator_orders
+
+        order = operator_orders.find_order(ref)
+        if order is None:
+            return Response({"detail": "Encomenda não encontrada."}, status=404)
+        base = str(request.data.get("base_revision") or "").strip()
+        if not base:
+            return Response({"detail": "Esta tela está desatualizada. Atualize a encomenda e tente de novo.",
+                "error": {"code": "base_revision_required"}}, status=400)
+        terminal_ref = _terminal_do_pedido(request)
+        try:
+            pos_service.current_shift(terminal_ref, strict=True)
+        except Exception as exc:
+            logger.debug("pos_preorder_counter_pix_no_shift order=%s", order.ref, exc_info=True)
+            return _falha_do_caixa(exc, "Abra o caixa para receber o Pix.")
+        if operator_orders.operational_revision(order) != base:
+            return Response({"detail": "A encomenda mudou. Confira o estado atualizado antes de receber.",
+                "error": {"code": "preorder_changed"}}, status=409)
+        try:
+            payment = counter_pix.start(
+                order, actor=_actor(request), terminal_ref=terminal_ref,
+                attempt_id=str(request.data.get("client_request_id") or "").strip(),
+            )
+        except counter_takeover.PaidOnline as exc:
+            return Response({"detail": str(exc), "error": {"code": "preorder_paid_online"}}, status=409)
+        except counter_takeover.TakeoverFailed as exc:
+            return Response({"detail": str(exc), "error": {"code": "digital_charge_not_cancelled"}}, status=409)
+        except counter_pix.CounterPixRefused as exc:
+            return Response({"detail": str(exc), "error": {"code": "counter_pix_refused"}}, status=400)
+        return Response({"ok": True, "ref": order.ref, "payment": payment})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Open (or resume) the virtual tab that edits a preorder in the POS sale screen",
         responses={200: OpenApiResponse(description="Virtual tab + edit context."), 409: OpenApiResponse(description="Not editable.")},
     ),
@@ -3173,7 +4846,7 @@ class POSPreorderRedoTabView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="DANFE NFC-e bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="DANFE payload.")},
@@ -3191,7 +4864,7 @@ class POSDanfeEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.backstage.services.receipt_escpos import danfe_nfce
@@ -3240,24 +4913,30 @@ def _stamp_first_print(order_ref: str, key: str) -> bool:
     documentadas em docs/reference/data-schemas.md). Marca na COMPOSIÇÃO, não na
     confirmação do papel: o que importa é que um papel daquele pedido já saiu
     para o mundo uma vez — a partir daí, todo seguinte circula como segunda via.
+
+    Por isso toda rota que compõe papel é POST: pedir os bytes é emitir a via, e
+    leitura (GET) não carimba nada.
     """
     from django.utils import timezone
     from shopman.orderman.models import Order
 
-    order = Order.objects.filter(ref=order_ref).first()
-    if order is None:
-        return False
-    data = order.data or {}
-    if data.get(key):
-        return True
-    data[key] = timezone.now().isoformat()
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
+    # A trava da linha faz dois toques ao mesmo tempo darem UMA primeira via:
+    # o segundo espera o primeiro gravar e lê o carimbo.
+    with transaction.atomic():
+        order = Order.objects.select_for_update().filter(ref=order_ref).first()
+        if order is None:
+            return False
+        data = order.data or {}
+        if data.get(key):
+            return True
+        data[key] = timezone.now().isoformat()
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
     return False
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Non-fiscal sale receipt bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Receipt payload.")},
@@ -3275,7 +4954,7 @@ class POSSaleReceiptEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3302,7 +4981,7 @@ class POSSaleReceiptEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Order ticket bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Order ticket payload.")},
@@ -3321,7 +5000,7 @@ class OrderTicketEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3338,6 +5017,62 @@ class OrderTicketEscposView(APIView):
                 "ok": True,
                 "payload_b64": base64.b64encode(payload).decode("ascii"),
                 "title": f"filipeta:{ref}",
+                "reprint": reprint,
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Retained-amount receipt bytes (ESC/POS, base64) of a not-picked-up order, for the station agent",
+        responses={
+            200: OpenApiResponse(description="Receipt payload."),
+            404: OpenApiResponse(description="No retained amount on this order."),
+        },
+    ),
+)
+class OrderRetentionReceiptEscposView(APIView):
+    """O recibo do valor retido de uma encomenda não retirada (#3538).
+
+    Contador (24/11/2026, #2695): o valor que a loja retém é multa, com recibo e
+    sem NFC-e. O papel é composto aqui (``receipt_escpos.retention_receipt``) a
+    partir do que o gesto do "Não retirado" gravou, e a página relaia ao agente
+    local da estação, como a Via Pedido. Sai sozinho no fim do gesto e pode ser
+    reimpresso pelo pedido; a partir do segundo, é 2ª via
+    (``retention_receipt_printed_at`` em ``Order.data``).
+
+    Não é uma das vias do pedido (``order_documents``): é o documento do
+    encerramento, como a DANFE é o da venda. Mesma permissão do gesto e da
+    filipeta (``shop.manage_orders``).
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def post(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services.receipt_escpos import retention_receipt
+        from shopman.shop.services import no_show, storefront_links
+
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        receipt = no_show.retention_receipt(order)
+        if receipt is None:
+            return Response({"detail": "Este pedido não tem valor retido pela loja."}, status=404)
+        reprint = _stamp_first_print(ref, "retention_receipt_printed_at")
+        payload = retention_receipt(
+            receipt, verify_url=storefront_links.order_tracking_url(ref), reprint=reprint,
+        )
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"recibo-retido:{ref}",
                 "reprint": reprint,
             }
         )
@@ -3389,7 +5124,7 @@ class OrderDanfeEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Courier ticket bytes (ESC/POS, base64) for the counter agent",
         responses={200: OpenApiResponse(description="Courier ticket payload.")},
@@ -3417,7 +5152,7 @@ class CourierTicketEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request, ref: str):
+    def post(self, request, ref: str):
         import base64
 
         from shopman.orderman.models import Order
@@ -3448,7 +5183,7 @@ class CourierTicketEscposView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Order-ticket batch bytes (ESC/POS, base64) for a committed period",
         responses={200: OpenApiResponse(description="Consecutive order tickets on one roll.")},
@@ -3475,14 +5210,15 @@ class OrderTicketBatchEscposView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
-    def get(self, request):
+    def post(self, request):
         import base64
 
         from shopman.backstage.services import order_ticket as tickets
 
-        date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
+        body = request.data
+        date_from, date_to = tickets.parse_period(body.get("date_from"), body.get("date_to"))
         orders = tickets.select_refs(
-            tickets.orders_for_period(date_from, date_to), tickets.parse_refs(request.GET.get("refs")),
+            tickets.orders_for_period(date_from, date_to), tickets.parse_refs(body.get("refs")),
         )
         if len(orders) > tickets.MAX_BATCH:
             return Response(
@@ -3732,16 +5468,29 @@ class OrderCourierDispatchView(_OrderActionBase):
         if change_out is not None and not isinstance(change_out, str | int | float):
             return Response({"detail": "Troco inválido."}, status=400)
         change_out = None if change_out is None else str(change_out)
+        # O número (letra e cor) que a tela mostrava para esta corrida, quando a
+        # chamada vem das Entregas; vale se ainda estiver livre.
+        ride_number, valid = _ride_number_input(request.data)
+        if not valid:
+            return Response({"detail": "Número de corrida inválido.", "field": "ride_number",
+                             "errors": {"ride_number": ["Número de corrida inválido."]}}, status=400)
 
         def enqueue(base):
+            from shopman.shop.services import courier
+
             task = orders_service.courier_dispatch(
                 order, actor=_actor(request), expected_revision=base, operator=request.user,
-                change_out_raw=change_out, equipment=equipment,
+                change_out_raw=change_out, equipment=equipment, ride_number=ride_number,
             )
-            return {"directive_id": task.pk, "status": task.status}
+            order.refresh_from_db()
+            number = courier.get_block(order).get("ride_number")
+            return {"directive_id": task.pk, "status": task.status,
+                    "ride_number": number, "ride_letter": courier.ride_letter(number)}
 
-        return self._context_response(request, order, self.intention_operation,
-            {"change_out": change_out, "equipment": equipment}, enqueue)
+        inputs = {"change_out": change_out, "equipment": equipment}
+        if ride_number is not None:
+            inputs["ride_number"] = ride_number
+        return self._context_response(request, order, self.intention_operation, inputs, enqueue)
 
 
 @extend_schema_view(
@@ -3789,6 +5538,42 @@ class OrderCourierReminderDismissView(_OrderActionBase):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Close the customer's contact request (ombudsman) with what the team did",
+        responses={
+            200: OpenApiResponse(description="Contact request resolved."),
+            400: OpenApiResponse(description="Missing note."),
+            409: OpenApiResponse(description="No open contact request."),
+        },
+    ),
+)
+class OrderCustomerContactResolveView(_OrderActionBase):
+    """"Resolvido" da ouvidoria: fecha o caso com a nota do que foi feito."""
+
+    def post(self, request, ref: str):
+        from shopman.shop.services import customer_contact
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        note = str(request.data.get("note") or "").strip()
+        if not note:
+            return Response(
+                {"detail": "Conte em uma frase o que foi feito.", "field": "note"},
+                status=400,
+            )
+        try:
+            customer_contact.resolve(order, note=note, actor=_actor(request))
+        except customer_contact.ContactRequestNotOpen:
+            return Response(
+                {"detail": "Este pedido não tem pedido de contato em aberto.", "code": "contact_request_not_open"},
+                status=409,
+            )
+        return Response({"ok": True, "ref": order.ref})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Cancel the active external courier ride",
         responses={200: OpenApiResponse(description="Courier cancellation queued; remote outcome pending.")},
     ),
@@ -3809,6 +5594,63 @@ class OrderCourierCancelView(_OrderActionBase):
             return {"directive_id": task.pk, "status": task.status}
 
         return self._context_response(request, order, self.intention_operation, {"reason_id": reason_id}, enqueue)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Separate again the change and the card machine of a ride the courier central resumed",
+        responses={200: OpenApiResponse(description="Custody recorded.")},
+    ),
+)
+class OrderCourierCustodyView(_OrderActionBase):
+    intention_operation = "courier-custody"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        # O mesmo formato da custódia da chamada (``OrderCourierDispatchView``).
+        equipment = request.data.get("equipment") or []
+        if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
+            return Response({"detail": "Maquininhas devem ser uma lista de referências."}, status=400)
+        equipment = sorted(set(equipment))
+        change_out = request.data.get("change_out")
+        if change_out is not None and not isinstance(change_out, str | int | float):
+            return Response({"detail": "Troco inválido."}, status=400)
+        change_out = None if change_out is None else str(change_out)
+
+        def execute(base):
+            return orders_service.courier_custody(
+                order, actor=_actor(request), expected_revision=base, operator=request.user,
+                change_out_raw=change_out, equipment=equipment,
+            )
+
+        return self._context_response(request, order, self.intention_operation,
+                                      {"change_out": change_out, "equipment": equipment}, execute)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Close here the ride the courier central never closed (delivered or back at the store)",
+        responses={200: OpenApiResponse(description="Ride closed here.")},
+    ),
+)
+class OrderCourierCloseHereView(_OrderActionBase):
+    intention_operation = "courier-close-here"
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        outcome = str(request.data.get("outcome") or "")
+
+        def execute(base):
+            closed = orders_service.courier_close_here(order, outcome=outcome, actor=_actor(request), expected_revision=base)
+            return {"closed": closed, "outcome": outcome}
+
+        return self._context_response(request, order, self.intention_operation, {"outcome": outcome}, execute)
 
 
 @extend_schema_view(
@@ -3924,6 +5766,189 @@ class OrderVolumeCheckView(APIView):
         })
 
 
+def _ride_number_input(data) -> tuple[int | None, bool]:
+    """O número de corrida que a tela mostrava (``ride_number``): ``(valor, válido)``."""
+    from shopman.shop.services import courier
+
+    value = data.get("ride_number")
+    if value is None:
+        return None, True
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= courier.RIDE_LETTERS:
+        return None, False
+    return value, True
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="One courier ride for several orders (one stop per order)",
+        responses={
+            200: OpenApiResponse(description="Ride dispatch queued (or already called)."),
+            409: OpenApiResponse(description="An order changed since the screen read it (revision_changed)."),
+        },
+    ),
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Read the committed result of a courier ride intention",
+        responses={200: OpenApiResponse(description="Committed result."),
+                   202: OpenApiResponse(description="No committed result yet.")},
+    ),
+)
+class OrderCourierRideView(OperationalObservationMixin, APIView):
+    """Uma corrida da TaOn para vários pedidos: uma solicitação, uma parada por pedido.
+
+    Passa pelo protocolo de intenção, como a chamada de um pedido só
+    (``courier-dispatch``): ``expected_actor_id`` (quem a tela leu), uma
+    ``Idempotency-Key`` por corrida e ``base_revisions`` (``{ref:
+    courier.dispatch_revision}``, o que a tela leu de CADA pedido), conferidas
+    com os pedidos travados antes de gravar. A projeção entrega isso pronto na
+    ação ``courier-ride`` (``group_action`` das Entregas, ``ride_action`` do
+    Painel e do detalhe).
+
+    ``refs``: os pedidos, de 2 a ``courier.MAX_RIDE_STOPS``, cada um podendo ser
+    chamado sozinho (``courier.group_refusal``). A custódia vem junto, como na
+    chamada de um pedido: ``change_out`` é ``{ref: "20,00"}`` para os pedidos
+    que pedem troco, e ``machine`` a maquininha da corrida (uma só, para todos
+    os pedidos de cartão). ``ride_number`` é o número que a tela mostrava; vale
+    se ainda estiver livre, e a resposta diz o que ficou (``ride_number`` e
+    ``ride_letter``).
+
+    Recusas: pedido que mudou devolve 409 ``revision_changed`` com
+    ``errors{ref}``; as de negócio dizem qual pedido e por quê. Repetir a mesma
+    chave devolve o mesmo resultado (``replayed``); a corrida que já existe com
+    estes mesmos pedidos conta como feita (``already_called``).
+    ``GET ?idempotency_key=`` lê o resultado sem executar nada.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+    intention_operation = "courier-ride"
+
+    def get(self, request):
+        return _intention_receipt(request, operation=self.intention_operation, resource="")
+
+    def post(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.shop.services import courier
+
+        refs = request.data.get("refs")
+        if not isinstance(refs, list) or any(not isinstance(ref, str) or not ref.strip() for ref in refs):
+            return Response({"detail": "Escolha os pedidos da corrida.", "field": "refs",
+                             "errors": {"refs": ["Escolha os pedidos da corrida."]}}, status=400)
+        change_out = request.data.get("change_out") or {}
+        if not isinstance(change_out, dict) or any(
+            not isinstance(value, str | int | float) for value in change_out.values()
+        ):
+            return Response({"detail": "Troco inválido.", "field": "change_out",
+                             "errors": {"change_out": ["Troco inválido."]}}, status=400)
+        machine = request.data.get("machine") or ""
+        if not isinstance(machine, str):
+            return Response({"detail": "Maquininha inválida.", "field": "machine",
+                             "errors": {"machine": ["Maquininha inválida."]}}, status=400)
+        ride_number, valid = _ride_number_input(request.data)
+        if not valid:
+            return Response({"detail": "Número de corrida inválido.", "field": "ride_number",
+                             "errors": {"ride_number": ["Número de corrida inválido."]}}, status=400)
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in refs))
+        revisions = request.data.get("base_revisions")
+        if not isinstance(revisions, dict):
+            revisions = {}
+        # Só as revisões dos pedidos desta corrida; faltou uma, a tela está velha.
+        base = {ref: revisions[ref] for ref in refs if isinstance(revisions.get(ref), str) and revisions[ref]}
+        if len(base) != len(refs):
+            base = None
+        change_out = {str(ref): str(value) for ref, value in change_out.items()}
+        machine = machine.strip()
+        found: dict[str, Order] = {}
+
+        def prepare():
+            found.update({order.ref: order for order in Order.objects.filter(ref__in=refs)})
+            if len(found) != len(refs):
+                return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+            return None
+
+        def enqueue(expected):
+            if not found and prepare() is not None:
+                raise OrderConflict("Algum pedido não existe mais. Atualize a fila.")
+            orders = [found[ref] for ref in refs]
+            try:
+                task = orders_service.courier_group_dispatch(
+                    orders, actor=_actor(request), operator=request.user, change_out_raw=change_out,
+                    machine=machine, expected_revisions=expected, ride_number=ride_number,
+                )
+            except orders_service.OrderRideAlreadyCalled as exc:
+                # A corrida pedida já existe com estes mesmos pedidos (outro
+                # dispositivo, ou a tela que perdeu a resposta): é o que o
+                # operador queria. Nada é gravado de novo, nem troco nem maquininha.
+                return {"refs": refs, "already_called": True, "detail": str(exc),
+                        **({"directive_id": exc.directive_id} if exc.directive_id else {}),
+                        "ride_number": exc.ride_number, "ride_letter": courier.ride_letter(exc.ride_number)}
+            number = courier.get_block(Order.objects.get(ref=task.payload["order_ref"])).get("ride_number")
+            return {"refs": refs, "directive_id": task.pk, "status": task.status,
+                    "ride_number": number, "ride_letter": courier.ride_letter(number)}
+
+        return _intention_response(
+            request, operation=self.intention_operation, resource="", base=base or "",
+            inputs={"refs": refs, "change_out": change_out, "machine": machine, "ride_number": ride_number},
+            execute=enqueue, prepare=prepare, where="a fila",
+        )
+
+
+class OrderCourierRideQuoteView(APIView):
+    """Quanto custa a corrida com estas paradas, antes de chamar.
+
+    ``?refs=A&refs=B``: os pedidos, de 1 a ``courier.MAX_RIDE_STOPS``. A mesma
+    corrida que a chamada vai abrir (ordem do percurso, retorno), cotada na TaOn.
+    ``estimate`` nulo com ``detail`` quando não dá para cotar (pedido sem
+    endereço com coordenada, TaOn fora): a chamada continua possível.
+
+    Com 2 ou mais pedidos, ``separate_value_q`` (a soma das corridas sozinhas) e
+    ``saving_q`` (separadas menos juntas; negativo quando separadas sai mais
+    barato) vêm SÓ quando todas as sozinhas cotaram: comparação com buraco mente.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.projections.order_queue import courier_estimate_display
+        from shopman.shop.services import courier
+        from shopman.shop.services.operator_orders import short_ref
+
+        refs = list(dict.fromkeys(ref.strip()[:64] for ref in request.GET.getlist("refs") if ref.strip()))
+        if not 1 <= len(refs) <= courier.MAX_RIDE_STOPS:
+            return Response({"detail": f"Escolha de 1 a {courier.MAX_RIDE_STOPS} pedidos.", "field": "refs"},
+                            status=400)
+        by_ref = {order.ref: order for order in Order.objects.filter(ref__in=refs)}
+        if len(by_ref) != len(refs):
+            return Response({"detail": "Algum pedido não existe mais. Atualize a fila."}, status=409)
+        orders = [by_ref[ref] for ref in refs]
+        if len(orders) == 1:
+            solo = courier.estimate_for_order(orders[0])
+            estimate = {**solo, "stops": [orders[0].ref]} if solo else None
+        else:
+            estimate = courier.estimate_for_ride(orders)
+        if estimate is None:
+            from shopman.shop.services import delivery_services
+
+            # A corrida que ainda vai abrir vai pelo serviço padrão do Admin.
+            return Response({"estimate": None,
+                             "detail": f"A {delivery_services.service_name()} não cotou esta corrida agora. "
+                                       "Dá para chamar mesmo assim."})
+        order_line = " → ".join(short_ref(ref) for ref in estimate["stops"])
+        compare = {}
+        if len(orders) > 1:
+            solos = [courier.estimate_for_order(order) for order in orders]
+            if all(solo and solo.get("value_q") is not None for solo in solos):
+                separate_q = sum(int(solo["value_q"]) for solo in solos)
+                compare = {"separate_value_q": separate_q, "saving_q": separate_q - int(estimate["value_q"])}
+        return Response({"estimate": {**estimate, **compare, "display": courier_estimate_display(estimate),
+                                      "route": order_line}})
+
+
 def _operator_identity(request) -> tuple[int, str]:
     """A quem creditar a retirada de um pedido — que é quem está logado.
 
@@ -4032,11 +6057,14 @@ class WorkOrderPlanView(_ProductionActionBase):
                 request,
                 "can_edit_suggested" if body["source"] == "suggested" else "can_edit_planned",
             )
+            if Decimal(str(body["quantity"])) == 0:
+                # Zerar tira o lote do plano: é cancelar, e cancelar é com quem
+                # pode cancelar (P0-1 do plano de excelência da Produção).
+                access = getattr(request, "production_access", None) or _resolved_production_access(request)
+                if not access.can_void:
+                    deny_production_capability("can_void", detail="Cancelar lote é com o gerente.")
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             _require_shortage_override_proof(body)
             output_sku, wo_ref, qty, result = production_service.apply_planned(
                 recipe_id=body["recipe_id"],
@@ -4105,6 +6133,8 @@ class WorkOrderStartView(_ProductionActionBase):
             committed_replay=body.get("_committed_replay", False),
         )
         try:
+            _require_short_lot_proof(body)
+            _require_material_shortage_proof(body)
             wo_ref, quantity = production_service.apply_start(
                 work_order_id=wo_id,
                 quantity=body["quantity"],
@@ -4114,12 +6144,17 @@ class WorkOrderStartView(_ProductionActionBase):
                 actor=_production_actor(request),
                 expected_rev=body["expected_rev"],
                 idempotency_key=body["idempotency_key"],
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
+                approved_material_shortage=body.get("_approved_material_shortage_snapshot"),
             )
         except ProductionError as exc:
             return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="start",
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -4134,6 +6169,268 @@ class WorkOrderStartView(_ProductionActionBase):
                 "current": _current_work_order_projection(wo_ref),
             }
         )
+
+
+def _shortage_auth_refusal(field: str, message: str) -> Response:
+    """A recusa da assinatura com a frase do problema no ``detail``.
+
+    O envelope de validação genérico diz "Corrija os campos indicados", e a tela de
+    quem autoriza mostraria isso no lugar de "PIN incorreto. Restam 3 tentativas".
+    """
+    return Response(
+        {
+            "detail": message,
+            "field": field,
+            "errors": {field: [message]},
+            "error": {
+                "code": "validation_error",
+                "issues": [{"field": field, "code": "invalid", "message": message}],
+            },
+        },
+        status=400,
+    )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Leave a purchase request for the Purchase app (material shortage)",
+        responses={200: OpenApiResponse(description="Purchase request recorded.")},
+    ),
+)
+class ProductionPurchaseRequestView(_ProductionActionBase):
+    """"Solicitar ao Compras": quem não opera o Compras deixa a falta para quem opera.
+
+    Recebe a prova que a recusa da falta devolveu (o lote e quanto falta de cada
+    insumo comprado) e grava a solicitação no cadastro de compra de cada insumo
+    (`purchase.internal_requests`). Nada sai para o fornecedor: o Compras vê a
+    linha no "Comprar" e decide o pedido. Decisão do dono ao aprovar o WP-F11 (26/11).
+    """
+
+    def post(self, request):
+        from django.core import signing
+        from shopman.craftsman.models import WorkOrder
+
+        from shopman.backstage.projections.production import _product_names
+        from shopman.backstage.services.purchase import (
+            ProductionPurchaseRequestItem,
+            request_purchase_from_production,
+        )
+
+        access = getattr(request, "production_access", None)
+        if access is not None and not (access.can_start or access.can_close_qc):
+            return _shortage_auth_refusal("purchase_request_proof", "Quem não abre nem fecha lote não solicita compra.")
+        serializer = ProductionPurchaseRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
+        try:
+            snapshot = signing.loads(
+                serializer.validated_data["purchase_request_proof"],
+                salt=PURCHASE_REQUEST_SALT,
+                max_age=PURCHASE_REQUEST_MAX_AGE_SECONDS,
+            )
+        except signing.BadSignature:
+            return _shortage_auth_refusal(
+                "purchase_request_proof", "Este aviso de falta ficou antigo. Tente a ação de novo para ver a falta de agora."
+            )
+        work_order = WorkOrder.objects.select_related("recipe").filter(ref=snapshot.get("work_order_ref")).first()
+        if work_order is None:
+            return _shortage_auth_refusal("purchase_request_proof", "Este lote não existe mais. Atualize o painel.")
+        product = (
+            _product_names({work_order.output_sku}).get(work_order.output_sku)
+            or getattr(work_order.recipe, "name", "")
+            or work_order.output_sku
+        )
+        items = [
+            ProductionPurchaseRequestItem(sku=str(row["sku"]), quantity=Decimal(str(row["quantity"])), unit=str(row["unit"]))
+            for row in snapshot.get("items") or ()
+        ]
+        requested = request_purchase_from_production(
+            work_order_ref=work_order.ref,
+            product_name=product,
+            items=items,
+            user=request.user,
+        )
+        if not requested:
+            return _shortage_auth_refusal("purchase_request_proof", "Nenhum insumo desta falta tem cadastro de compra.")
+        logger.info(
+            "production_purchase_request operator=%s work_order=%s skus=%s",
+            _production_actor(request),
+            work_order.ref,
+            ",".join(requested),
+        )
+        return Response({"requested_skus": requested, "detail": "Solicitado ao Compras."})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Sign a material shortage with the PIN of who may authorize it",
+        responses={200: OpenApiResponse(description="Signed shortage proof.")},
+    ),
+)
+class ProductionShortageAuthorizationView(_ProductionActionBase):
+    """A Gerente ou o Dono assina a falta de insumo com o próprio PIN (D-042, WP-F11).
+
+    Recebe a prova que a recusa de fechamento devolveu, o usuário escolhido na
+    lista e o PIN dele. Devolve a MESMA prova assinada pelo nome de quem autorizou;
+    a tentativa de fechar segue pelo caminho de sempre (``force`` + ``override_proof``),
+    e o motivo sai do nome, não de texto livre (P1-24). PIN errado conta na
+    credencial da pessoa (trava progressiva, como no PDV).
+    """
+
+    required_production_capability = "can_close_qc"
+
+    def post(self, request):
+        from shopman.backstage.services import operator as operator_service
+
+        serializer = ProductionShortageAuthorizationSerializer(data=request.data)
+        if not serializer.is_valid():
+            field, messages = next(iter(serializer.errors.items()))
+            return _shortage_auth_refusal(field, str(messages[0]))
+        data = serializer.validated_data
+        proof = data["override_proof"]
+        snapshot = override_shortage_snapshot(proof)
+        if not snapshot or snapshot.get("kind") != "material_shortage":
+            return _shortage_auth_refusal("override_proof", "Esta autorização não é de falta de insumo. Atualize o painel.")
+        if data.get("badge"):
+            # O crachá é a posse no lugar do PIN, como no destrave e no PDV.
+            user = operator_service.resolve_operator_by_badge(
+                data["badge"], required_perm=operator_service.OVERRIDE_PRODUCTION_SHORTAGE
+            )
+            if user is None:
+                return _shortage_auth_refusal("badge", "Crachá não reconhecido, ou de quem não autoriza falta de insumo.")
+            return self._signed(proof, user, operator_service)
+        user = operator_service.shortage_authorizer(data.get("username", ""))
+        if user is None:
+            return _shortage_auth_refusal("username", "Esta pessoa não pode autorizar falta de insumo.")
+        locked_until = operator_service.pin_locked_until(user)
+        if locked_until is not None:
+            return _shortage_auth_refusal("pin", operator_service.pin_locked_message(locked_until))
+        if not operator_service.verify_shortage_authorizer_pin(user, data.get("pin", "")):
+            logger.warning(
+                "production_shortage_pin_wrong operator=%s authorizer=%s work_order=%s",
+                _production_actor(request),
+                user.get_username(),
+                snapshot.get("work_order_ref"),
+            )
+            return _shortage_auth_refusal("pin", operator_service.unlock_refusal_detail(user, badge=False))
+        return self._signed(proof, user, operator_service)
+
+    @staticmethod
+    def _signed(proof: str, user, operator_service) -> Response:
+        signed = authorized_override_proof(proof, authorized_by=user.get_username())
+        if signed is None:
+            return _shortage_auth_refusal("override_proof", "Autorização de exceção inválida.")
+        return Response(
+            {
+                "override_proof": signed,
+                "authorizer_name": operator_service.operator_card(user)["name"],
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Register reusable old dough from a production lot",
+        responses={200: OpenApiResponse(description="Old dough stock lot registered.")},
+    ),
+)
+class WorkOrderOldDoughView(_ProductionActionBase):
+    required_production_capability = "can_start"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionOldDoughMutationSerializer,
+            projection_kind="kds",
+            action_kind="register_old_dough",
+            action_href=f"/api/v1/backstage/production/{wo_id}/old-dough/",
+            action_ref=f"register_old_dough:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.register_old_dough(
+                work_order_id=wo_id,
+                quantity=body["quantity"],
+                unit=body["unit"],
+                expiry_date=body["expiry_date"],
+                position_ref=body.get("position_ref", ""),
+                note=body.get("note", ""),
+                actor=_production_actor(request),
+                user=request.user,
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados da massa velha inválidos.",
+            )
+        return Response({"ok": True, **result})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Authorize an execution-only ingredient quantity deviation",
+        responses={200: OpenApiResponse(description="Deviation authorized and effective BOM recalculated.")},
+    ),
+)
+class WorkOrderFormulaDeviationView(_ProductionActionBase):
+    required_production_capability = "can_override_shortage"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionFormulaDeviationMutationSerializer,
+            projection_kind="kds",
+            action_kind="authorize_formula_deviation",
+            action_href=f"/api/v1/backstage/production/{wo_id}/formula-deviation/",
+            action_ref=f"authorize_formula_deviation:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            result = production_service.authorize_formula_deviation(
+                work_order_id=wo_id,
+                ingredient_ref=body["ingredient_ref"],
+                actual_quantity=body["actual_quantity"],
+                batch_ref=body.get("batch_ref", ""),
+                reason=body["reason"],
+                actor=_production_actor(request),
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        except ValueError as exc:
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados do desvio inválidos.",
+            )
+        return Response({"ok": True, **result})
 
 
 @extend_schema_view(
@@ -4164,10 +6461,7 @@ class WorkOrderFinishView(_ProductionActionBase):
         force = body["force"]
         try:
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             from shopman.craftsman.models import WorkOrder
 
             work_order = WorkOrder.objects.filter(pk=wo_id).first()
@@ -4176,16 +6470,22 @@ class WorkOrderFinishView(_ProductionActionBase):
                 WorkOrder.Status.VOID,
             ):
                 yield_anchor = work_order.started_qty or work_order.quantity
-                if body["quantity"] < yield_anchor:
+                # Rendeu menos (beta 05/11): vale com a confirmação e o motivo
+                # do operador; sem eles, a diferença não pode sumir calada.
+                shortfall_explained = body["yield_deviation_confirmed"] and bool(
+                    str(body.get("yield_deviation_reason") or "").strip()
+                )
+                if body["quantity"] < yield_anchor and not shortfall_explained:
                     raise ProductionMutationValidationError(
                         {
                             "quantity": (
-                                "A quantidade total deve incluir toda perda do lote. "
-                                "Classifique o déficit em partition com um motivo de qualidade."
+                                "O total ficou abaixo do previsto. Lance a perda com o motivo, "
+                                "ou confirme que rendeu menos e diga por quê."
                             )
                         }
                     )
             _require_shortage_override_proof(body)
+            _require_short_lot_proof(body)
             current = _current_work_order_projection(wo_id)
             allow_implicit_start = bool(current and current["status"] == "planned")
             if allow_implicit_start:
@@ -4209,6 +6509,8 @@ class WorkOrderFinishView(_ProductionActionBase):
                 yield_deviation_reason=body.get("yield_deviation_reason", ""),
                 allow_implicit_start=allow_implicit_start,
                 approved_shortage=body.get("_approved_shortage_snapshot"),
+                approved_short_lot=body.get("_approved_short_lot_snapshot"),
+                authorized_by=body.get("_authorized_by", ""),
             )
         except ProductionError as exc:
             return _production_error_response(
@@ -4217,6 +6519,8 @@ class WorkOrderFinishView(_ProductionActionBase):
                 can_override_shortage=request.production_access.can_override_shortage,
                 projection_generated_at=body.get("projection_generated_at"),
                 override_proof=_shortage_override_proof(body, exc),
+                short_lot_action="finish",
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -4406,10 +6710,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
         try:
             force = body["force"]
             if force:
-                _shortage_override_reason(
-                    request,
-                    reason=body.get("reason", ""),
-                )
+                _authorize_shortage_override(request, body)
             _require_shortage_override_proof(body)
             _, wo_ref, qty = production_service.apply_quick_finish(
                 recipe_id=body["recipe_id"],
@@ -4424,6 +6725,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 override_reason=body.get("reason", ""),
                 projected_action_proof=body["action_proof"],
                 approved_shortage=body.get("_approved_shortage_snapshot"),
+                authorized_by=body.get("_authorized_by", ""),
             )
         except ProductionError as exc:
             return _production_error_response(
@@ -4432,6 +6734,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 can_override_shortage=request.production_access.can_override_shortage,
                 projection_generated_at=body.get("projection_generated_at"),
                 override_proof=_shortage_override_proof(body, exc),
+                purchase_url=purchase_surface_url(request.user),
             )
         except ValueError as exc:
             return _production_validation_error_response(
@@ -4592,6 +6895,80 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
 # ── POS cash shift endpoints ──────────────────────────────────────────
 
 
+#: Quantos PINs de gerente errados um operador digita antes de o PDV parar de
+#: conferir (P2-12). O gerente trava no quinto erro (``DOORMAN.PIN_MAX_ATTEMPTS``), e
+#: a conferência do PIN não gravava quem errou: a Caixa, sozinha, travava quem
+#: autoriza. Com o teto abaixo do do gerente, o operador para antes, e cada erro fica
+#: no log com quem digitou e para quem. A conta mora no mesmo rate-limit do
+#: destrave do operador (``django_ratelimit``, cache compartilhado em produção).
+MANAGER_PIN_OPERATOR_RATE = "3/15m"
+MANAGER_PIN_OPERATOR_GROUP = "pos.manager_pin.wrong"
+MANAGER_PIN_THROTTLED_DETAIL = (
+    "Três PINs de gerente errados em 15 minutos. Espere ou peça ao gerente para assinar com o crachá."
+)
+
+
+def _pin_do_gerente(approval) -> str:
+    """O gerente cujo PIN veio na aprovação, ou ``""`` (crachá e aprovação vazia não contam)."""
+    if not isinstance(approval, dict) or str(approval.get("badge") or "").strip():
+        return ""
+    username = str(approval.get("username") or "").strip()
+    return username if username and str(approval.get("pin") or "") else ""
+
+
+def _uso_do_pin_errado(request, *, contar: bool) -> dict:
+    from django_ratelimit.core import get_usage
+
+    return get_usage(
+        request, group=MANAGER_PIN_OPERATOR_GROUP, key="user",
+        rate=MANAGER_PIN_OPERATOR_RATE, increment=contar,
+    ) or {}
+
+
+def _orcamento_de_pin_esgotado(request, approval) -> Response | None:
+    """A recusa ANTES de conferir, quando este operador já errou o PIN demais."""
+    if not _pin_do_gerente(approval):
+        return None
+    uso = _uso_do_pin_errado(request, contar=False)
+    if not uso or int(uso.get("count") or 0) < int(uso.get("limit") or 0):
+        return None
+    logger.warning(
+        "pos_manager_pin_throttled operator=%s manager=%s path=%s",
+        _actor(request), _pin_do_gerente(approval), request.path,
+    )
+    return Response(
+        {
+            "detail": MANAGER_PIN_THROTTLED_DETAIL,
+            "field": "manager_approval",
+            "errors": {"manager_approval": [MANAGER_PIN_THROTTLED_DETAIL]},
+            "error": {
+                "code": "manager_approval_throttled",
+                "message": MANAGER_PIN_THROTTLED_DETAIL,
+                "field": "manager_approval",
+                "focus": "approval",
+                "recovery": "Espere ou use o crachá do gerente.",
+            },
+        },
+        status=429,
+    )
+
+
+def _conta_pin_do_gerente(request, approval, resposta: Response) -> Response:
+    """Grava o PIN errado na conta de quem DIGITOU, e no log com o nome do gerente."""
+    gerente = _pin_do_gerente(approval)
+    if not gerente:
+        return resposta
+    dados = resposta.data if isinstance(resposta.data, dict) else {}
+    erro = dados.get("error") if isinstance(dados.get("error"), dict) else {}
+    if erro.get("code") == "manager_approval_invalid":
+        uso = _uso_do_pin_errado(request, contar=True)
+        logger.warning(
+            "pos_manager_pin_wrong operator=%s manager=%s path=%s wrong_in_window=%s",
+            _actor(request), gerente, request.path, uso.get("count"),
+        )
+    return resposta
+
+
 #: Escopo da trava das mutações de dinheiro do caixa, na `IdempotencyKey` do
 #: orderman — a mesma tabela do commit de sessão, do replay de webhook e do submit
 #: do PDV. Nenhum modelo novo, nenhuma migração.
@@ -4606,33 +6983,136 @@ def _falha_do_caixa(exc, padrao: str) -> Response:
     está errado"; aqui o pedido está certo e o ESTADO da loja é que é ambíguo — mais de
     uma gaveta ativa e ninguém disse qual. O operador não tem o que corrigir no que
     mandou, então a resposta é 409, com o campo que falta nomeado.
-    """
-    from rest_framework.exceptions import APIException
 
+    ⚠️ E devolvia ``str(exc)`` para QUALQUER exceção (P1-9 do plano de excelência do
+    PDV): erro de banco, ``KeyError`` ou bug chegavam ao balcão como texto de
+    programador, com 400, e o operador lia "seu pedido está errado" sobre uma falha
+    que era do sistema. Agora são três casos, todos no dialeto ``{detail, field,
+    errors}`` (``docs/reference/errors.md``):
+
+    - ``APIException`` (a estação que não confere, por exemplo): o status e o
+      ``detail`` dela, com ``field``/``errors`` quando ela nomeia o campo;
+    - recusa de negócio (as famílias com texto para a tela, mais ``POSError`` do
+      backstage): 400 (409 na gaveta ambígua) com a frase do serviço;
+    - qualquer outra coisa é falha do SISTEMA: 500, com ``padrao`` (a frase do gesto
+      que não aconteceu), e o texto da exceção só no log, com o traceback.
+    """
+    from rest_framework.exceptions import APIException, ValidationError
+
+    from shopman.shop.api_errors import validation_error_payload
+
+    if isinstance(exc, ValidationError):
+        return Response(validation_error_payload(exc.detail), status=exc.status_code)
     if isinstance(exc, APIException):
-        return Response(exc.detail, status=exc.status_code)
+        dados = exc.detail if isinstance(exc.detail, dict) else {"detail": exc.detail}
+        corpo = dict(dados)
+        corpo["detail"] = str(corpo.get("detail") or padrao)
+        return Response(_no_dialeto(corpo), status=exc.status_code)
     if isinstance(exc, POSTerminalAmbiguous):
-        return Response({"detail": str(exc), "field": "terminal_ref"}, status=409)
-    return Response({"detail": str(exc) or padrao}, status=400)
+        return Response(_no_dialeto({"detail": str(exc), "field": "terminal_ref"}), status=409)
+    if isinstance(exc, ObjectDoesNotExist):
+        return Response({"detail": padrao}, status=404)
+    if isinstance(exc, POSError) or _recusa_de_negocio(exc):
+        return Response({"detail": str(exc) or padrao}, status=400)
+    logger.exception("pos_cash_unexpected_error type=%s", type(exc).__name__)
+    return Response(
+        {"detail": padrao, "error": {"code": "cash_system_error", "message": padrao}},
+        status=500,
+    )
+
+
+def _recusa_de_negocio(exc) -> bool:
+    """A exceção nasce com texto para a tela? (Ver ``public_error_detail``.)"""
+    from shopman.cashman.exceptions import CashError
+    from shopman.orderman.exceptions import OrderError
+    from shopman.payman.exceptions import PaymentError
+    from shopman.utils.exceptions import BaseError
+
+    return isinstance(exc, (ValueError, BaseError, OrderError, CashError, PaymentError))
+
+
+def _resposta_no_dialeto(resposta: Response) -> Response:
+    """A recusa de uma mutação de caixa sai no dialeto canônico (ver ``_no_dialeto``)."""
+    if isinstance(resposta.data, dict) and resposta.data.get("detail"):
+        resposta.data = _no_dialeto(dict(resposta.data))
+    return resposta
+
+
+def _no_dialeto(corpo: dict) -> dict:
+    """Completa uma recusa no dialeto canônico ``{detail, field, errors}``.
+
+    O PDV fala um superset (``error: {code, field, focus, recovery}``), e um front
+    que só lê o canônico perdia o campo quando ele vinha só dentro de ``error``
+    (#2347). Aqui o ``field`` sobe para o topo e ``errors`` ganha a frase sob o
+    campo. Nada é removido: ``error`` continua inteiro para quem o lê.
+    """
+    detail = str(corpo.get("detail") or "")
+    erro = corpo.get("error") if isinstance(corpo.get("error"), dict) else {}
+    campo = corpo.get("field") or erro.get("field") or ""
+    if campo:
+        corpo["field"] = str(campo)
+        erros = corpo.get("errors") if isinstance(corpo.get("errors"), dict) else {}
+        erros.setdefault(str(campo), [detail])
+        corpo["errors"] = erros
+    elif "field" in corpo and not corpo["field"]:
+        corpo.pop("field")
+    return corpo
 
 
 def _cash_idempotent(request, *, acao: str, executar):
     """Efeito interno e recibo compartilham a transação e o conteúdo da tentativa."""
-    from shopman.shop.services.remote_mutations import (
-        RemoteMutationConflict,
-        RemoteMutationInProgress,
-        mutation_fingerprint,
-        run_idempotent_mutation,
+    return _local_idempotent(
+        request,
+        scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+        terminal_ref=_terminal_do_pedido(request),
+        executar=executar,
     )
 
-    terminal_ref = _terminal_do_pedido(request)
-    chave = str(request.data.get("client_request_id") or "").strip()
+
+#: Escopo da trava de replay das mutações do PDV que não são do caixa (hoje,
+#: cancelar venda recente). Mesma tabela ``IdempotencyKey``, outro escopo.
+POS_IDEMPOTENCY_SCOPE = "pos.sale"
+
+
+def _local_idempotent(request, *, scope: str, executar, terminal_ref: str = ""):
+    """Claim + replay por ``client_request_id`` de uma mutação local do PDV.
+
+    O mesmo ``client_request_id`` com o mesmo conteúdo devolve a resposta
+    gravada da primeira vez, sem executar de novo; recusa (status >= 300) não
+    queima a chave, e a próxima tentativa executa. O caixa usa com o terminal
+    da estação na impressão digital; o cancelamento de venda, sem ele.
+
+    Antes de conferir o PIN do gerente, o orçamento de PINs errados de quem digita
+    (``_orcamento_de_pin_esgotado``, P2-12); depois, a conta do erro ou do acerto.
+    """
+    from shopman.shop.services.remote_mutations import mutation_fingerprint
+
+    chave =str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
-        return Response({"detail": "Identifique a tentativa antes de registrar.",
+        return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+            "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
             "error": {"code": "client_request_id_required"}}, status=422)
     payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
     fingerprint = mutation_fingerprint({"actor": request.user.pk, "terminal": terminal_ref,
         "path": request.path, "payload": payload})
+
+    aprovacao = request.data.get("manager_approval")
+    esgotado = _orcamento_de_pin_esgotado(request, aprovacao)
+    if esgotado is not None:
+        return esgotado
+    return _conta_pin_do_gerente(
+        request, aprovacao, _local_idempotent_com_pin(request, scope=scope, chave=chave,
+                                                      fingerprint=fingerprint, executar=executar),
+    )
+
+
+def _local_idempotent_com_pin(request, *, scope: str, chave: str, fingerprint: str, executar):
+    """O claim da tentativa, com o PIN do gerente conferido fora da transação."""
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationConflict,
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
+    )
 
     class CashMutationRejected(Exception):
         def __init__(self, response):
@@ -4645,14 +7125,18 @@ def _cash_idempotent(request, *, acao: str, executar):
         return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
 
     try:
-        resultado = run_idempotent_mutation(
-            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
-            key=chave,
-            fingerprint=fingerprint,
-            execute=_executar_para_o_claim,
-        )
+        # O PIN de gerente se confere aqui, FORA da transação da mutação: a recusa
+        # desfaz tudo o que a mutação gravou, e o erro do PIN ia junto (a trava
+        # nunca armava). Ver `manager_pin_checked_before_transaction`.
+        with pos_tabs_service.manager_pin_checked_before_transaction(request.data.get("manager_approval")):
+            resultado = run_idempotent_mutation(
+                scope=scope,
+                key=chave,
+                fingerprint=fingerprint,
+                execute=_executar_para_o_claim,
+            )
     except CashMutationRejected as exc:
-        return exc.response
+        return _resposta_no_dialeto(exc.response)
     except RemoteMutationConflict:
         return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
             "error": {"code": "idempotency_conflict"}}, status=409)
@@ -4689,7 +7173,8 @@ def _cash_remote_idempotent(request, *, acao: str, executar):
     terminal_ref = _terminal_do_pedido(request)
     chave = str(request.data.get("client_request_id") or "").strip()
     if not chave or len(chave) > 128:
-        return Response({"detail": "Identifique a tentativa antes de registrar.",
+        return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+            "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
             "error": {"code": "client_request_id_required"}}, status=422)
     payload = {k: v for k, v in request.data.items() if k not in {"client_request_id", "manager_approval"}}
     intention = {"actor": request.user.pk, "terminal": terminal_ref, "path": request.path, "payload": payload}
@@ -4713,7 +7198,7 @@ def _cash_remote_idempotent(request, *, acao: str, executar):
             execute=_executar_para_o_claim,
         )
     except CashMutationRejected as exc:
-        return exc.response
+        return _resposta_no_dialeto(exc.response)
     except RemoteMutationConflict:
         return Response({"detail": "Esta tentativa pertence a outro conteúdo ou operador. Confira o resultado.",
             "error": {"code": "idempotency_conflict"}}, status=409)
@@ -4768,7 +7253,7 @@ class POSCashOpenView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_open_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao abrir caixa.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu abrir o caixa.")
             return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
 
         return _cash_idempotent(request, acao="open_cash_shift", executar=lambda: _executar())
@@ -4798,7 +7283,12 @@ class POSCashCloseView(APIView):
                     closing_amount_raw=str(amount),
                     notes=notes,
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=request.data.get("manager_approval"),
                 )
+            # Venda sem conexão "a conferir": o desafio do gerente chega à tela COM
+            # o código, para o PDV abrir "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSPermissionError as exc:
                 # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
                 # distinguir "sem permissão" de "falhou" para pedir a gerente em vez
@@ -4809,7 +7299,7 @@ class POSCashCloseView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao fechar caixa.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu fechar o caixa.")
             return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
 
         return _cash_idempotent(request, acao="close_cash_shift", executar=lambda: _executar())
@@ -4833,7 +7323,9 @@ class POSMovementView(APIView):
             amount = request.data.get("amount", "0")
             reason = (request.data.get("reason") or "").strip()
             if kind not in {"sangria", "suprimento"}:
-                return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
+                return Response(
+                    _no_dialeto({"detail": "Escolha entrada ou saída de caixa.", "field": "kind"}), status=400,
+                )
             try:
                 entry = pos_service.register_cash_movement(
                     operator=request.user,
@@ -4849,7 +7341,7 @@ class POSMovementView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao registrar movimento.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar o movimento no livro-caixa.")
             return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
 
         return _cash_idempotent(request, acao="cash_movement", executar=lambda: _executar())
@@ -4880,18 +7372,23 @@ class POSCashReceiptView(APIView):
 
     def get(self, request, entry_id: int):
         reprint = str(request.query_params.get("reprint") or "").lower() in {"1", "true", "on"}
+        # A gaveta do comprovante é a da ESTAÇÃO, como na leitura X: o query param
+        # só confere. Ele escolhia a gaveta, e o balcão 1 reimprimia a sangria do 2.
+        terminal_ref, refusal = _terminal_da_leitura(request)
+        if refusal is not None:
+            return refusal
         try:
             payload = pos_service.cash_movement_receipt_payload(
                 operator=request.user,
                 entry_id=entry_id,
                 reprint=reprint,
-                terminal_ref=str(request.query_params.get("terminal_ref") or ""),
+                terminal_ref=terminal_ref,
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_receipt_payload_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao montar o comprovante."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao montar o comprovante.")}, status=400)
         return Response(payload)
 
     def post(self, request, entry_id: int):
@@ -4907,7 +7404,7 @@ class POSCashReceiptView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_receipt_result_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar o comprovante."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao registrar o comprovante.")}, status=400)
         return Response({"ok": True, "receipt_status": str((result.payload or {}).get("status") or "")})
 
 
@@ -4953,7 +7450,7 @@ class POSCashDrawerOpenView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_open_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar abertura.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a abertura da gaveta.")
         body = {"ok": True, "entry_id": entry.pk, "pulse": None}
         if job is not None:
             state = drawer_pulse._state_of(job)
@@ -4981,7 +7478,7 @@ class POSCashDrawerPulseView(APIView):
             state = drawer_pulse.pulse_state(ref=ref, terminal_ref=_terminal_do_pedido(request))
         except Exception as exc:
             logger.debug("pos_drawer_pulse_read_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Pulso não encontrado.")
+            return _falha_do_caixa(exc, "O sistema não achou o pedido de abrir a gaveta.")
         return Response({"pulse": {"ref": state.ref, "state": state.state, "message": state.message}})
 
 
@@ -5014,7 +7511,7 @@ class POSCashDrawerUnlockAttemptView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_attempt_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar a tentativa.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a tentativa.")
         return Response({"ok": True})
 
 
@@ -5047,7 +7544,7 @@ class POSCashDrawerLeftOpenView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_left_open_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar a gaveta aberta.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar a gaveta aberta.")
         return Response({"ok": True})
 
 
@@ -5085,7 +7582,7 @@ class POSCashDrawerBlockView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_block_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar o bloqueio.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar o bloqueio.")
         return Response({"ok": True})
 
 
@@ -5120,7 +7617,7 @@ class POSCashDrawerBlindView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_blind_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao registrar o sensor cego.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu registrar o sensor da gaveta.")
         return Response({"ok": True})
 
 
@@ -5160,7 +7657,7 @@ class POSCashDrawerUnlockView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_failed user=%s", _actor(request), exc_info=True)
-            return _falha_do_caixa(exc, "Falha ao liberar a gaveta.")
+            return _falha_do_caixa(exc, "O sistema não conseguiu liberar a gaveta.")
         return Response({"ok": True})
 
 
@@ -5221,7 +7718,7 @@ class POSChangeRequestView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao pedir troco.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu pedir o troco.")
             return Response({"ok": True, "request_ref": str(entry.pk)})
 
         return _cash_idempotent(request, acao="request_change", executar=lambda: _executar())
@@ -5264,7 +7761,7 @@ class POSChangeRequestServeView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao atender o pedido.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu atender o pedido de troco.")
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="serve_change_request", executar=lambda: _executar(request_ref))
@@ -5302,7 +7799,7 @@ class POSChangeRequestCancelView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao cancelar o pedido.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu cancelar o pedido de troco.")
             return Response({"ok": True})
 
         return _cash_idempotent(request, acao="cancel_change_request", executar=lambda: _executar(request_ref))
@@ -5337,7 +7834,7 @@ class POSCardMachineRefundView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_card_machine_refund_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao registrar o estorno.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar o estorno.")
             return Response({"ok": True, "refunded_q": recorded_q})
 
         return _cash_idempotent(request, acao="card_machine_refund", executar=lambda: _executar(order_ref))
@@ -5377,7 +7874,7 @@ class POSCashRefundView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
-                return _falha_do_caixa(exc, "Falha ao devolver o dinheiro.")
+                return _falha_do_caixa(exc, "O sistema não conseguiu registrar a devolução.")
             return Response({"ok": True, "refunded_q": refunded_q})
 
         return _cash_idempotent(request, acao="refund_cash", executar=lambda: _executar(order_ref))
@@ -5428,7 +7925,12 @@ class POSAccountSettleView(APIView):
                     amount_raw=str(body.get("amount", "")),
                     method=str(body.get("method", "")),
                     terminal_ref=_terminal_do_pedido(request),
+                    manager_approval=body.get("manager_approval"),
                 )
+            # Pix/cartão/outro sem assinatura: o código chega à tela para ela abrir
+            # "Quem autoriza?" em vez de um toast.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except POSError as exc:
                 return Response({"detail": str(exc)}, status=400)
             return Response(
@@ -5566,7 +8068,7 @@ class POSTabCreateView(APIView):
             tab = pos_tabs_service.register_pos_tab(tab_ref=tab_ref, label=label)
         except Exception as exc:
             logger.debug("pos_tab_create_failed tab_ref=%s", tab_ref, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao criar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao criar comanda.")}, status=400)
         return Response({"ok": True, "tab": tab})
 
 
@@ -5585,15 +8087,21 @@ class POSTabOpenView(ServerTimingMixin, APIView):
     def get(self, request, tab_ref: str):
         from shopman.orderman.models import Session
 
-        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open",
-            handle_ref=pos_tabs_service.normalize_tab_ref(tab_ref)).first()
+        try:
+            ref = pos_tabs_service.normalize_tab_ref(tab_ref)
+        except ValueError as exc:
+            return Response(
+                {"detail": f"{exc} Use um hífen, por exemplo 77-2.", "error": {"code": "invalid_tab_ref"}},
+                status=422,
+            )
+        session = Session.objects.filter(channel_ref=POS_CHANNEL_REF, state="open", handle_ref=ref).first()
         if session is None:
             return Response({"detail": "Esta comanda já foi encerrada.", "error": {"code": "tab_closed"}}, status=409)
         return Response(build_open_tab(session))
 
     def post(self, request, tab_ref: str):
         try:
-            session = pos_tabs_service.open_pos_tab(
+            opening = pos_tabs_service.open_pos_tab_reporting(
                 channel_ref=POS_CHANNEL_REF,
                 tab_ref=tab_ref,
                 actor=_actor_pos(request),
@@ -5601,8 +8109,41 @@ class POSTabOpenView(ServerTimingMixin, APIView):
             )
         except Exception as exc:
             logger.debug("pos_tab_open_failed tab_ref=%s", tab_ref, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao abrir comanda."}, status=400)
-        return Response(build_open_tab(session))
+            return Response({"detail": public_error_detail(exc, "Falha ao abrir comanda.")}, status=400)
+        # ``created``: foi esta abertura que pôs a comanda em uso. É a deixa do PDV
+        # para devolvê-la ao quadro se ele sair dela vazia (#2443).
+        return Response({**build_open_tab(opening.session), "created": opening.created})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reserve and open the next free numeric POS tab",
+        responses={200: OpenApiResponse(description="Tab payload of the reserved tab.")},
+    ),
+)
+class POSTabReserveNextFreeView(ServerTimingMixin, APIView):
+    """A "Próxima livre" escolhida e reservada pelo servidor, numa ida só (#2443).
+
+    Duas estações que tocam juntas recebem comandas diferentes: a reserva é a
+    criação da conta, travada pelo banco.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+    server_timing_methods = ("POST",)
+
+    def post(self, request):
+        try:
+            body = request.data if isinstance(getattr(request, "data", None), dict) else {}
+            session = pos_tabs_service.reserve_next_free_pos_tab(
+                channel_ref=POS_CHANNEL_REF,
+                operator_username=_username(request),
+                client_request_id=str(body.get("client_request_id") or ""),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        return Response({**build_open_tab(session), "created": True})
 
 
 @extend_schema_view(
@@ -5633,7 +8174,7 @@ class POSTabSaveView(ServerTimingMixin, APIView):
             return Response({"detail": str(exc)}, status=400)
         except Exception as exc:
             logger.debug("pos_tab_save_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao salvar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao salvar comanda.")}, status=400)
         response = Response(
             {
                 "ok": True,
@@ -5695,7 +8236,7 @@ class POSTabClearView(APIView):
             )
         except Exception as exc:
             logger.debug("pos_tab_clear_failed session_key=%s", session_key, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao liberar comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao liberar comanda.")}, status=400)
         if not cleared:
             return Response({"detail": "Comanda não encontrada."}, status=404)
         return Response({"ok": True})
@@ -5741,7 +8282,7 @@ class POSTabMoveLinesView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_move_lines_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao mover itens entre comandas."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao mover itens entre comandas.")}, status=400)
         return Response(
             {
                 "ok": True,
@@ -5784,7 +8325,7 @@ class POSTabRenameView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_rename_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao renomear comanda."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao renomear comanda.")}, status=400)
         return Response({"ok": True, "tab": build_open_tab(session)})
 
 
@@ -5808,7 +8349,7 @@ class POSTabFireView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_fire_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao enviar à cozinha."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao enviar à cozinha.")}, status=400)
         return Response(
             {
                 "ok": True,
@@ -5840,7 +8381,7 @@ class POSTabUnfireView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_tab_unfire_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao cancelar envio à cozinha."}, status=400)
+            return Response({"detail": public_error_detail(exc, "Falha ao cancelar envio à cozinha.")}, status=400)
         return Response(
             {
                 "ok": True,
@@ -5853,7 +8394,7 @@ class POSTabUnfireView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Look up customer by ref or phone",
         responses={200: OpenApiResponse(description="Customer projection or null.")},
@@ -5863,9 +8404,13 @@ class POSCustomerLookupView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
 
-    def get(self, request):
-        ref = (request.query_params.get("ref") or "").strip()
-        phone = (request.query_params.get("phone") or "").strip()
+    def post(self, request):
+        # O telefone viaja no CORPO: na query string ele ficava no log de acesso
+        # e no cache (beta test de 05/11/2026, PDV2-07). Leitura pura, POST só
+        # para o dado pessoal não aparecer na URL.
+        body = request.data if isinstance(request.data, dict) else {}
+        ref = str(body.get("ref") or "").strip()
+        phone = str(body.get("phone") or "").strip()
         # `ref` vence: é a chave exata do cadastro (cliente sem telefone existe).
         if ref:
             customer = build_pos_customer_lookup_by_ref(ref)
@@ -5879,18 +8424,28 @@ class POSCustomerLookupView(APIView):
 
 
 @extend_schema_view(
-    get=extend_schema(
+    post=extend_schema(
         tags=["backstage"],
         summary="Search customers by any unique key (name/phone/CPF/email)",
         responses={200: OpenApiResponse(description="List of matching customers.")},
     ),
 )
 class POSCustomerSearchView(APIView):
+    """A busca de cliente do PDV: leitura pura, mas por POST e com limite.
+
+    O termo viaja no CORPO, como o telefone do lookup: na query string ele ficava
+    no log de acesso e no cache (#2335). E a busca tem teto por operador (#2336):
+    sem ele, "aa", "ab", "ac"... percorria a base de clientes inteira, ainda que
+    mascarada. A régua é ``pos_customer_search`` em ``DEFAULT_THROTTLE_RATES``.
+    """
+
     permission_classes = [HasBackstagePermission]
     required_permission = "cashman.operate_pos"
+    throttle_classes = [POSCustomerSearchThrottle]
 
-    def get(self, request):
-        query = (request.query_params.get("q") or "").strip()
+    def post(self, request):
+        body = request.data if isinstance(request.data, dict) else {}
+        query = str(body.get("q") or "").strip()
         results = build_pos_customer_search(query)
         return Response({"results": [projection_data(result) for result in results]})
 
@@ -5961,6 +8516,66 @@ def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response
         },
         status=422,
     )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Check a manager approval (PIN or badge) and issue the single-use sale approval token",
+        responses={200: OpenApiResponse(description="The approving manager's username and the signed approval token.")},
+    ),
+)
+class POSManagerApprovalCheckView(APIView):
+    """Confere o PIN (ou o crachá) do gerente NA HORA, no próprio diálogo.
+
+    Beta test de 05/11/2026 (PDV-05). O diálogo "Quem autoriza?" guardava o PIN
+    e fechava; a conferência só acontecia no fechamento, depois de o operador já
+    ter confirmado "Recebi o Pix" com o cliente. PIN errado voltava como recusa
+    da VENDA, com a tela já adiante.
+
+    É o MESMO desafio do fechamento (``validate_manager_override``: permissão
+    ``cashman.adjust_shift``, ``PinCredential`` com trava progressiva), então
+    errar aqui conta na mesma trava. Não grava nada no livro: devolve o carimbo
+    assinado (``issue_sale_approval``) que o fechamento resgata e confere.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        approval = (request.data or {}).get("manager_approval")
+        if not isinstance(approval, dict):
+            approval = {}
+        esgotado = _orcamento_de_pin_esgotado(request, approval)
+        if esgotado is not None:
+            return esgotado
+        return _conta_pin_do_gerente(request, approval, self._check(request, approval))
+
+    def _check(self, request, approval):
+        try:
+            approver = pos_tabs_service.validate_manager_override(
+                approval,
+                operator_username=_username(request),
+                action="sale_approval_check",
+                # A saída fala da porta que o gerente usou: com o crachá, "digite o
+                # PIN de novo" mandava refazer um gesto que ninguém fez (#2691).
+                recovery_invalid=(
+                    "Passe o crachá de novo, ou escolha o gerente e digite o PIN."
+                    if str(approval.get("badge") or "").strip()
+                    else "Confira o gerente e digite o PIN de novo."
+                ),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=422)
+        # O que sai daqui é o CARIMBO, não um "pode": preso ao operador, à comanda
+        # e aos números que o diálogo mostrou ao gerente (#2558). O PIN fica no
+        # diálogo; o fechamento resgata o carimbo uma vez e recusa valor diferente
+        # do assinado.
+        scope = pos_tabs_service.SaleApprovalScope.from_request((request.data or {}).get("scope"))
+        token = pos_tabs_service.issue_sale_approval(
+            approver, operator_username=_username(request), scope=scope,
+        )
+        return Response({"approved_by": approver.get_username(), "token": token})
 
 
 @extend_schema_view(
@@ -6197,8 +8812,22 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
     server_timing_methods = ("POST",)
 
     def post(self, request):
+        # Toda recusa do fechamento sai no dialeto canônico ``{detail, field,
+        # errors}`` por cima do superset do PDV (#2347): o ``field`` que vinha só
+        # dentro de ``error`` sobe para o topo, e ``errors`` diz a frase sob o campo.
+        return _resposta_no_dialeto(self._close(request))
+
+    def _close(self, request):
+        # A chave da tentativa é o que faz o reenvio devolver a MESMA venda (resposta
+        # perdida, fila sem conexão, toque duplo). Sem ela, a retentativa fechava uma
+        # segunda venda. O PDV sempre manda (``cart.clientRequestId``); a regra é a
+        # mesma das rotas de caixa (F8, #2565).
+        if not str(request.data.get("client_request_id") or "").strip():
+            return Response({"detail": "Identifique a tentativa antes de registrar.", "field": "client_request_id",
+                "errors": {"client_request_id": ["Identifique a tentativa antes de registrar."]},
+                "error": {"code": "client_request_id_required"}}, status=422)
         if (request.data.get("tab_session_key") or request.data.get("tab_ref")) and not request.data.get("expected_revision"):
-            return Response({"detail": "Atualize a comanda antes de finalizar.",
+            return Response({"detail": "Atualize a comanda antes de validar.", "field": "expected_revision",
                              "error": {"code": "tab_revision_required"}}, status=422)
         body = request.data if hasattr(request, "data") else {}
         if _open_cash_shift_for_request(request) is None:
@@ -6209,17 +8838,10 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
                 payload=_pos_payload_with_runtime(request, body),
                 actor=_actor_pos(request),
                 operator_username=_username(request),
-                # A tela diz o total que mostrou; sem ele a venda não fecha (D42).
-                require_expected_total=True,
             )
         except PosIntentError as exc:
-            body = {"detail": exc.message, "error": exc.as_dict()}
-            if exc.field:
-                # O canônico (``docs/reference/errors.md``) por cima do superset do
-                # PDV: ``field``/``errors`` dizem a quem lê só o dialeto comum que
-                # campo recusou (ex.: ``expected_total_q`` no total que mudou).
-                body.update({"field": exc.field, "errors": {exc.field: [exc.message]}})
-            return Response(body, status=exc.status)
+            # ``field``/``errors`` do canônico saem em ``post`` (``_no_dialeto``).
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except PosCustomerConflict as exc:
             # ⚠️ ANTES do `except ValueError` — ver `_pos_customer_conflict_response`.
             # O conflito de cliente sempre foi detectado no COMMIT; o que nunca
@@ -6231,7 +8853,7 @@ class POSCloseSaleView(ServerTimingMixin, APIView):
             # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
             return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
+            return Response({"detail": str(exc) or "Não foi possível validar a venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
         from shopman.orderman.models import Order
 
@@ -6294,6 +8916,18 @@ class POSCancelRecentSaleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
+        # Trava de replay (fallbacks perigosos, item 18): o toque repetido depois
+        # de uma resposta perdida no 4G devolve a resposta da primeira vez em vez
+        # de executar de novo. Com motivo, a correção reabriria a venda duas
+        # vezes; sem ele, o segundo toque virava "venda já cancelada" e o
+        # operador perdia o aviso do estorno na maquininha.
+        return _local_idempotent(
+            request,
+            scope=f"{POS_IDEMPOTENCY_SCOPE}.cancel_recent",
+            executar=lambda: self._cancel(request),
+        )
+
+    def _cancel(self, request):
         order_ref = (request.data.get("order_ref") or "").strip()
         reason = (request.data.get("reason") or "").strip()
         if not order_ref:

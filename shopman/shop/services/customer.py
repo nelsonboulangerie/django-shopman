@@ -24,6 +24,7 @@ from django.conf import settings
 from shopman.utils.names import split_full_name
 
 from shopman.shop.adapters import get_adapter
+from shopman.shop.services import phone_confirmation
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,21 @@ def ensure(order) -> None:
         _save_delivery_address(customer, order)
         _create_timeline_event(customer, order)
         _update_insights(customer["ref"])
+
+
+def refresh_insights(order) -> None:
+    """Recalcula o insight do cliente quando um pedido DEIXA de ser compra.
+
+    O insight materializado no ``ensure`` contava o pedido como compra. Cancelado
+    (inclusive o Pix ou cartão vencido) ou devolvido, ele sai do histórico, e o
+    insight precisa sair junto: senão o Gestor segue dizendo "Cliente fiel · 5
+    pedidos" de quem nunca pagou (beta 06/11, PIXEXP-07). Nunca levanta.
+    """
+    if not _customers_available():
+        return
+    customer_ref = str((order.data or {}).get("customer_ref") or "").strip()
+    if customer_ref:
+        _update_insights(customer_ref)
 
 
 # ── Built-in strategies ──
@@ -226,10 +242,13 @@ def _handle_counter(order):
 
         first_name, last_name = split_full_name(name)
         ref = f"CLI-{uuid.uuid4().hex[:8].upper()}"
-        return adapter.create_customer(
+        customer = adapter.create_customer(
             ref=ref, first_name=first_name, last_name=last_name,
             phone=phone, customer_type="individual", source_system="pdv",
         )
+        # Número digitado no balcão: o titular confirma no WhatsApp (D4).
+        phone_confirmation.request_on_commit(customer["ref"], phone)
+        return customer
 
     if tax_id:
         document = "".join(filter(str.isdigit, tax_id))
@@ -279,6 +298,9 @@ def _handle_phone(order):
         ref=ref, first_name=first_name, last_name=last_name,
         phone=phone, customer_type="individual", source_system="shopman",
     )
+    # Pedido anotado por telefone: o número foi digitado pela equipe, e o
+    # titular confirma no WhatsApp (D4).
+    phone_confirmation.request_on_commit(customer["ref"], phone)
     return customer
 
 
@@ -286,7 +308,7 @@ def _handle_phone(order):
 # the configured POS channel ref (default "pdv") since that ref is deployment-set.
 register_strategy("manychat", _handle_manychat)
 register_strategy("ifood", _handle_ifood)
-register_strategy(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv"), _handle_counter)
+register_strategy(settings.SHOPMAN_POS_CHANNEL_REF, _handle_counter)
 
 
 # ── helpers ──
@@ -385,13 +407,16 @@ def _save_delivery_address(customer: dict, order) -> None:
         lat = structured.get("latitude")
         lng = structured.get("longitude")
         coordinates = (float(lat), float(lng)) if lat and lng else None
-        # Etiqueta neutra: nem todo endereço de entrega é a "Casa" do cliente.
-        # Ele renomeia depois (etiqueta-DEPOIS do ADDRESS-UX). Os dados
-        # estruturados — place_id e lat/lng — nunca são descartados.
+        # Sem etiqueta: nem todo endereço de entrega é a "Casa" do cliente, e
+        # uma etiqueta igual em todos ("Entrega", que só repete o canal) não
+        # distingue um endereço do outro (#2775). Sem etiqueta, quem fala nas
+        # telas é o próprio endereço; o cliente etiqueta depois, se quiser
+        # (etiqueta-DEPOIS do ADDRESS-UX). Os dados estruturados (place_id e
+        # lat/lng) nunca são descartados.
         adapter.create_address(
             customer_ref=customer_ref,
             label="other",
-            label_custom="Entrega",
+            label_custom="",
             formatted_address=delivery_address,
             place_id=structured.get("place_id") or None,
             components={

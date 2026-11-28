@@ -73,11 +73,10 @@ export function installCatalogStructureSnapshot (
 function pendingItem (item: CatalogStructureState['items'][string]): CatalogItemProjection {
   return {
     ...item,
-    base_price_q: 0,
-    price_display: '',
-    has_promotion: false,
-    original_price_display: null,
-    promotion_label: null,
+    quote: {
+      qty: '1', listing_ref: null, list_unit_price_q: 0, list_line_total_q: 0,
+      final_unit_price_q: 0, final_line_total_q: 0, adjustments: []
+    },
     availability: 'available',
     availability_label: '',
     can_add_to_cart: false,
@@ -118,7 +117,6 @@ export function catalogFromStructureSnapshot (
       category: section.category,
       skus: [...section.skus]
     })),
-    featured: [],
     active_category_ref: null,
     favorite_category_ref: null,
     has_items: state.has_items && items.length > 0,

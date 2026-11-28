@@ -21,9 +21,11 @@ from django.test import TestCase
 from django.utils import timezone
 from shopman.cashman.models import Shift
 from shopman.orderman.models import Order
+from shopman.utils.formatting import format_clock, format_local
 
 from shopman.shop.models import Channel, Shop
 from shopman.shop.tests.danfe_fixtures import xml_for_key
+from shopman.shop.tests.fiscal_document_support import access_key_for
 
 
 def _brasilia(hour, minute, *, day=30, month=9):
@@ -49,7 +51,7 @@ class StubFiscalBackend:
     def emit(self, **kwargs):
         from shopman.fiscalman.contracts import FiscalDocumentResult
 
-        return FiscalDocumentResult(success=True, access_key="stub", status="authorized")
+        return FiscalDocumentResult(success=True, access_key=access_key_for(kwargs["reference"]), status="authorized")
 
     def query_status(self, *, reference):
         from shopman.fiscalman.contracts import FiscalDocumentResult
@@ -234,9 +236,9 @@ class POSRecentSalesFiscalTests(TestCase):
         by_ref = {sale["order_ref"]: sale for sale in sales}
         local = timezone.localtime(agora)
         retirada = by_ref["PDV-ENC-RET"]
-        self.assertEqual(retirada["created_at_display"], timezone.localtime(tres_dias).strftime("%d/%m %H:%M"))
-        self.assertEqual(retirada["handoff_display"], f"Retirada hoje às {local.strftime('%H:%M')}")
-        entrega = (local - timedelta(minutes=5)).strftime("%H:%M")
+        self.assertEqual(retirada["created_at_display"], format_local(tres_dias, "%d/%m {clock}"))
+        self.assertEqual(retirada["handoff_display"], f"Retirada hoje às {format_clock(local)}")
+        entrega = format_clock(local - timedelta(minutes=5))
         self.assertEqual(by_ref["PDV-ENC-ENTREGA"]["handoff_display"], f"Saiu para entrega hoje às {entrega}")
         self.assertEqual(by_ref["PDV-HOJE"]["handoff_display"], "")
         # A emissão avulsa vale no dia da SAÍDA, não no do pagamento.
@@ -267,7 +269,7 @@ class POSRecentSalesFiscalTests(TestCase):
 
         [venda] = self._recent_sales_at(agora)
 
-        self.assertEqual(venda["handoff_display"], "Retirada hoje às 20:00")
+        self.assertEqual(venda["handoff_display"], "Retirada hoje às 20h")
         self.assertTrue(venda["can_emit_fiscal"])
 
     def test_entrega_das_23h57_vista_as_00h02_e_de_ontem(self) -> None:
@@ -288,13 +290,13 @@ class POSRecentSalesFiscalTests(TestCase):
 
         [venda] = self._recent_sales_at(agora)
 
-        self.assertEqual(venda["handoff_display"], "Saiu para entrega 30/09 às 23:57")
+        self.assertEqual(venda["handoff_display"], "Saiu para entrega 30/09 às 23h57")
         self.assertFalse(venda["can_emit_fiscal"])
 
     def test_danfe_escpos_returns_printable_bytes(self) -> None:
         self._order("PDV-RS-3", nfce=True)
 
-        response = self.client.get("/api/v1/backstage/pos/orders/PDV-RS-3/danfe-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/PDV-RS-3/danfe-escpos/")
 
         self.assertEqual(response.status_code, 200)
         payload = base64.b64decode(response.json()["payload_b64"])
@@ -307,7 +309,7 @@ class POSRecentSalesFiscalTests(TestCase):
     def test_danfe_escpos_refuses_unemitted_note(self) -> None:
         self._order("PDV-RS-4", nfce=False)
 
-        response = self.client.get("/api/v1/backstage/pos/orders/PDV-RS-4/danfe-escpos/")
+        response = self.client.post("/api/v1/backstage/pos/orders/PDV-RS-4/danfe-escpos/")
 
         self.assertEqual(response.status_code, 409)
 

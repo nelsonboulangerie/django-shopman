@@ -19,7 +19,7 @@ from shopman.stockman.services.availability import (
     availability_for_sku,
     availability_for_skus,
     availability_scope_for_channel,
-    promise_decision_for_sku,
+    promise_for_sku,
     sku_exists,
 )
 from shopman.stockman.services.movements import StockMovements
@@ -245,7 +245,7 @@ class PromiseView(APIView):
         channel_ref = request.query_params.get("channel_ref")
         scope = availability_scope_for_channel(channel_ref)
 
-        decision = promise_decision_for_sku(
+        decision = promise_for_sku(
             sku,
             requested_qty,
             target_date=target_date,

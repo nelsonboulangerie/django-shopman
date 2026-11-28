@@ -29,6 +29,10 @@ import inspect
 
 from rest_framework import serializers
 
+from shopman.shop.projections.pricing_quote import (
+    PriceAdjustmentProjection,
+    PriceQuoteProjection,
+)
 from shopman.shop.projections.types import (
     Action,
     OrderItemProjection,
@@ -38,13 +42,21 @@ from shopman.shop.projections.types import (
 from shopman.shop.services.conversation import RemoteConversationProjection
 from shopman.storefront.api import serializers as api_serializers
 from shopman.storefront.presentation.order_tracking import (
-    CancellationRequestProjection,
+    CancellationContactProjection,
     FiscalNoteProjection,
     OrderTrackingCopyProjection,
     OrderTrackingProjection,
     OrderTrackingPromiseProjection,
     PickupInfoProjection,
+    RatingFollowupProjection,
+    RetentionReceiptLineProjection,
+    RetentionReceiptProjection,
+    RetentionReceiptRowProjection,
+    TrackingDiscountLineProjection,
+    TrackingGiftProjection,
+    TrackingLoginInviteProjection,
 )
+from shopman.storefront.presentation.promise import PromiseProjection
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
     OrderProgressStepProjection,
@@ -53,16 +65,34 @@ from shopman.storefront.presentation.types import (
 # (serializer, dataclass, campos da dataclass conscientemente NÃO expostos)
 MIRROR_CONTRACTS = [
     (api_serializers.ActionSerializer, Action, set()),
+    (
+        api_serializers.PriceAdjustmentSerializer,
+        PriceAdjustmentProjection,
+        set(),
+    ),
+    (api_serializers.PriceQuoteSerializer, PriceQuoteProjection, set()),
+    (api_serializers.ReadyPromiseSerializer, PromiseProjection, set()),
     # Timeline do storefront mostra só label/hora; actor/detail servem a outras superfícies.
     (api_serializers.TimelineEventSerializer, TimelineEventProjection, {"actor", "detail"}),
-    (api_serializers.OrderItemSerializer, OrderItemProjection, set()),
+    # A instrução do item é do balcão (Gestor/cozinha); a loja não a repete.
+    (api_serializers.OrderItemSerializer, OrderItemProjection, {"notes"}),
     (api_serializers.PickupInfoSerializer, PickupInfoProjection, set()),
     (
-        api_serializers.CancellationRequestProjectionSerializer,
-        CancellationRequestProjection,
+        api_serializers.CancellationContactProjectionSerializer,
+        CancellationContactProjection,
+        set(),
+    ),
+    (
+        api_serializers.RatingFollowupProjectionSerializer,
+        RatingFollowupProjection,
         set(),
     ),
     (api_serializers.FiscalNoteSerializer, FiscalNoteProjection, set()),
+    (api_serializers.RetentionReceiptSerializer, RetentionReceiptProjection, set()),
+    (api_serializers.RetentionReceiptLineSerializer, RetentionReceiptLineProjection, set()),
+    (api_serializers.RetentionReceiptRowSerializer, RetentionReceiptRowProjection, set()),
+    (api_serializers.TrackingDiscountLineSerializer, TrackingDiscountLineProjection, set()),
+    (api_serializers.TrackingGiftSerializer, TrackingGiftProjection, set()),
     (api_serializers.OrderProgressStepSerializer, OrderProgressStepProjection, set()),
     # O cliente recebe os ISOs crus (dispatched_at/delivered_at); os *_display são internos.
     (
@@ -72,6 +102,7 @@ MIRROR_CONTRACTS = [
     ),
     (api_serializers.OrderTrackingCopySerializer, OrderTrackingCopyProjection, set()),
     (api_serializers.OrderTrackingPromiseSerializer, OrderTrackingPromiseProjection, set()),
+    (api_serializers.TrackingLoginInviteSerializer, TrackingLoginInviteProjection, set()),
     # `order_ref` é usado só server-side (support_url/share_text); o cliente lê `ref`.
     (api_serializers.OrderTrackingSerializer, OrderTrackingProjection, {"order_ref"}),
     (api_serializers.AddressSerializer, SavedAddressProjection, set()),
@@ -84,6 +115,7 @@ NON_MIRROR = {
     "SetSkuQtySerializer",
     "CartLineNotesSerializer",
     "AddCartLineSerializer",
+    "CartDaySerializer",
     "CartLineOptionSerializer",
     "CheckoutSerializer",
     "CheckoutAddressLabelSerializer",
@@ -92,7 +124,6 @@ NON_MIRROR = {
     "StockAlertSubscriptionRefSerializer",
     "StockAlertSubscriptionControlRequestSerializer",
     "StockAlertManagementActionSerializer",
-    "CancellationRequestInputSerializer",
     # Envelope de erro canônico ({detail, ...}).
     "DetailSerializer",
     # Respostas montadas como dict ad-hoc no view (não há dataclass fonte).

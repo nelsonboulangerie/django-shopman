@@ -24,6 +24,17 @@ _RATE_LIMIT_CODES = frozenset(
 )
 
 
+def _validation_error_response(serializer) -> Response:
+    """Return Doorman's stable field-error envelope without host coupling."""
+    errors = serializer.errors
+    first_messages = next(iter(errors.values()), ["Invalid request."])
+    detail = str(first_messages[0] if isinstance(first_messages, (list, tuple)) else first_messages)
+    return Response(
+        {"detail": detail, "errors": errors},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 class RequestCodeView(APIView):
     """
     POST /api/auth/request-code/
@@ -46,7 +57,8 @@ class RequestCodeView(APIView):
     )
     def post(self, request):
         serializer = RequestCodeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return _validation_error_response(serializer)
 
         target_raw = serializer.validated_data["target"]
         delivery_method = serializer.validated_data.get("delivery_method", "whatsapp")
@@ -101,7 +113,8 @@ class VerifyCodeView(APIView):
     )
     def post(self, request):
         serializer = VerifyCodeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            return _validation_error_response(serializer)
 
         target_raw = serializer.validated_data["target"]
         code_input = serializer.validated_data["code"]
@@ -120,7 +133,7 @@ class VerifyCodeView(APIView):
         data = VerifyCodeResponseSerializer(
             {
                 "success": True,
-                "customer_id": result.customer.uuid,
+                "customer_id": result.customer.subject_id,
                 "created_customer": result.created_customer,
             }
         ).data

@@ -34,6 +34,10 @@ TEXT_MIGRATIONS = [
     import_module("shopman.shop.migrations.0079_confirmado_com_todo_carinho"),
     import_module("shopman.shop.migrations.0082_access_link_button_copy"),
     import_module("shopman.shop.migrations.0092_avisos_de_estorno_e_devolucao"),
+    import_module("shopman.shop.migrations.0101_confirmado_diz_a_data_da_encomenda"),
+    import_module("shopman.shop.migrations.0107_access_link_voltar_a_loja"),
+    import_module("shopman.shop.migrations.0111_cancelamento_conforme_solicitacao"),
+    import_module("shopman.shop.migrations.0124_avisos_dizem_ficar_pronto"),
 ]
 DISPATCHED = import_module("shopman.shop.migrations.0076_saiu_para_entrega_sem_cumprimento")
 REVISED = import_module("shopman.shop.migrations.0078_frases_revisadas_das_notificacoes")
@@ -87,12 +91,14 @@ def test_status_note_so_existe_onde_o_texto_a_usa():
     users = {e for e, c in notification_copy.CUSTOMER_COPY.items() if "{status_note}" in c["body"]}
     assert users == {
         "order_preparing",
-        "order_cancelled",
         "order_rejected",
         "order_rescheduled",
         "order_updated",
         "payment_refunded",
         "order_returned",
+        "order_delayed",
+        "order_item_missing",
+        "order_reschedule_needed",
     }
 
 

@@ -2,7 +2,7 @@
 
 O kernel do Craftsman modela ``planned → started → finished`` (e ``void``). A
 camada pt-BR fala Planejada · Aberta · Fechada · Cancelada; os eventos
-``started``/``finished`` são Abertura e Fechamento. "Produzido" chegou a
+``started``/``finished`` são Produção e Finalização. "Produzido" chegou a
 significar ``started`` no quadro da Produção e ``finished`` no Admin; esta trava
 impede que volte a rotular qualquer um dos dois.
 
@@ -56,8 +56,8 @@ def test_status_da_workorder_fala_o_vocabulario_canonico():
 
 
 def test_eventos_de_abertura_e_fechamento():
-    assert str(WorkOrderEvent.Kind.STARTED.label) == "Abertura"
-    assert str(WorkOrderEvent.Kind.FINISHED.label) == "Fechamento"
+    assert str(WorkOrderEvent.Kind.STARTED.label) == "Produção"
+    assert str(WorkOrderEvent.Kind.FINISHED.label) == "Finalização"
 
 
 def test_projecao_le_os_rotulos_da_fonte_unica():

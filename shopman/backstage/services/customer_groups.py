@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from shopman.backstage.services.exceptions import CustomerGroupMutationError
 from shopman.shop.models import Channel, Promotion
 from shopman.shop.services import customer_groups as domain_service
 from shopman.shop.services.customer_groups import ADVANTAGE_KINDS
+
+logger = logging.getLogger(__name__)
 
 _FIELDS = {
     "ref", "name", "description", "listingRef", "priority", "isDefault",
@@ -333,3 +337,121 @@ def update_group(ref: str, data: dict):
         )
     _apply(tier, values)
     return tier
+
+
+#: As duas ações sobre quem pertence ao grupo. Pôr nunca tira o cliente dos outros
+#: grupos dele: o vínculo é N:N e vale a melhor vantagem por tipo.
+MEMBER_OPERATIONS = ("add", "remove")
+#: O mesmo teto das etiquetas em lote: a seleção é escolhida na tela.
+MEMBER_LIMIT = 200
+
+
+def _member_refs(value) -> list[str]:
+    if not isinstance(value, list) or not value:
+        raise _error("Escolha ao menos um cliente.", field="refs")
+    refs: list[str] = []
+    for raw in value:
+        if not isinstance(raw, str) or not raw.strip():
+            raise _error("Escolha ao menos um cliente.", field="refs")
+        item = raw.strip()
+        if item not in refs:
+            refs.append(item)
+    if len(refs) > MEMBER_LIMIT:
+        raise _error(f"Escolha no máximo {MEMBER_LIMIT} clientes por vez.", field="refs")
+    return refs
+
+
+@transaction.atomic
+def change_group_members(ref: str, data: dict, *, actor: str = "") -> dict:
+    """Põe ou tira vários clientes de UM grupo, numa ida e em consultas constantes.
+
+    Escreve direto na tabela do vínculo (``Customer.price_tiers.through``): pôr é um
+    ``bulk_create`` que ignora quem já estava; tirar é um ``delete`` filtrado. O
+    número de consultas não cresce com a seleção, e repetir o gesto não muda nada.
+
+    Pôr não mexe nos outros grupos do cliente. Tirar segue a régua do
+    ``Customer._apply_default_price_tier``: quem fica sem grupo nenhum volta para o
+    grupo padrão, e quem só está no grupo padrão continua nele.
+    """
+    from shopman.guestman.models import Customer, PriceTier
+
+    if not isinstance(data, dict):
+        raise _error("O pedido precisa ser um objeto.")
+    unknown = sorted(set(data) - {"refs", "operation"})
+    if unknown:
+        raise _error(f"Campo desconhecido: {unknown[0]}.", field=unknown[0])
+    operation = _text(data, "operation")
+    if operation not in MEMBER_OPERATIONS:
+        raise _error("Escolha pôr ou tirar do grupo.", field="operation")
+    refs = _member_refs(data.get("refs"))
+
+    # O grupo e o padrão numa consulta só; o lock serializa dois lotes no mesmo grupo.
+    tiers = list(
+        PriceTier.objects.select_for_update().filter(Q(ref=ref) | Q(is_default=True)).order_by("pk")
+    )
+    tier = next((item for item in tiers if item.ref == ref), None)
+    if tier is None:
+        raise _error("Grupo não encontrado.", code="not_found")
+    default = next((item for item in tiers if item.is_default), None)
+
+    found: dict[int, str] = dict(
+        Customer.objects.filter(ref__in=refs, is_active=True).values_list("pk", "ref")
+    )
+    found_refs = set(found.values())
+    skipped = [{"ref": item, "reason": "not_found_or_inactive"} for item in refs if item not in found_refs]
+
+    link = Customer.price_tiers.through
+    members = set(
+        link.objects.filter(pricetier_id=tier.pk, customer_id__in=list(found))
+        .values_list("customer_id", flat=True)
+    )
+    moved_to_default: list[str] = []
+    if operation == "add":
+        changed = sorted(pk for pk in found if pk not in members)
+        if changed:
+            link.objects.bulk_create(
+                [link(customer_id=pk, pricetier_id=tier.pk) for pk in changed], ignore_conflicts=True,
+            )
+    else:
+        with_other_group = set(
+            link.objects.filter(customer_id__in=list(members))
+            .exclude(pricetier_id=tier.pk)
+            .values_list("customer_id", flat=True)
+            .distinct()
+        ) if members else set()
+        alone = sorted(members - with_other_group)
+        if alone and (tier.is_default or default is None):
+            # Sem outro grupo para onde ir: o cliente fica onde está.
+            skipped.extend({"ref": found[pk], "reason": "only_group"} for pk in alone)
+            changed = sorted(members - set(alone))
+        else:
+            changed = sorted(members)
+            if alone:
+                moved_to_default = [found[pk] for pk in alone]
+                link.objects.bulk_create(
+                    [link(customer_id=pk, pricetier_id=default.pk) for pk in alone],
+                    ignore_conflicts=True,
+                )
+        if changed:
+            link.objects.filter(pricetier_id=tier.pk, customer_id__in=changed).delete()
+
+    changed_set = set(changed)
+    skipped_refs = {item["ref"] for item in skipped}
+    applied = [found[pk] for pk in changed]
+    unchanged = [
+        found[pk] for pk in sorted(found)
+        if pk not in changed_set and found[pk] not in skipped_refs
+    ]
+    logger.info(
+        "gestor_customer_group_members group=%s operation=%s applied=%s unchanged=%s skipped=%s actor=%s",
+        tier.ref, operation, len(applied), len(unchanged), len(skipped), actor,
+    )
+    return {
+        "operation": operation,
+        "group": {"ref": tier.ref, "name": tier.name},
+        "applied": applied,
+        "unchanged": unchanged,
+        "skipped": skipped,
+        "moved_to_default": moved_to_default,
+        "default_group": {"ref": default.ref, "name": default.name} if default is not None else None,
+    }

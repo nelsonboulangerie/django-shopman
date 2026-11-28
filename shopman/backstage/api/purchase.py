@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.api.projections import projection_data
+from shopman.backstage.parsing import as_bool
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.backstage.projections.purchase_count import build_purchase_count
 from shopman.backstage.services import purchase as purchase_service
@@ -115,7 +116,31 @@ class PurchaseBoardView(ServerTimingMixin, APIView):
         responses={200: OpenApiResponse(description="Materials, suppliers, costs and active receipt draft.")},
     )
     def get(self, request):
-        return Response({"purchase": projection_data(build_purchase())})
+        def values(name: str) -> list[str]:
+            return [value for value in request.query_params.getlist(name) if value]
+
+        return Response(
+            {
+                "purchase": projection_data(
+                    build_purchase(
+                        paginate=True,
+                        page=request.query_params.get("page", 1),
+                        page_size=request.query_params.get("page_size", 30),
+                        query=request.query_params.get("q", ""),
+                        order=request.query_params.get("order", "name"),
+                        material_filters={
+                            "archive": values("material_archive"),
+                            "category": values("category"),
+                            "tone": values("tone"),
+                        },
+                        supplier_filters={
+                            "archive": values("supplier_archive"),
+                            "contact": values("contact"),
+                        },
+                    )
+                )
+            }
+        )
 
 
 class PurchaseScanInvoiceView(APIView):
@@ -203,9 +228,10 @@ class PurchaseCostView(APIView):
         return _purchase_response(projection, message="Custo salvo.")
 
 
-class PurchaseCostBatchView(APIView):
+class PurchaseCostBatchView(ServerTimingMixin, APIView):
     """Tabela de preços do fornecedor num gesto só — ver `upsert_costs`."""
 
+    server_timing_methods = ("POST",)
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
 
@@ -226,9 +252,10 @@ class PurchaseCostBatchView(APIView):
         )
 
 
-class PurchaseMinStockView(APIView):
+class PurchaseMinStockView(ServerTimingMixin, APIView):
     """Estoque mínimo declarado — ver `set_min_stock`."""
 
+    server_timing_methods = ("POST",)
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_purchase"
 
@@ -369,8 +396,13 @@ class PurchaseRequestSendView(APIView):
         responses={200: OpenApiResponse(description="Request marked as sent.")},
     )
     def post(self, request, material_sku: str):
+        reviewed = as_bool(dict(request.data or {}), "reviewed", default=False)
         try:
-            projection = purchase_service.send_purchase_request(material_sku, user=request.user)
+            projection = purchase_service.send_purchase_request(
+                material_sku,
+                reviewed=reviewed,
+                user=request.user,
+            )
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Pedido enviado ao canal do fornecedor.")

@@ -18,7 +18,7 @@ from shopman.guestman.contrib.identifiers.models import CustomerIdentifier, Iden
 User = get_user_model()
 
 DOORMAN_SETTINGS = {
-    "CUSTOMER_RESOLVER_CLASS": "shopman.guestman.adapters.auth.CustomerResolver",
+    "IDENTITY_RESOLVER_CLASS": "shopman.guestman.adapters.auth.IdentityResolver",
     "MESSAGE_SENDER_CLASS": "shopman.doorman.senders.LogSender",
     "DEVICE_TRUST_COOKIE_NAME": "doorman_dt",
     "LOGOUT_REDIRECT_URL": "/",
@@ -159,7 +159,7 @@ def test_verify_login_links_whatsapp_identifier(customer, verification_code):
 
     CustomerIdentifier.objects.filter(
         customer=customer,
-        identifier_type=IdentifierType.WHATSAPP,
+        identifier_type=IdentifierType.PHONE,
     ).delete()
 
     result = AuthService.verify_for_login(
@@ -171,7 +171,7 @@ def test_verify_login_links_whatsapp_identifier(customer, verification_code):
     assert result.success
     assert CustomerIdentifier.objects.filter(
         customer=customer,
-        identifier_type=IdentifierType.WHATSAPP,
+        identifier_type=IdentifierType.PHONE,
         identifier_value=verification_code.target_value,
     ).exists()
 
@@ -202,8 +202,13 @@ def test_logout_clears_session(customer):
 @pytest.mark.django_db
 @override_settings(DOORMAN=DOORMAN_SETTINGS)
 def test_logout_clears_device_trust_cookie(customer):
+    from shopman.doorman.models import TrustedDevice
+    from shopman.guestman.adapters.auth import IdentityResolver
+
     request = _make_request("post", "/auth/logout/")
-    request.COOKIES["doorman_dt"] = "some-token"
+    request.customer = IdentityResolver().get(customer.uuid, purpose="session")
+    _device, raw_token = TrustedDevice.create_for("customer", customer.uuid)
+    request.COOKIES["doorman_dt"] = raw_token
 
     response = LogoutView.as_view()(request)
 

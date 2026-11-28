@@ -11,6 +11,7 @@
 
 import type { POSCartItem, POSSaleReviewProjection } from "~/types/pos";
 import { cartTotalQ, formatBRL } from "~/utils/posIntent";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Formas que se recebem sem rede: dinheiro, e a maquininha com chip e 4G próprios. */
 export const OFFLINE_PAYMENT_METHODS = ["cash", "credit", "debit", "external"] as const;
@@ -42,7 +43,22 @@ export interface OfflineSale {
   lastError?: OfflineSaleError;
 }
 
+/**
+ * A loja com a venda sem conexão DESLIGADA (`offline_sale_enabled`, o padrão até
+ * existir NFC-e em contingência): sem rede, o balcão não cobra nem guarda venda.
+ * O aviso do cabeçalho e a razão sob o Pagamento dizem a mesma coisa.
+ */
+export const OFFLINE_SALE_OFF_TITLE = "Sem conexão: a venda espera a rede voltar.";
+export const OFFLINE_SALE_OFF_REASON = "Sem conexão. A venda espera a rede voltar.";
+
+/** O que impede a venda AGORA, pela chave da loja: vazio quando pode seguir. */
+export function offlineSaleOffReason(input: { online: boolean; saleEnabled: boolean }): string {
+  return !input.online && !input.saleEnabled ? OFFLINE_SALE_OFF_REASON : "";
+}
+
 export interface OfflineSaleInputs {
+  /** A chave da loja (`offline_sale_enabled`). Desligada, nenhuma venda segue sem conexão. */
+  saleEnabled: boolean;
   salesMode: "counter" | "order" | string;
   fulfillmentType: string;
   items: POSCartItem[];
@@ -69,6 +85,7 @@ export interface OfflineSaleInputs {
  * venda de balcão direta.
  */
 export function offlineSaleBlockers(input: OfflineSaleInputs): string[] {
+  if (!input.saleEnabled) return [OFFLINE_SALE_OFF_REASON];
   const blockers: string[] = [];
   if (input.salesMode === "order") {
     blockers.push("Encomenda só nasce com conexão.");
@@ -117,7 +134,7 @@ export function offlinePaymentLabel(methods: string[]): string {
 export function clockLabel(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  return formatClock(date);
 }
 
 /**
@@ -253,14 +270,30 @@ export function offlineQueueAlert(input: {
   pending: number;
   conflicts: number;
   sending: boolean;
+  /** A chave da loja (`offline_sale_enabled`). Desligada, sem rede o balcão não vende. */
+  saleEnabled: boolean;
 }): OfflineQueueAlert | null {
-  const { online, pending, conflicts, sending } = input;
+  const { online, pending, conflicts, sending, saleEnabled } = input;
   if (conflicts > 0) {
     return {
       color: "error",
       title: conflicts === 1 ? "1 venda guardada não entrou." : `${conflicts} vendas guardadas não entraram.`,
       description: "Cada uma diz por quê. O caixa só fecha depois de resolver.",
       actionLabel: "Resolver",
+    };
+  }
+  if (!online && !saleEnabled) {
+    // A venda guardada ANTES de a chave desligar não some: segue listada, e o
+    // servidor a recusa com o motivo quando a rede voltar.
+    return {
+      color: "warning",
+      title: OFFLINE_SALE_OFF_TITLE,
+      description: pending
+        ? (pending === 1
+            ? "Esta loja não vende sem conexão. 1 venda guardada antes segue na lista."
+            : `Esta loja não vende sem conexão. ${pending} vendas guardadas antes seguem na lista.`)
+        : "Esta loja não vende sem conexão. Os itens ficam na comanda até a rede voltar.",
+      actionLabel: pending ? "Ver vendas guardadas" : "",
     };
   }
   if (!online) {

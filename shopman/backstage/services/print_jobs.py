@@ -182,7 +182,7 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
             # JSON: `print_target_ref` era o nome da chave, e mandava o padeiro
             # procurar um campo que, até agora, não existia em tela nenhuma.
             "Há mais de uma impressora de preparação e esta estação não tem destino "
-            "escolhido. Escolha em Terminais do PDV, no gestor.",
+            "escolhido. Escolha em Terminais do PDV, no Admin.",
         )
     if invalid:
         terminal, problem = invalid[0]
@@ -210,9 +210,14 @@ def _destination_health(terminal, *, config: PrinterConfig | None = None) -> Pri
     return PrintDestination(
         terminal,
         _terminal_label(terminal),
-        "Pronta" if recently_seen else ("Aguardando estação" if paired else "Relay não pareado"),
+        # Copy de gestor: "relay" é o nome do mecanismo, não do que ele vê na tela
+        # (beta test 05/11/2026, ADM-11). A página do pareamento se chama
+        # "Instalar o agente do balcão", no terminal.
+        "Pronta" if recently_seen else ("Aguardando estação" if paired else "Agente não pareado"),
         paired,
-        "" if paired else "Emita uma credencial para o relay deste terminal.",
+        ""
+        if paired
+        else "Faça o pareamento em Instalar o agente do balcão, na tela deste terminal.",
         config or PrinterConfig.from_terminal(terminal),
     )
 
@@ -941,6 +946,24 @@ def reconcile_job_state(job: PrintJob) -> PrintJob:
                 locked.status = PrintJob.Status.UNCERTAIN
                 locked.save(update_fields=("status", "updated_at"))
         return locked
+
+
+def read_job_state(job: PrintJob, *, now=None) -> PrintJob:
+    """O estado que o relógio já decidiu, para LER: o mesmo veredito de
+    ``reconcile_job_state``, sem gravar nada.
+
+    O poll do operador é leitura e não produz efeito; quem grava o veredito é o
+    comando seguinte sobre o trabalho (repetir, reimprimir, confirmar) e o
+    ``maintenance_worker``. A instância devolvida não deve ser salva.
+    """
+    now = now or timezone.now()
+    if job.status in {PrintJob.Status.QUEUED, PrintJob.Status.PREPARED} and job.expires_at <= now:
+        job.status = PrintJob.Status.EXPIRED
+    elif job.status == PrintJob.Status.LEASED:
+        attempt = job.attempts.filter(status=PrintAttempt.Status.LEASED).order_by("-sequence").first()
+        if attempt is not None and attempt.lease_expires_at and attempt.lease_expires_at <= now:
+            job.status = PrintJob.Status.UNCERTAIN
+    return job
 
 
 _STATUS_MESSAGES = {

@@ -16,27 +16,56 @@ from decimal import Decimal
 import pytest
 from django.conf import settings
 from django.test import Client
+from django.urls import URLPattern, URLResolver, get_resolver
 from shopman.guestman.models import Customer, PriceTier
 
-from shopman.storefront.api.public_cache import PUBLIC_EDGE_CACHE_CONTROL
+from shopman.storefront.api.public_cache import (
+    PUBLIC_EDGE_CACHE_CONTROL,
+    RECOMMENDATIONS_EDGE_CACHE_CONTROL,
+    PublicReadMixin,
+)
 from shopman.storefront.services import favorites
 from shopman.storefront.tests.api.test_storefront_surface import _seed_surface
 
 pytestmark = pytest.mark.django_db
+
+# O rail de sugestões é o único request que a PDP faz DEPOIS do SSR, e o corpo do
+# anônimo é o mesmo para todo mundo: é ele que mais paga o TTFB do Django.
+RECOMMENDATIONS_TWIN = "/api/v1/storefront/public/products/PAO-FRANCES/recommendations/"
+RECOMMENDATIONS_PRIVATE = "/api/v1/storefront/products/PAO-FRANCES/recommendations/"
+PRODUCT_TWIN = "/api/v1/storefront/public/products/PAO-FRANCES/"
+PRODUCT_PRIVATE = "/api/v1/storefront/products/PAO-FRANCES/"
 
 PUBLIC_TWINS = {
     "/api/v1/storefront/public/home/": "/api/v1/storefront/home/",
     "/api/v1/storefront/public/shell/": "/api/v1/storefront/shell/",
     "/api/v1/storefront/public/catalog/": "/api/v1/storefront/catalog/",
     "/api/v1/storefront/public/catalog/paes/": "/api/v1/storefront/catalog/paes/",
+    RECOMMENDATIONS_TWIN: RECOMMENDATIONS_PRIVATE,
+    PRODUCT_TWIN: PRODUCT_PRIVATE,
 }
 PUBLIC_IN_PLACE = ("/api/v1/storefront/site/", "/api/v1/storefront/legal/")
+# A gêmea do rail tem constante própria (o TTL é da rota), hoje na mesma régua.
+RECOMMENDATIONS_TWINS = (RECOMMENDATIONS_TWIN,)
+
+#: X8 da Etapa III: copy editada no Admin chega à loja em até 60 s. A borda conta.
+X8_EDGE_CEILING_S = 60
+
+
+def _cache_control(path: str) -> str:
+    """O TTL é da ROTA: cada rota pública declara o seu, todos sob o teto do X8."""
+    return (
+        RECOMMENDATIONS_EDGE_CACHE_CONTROL
+        if path in RECOMMENDATIONS_TWINS
+        else PUBLIC_EDGE_CACHE_CONTROL
+    )
 
 
 def _customer_client() -> tuple[Client, Customer]:
     """Cliente logado com favorito e sacola: tudo o que a borda não pode espalhar."""
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
+
+    from shopman.storefront.tests.identity_fakes import make_identity_view
 
     tier, _ = PriceTier.objects.get_or_create(
         ref="regular", defaults={"name": "Regular", "is_default": True, "priority": 0}
@@ -44,8 +73,8 @@ def _customer_client() -> tuple[Client, Customer]:
     customer = Customer.objects.create(
         ref="CUST-EDGE", first_name="Marisol", phone="+5543999990077", price_tiers=tier
     )
-    info = AuthCustomerInfo(
-        uuid=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True
+    info = make_identity_view(
+        subject_id=customer.uuid, name=customer.name, phone=customer.phone, email=None, is_active=True
     )
     user, _ = get_or_create_user_for_customer(info)
     client = Client()
@@ -74,7 +103,7 @@ def test_public_read_is_edge_cacheable_and_opens_no_session(client, path):
     response = client.get(path)
 
     assert response.status_code == 200, response.content[:300]
-    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+    assert response["Cache-Control"] == _cache_control(path)
     assert not response.cookies, "resposta cacheável não pode definir cookie"
 
 
@@ -97,6 +126,76 @@ def test_public_twin_refuses_anything_that_could_personalize(client, path, crede
     assert response.status_code == 400
     assert response["Cache-Control"] == "private, no-store"
     assert set(response.json()) <= {"detail", "field", "errors"}
+
+
+def test_recommendations_twin_serves_the_rail_within_the_x8_ceiling(client):
+    """s-maxage=30 + stale-while-revalidate=30: o selo dos cards é copy do Admin."""
+    _seed_surface()
+
+    response = client.get(RECOMMENDATIONS_TWIN)
+
+    assert response.status_code == 200
+    assert response["Cache-Control"] == RECOMMENDATIONS_EDGE_CACHE_CONTROL
+    assert "max-age=0" in response["Cache-Control"], "quem cacheia é a borda, não o navegador"
+    assert "s-maxage=30" in response["Cache-Control"]
+    assert "stale-while-revalidate=30" in response["Cache-Control"]
+
+
+def _edge_window_s(cache_control: str) -> int:
+    """Quanto a borda pode servir o mesmo corpo: ``s-maxage`` + ``stale-while-revalidate``.
+
+    ``stale-if-error`` fica de fora: só vale quando a origem responde erro.
+    """
+    directives = {}
+    for part in cache_control.split(","):
+        name, _, value = part.strip().partition("=")
+        directives[name] = value
+    assert "s-maxage" in directives, f"resposta pública sem s-maxage: {cache_control!r}"
+    return int(directives["s-maxage"]) + int(directives.get("stale-while-revalidate") or 0)
+
+
+def _public_routes(patterns=None, prefix=""):
+    """Toda rota montada cuja view é pública na borda (``PublicReadMixin``)."""
+    for pattern in get_resolver().url_patterns if patterns is None else patterns:
+        if isinstance(pattern, URLResolver):
+            yield from _public_routes(pattern.url_patterns, prefix + str(pattern.pattern))
+        elif isinstance(pattern, URLPattern):
+            view_class = getattr(pattern.callback, "view_class", None)
+            if view_class is not None and issubclass(view_class, PublicReadMixin):
+                yield prefix + str(pattern.pattern), view_class
+
+
+def test_x8_no_public_route_declares_more_than_sixty_seconds_at_the_edge():
+    """Rota pública nova nasce sob o teto: a varredura é do URLConf, não de uma lista."""
+    routes = list(_public_routes())
+
+    assert len(routes) >= len(PUBLIC_TWINS) + len(PUBLIC_IN_PLACE), routes
+    over = {
+        route: view_class.edge_cache_control
+        for route, view_class in routes
+        if _edge_window_s(view_class.edge_cache_control) > X8_EDGE_CEILING_S
+    }
+    assert over == {}
+
+
+@pytest.mark.parametrize("path", [*PUBLIC_TWINS, *PUBLIC_IN_PLACE])
+def test_x8_public_response_fits_in_sixty_seconds_at_the_edge(client, path):
+    _seed_surface()
+
+    response = client.get(path)
+
+    assert response.status_code == 200
+    assert _edge_window_s(response["Cache-Control"]) <= X8_EDGE_CEILING_S
+
+
+def test_recommendations_twin_does_not_cache_a_missing_product(client):
+    """404 não vira resposta pública: cachear o erro esconderia o produto por 1 minuto."""
+    _seed_surface()
+
+    response = client.get("/api/v1/storefront/public/products/NAO-EXISTE/recommendations/")
+
+    assert response.status_code == 404
+    assert response["Cache-Control"] == "private, no-store"
 
 
 def test_customer_session_never_reaches_the_cacheable_body():
@@ -147,7 +246,10 @@ def test_public_twin_is_the_anonymous_projection_not_a_new_one(client):
     _seed_surface(stock_qty=Decimal("20"))
 
     for twin, private in PUBLIC_TWINS.items():
-        assert client.get(twin).json() == Client().get(private).json(), twin
+        expected = Client().get(private).json()
+        if twin == PRODUCT_TWIN:
+            expected.pop("cart")
+        assert client.get(twin).json() == expected, twin
 
 
 @pytest.mark.parametrize("path", PUBLIC_IN_PLACE)
@@ -172,6 +274,8 @@ def test_bff_routing_depends_on_the_session_cookie_name():
         "/api/v1/storefront/menu/",
         "/api/v1/storefront/catalog/",
         "/api/v1/storefront/products/PAO-FRANCES/",
+        "/api/v1/storefront/products/PAO-FRANCES/recommendations/",
+        RECOMMENDATIONS_TWIN,
         "/api/v1/storefront/checkout/",
     ],
 )
@@ -182,3 +286,57 @@ def test_read_routes_no_longer_hand_out_csrf_cookie(client, path):
 
     assert response.status_code == 200
     assert "csrftoken" not in response.cookies
+
+
+def test_public_product_does_not_build_or_include_a_cart(client, monkeypatch):
+    from shopman.storefront.api import surface
+
+    _seed_surface(stock_qty=Decimal("20"))
+
+    def unexpected_cart(*args, **kwargs):
+        raise AssertionError("a PDP pública tentou montar sacola")
+
+    monkeypatch.setattr(surface, "_cart_payload", unexpected_cart)
+    response = client.get(PRODUCT_TWIN)
+    assert response.status_code == 200
+    assert set(response.json()) == {"product"}
+    assert response.json()["product"]["qty_in_cart"] == 0
+    assert response.json()["product"]["is_favorite"] is False
+    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+
+
+def test_public_product_keeps_personalized_state_in_the_private_path():
+    _seed_surface(stock_qty=Decimal("20"))
+    customer_client, customer = _customer_client()
+    private = customer_client.get(PRODUCT_PRIVATE)
+    public = Client().get(PRODUCT_TWIN)
+    assert private.status_code == public.status_code == 200
+    assert private.json()["product"]["qty_in_cart"] == 2
+    assert private.json()["product"]["is_favorite"] is True
+    assert private.json()["cart"]["items_count"] == 2
+    assert private["Cache-Control"] == "private, no-store"
+    assert public.json()["product"]["qty_in_cart"] == 0
+    assert public.json()["product"]["is_favorite"] is False
+    assert "cart" not in public.json()
+    assert customer.ref not in public.content.decode()
+    assert customer_client.get(PRODUCT_TWIN).status_code == 400
+
+
+def test_public_product_does_not_cache_missing_or_unpublished_products(client):
+    product = _seed_surface()
+    for sku in ("UNKNOWN", product.sku):
+        if sku == product.sku:
+            product.is_published = False
+            product.save(update_fields=["is_published"])
+        response = client.get(f"/api/v1/storefront/public/products/{sku}/")
+        assert response.status_code == 404
+        assert response["Cache-Control"] == "private, no-store"
+
+
+def test_public_product_head_has_the_same_cache_policy(client):
+    _seed_surface()
+    response = client.head(PRODUCT_TWIN)
+    assert response.status_code == 200
+    assert response.content == b""
+    assert response["Cache-Control"] == PUBLIC_EDGE_CACHE_CONTROL
+    assert not response.cookies

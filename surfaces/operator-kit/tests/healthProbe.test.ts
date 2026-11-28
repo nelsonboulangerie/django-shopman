@@ -14,7 +14,7 @@ import {
   checkDjangoReadiness,
   ProbeRateLimiter,
 } from "../server/utils/healthProbe";
-import { OPERATOR_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES as OPERATOR_APPS } from "./support/surfaceRegistry";
 
 const surfacesDir = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 

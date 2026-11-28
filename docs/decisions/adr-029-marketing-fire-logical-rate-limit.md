@@ -1,6 +1,7 @@
 # ADR-029 — Quota lógica do disparo manual de Marketing
 
-**Status:** Aceito em 2026-09-11
+**Status:** Aceito
+**Data:** 2026-09-11
 
 ## Contexto
 

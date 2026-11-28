@@ -1,0 +1,76 @@
+{
+  "production_flag": {
+    "key": "NUXT_PUBLIC_CONTINUUM_CATALOG_ENABLED",
+    "value": true,
+    "verified_read_only": true
+  },
+  "baseline_git_sha": "e0c22ba1ffe28e20c5c453db09160e941dfae8c6",
+  "paired_median_ms": {
+    "before": 3154.519209,
+    "after": 2096.0519999999997
+  },
+  "reduction_percent": 33.55,
+  "same_visible_text_and_json_ld": true,
+  "preserved": [
+    "ETag and 304 conditional response",
+    "public structural snapshot without prices/cart",
+    "canonical fallback on snapshot failure",
+    "persistent failure remains HTTP 503",
+    "Cookie/Authorization not passed to snapshot backend",
+    "client polling and runtime flag unchanged",
+    "Snapshot freshness starts at receipt; waiting for the shell does not renew the data validity window."
+  ],
+  "new_http_tests": {
+    "passed": 14,
+    "failed": 0,
+    "log": "/tmp/perf-continuum-http-tests-20261030.log"
+  },
+  "unit_tests": {
+    "passed": 787,
+    "files": 77
+  },
+  "component_tests": {
+    "passed": 340,
+    "files": 54
+  },
+  "checks": [
+    "typecheck passed",
+    "production build Node 22 passed",
+    "named ESLint passed",
+    "silent-swallow gate passed"
+  ],
+  "historical_limits": [
+    "The old menu experiment with Continuum disabled does not represent the active production catalog path.",
+    "Historical 6203ms had no SSR spans; two historical curl56 batches discarded stderr/partial results. No unique retrospective cause can be claimed."
+  ],
+  "new_peak_before_deploy": {
+    "url_effective": "https://www.nelsonboulangerie.com.br/menu",
+    "http_code": 200,
+    "http_connect": 0,
+    "http_version": "2",
+    "exitcode": 0,
+    "errormsg": null,
+    "num_connects": 1,
+    "time_namelookup": 0.003679,
+    "time_connect": 0.032503,
+    "time_appconnect": 0.06809,
+    "time_pretransfer": 0.068181,
+    "time_starttransfer": 3.131964,
+    "time_total": 3.179525,
+    "size_download": 174976,
+    "proxy_used": 0,
+    "headers": {
+      "server-timing": "",
+      "cf-cache-status": "BYPASS",
+      "age": "",
+      "cf-ray": "a529cea039f8012f-GRU",
+      "date": "Fri, 30 Oct 2026 10:41:24 GMT",
+      "cache-control": "private",
+      "x-storefront-request-id": ""
+    },
+    "captured_utc": "2026-10-30T10:41:21.818007+00:00",
+    "sequence": 242,
+    "requested_protocol": "--http2"
+  },
+  "new_peak_interpretation": "3179ms HTTP 200; TLS 68ms, most wait before first byte. No SSR spans in old deploy, so not attributable uniquely to database, snapshot or global reads."
+}

@@ -362,3 +362,103 @@ def test_o_sabor_entra_como_categoria_adicional(colecoes):
     for sku in ("FFGO", "CRPQ"):
         assert sku in colecoes["salgados"], f"{sku} é salgado e também é Salgados"
     assert "CRO" not in colecoes["doces"], "o croissant puro não é doce"
+
+
+def test_o_nome_do_insumo_nao_contradiz_o_sku(arvore):
+    """O `label` do perfil vira `Material.name`, e a Produção busca por um e lê o outro.
+
+    No beta de 05/11/2026 a busca por "farinha" devolvia "Farinha de trigo T65"
+    com SKU FARINHA-NOVARA-T55, "Farinha de trigo T55" com SKU
+    FARINHA-ANACONDA-PREMIUM e "Sal marinho" com SKU SAL-REFINADO. A trava cobra
+    os dois sinais que o SKU declara: o tipo da farinha (T45/T55/T65) e o refino.
+    """
+    import re
+
+    perfis = _atribuicao(arvore, "INGREDIENT_PROFILES")
+    contradicoes = []
+    for sku, perfil in perfis.items():
+        nome = perfil.get("label", "")
+        tipos_no_sku = set(re.findall(r"\bT\d{2}\b", sku.replace("-", " ")))
+        tipos_no_nome = set(re.findall(r"\bT\d{2}\b", nome))
+        if tipos_no_sku != tipos_no_nome:
+            contradicoes.append(f"{sku} → {nome!r}")
+        if "REFINADO" in sku and "refinado" not in nome.lower():
+            contradicoes.append(f"{sku} → {nome!r}")
+    assert not contradicoes, f"nome de insumo contradiz o SKU: {contradicoes}"
+
+
+def _fora_do_dado(arvore):
+    """Literais que não viram dado: docstring e o que vai para o terminal (``write``, log)."""
+    ids = set()
+    for node in ast.walk(arvore):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            corpo = node.body
+            if corpo and isinstance(corpo[0], ast.Expr) and isinstance(corpo[0].value, ast.Constant):
+                ids.add(id(corpo[0].value))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in {
+            "write", "debug", "info", "warning", "error", "exception",
+        }:
+            for argumento in node.args:
+                ids.update(id(filho) for filho in ast.walk(argumento))
+    return ids
+
+
+def test_o_dado_do_seed_nao_usa_travessao(arvore):
+    """Copy sem travessão vale para o seed (CLAUDE.md): ele vira dado de tela.
+
+    O beta de 05/11/2026 achou "Baguette, manteiga e presunto — o clássico
+    parisiense" na Loja. A trava do servidor (`test_copy_sem_travessao.py`) deixa
+    `management/commands/` de fora porque ali a saída vai para o terminal; o
+    seed é a exceção, porque o que ele grava chega ao cliente e ao operador.
+    Docstring e saída de terminal não contam; o prompt da IA cita a regra.
+    """
+    fora = _fora_do_dado(arvore)
+    com_travessao = sorted(
+        {
+            (node.lineno, node.value[:80])
+            for node in ast.walk(arvore)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and "—" in node.value
+            and id(node) not in fora
+            and "sem travessão (—)" not in node.value
+        }
+    )
+    assert not com_travessao, f"travessão em dado do seed: {com_travessao}"
+
+
+FOTOS = SEED.parents[3] / "surfaces/storefront-nuxt/public/img/products"
+
+
+def _foto_principal_por_sku(arvore):
+    """SKU → nome do arquivo da foto principal (a f-string ``{IMG}/x.webp``)."""
+    fotos = {}
+    for elemento in _no_da_atribuicao(arvore, "products_data").elts:
+        sku = elemento.elts[0].value
+        for parte in elemento.elts[1:]:
+            if isinstance(parte, ast.JoinedStr):
+                texto = "".join(v.value for v in parte.values if isinstance(v, ast.Constant))
+                if texto.endswith(".webp"):
+                    fotos[sku] = texto.lstrip("/")
+    return fotos
+
+
+def test_toda_foto_citada_pelo_seed_existe_na_loja():
+    """Foto apontada e não gravada vira imagem quebrada na loja e no Google."""
+    citadas = set()
+    for linha in SEED.read_text().splitlines():
+        if "{IMG}/" in linha:
+            for pedaco in linha.split("{IMG}/")[1:]:
+                nome = pedaco.split('"')[0].split("'")[0]
+                if nome.endswith(".webp"):
+                    citadas.add(nome)
+    assert citadas, "nenhuma foto {IMG}/… encontrada no seed"
+    faltando = sorted(nome for nome in citadas if not (FOTOS / nome).exists())
+    assert not faltando, f"fotos citadas no seed sem arquivo em {FOTOS}: {faltando}"
+
+
+def test_campagne_oval_e_redondo_nao_dividem_a_foto(arvore):
+    """O oval (CPG) mostrava a foto do redondo (CPR) até 25/11/2026 (#3601)."""
+    fotos = _foto_principal_por_sku(arvore)
+    assert fotos["CPG"] == "cgo.webp"
+    assert fotos["CPR"] == "cgr.webp"

@@ -1,6 +1,6 @@
 """A régua da Concierge (OBS0310-K): custo e tempo por resposta, e o golden set.
 
-Fatia 1 do ``docs/plans/CONCIERGE-ARQUITETURA-ALVO.md``. O cliente não vê nada
+Fatia 1 do ``docs/plans/completed/CONCIERGE-ARQUITETURA-ALVO.md``. O cliente não vê nada
 mudar; o turno grava em ``ConversationMessage.usage`` do primeiro bloco da
 resposta quem respondeu, os tokens por (etapa, modelo) com a escrita de cache, o
 custo estimado e o tempo de ponta a ponta e por etapa.
@@ -18,9 +18,13 @@ from django.core.management import call_command
 
 from shopman.shop.models import ConversationMessage
 from shopman.shop.services.ai_pricing import usage_cost
+from shopman.shop.tests.ai_support import configure_ai
 from shopman.storefront.concierge import metrics, reply_eval, service
+from shopman.storefront.concierge.turn_outcome import TurnOutcome
 from shopman.storefront.tests import test_concierge_engine as engine
-from shopman.storefront.tests.test_concierge_engine import ScriptedClient, _binding, _receive, _response, _text, _tool
+from shopman.storefront.tests.support.concierge_turn import stub_turn
+from shopman.storefront.tests.test_concierge_engine import _binding, _receive
+from shopman.storefront.tests.test_concierge_intents import ReaderClient, _act
 
 surface = engine.surface
 customer = engine.customer
@@ -28,22 +32,6 @@ conversation = engine.conversation
 outbox = engine.outbox
 
 pytestmark = pytest.mark.django_db
-
-
-class UsageClient:
-    """Cliente da triagem que devolve JSON e um ``usage`` com escrita de cache."""
-
-    def __init__(self, payload: dict):
-        self.payload = payload
-        self.messages = SimpleNamespace(create=self._create)
-
-    def _create(self, **kwargs):
-        return SimpleNamespace(
-            content=[SimpleNamespace(type="text", text=json.dumps(self.payload))],
-            usage=SimpleNamespace(
-                input_tokens=300, output_tokens=40, cache_read_input_tokens=0, cache_creation_input_tokens=0
-            ),
-        )
 
 
 def _first_reply(conversation) -> ConversationMessage:
@@ -73,43 +61,35 @@ def test_unknown_model_has_unknown_cost_not_zero():
 # ── O turno grava a régua ────────────────────────────────────────────
 
 
-def test_agent_turn_records_tokens_cost_and_latency_on_the_first_reply_block(conversation, outbox):
-    _receive(conversation, "tem pão francês?", "m1")
-    client = ScriptedClient(
-        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
-        _response(_text("Temos sim."), stop_reason="end_turn"),
-    )
-    service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
+def test_parts_turn_records_tokens_cost_and_latency_on_the_first_reply_block(conversation, outbox):
+    configure_ai("sk-teste", model="claude-haiku-4-5")
+    _receive(conversation, "tem pão francês? e vocês aceitam vale refeição?", "m1")
+    reader = ReaderClient([
+        _act("product_question", "tem pão francês?", "pão francês"),
+        _act("house_info", "vocês aceitam vale refeição?"),
+    ])
+    service.run_turn(conversation.pk, _binding(conversation).pk, intents_client=reader)
 
     usage = _first_reply(conversation).usage
-    assert usage["version"] == 1 and usage["layer"] == "agent"
-    assert usage["triage"] == {"classifier": "anthropic", "source": "rules"}
+    assert usage["version"] == 1 and usage["layer"] == "intents"
+    assert usage["triage"]["classifier"] == "jev" and usage["triage"]["source"] == "rules"
     [call] = usage["calls"]
-    assert call == {
-        "stage": "model",
-        "model": "claude-sonnet-5",
-        "provider": "anthropic",
-        "calls": 2,
-        "input_tokens": 200,
-        "output_tokens": 40,
-        "cache_read_input_tokens": 100,
-        "cache_creation_input_tokens": 0,
-        "cost_usd": pytest.approx(usage_cost("claude-sonnet-5", call)),
-    }
+    assert call["stage"] == "intents" and call["calls"] == 1
+    assert (call["input_tokens"], call["output_tokens"]) == (700, 60)
+    assert call["cost_usd"] == pytest.approx(usage_cost(call["model"], call))
     assert usage["cost_usd"] == call["cost_usd"] > 0
     latency = usage["latency_ms"]
-    assert {"total", "turn", "triage", "agent", "model", "tools"} <= set(latency)
-    assert latency["total"] >= latency["turn"] >= latency["agent"] >= latency["model"]
+    assert {"total", "turn", "triage", "intents"} <= set(latency)
+    assert latency["total"] >= latency["turn"] >= latency["intents"]
+    assert not {"agent", "model", "tools"} & set(latency)  # o laço do agente saiu (WP-08)
 
 
-def test_only_the_first_block_carries_the_turn(conversation, outbox):
+def test_only_the_first_block_carries_the_turn(conversation, outbox, monkeypatch):
     _receive(conversation, "tem pão francês?", "m2")
-    client = ScriptedClient(
-        _response(_tool("search_storefront", {"query": "pão"}), stop_reason="tool_use"),
-        _response(_text("Temos sim."), stop_reason="end_turn"),
-    )
-    service.run_turn(conversation.pk, _binding(conversation).pk, client=client)
+    stub_turn(monkeypatch, lambda **kwargs: TurnOutcome(reply_text="Temos sim.", extra_replies=["Bloco à parte."]))
+    service.run_turn(conversation.pk, _binding(conversation).pk)
     replies = list(ConversationMessage.objects.filter(conversation=conversation, kind="reply").order_by("id"))
+    assert len(replies) == 2
     assert replies[0].usage["version"] == 1
     assert all(reply.usage == {} for reply in replies[1:])
 
@@ -118,34 +98,42 @@ def test_courtesy_turn_costs_nothing_and_never_builds_a_model_client(conversatio
     def forbidden():
         raise AssertionError("cortesia não chama o modelo")
 
-    monkeypatch.setattr("shopman.storefront.concierge.agent.build_client", forbidden)
+    monkeypatch.setattr("shopman.storefront.concierge.intents.build_client", forbidden)
     _receive(conversation, "bom dia!", "m3")
     service.run_turn(conversation.pk, _binding(conversation).pk)
 
     usage = _first_reply(conversation).usage
     assert usage["layer"] == "courtesy"
     assert usage["calls"] == [] and usage["cost_usd"] == 0
-    assert "model" not in usage["latency_ms"]
+    assert "intents" not in usage["latency_ms"]
 
 
-def test_triage_model_tokens_are_recorded_with_the_handoff_ack(conversation, outbox):
+def test_jev_triage_tokens_are_recorded_with_the_handoff_ack(conversation, outbox, settings):
+    from shopman.storefront.concierge.intent_benchmark import Prediction
+
+    class Jev:
+        model = "jev-1"
+
+        def scores(self, sample, categories):
+            return Prediction(intents={c.ref: (0.95 if c.ref == "human" else 0.01) for c in categories},
+                              input_tokens=300)
+
+    settings.SHOPMAN_CONCIERGE = {**settings.SHOPMAN_CONCIERGE, "triage_with_model": True}
+    # O Jev lê "pessoa": a equipe assume (reclamação sozinha não cala mais a conversa, 21/11/2026).
     _receive(conversation, "olha, sobre a conta de ontem", "m4")
-    triage_client = UsageClient({"intent": "complaint", "urgency": "now", "summary": "Contesta a conta."})
-    result = service.run_turn(
-        conversation.pk, _binding(conversation).pk, client=ScriptedClient(), triage_client=triage_client
-    )
+    result = service.run_turn(conversation.pk, _binding(conversation).pk, triage_client=Jev())
     assert result.handoff
     ack = ConversationMessage.objects.get(conversation=conversation, kind="reply", envelope__purpose="handoff_ack")
     assert ack.usage["layer"] == "team"
-    assert ack.usage["triage"]["source"] == "model"
+    assert ack.usage["triage"] == {"classifier": "jev", "source": "jev"}
     [call] = ack.usage["calls"]
-    assert call["stage"] == "triage" and call["input_tokens"] == 300 and call["output_tokens"] == 40
+    assert call["stage"] == "jev" and call["provider"] == "typesafe" and call["input_tokens"] == 300
 
 
 def test_media_turn_is_recorded_as_media(conversation, outbox, monkeypatch):
     monkeypatch.setattr(service, "copy_message", lambda key: f"[{key}]")
     _receive(conversation, "opaque-provider-reference", "m5", message_type="image")
-    service.run_turn(conversation.pk, _binding(conversation).pk, client=ScriptedClient())
+    service.run_turn(conversation.pk, _binding(conversation).pk)
     reply = _first_reply(conversation)
     assert reply is not None and reply.usage["layer"] == "media"
 
@@ -205,9 +193,9 @@ def test_eval_command_prints_the_scoreboard():
 
 
 def test_eval_refuses_a_provider_it_cannot_reach(settings):
-    settings.AI_ASSIST_API_KEY = ""
+    configure_ai("")
     with pytest.raises(ValueError, match="indisponível"):
-        reply_eval.run(reply_eval.load_golden()[:1], classifier="model")
+        reply_eval.run(reply_eval.load_golden()[:1], classifier="jev")
 
 
 def test_production_summary_reads_what_the_turn_recorded(conversation, outbox):

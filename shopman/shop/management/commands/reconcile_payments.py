@@ -225,7 +225,8 @@ class Command(BaseCommand):
         ⚠️ **Esta é a rede que não depende de ninguém estar olhando.**
 
         A reconciliação contra webhook perdido existia em um lugar só: a
-        leitura do acompanhamento, quando o cliente volta do Stripe. Enquanto
+        conferência do acompanhamento, quando o cliente volta do Stripe
+        (hoje o POST ``orders/<ref>/payment/check/``). Enquanto
         for só ali, a verdade do sistema fica pendurada no navegador do
         cliente — quem paga e fecha a aba, ou paga num dispositivo e some, deixa
         o pedido ACCEPTED com o avanço barrado por "Aguardando pagamento…", e
@@ -240,7 +241,7 @@ class Command(BaseCommand):
         ``reconcile_with_gateway_if_due``.
 
         Só sessão hospedada (cartão da loja e link do balcão), pela mesma
-        razão que a leitura da loja: o PIX já tem webhook, SSE e a checagem do
+        razão que a conferência da loja: o PIX já tem webhook, SSE e a checagem do
         vencimento. A sessão hospedada é o que leva o cliente para fora do site
         e volta sem sinal nenhum — e o link nem tem "volta": o cliente paga do
         celular, num dispositivo que nunca abriu o acompanhamento.

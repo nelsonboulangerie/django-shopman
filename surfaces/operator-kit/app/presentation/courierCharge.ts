@@ -7,6 +7,8 @@
 // O fato é do servidor (`courier.charge_outdated`, no bloco `courier` do Gestor e
 // do PDV); aqui só a frase.
 
+import { deliveryServiceName } from "./deliveryService";
+
 export interface CourierChargeOutdated {
   /** O que a corrida leva ("Cobrar R$ 50,00 em dinheiro · troco para R$ 100,00"). */
   sent: string;
@@ -25,18 +27,19 @@ export const COURIER_CHARGE_TITLE = "O pedido mudou depois da chamada";
 
 /**
  * O aviso, ou `null` quando a corrida leva a cobrança certa. `cancelHere`: a tela
- * tem o "Solicitar cancelamento" (o Gestor); no PDV, ele mora no Gestor.
+ * tem o "Cancelar corrida" (o Gestor); no PDV, ele mora no Gestor.
  */
 export function courierChargeNotice(
   outdated: CourierChargeOutdated | null | undefined,
-  { cancelHere }: { cancelHere: boolean },
+  { cancelHere, service }: { cancelHere: boolean; service?: string },
 ): CourierChargeNotice | null {
   if (!outdated) return null;
+  const who = deliveryServiceName(service);
   const facts = `Na corrida: ${outdated.sent}. No pedido: ${outdated.current}.`;
   const advice = outdated.collected
     ? "O entregador já coletou: ligue para ele e passe a cobrança nova."
     : cancelHere
-      ? "A TaOn não muda a corrida aberta: solicite o cancelamento e chame o entregador de novo."
-      : "A TaOn não muda a corrida aberta: no Gestor de pedidos, solicite o cancelamento e chame o entregador de novo.";
+      ? `A ${who} não muda a corrida aberta: solicite o cancelamento e chame o entregador de novo.`
+      : `A ${who} não muda a corrida aberta: no Gestor de pedidos, solicite o cancelamento e chame o entregador de novo.`;
   return { title: COURIER_CHARGE_TITLE, description: `${facts} ${advice}` };
 }

@@ -13,6 +13,7 @@ import type {
   ReadingChartSeries,
 } from "../../../operator-kit/app/presentation/readingChart";
 import { csvMoney, formatInt, formatQty, shortDate } from "./bi";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 /** Custo da sobra em reais inteiros ("R$ 158"), como na prévia: centavo não decide produção. */
 export function formatCostWhole(cents: number): string {
@@ -68,14 +69,25 @@ export function overShortTitle(day: string, today: string): string {
 }
 
 const WEEKDAY_TYPICAL = [
-  { one: "segunda típica", many: "segundas" },
-  { one: "terça típica", many: "terças" },
-  { one: "quarta típica", many: "quartas" },
-  { one: "quinta típica", many: "quintas" },
-  { one: "sexta típica", many: "sextas" },
-  { one: "sábado típico", many: "sábados" },
-  { one: "domingo típico", many: "domingos" },
+  { one: "segunda típica", many: "segundas", feminine: true },
+  { one: "terça típica", many: "terças", feminine: true },
+  { one: "quarta típica", many: "quartas", feminine: true },
+  { one: "quinta típica", many: "quintas", feminine: true },
+  { one: "sexta típica", many: "sextas", feminine: true },
+  { one: "sábado típico", many: "sábados", feminine: false },
+  { one: "domingo típico", many: "domingos", feminine: false },
 ] as const;
+
+/**
+ * Os artigos que concordam com o dia: segunda a sexta são femininas ("Nas 4
+ * quartas", "As 4 quartas", "uma só"); sábado e domingo, masculinos.
+ */
+function weekdayWords(day: string) {
+  const entry = WEEKDAY_TYPICAL[weekdayIndex(day)]!;
+  return entry.feminine
+    ? { ...entry, inThe: "Nas", the: "As", theOne: "A", onlyOne: "uma só" }
+    : { ...entry, inThe: "Nos", the: "Os", theOne: "O", onlyOne: "um só" };
+}
 
 /** "sábado típico" para o dia lido. */
 export function typicalName(day: string): string {
@@ -110,10 +122,10 @@ export function compareName(day: string, compare = "typical"): string {
 
 /** As opções do controle, com o alcance de cada uma ("4 sábados", "8 sábados", "um só"). */
 export function compareOptions(day: string): { key: CompareKey; label: string; reach: string }[] {
-  const many = WEEKDAY_TYPICAL[weekdayIndex(day)]!.many;
+  const { many, onlyOne } = weekdayWords(day);
   return [
     { key: "typical", label: typicalName(day), reach: `4 ${many}` },
-    { key: "last", label: WEEKDAY_LAST[weekdayIndex(day)]!, reach: "um só" },
+    { key: "last", label: WEEKDAY_LAST[weekdayIndex(day)]!, reach: onlyOne },
     { key: "typical8", label: typicalName(day), reach: `8 ${many}` },
   ];
 }
@@ -129,10 +141,10 @@ export function compareCaption(day: string, compareDays: readonly string[]): str
   return `${count} ${many}: ${shortDate(oldest)} a ${shortDate(newest)}`;
 }
 
-/** "Nos 4 sábados" (cabeça da coluna do histórico). */
+/** "Nos 4 sábados", "Nas 4 quartas" (cabeça da coluna do histórico). */
 export function historyHeading(day: string, compareDays: readonly string[]): string {
-  const many = WEEKDAY_TYPICAL[weekdayIndex(day)]!.many;
-  return compareDays.length ? `Nos ${compareDays.length} ${many}` : `Nos ${many} anteriores`;
+  const { many, inThe } = weekdayWords(day);
+  return compareDays.length ? `${inThe} ${compareDays.length} ${many}` : `${inThe} ${many} anteriores`;
 }
 
 // ── A resposta ───────────────────────────────────────────────────────────────
@@ -204,7 +216,7 @@ function productAnswer(report: Pick<BIOverShortReport, "rows">): string {
   const parts: string[] = [];
   if (short.length) {
     const first = short[0]!;
-    parts.push(`faltou ${nameList(short)}${first.soldout_at ? ` (acabou às ${first.soldout_at})` : ""}`);
+    parts.push(`faltou ${nameList(short)}${first.soldout_at ? ` (acabou às ${formatClock(first.soldout_at)})` : ""}`);
   }
   if (over.length) {
     const first = over[0]!;
@@ -259,7 +271,7 @@ function lastHour(closesAt: string): string {
   const minutes = (h ?? 0) * 60 + (m ?? 0) - 60;
   const hour = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  return rest ? `${hour}h${String(rest).padStart(2, "0")}` : `${hour}h`;
+  return formatClock(`${hour}:${String(rest).padStart(2, "0")}`);
 }
 
 // ── Cada produto ─────────────────────────────────────────────────────────────
@@ -273,9 +285,9 @@ export function outcomeText(row: BIOverShortRow): string {
   return left > 0 ? `sobrou ${formatQty(row.leftover)}` : "zerou";
 }
 
-/** "10:40", "não acabou". */
+/** "10h40", "não acabou". */
 export function soldoutText(row: BIOverShortRow): string {
-  return row.soldout_at || "não acabou";
+  return formatClock(row.soldout_at) || "não acabou";
 }
 
 /** "faltou 3 de 4" (quantas vezes o veredito de hoje se repetiu nos dias de comparação). */
@@ -370,10 +382,10 @@ function joinNames(names: readonly string[]): string {
   return `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}`;
 }
 
-/** "iFood, Meta e Google indisponíveis às 10:40" (o "(automático)" fica com a tela). */
+/** "iFood, Meta e Google indisponíveis às 10h40" (o "(automático)" fica com a tela). */
 export function unavailableText(item: BIOverShortUnavailable): string {
   const verb = item.channels.length === 1 ? "indisponível" : "indisponíveis";
-  return `${joinNames(item.channels)} ${verb} às ${item.at}`;
+  return `${joinNames(item.channels)} ${verb} às ${formatClock(item.at)}`;
 }
 
 /** "5 clientes" (o "Me avise" do site, por produto e dia). */
@@ -381,16 +393,26 @@ export function clientCount(count: number): string {
   return `${formatInt(count)} ${plural(count, "cliente", "clientes")}`;
 }
 
+/**
+ * O link do "Abrir os N pedidos": o Histórico do Gestor naquele dia, só com o produto,
+ * pelo eixo que o B.I. contou (a hora da venda, `basis=ordered`). Sem o eixo o
+ * Histórico conta pelo fechamento e a encomenda retirada no outro dia some.
+ */
+export function overShortOrdersHref(ordersUrl: string, day: string, sku: string): string {
+  const query = new URLSearchParams({ period: "custom", from: day, to: day, sku, basis: "ordered" });
+  return `${ordersUrl}history?${query.toString()}`;
+}
+
 /** "Abrir os 44 pedidos" / "Abrir o pedido". */
 export function ordersLinkLabel(count: number): string {
   return count === 1 ? "Abrir o pedido" : `Abrir os ${formatInt(count)} pedidos`;
 }
 
-/** "Os 4 sábados" (os dias da comparação em que o produto foi feito). */
+/** "Os 4 sábados", "As 4 quartas" (os dias da comparação em que o produto foi feito). */
 export function historyDaysLabel(day: string, count: number): string {
-  const many = WEEKDAY_TYPICAL[weekdayIndex(day)]!.many;
+  const { many, the, theOne } = weekdayWords(day);
   const one = many.replace(/s$/, "");
-  return count === 1 ? `O ${one}` : `Os ${count} ${many}`;
+  return count === 1 ? `${theOne} ${one}` : `${the} ${count} ${many}`;
 }
 
 const ORDINAL = (n: number) => `${n}º`;

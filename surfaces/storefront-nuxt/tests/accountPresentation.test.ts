@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { AccountLoyalty, AccountSummary, Action, OrderHistoryItem } from '~/types/shopman'
 import {
+  ACCOUNT_DELETED_MESSAGE,
   ORDER_FILTER_OPTIONS,
   accountGreeting,
   accountNavCards,
@@ -311,5 +312,41 @@ describe('profileActionIsExternal', () => {
     expect(profileActionIsExternal({ kind: 'external', href: 'https://wa.me/55' })).toBe(true)
     expect(profileActionIsExternal({ kind: 'link', href: 'https://exemplo.com' })).toBe(true)
     expect(profileActionIsExternal({ kind: 'link', href: '/entrar?next=/conta/perfil' })).toBe(false)
+  })
+})
+
+// WP-L06 (P2-03): pedido encerrado não tem o que acompanhar, e o gesto de repetir
+// tem um nome só, que vem do servidor.
+describe('account presentation: o botão que abre o pedido', () => {
+  it('"Acompanhar" só no pedido que ainda está andando', async () => {
+    const { orderOpenLabel, orderOpenIcon } = await import('~/presentation/account')
+    expect(orderOpenLabel({ is_active: true })).toBe('Acompanhar')
+    expect(orderOpenLabel({ is_active: false })).toBe('Ver pedido')
+    expect(orderOpenLabel({})).toBe('Ver pedido')
+    expect(orderOpenIcon({ is_active: true })).toBe('lucide:radar')
+    expect(orderOpenIcon({ is_active: false })).toBe('lucide:receipt-text')
+  })
+
+  it('as telas da conta usam o rótulo do servidor para repetir, nunca "Refazer"', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    for (const page of ['app/pages/conta/pedidos.vue', 'app/pages/conta/index.vue']) {
+      const source = readFileSync(resolve(__dirname, '..', page), 'utf8')
+      const template = source.slice(source.indexOf('<template>'))
+      expect(template).not.toContain('Refazer')
+      expect(template).toContain('.label }}')
+      expect(template).toContain('orderOpenLabel(')
+    }
+  })
+})
+
+describe('conta excluída (#3242)', () => {
+  it('a frase confirma e repete só o que a Política de Privacidade promete', () => {
+    expect(ACCOUNT_DELETED_MESSAGE).toMatch(/^Pronto, sua conta foi excluída\./)
+    for (const erased of ['nome', 'telefone', 'e-mail', 'endereços', 'preferências']) {
+      expect(ACCOUNT_DELETED_MESSAGE).toContain(erased)
+    }
+    expect(ACCOUNT_DELETED_MESSAGE).toContain('prazo da lei fiscal')
+    expect(ACCOUNT_DELETED_MESSAGE).not.toContain('—')
   })
 })

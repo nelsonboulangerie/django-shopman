@@ -7,6 +7,7 @@ manutenção num loop (default: a cada 5 minutos):
   cleanup_stale_sessions    — sessões abandonadas antigas (liberando os holds delas)
   sweep_orphan_holds        — holds indefinidos órfãos (sem sessão viva/data passada)
   cleanup_stale_planning    — quants planejados órfãos
+  refresh_catalog_structure — a cabeça do snapshot público do cardápio sara (Continuum)
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
   process_marketing_outbox   — recupera leases e publica intents já commitadas
   process_marketing_delivery — entrega os destinos aprovados ao provedor (lote por ciclo)
@@ -14,15 +15,22 @@ manutenção num loop (default: a cada 5 minutos):
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
+  bake_alpha_tradi_daily    — só no alpha: a fornada diária da TRADI (decisão de 29/10)
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
+  concierge_verification_sweep — prazos do "vou verificar": aviso ao cliente e passagem à equipe
+  concierge_reading_check   — Concierge atendendo sem modelo vira aviso no Gestor (um por causa)
+  concierge_inbound_sweep   — o que o ManyChat recebeu e não chegou ao webhook é reingerido
+  concierge_corpus_copy     — cópia anonimizada das mensagens para o aprendizado (antes da retenção)
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_stock_alert_delivery_sla — aviso ao cliente travado/incerto alerta o Gestor
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
   check_geoip_freshness     — base de cidade velha vira alerta (velha, ela erra CALADA)
   check_ifood_store         — iFood fechado com a casa aberta (ou o contrário) vira alerta
+  check_ifood_polling       — polling do iFood sem resposta há mais de 2 min vira alerta
+  act_on_incidents          — repescagem do acionador de incidentes (directive perdida, conferência vencida)
   check_card_machines_out   — maquininha na rua além do limite vira alerta
   sweep_danfe_print_jobs    — DANFE da entrega que a impressora não buscou vira alerta
   sweep_kitchen_print_jobs  — Via Cozinha que a impressora do posto não buscou vira alerta
@@ -30,10 +38,15 @@ manutenção num loop (default: a cada 5 minutos):
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
+  concierge_shadow_decisions — decisão em sombra do framework conversacional (desligada pela Shop)
+  concierge_engine_tick     — prazos vencidos do motor da Concierge (atrás das chaves da Shop)
   run_intent_pilot          — piloto de intenções: sorteia, pré-marca e mede (tetos próprios)
-  run_alias_benchmark       — placar semanal do de-para de produto (B.I.)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
+Cada tarefa tem prazo (``COMMAND_TIMEOUT_SECONDS``, com exceções em
+``COMMAND_TIMEOUTS``): a que estoura é interrompida, registrada como erro, e o
+ciclo segue. Em loop, um watchdog encerra o processo (código diferente de 0) se
+nem o prazo conseguir interromper a tarefa, para a DO reiniciar o componente.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
 
 Uso:
@@ -45,11 +58,17 @@ Uso:
 from __future__ import annotations
 
 import logging
+import signal
+import threading
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from time import monotonic as _monotonic
 
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
-from django.db import close_old_connections
+from django.db import close_old_connections, connections
+from shopman.orderman.management.commands.process_directives import Watchdog
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +101,10 @@ MAINTENANCE_COMMANDS = (
     # Logo depois de liberar reservas: reserva que expira sai por update em
     # massa, sem signal, então é aqui que a volta do produto é percebida.
     "reconcile_shelf_outages",
+    # Rede de segurança do envio ao Google e à Meta: reenvia o SKU cujo último
+    # envio passou de 24h (o Google expira produto sem reenvio em 30 dias) e retira
+    # o que saiu do canal. Sem envio ligado, volta calado; a cadência é do comando.
+    "sync_platform_catalogs",
     # O expediente do dia que terminou vira denominador congelado: sem isso,
     # mexer no horário da loja reescreveria as métricas do passado.
     "stamp_business_days",
@@ -97,12 +120,19 @@ MAINTENANCE_COMMANDS = (
     # Com a série do dia em dia, os alarmes do B.I. comparam com o esperado e
     # avisam quem opera. Depois do refresh de propósito: leem a tabela recém-feita.
     "evaluate_bi_alerts",
-    # O placar do de-para de produto: mede os concorrentes contra os de-paras
-    # confirmados e guarda o resultado no Admin. Semanal e com gabarito mínimo —
-    # quem segura a cadência é o próprio comando; ciclo vazio não custa nada.
-    "run_alias_benchmark",
+    # O placar do de-para (`run_alias_benchmark`) NÃO roda aqui de propósito. Entre
+    # 28/10 e 11/11/2026 ele recomeçou do zero a cada deploy e gastou cerca de US$ 1.180
+    # de API. Ele mede à mão, com teto de casos e de gasto
+    # (flags do comando manual). Não volte a pô-lo no ciclo sem
+    # essas travas e sem o dono saber o custo.
+    # A read model pública do cardápio (Continuum) se reconcilia com o catálogo:
+    # o GET do snapshot só lê, então a cabeça que ficou para trás sara aqui.
+    "refresh_catalog_structure",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
+    # Experimento de versão vencido (R4, OC-20): o GET já serve o padrão a todos;
+    # aqui o operador fica sabendo. O debounce do alerta segura a repetição.
+    "alert_expired_experiments",
     # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
     # off por default e o comando continua servindo de reconciler/canary explícito.
     "process_marketing_outbox",
@@ -141,6 +171,11 @@ MAINTENANCE_COMMANDS = (
     # alerta aberto (ver `DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO`).
     "reconcile_financial_day",
     "sweep_stuck_orders",
+    # Só no alpha (SHOPMAN_ENVIRONMENT=staging) e só a TRADI: a fornada do dia
+    # para o Google ler a baguete disponível (decisão do dono, 29/10). Uma por
+    # dia a partir das 7h; quem segura a cadência é o próprio comando. ANTES do
+    # resgate abaixo, de propósito: fornada cujo ledger não fechou sara no mesmo ciclo.
+    "bake_alpha_tradi_daily",
     # O mesmo resgate, do lado da produção: fornada concluída cujo ledger de
     # estoque não fechou (queda no meio do handler) volta a ser realizada.
     "sweep_unrealized_production",
@@ -156,15 +191,42 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "recover_concierge",
+    # O relógio do "vou verificar" (WP-06): depois da recuperação, para não avisar o
+    # cliente de uma resposta que a fila ainda ia mandar. Custo zero, sem modelo.
+    "concierge_verification_sweep",
+    # A Concierge sem modelo (dono, 19/11/2026): aviso no topo do Gestor, um por causa;
+    # resolve sozinho quando o modelo volta. Lê a configuração, não chama modelo.
+    "concierge_reading_check",
+    # O que o ManyChat recebeu e não chegou aqui (o External Request não reenvia, #2943):
+    # pergunta ao ManyChat pela última entrada de quem conversa com a Concierge. Teto por rodada.
+    "concierge_inbound_sweep",
+    # O corpus anonimizado (dono, 20/11/2026, #2851): ANTES da limpeza de retenção, para a
+    # observação ser copiada antes de vencer. Sem nada que ligue à pessoa.
+    "concierge_corpus_copy",
     # A retenção é executada automaticamente; o comando só toca mensagens
     # inelegíveis cujo prazo aprovado já venceu.
     "cleanup_concierge_observations",
+    # A decisão em sombra do framework conversacional (N5): DEPOIS da limpeza, de
+    # propósito, para nunca decidir sobre o que a retenção acabou de vencer. Desligada
+    # pelo campo da Shop, não toca em nada; ligada, só grava (nem envia, nem escreve no
+    # comércio, nem chama modelo).
+    "concierge_shadow_decisions",
+    # Os prazos do motor do framework (#3298): só com classe ligada na Shop e frase da Nice
+    # para o aviso; senão, não faz nada. Depois da sombra, com o mesmo estado da limpeza.
+    "concierge_engine_tick",
+    # A PTAX final dos dias com gasto de IA (o B.I. diz em reais e só lê a cotação). Sem dia
+    # faltando, não chama a API do BCB.
+    "record_usd_brl_quotes",
     # Piloto de intenções (INTENT-PILOT-PLAN): sorteia a mensagem observada
     # recente, pré-marca as intenções e mede os classificadores. DEPOIS da
     # limpeza, de propósito: nunca sorteia o que acabou de vencer. Tetos próprios
     # (por dia, fila aberta, placar semanal) — em ciclo vazio não custa nada.
     "run_intent_pilot",
     "check_directive_health",
+    # O alerta pessoal cuja causa acabou e cujo produtor não o fechou (signal
+    # que falhou, processo que caiu entre o fato e o alerta). Era a leitura do
+    # sino que fazia isto; leitura não produz efeito.
+    "reconcile_user_notifications",
     # Resultado incerto no provedor não pode depender do callback original: o
     # comando recupera incidentes antigos/órfãos e nunca reenvia ao cliente.
     "check_stock_alert_delivery_sla",
@@ -192,6 +254,18 @@ MAINTENANCE_COMMANDS = (
     # esquecida no Portal) ou abre com ela fechada. É o vigia que o
     # ``ifood_poll`` não tinha. Desligado (IFOOD_MERCHANT_SYNC), volta calado.
     "check_ifood_store",
+    # Fato do iFood (confirmou, saiu, concluiu) que chegou antes de o pedido local
+    # estar no ponto: aplica quando recente, avisa quando velho (3417, 12/11/2026).
+    "reconcile_ifood_orders",
+    # O sinal de vida do ``ifood_poll --watch``: a integração direta entra só por
+    # polling, e sem ele o iFood cancela em 8 min o pedido que não entrou. Mais de
+    # 2 min sem resposta do iFood vira alerta crítico com e-mail (DEV-2026-017).
+    # Não depende do módulo Merchant: ligado sempre que houver credencial.
+    "check_ifood_polling",
+    # Incidentes (DEV-2026-066): a repescagem do acionador. O normal é a directive
+    # nascer com o alerta; aqui entra o alerta cuja directive se perdeu, e a
+    # conferência vencida vira "não resolveu". Não aciona nada sozinha.
+    "act_on_incidents",
     # A maquininha não tem indicador fixo no Gestor: o card da saída basta. Só
     # quando passa do limite (default 2 h, em Shop.defaults) vira alerta.
     "check_card_machines_out",
@@ -201,6 +275,9 @@ MAINTENANCE_COMMANDS = (
     # A Via Cozinha do posto sem tela: sem papel o lanche não é feito, e o
     # posto não tem tela para descobrir. O alerta vai para quem tem.
     "sweep_kitchen_print_jobs",
+    # O pulso da gaveta que o agente do Balcão nunca respondeu: o tablet só lê
+    # o estado; o veredito e a nota no livro do turno são gravados aqui.
+    "sweep_drawer_pulse_jobs",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.
@@ -231,6 +308,59 @@ MAINTENANCE_COMMANDS = (
 
 MAINTENANCE_WORKER = "maintenance_worker"
 
+#: Prazo de cada tarefa do ciclo (O5 do laudo de 23/10). Antes, uma tarefa
+#: pendurada (HTTP sem timeout, lock no banco) congelava as ~45 do ciclo e o
+#: heartbeat junto, sem nada cair. O prazo é largo: as tarefas comuns levam
+#: segundos; ele existe para "nunca", não para "lento".
+COMMAND_TIMEOUT_SECONDS = 300
+#: Tarefas que carregam a própria janela noturna e fazem trabalho de minutos.
+COMMAND_TIMEOUTS = {
+    "compute_product_affinity": 900,
+    "recalculate_customer_insights": 900,
+}
+#: Folga do watchdog sobre o prazo de cada passo: se o prazo da tarefa não
+#: conseguiu interrompê-la (preso em código C que não devolve o controle), o
+#: processo sai e a DO o reinicia.
+WATCHDOG_GRACE_SECONDS = 120
+
+
+class CommandTimedOut(BaseException):
+    """Prazo da tarefa estourado.
+
+    Deriva de ``BaseException`` de propósito: um ``except Exception`` dentro da
+    tarefa não pode engolir o prazo e continuar rodando.
+    """
+
+
+@contextmanager
+def _time_limit(seconds: float) -> Iterator[None]:
+    """Interrompe o bloco com ``CommandTimedOut`` depois de ``seconds``.
+
+    ``SIGALRM`` na thread principal: interrompe espera de rede e de banco (o
+    psycopg devolve o controle ao Python no sinal), sem thread paralela segurando
+    conexão. Fora da thread principal (ou sem ``setitimer``) não há prazo, e o
+    watchdog continua de guarda. Um timer que já estava armado (por exemplo o do
+    pytest-timeout) é rearmado com o que lhe restava.
+    """
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def _on_alarm(signum, frame):
+        raise CommandTimedOut(seconds)
+
+    previous_handler = signal.signal(signal.SIGALRM, _on_alarm)
+    old_delay, old_interval = signal.setitimer(signal.ITIMER_REAL, seconds)
+    started = _monotonic()
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        if old_delay:
+            remaining = max(old_delay - (_monotonic() - started), 0.001)
+            signal.setitimer(signal.ITIMER_REAL, remaining, old_interval)
+
 #: Comandos cuja divergência volta IGUAL a cada ciclo até alguém resolver, e que
 #: gritam SOZINHOS, uma vez, quando a divergência nasce. O
 #: `reconcile_financial_day` re-reconcilia ontem a cada 5 min e, enquanto a
@@ -254,9 +384,25 @@ class Command(BaseCommand):
         parser.add_argument("--interval", type=int, default=300, help="Segundos entre ciclos (default 300).")
         parser.add_argument("--once", action="store_true", help="Roda um único ciclo e sai.")
 
+    _watchdog: Watchdog | None = None
+
+    def _alive(self, within_seconds: float) -> None:
+        if self._watchdog is not None:
+            self._watchdog.feed(within_seconds)
+
     def handle(self, *args, **options):
         interval = max(30, int(options["interval"]))
         once = bool(options["once"])
+        if not once:
+            self._watchdog = Watchdog(MAINTENANCE_WORKER).start()
+        try:
+            self._loop(interval, once)
+        finally:
+            if self._watchdog is not None:
+                self._watchdog.stop()
+                self._watchdog = None
+
+    def _loop(self, interval: int, once: bool) -> None:
         while True:
             # Um ciclo NUNCA derruba o worker. Durante o sleep ocioso (default 5
             # min) a conexão de banco/cache é reciclada pelo pooler; se a primeira
@@ -278,6 +424,7 @@ class Command(BaseCommand):
             elapsed = time.monotonic() - started
             remaining = interval - elapsed
             if remaining > 0:
+                self._alive(remaining + WATCHDOG_GRACE_SECONDS)
                 time.sleep(remaining)
             else:
                 # Ciclo mais lento que o intervalo: não dormir nada, e dizer. Silêncio
@@ -295,6 +442,7 @@ class Command(BaseCommand):
         # Postgres. Após o sleep ela já passou do CONN_MAX_AGE e/ou foi derrubada
         # pelo pooler (PgBouncer). Sem este close, TODA query do ciclo falharia
         # até um restart — a manutenção viraria no-op silencioso.
+        self._alive(COMMAND_TIMEOUT_SECONDS + WATCHDOG_GRACE_SECONDS)
         close_old_connections()
         worker_heartbeat.beat(MAINTENANCE_WORKER)
         for entrada in MAINTENANCE_COMMANDS:
@@ -302,11 +450,24 @@ class Command(BaseCommand):
             # opção — o `call_command` aceita as duas formas, e assim não é
             # preciso um comando-embrulho só para passar uma flag.
             command, kwargs = entrada if isinstance(entrada, tuple) else (entrada, {})
+            timeout = COMMAND_TIMEOUTS.get(command, COMMAND_TIMEOUT_SECONDS)
+            self._alive(timeout + WATCHDOG_GRACE_SECONDS)
             try:
-                if command == "process_marketing_outbox":
-                    call_command(command, quiet_disabled=True, **kwargs)
-                else:
-                    call_command(command, **kwargs)
+                with _time_limit(timeout):
+                    if command == "process_marketing_outbox":
+                        call_command(command, quiet_disabled=True, **kwargs)
+                    else:
+                        call_command(command, **kwargs)
+            except CommandTimedOut:
+                # Falha observável (Sentry pega o error): o nome e o prazo dizem
+                # qual tarefa não dá conta. A conexão pode ter ficado no meio de
+                # uma consulta; fechar faz a próxima tarefa reconectar limpo.
+                logger.error(
+                    "maintenance_worker: %s estourou o prazo de %ds e foi interrompido "
+                    "(ciclo continua)",
+                    command, timeout,
+                )
+                connections.close_all()
             except CommandError as exc:
                 if command in DIVERGENCIA_GRITA_NO_PROPRIO_COMANDO:
                     logger.warning(

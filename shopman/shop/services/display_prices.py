@@ -56,10 +56,12 @@ def resolve_prices(channel, products) -> dict[str, int]:
         logger.warning("display.no_price_source channel=%s", channel.ref)
         return base
 
-    from shopman.offerman.models import ListingItem
+    from decimal import Decimal
 
-    rows = (
-        ListingItem.objects.filter(listing__ref=source, product__sku__in=skus)
-        .values_list("product__sku", "price_q")
-    )
-    return {**base, **{sku: int(price_q) for sku, price_q in rows}}
+    from shopman.offerman.service import CatalogService
+
+    resolved = CatalogService.unit_prices([(sku, Decimal("1")) for sku in skus], listings=(source,))
+    return {
+        **base,
+        **{sku: price_q for sku, price_q in zip(skus, resolved, strict=True) if price_q is not None},
+    }

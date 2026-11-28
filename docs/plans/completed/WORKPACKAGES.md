@@ -1029,11 +1029,11 @@ def test_suggest_includes_advance_orders(self):
     # committed=50 deve aparecer no cálculo
     assert suggestions[0].basis["committed"] == 50
 
-def test_fermata_autocommit_on_materialization(self):
-    """Session em fermata auto-comita quando produção materializa."""
+def test_fermata_notifies_without_committing_on_materialization(self):
+    """Contrato atual: materialização notifica, mas não cria Order."""
     # Setup: session com hold planejado
     # Action: craft.close() → realize()
-    # Assert: session comitada, order criado
+    # Assert: session aberta, notificação emitida, nenhum order criado
 ```
 
 **Cenário 3:** Encomenda tardia (pós-planejamento, com margem)
@@ -1123,7 +1123,8 @@ Depois implemente nesta ordem:
 5. Testes para os 5 cenários do ADR-007:
    - test_advance_order_creates_demand_hold
    - test_suggest_includes_advance_orders
-   - test_fermata_autocommit_on_materialization
+   - `test_fermata_autocommit_on_materialization` (registro histórico superado;
+     contrato atual: notifica sem commit)
    - test_late_order_respects_safety_margin
    - test_late_order_rejected_when_over_margin
    - test_cancel_releases_planned_holds

@@ -23,7 +23,7 @@ janela; o placar guardado não tem texto e fica.
 
 **O viés declarado:** o gabarito nasce da sugestão de um modelo. A pessoa corrige
 o que discorda, mas sugestão ancora. Por isso o modelo que sugere
-(``AI_ASSIST_MODEL``) não entra no placar automático, que mede outros
+(a rota de IA ``labeling``) não entra no placar automático, que mede outros
 (``DEFAULT_LLM_MODELS``), a regex e os embeddings.
 """
 
@@ -143,7 +143,7 @@ def propose_labels(*, limit: int = PROPOSE_BATCH, model: str | None = None, cont
     """
     from shopman.storefront.models import IntentCategory, MessageIntentSample, SampleStatus
 
-    contender = contender or LLMContender(model=model or settings.AI_ASSIST_MODEL)
+    contender = contender or LLMContender(model=model, purpose="labeling")
     categories = load_categories()
     if not categories:
         return 0
@@ -191,13 +191,13 @@ def maybe_measure(*, force: bool = False, llm_models=DEFAULT_LLM_MODELS) -> Meas
         return Measurement(None, f"último placar de {last.created_at:%d/%m}; o próximo sai em até 7 dias")
     categories = load_categories()
     contenders, skipped = build_contenders(("regex", "embed", "llm", "jev"), llm_models=list(llm_models))
-    prices, _unpriced = prices_for(contenders)
+    prices, unpriced = prices_for(contenders)
     boards = run(samples, categories, contenders, prices=prices)
     report = IntentPilotReport.objects.create(
         samples=len(samples),
         contenders=", ".join(board.contender for board in boards)[:240],
         skipped="\n".join(f"{name}: {reason}" for name, reason in skipped),
-        report=render_report(boards, samples, categories),
+        report=render_report(boards, samples, categories, unpriced=unpriced),
     )
     return Measurement(report, "medido")
 
@@ -322,9 +322,9 @@ class IntentPilotMeasureHandler:
 #
 # A Concierge em ``observe`` não decide nada ao vivo, e a entrada promete que
 # nenhuma mensagem sai da casa no caminho do webhook. A sombra roda aqui, no
-# ciclo do piloto, com o mesmo portão do comparador (``typesafe`` aprovado e
-# ``JEV_API_KEY``). A decisão do Jev é a que a triagem tomaria com
-# ``triage_classifier = "jev"`` (``triage.best_jev_intent``), menos a trava do
+# ciclo do piloto, com o mesmo portão do comparador (a conexão do Jev liberada
+# para mensagem de cliente). A decisão do Jev é a que a triagem toma no turno
+# (``triage.best_jev_intent``), menos a trava do
 # sensível, que a sombra guarda separada para a casa ver onde ela agiria.
 
 SHADOW_KEY = "triage_shadow"

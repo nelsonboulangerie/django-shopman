@@ -25,7 +25,7 @@ def _get_customer_id(request) -> uuid.UUID | None:
     """Extract customer_id from authenticated request."""
     customer_info = getattr(request, "customer", None)
     if customer_info is not None:
-        return customer_info.uuid
+        return customer_info.subject_id
     return None
 
 

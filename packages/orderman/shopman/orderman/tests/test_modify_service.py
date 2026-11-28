@@ -504,7 +504,7 @@ class SessionWriteServiceTests(TestCase):
             {
                 "id": "ISS-1",
                 "source": "stock",
-                "code": "insufficient_stock",
+                "code": "insufficient_supply",
                 "message": "Not enough stock",
             }
         ]
@@ -521,7 +521,7 @@ class SessionWriteServiceTests(TestCase):
         self.assertTrue(result)
         self.session.refresh_from_db()
         self.assertEqual(len(self.session.data["issues"]), 1)
-        self.assertEqual(self.session.data["issues"][0]["code"], "insufficient_stock")
+        self.assertEqual(self.session.data["issues"][0]["code"], "insufficient_supply")
 
     def test_apply_check_result_replaces_old_issues(self) -> None:
         """Should replace old issues from same source."""

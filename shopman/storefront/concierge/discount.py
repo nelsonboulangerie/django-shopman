@@ -73,12 +73,7 @@ def max_percent(channel_ref: str) -> Decimal:
     """O teto do canal, em % do subtotal (0 = desligado)."""
     from shopman.shop.config import ChannelConfig
 
-    try:
-        value = ChannelConfig.for_channel(channel_ref).pricing.concierge_discount_max_percent
-    except Exception:
-        # Config inválida no Admin: o desconto fica desligado, nunca acima do teto.
-        logger.warning("concierge.discount: config unavailable channel=%s", channel_ref, exc_info=True)
-        return Decimal(0)
+    value = ChannelConfig.for_channel(channel_ref).pricing.concierge_discount_max_percent
     return max(Decimal(0), Decimal(str(value)))
 
 
@@ -171,8 +166,14 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
     if discount_q <= 0:
         return Outcome("unavailable")
 
+    from .effect_authority import lock_turn_authority
+    from .service import TurnRevoked
+
     try:
         with transaction.atomic():
+            # O cupom e a marca na sacola nascem aqui: a posse é reconferida na mesma
+            # transação, com a conversa travada contra a transferência (#2625).
+            lock_turn_authority(conversation, channel_ref=channel_ref)
             code = promotions.issue_concierge_coupon(
                 value_q=discount_q,
                 min_order_q=min_order_for(discount_q, percent),
@@ -180,9 +181,13 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
                 conversation_id=conversation.pk,
                 valid_for=COUPON_VALIDITY,
             )
-            applied, _name = cart_service.validate_and_apply_coupon(
-                session_key=session.session_key, channel_ref=channel_ref, code=code,
-            )
+            try:
+                applied, _name = cart_service.validate_and_apply_coupon(
+                    session_key=session.session_key, channel_ref=channel_ref, code=code,
+                )
+            except cart_service.CouponNotBetter:
+                # A linha já tem desconto igual ou maior: nada foi concedido.
+                raise _NotApplied from None
             applied_q = int(((applied.pricing or {}).get("coupon") or {}).get("discount_q") or 0)
             if applied_q <= 0:
                 # As portas do cupom recusaram em silêncio (linha já com desconto
@@ -205,6 +210,9 @@ def _grant(*, conversation, session, channel_ref: str, percent: Decimal, custome
             )
     except _NotApplied:
         return Outcome("unavailable")
+    except TurnRevoked:
+        # A equipe assumiu antes do cupom: nada foi concedido, e quem responde é ela.
+        raise
     except Exception:
         logger.warning("concierge.discount: grant failed conversation=%s", conversation.pk, exc_info=True)
         return Outcome("unavailable")

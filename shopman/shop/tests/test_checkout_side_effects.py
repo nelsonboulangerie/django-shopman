@@ -1,10 +1,10 @@
-"""WP-1 — post-commit side effects wired into checkout.process().
+"""WP-1 — durable post-commit effects queued by checkout.
 
 The headless API checkout (`storefront/api/views.py`) calls `checkout.process()`,
 which must run the customer-facing side effects the deleted Django page used to do:
 upsert customer, persist a new delivery address, save checkout defaults. Saving is
 the omotenashi default; the surface opts out via `save_as_default=false`. All are
-best-effort — never break the (already committed) order.
+durable and recoverable — never break the already committed order.
 """
 from __future__ import annotations
 
@@ -103,5 +103,10 @@ def _apply(data, channel, *, order_ref):
     phone = data.get("customer", {}).get("phone")
     if phone and customers.get_by_phone(phone) is None:
         customers.create(ref="SIDE-EFFECT-CUSTOMER", first_name="Ana", phone=phone)
-    Order.objects.create(ref=order_ref, channel_ref=channel, data=data)
+    Order.objects.create(
+        ref=order_ref,
+        channel_ref=channel,
+        data=data,
+        snapshot={"data": data},
+    )
     return checkout._apply_post_commit_side_effects(data, channel, order_ref=order_ref)

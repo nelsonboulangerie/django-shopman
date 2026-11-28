@@ -162,6 +162,7 @@ class TestFavoriteCategoryFromOrders:
 # ── CatalogProjection integration ────────────────────────────────────────────
 
 
+@pytest.mark.channels("nelson", "nelson2")
 class TestCatalogProjectionFavorite:
     def test_favorite_category_ref_present_on_projection(self, product_a1, customer):
         """build_catalog sets favorite_category_ref when request has a customer."""
@@ -181,9 +182,13 @@ class TestCatalogProjectionFavorite:
 
         # Build a mock request carrying the customer
         request = MagicMock()
-        request.customer = MagicMock()
-        request.customer.uuid = customer.uuid
-        request.customer.name = customer.name
+        from shopman.storefront.tests.identity_fakes import make_identity_view
+
+        request.customer = make_identity_view(
+            subject_id=customer.uuid,
+            name=customer.name,
+            phone=customer.phone,
+        )
         request.session = {}
 
         catalog = build_catalog(channel_ref="nelson", request=request)

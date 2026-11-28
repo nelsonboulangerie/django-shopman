@@ -1,3 +1,5 @@
+import { csvMoney, csvNumber, csvText } from "./csv";
+
 // Gráfico de leitura e quadro de leitura (PR-K1 do WP-BI-CANON-LAUDO): a parte pura.
 //
 // O componente (`OperatorReadingChart`) só desenha o que sai daqui. A frase que o
@@ -70,6 +72,8 @@ export interface ReadingDivergingLabels {
   negative: string;
   /** Default: "Sem diferença". */
   zero?: string;
+  /** O ponto sem dado, dito com a palavra do quadro (ex.: "Sem turno fechado"). Default: "sem dado". */
+  missing?: string;
   positiveTone?: ReadingTone;
   negativeTone?: ReadingTone;
 }
@@ -131,7 +135,7 @@ export function divergingText(
   labels: ReadingDivergingLabels,
   format: ReadingFormat,
 ): string {
-  if (value === null) return MISSING_VALUE;
+  if (value === null) return labels.missing ?? MISSING_VALUE;
   if (value === 0) return labels.zero ?? DEFAULT_ZERO;
   return `${value > 0 ? labels.positive : labels.negative} ${format(Math.abs(value))}`;
 }
@@ -288,24 +292,17 @@ export interface ReadingChartCsvOptions {
   money?: boolean;
 }
 
-const CSV_NUMBER = new Intl.NumberFormat("pt-BR", { useGrouping: false, maximumFractionDigits: 20 });
-const CSV_MONEY = new Intl.NumberFormat("pt-BR", {
-  useGrouping: false,
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-
 /**
  * Número para a planilha em português: vírgula decimal e nenhum separador de milhar
  * ("1234,5"). O ponto ("1.2") a planilha em português lê como milhar ou como texto.
  */
 export function readingCsvNumber(value: number): string {
-  return CSV_NUMBER.format(value);
+  return csvNumber(value);
 }
 
 /** Reais para a planilha: duas casas, vírgula decimal, sem milhar e sem "R$" ("1500,50"). */
 export function readingCsvMoney(value: number): string {
-  return CSV_MONEY.format(value);
+  return csvMoney(value);
 }
 
 /**
@@ -333,19 +330,13 @@ export function readingChartCsv(
   };
 }
 
-function csvCell(value: ReadingCsvCell): string {
-  const text = typeof value === "number" ? readingCsvNumber(value) : value;
-  return /[";\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-}
-
 /**
  * O texto do arquivo. Ponto e vírgula, porque a planilha em português lê a vírgula
  * como decimal (e é com vírgula que os números saem); a marca de ordem de bytes abre
  * o UTF-8 com acento certo.
  */
 export function readingCsvText(csv: ReadingCsv): string {
-  const lines = [csv.header, ...csv.rows].map((row) => row.map(csvCell).join(";"));
-  return `\uFEFF${lines.join("\n")}`;
+  return csvText(csv);
 }
 
 /** Um trecho contínuo de uma série: do índice `start` ao `end`, todos com valor. */

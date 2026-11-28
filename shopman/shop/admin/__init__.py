@@ -1,5 +1,11 @@
 """Shopman admin — Unfold admin de shop, rules, orders, channel, promoção e entrega."""
 
+from shopman.shop.admin.ai_connection import (  # noqa: F401
+    AIConnectionAdmin,
+    AiInvocationAdmin,
+    AiSpendDayAdmin,
+    PaidApiCallAdmin,
+)
 from shopman.shop.admin.attributes import AttributeDefinitionAdmin  # noqa: F401
 from shopman.shop.admin.campaign import (  # noqa: F401
     AnnouncementAdmin,
@@ -12,11 +18,20 @@ from shopman.shop.admin.campaign import (  # noqa: F401
     MarketingSecurityEventAdmin,
 )
 from shopman.shop.admin.channel import ChannelAdmin  # noqa: F401
+from shopman.shop.admin.conversational import (  # noqa: F401
+    ConversationalDecisionAdmin,
+    ConversationalOutcomeAdmin,
+)
 from shopman.shop.admin.delivery import (  # noqa: F401
+    CourierAdmin,
+    CourierRateAdmin,
     DeliveryDistanceBandAdmin,
+    DeliveryServiceAdmin,
     DeliveryZoneAdmin,
 )
 from shopman.shop.admin.faq import FAQEntryAdmin  # noqa: F401
+from shopman.shop.admin.instance_apply import InstanceApplyRecordAdmin  # noqa: F401
+from shopman.shop.admin.kitchen_note import KitchenNoteTagAdmin  # noqa: F401
 from shopman.shop.admin.omotenashi import OmotenashiCopyAdmin  # noqa: F401
 from shopman.shop.admin.orders import OrderAdmin  # noqa: F401
 from shopman.shop.admin.price_tier import PriceTierAdmin  # noqa: F401

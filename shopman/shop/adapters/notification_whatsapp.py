@@ -10,7 +10,7 @@ template — Utility for order/payment updates, Authentication for OTP. Map each
 approved template via ``SHOPMAN_WHATSAPP['templates']``. With no mapping, a plain text
 message is sent, which Meta only delivers inside the 24h window.
 
-See docs/plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
+See docs/plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md.
 """
 
 from __future__ import annotations

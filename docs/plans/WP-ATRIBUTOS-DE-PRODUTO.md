@@ -147,7 +147,7 @@ termos livres) e não como escolha múltipla. O registro não controla a escrita
 delas, e declarar opções fechadas seria prometer uma restrição que ele não tem
 como aplicar. A lista fechada entra com o rename.
 
-O rename é o [WP-ATRIBUTOS-RENAME](WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md), com
+O rename é o [WP-ATRIBUTOS-RENAME](completed/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md), com
 escopo arquivo a arquivo.
 
 ## Análise adversarial (04/09/2026)

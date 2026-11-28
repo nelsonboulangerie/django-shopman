@@ -11,7 +11,7 @@ from shopman.payman.models import PaymentIntent
 
 from shopman.shop.models import Shop
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def context(client, django_user_model):
     client.force_login(user)
     terminal = Terminal.objects.create(ref="only-lab", label="Synthetic counter")
     shift = cash.open_shift(operator=user, terminal=terminal)
-    order = Order.objects.create(ref="CASH-RECEIPT", status="dispatched", total_q=1500,
+    order = Order.objects.create(channel_ref="web", ref="CASH-RECEIPT", status="dispatched", total_q=1500,
         data={"fulfillment_type": "delivery", "payment": {"method": "cash", "collection": "on_delivery"}})
     detail = client.get(reverse("api-backstage-order-detail", args=[order.ref])).json()["order"]
     action = next(action for action in detail["actions"] if action["ref"] == "settle-delivery-cash")

@@ -9,6 +9,8 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.http import HttpResponseRedirect
+from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ExportMixin, ImportExportModelAdmin
@@ -30,13 +32,15 @@ from shopman.offerman.models import (
 from shopman.utils.admin.mixins import AutofillInlineMixin
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
+from shopman.utils.contrib.admin_unfold.money import MoneyReaisField
 from shopman.utils.monetary import format_money
 from taggit.forms import TagWidgetMixin
 from taggit.managers import TaggableManager
 from unfold.contrib.filters.admin.numeric_filters import RangeNumericFilter
 from unfold.contrib.import_export.forms import ExportForm, ImportForm
-from unfold.decorators import display
-from unfold.forms import ActionForm
+from unfold.decorators import action, display
+from unfold.enums import ActionVariant
+from unfold.forms import ActionForm, BaseDialogForm
 from unfold.widgets import (
     UnfoldAdminSelectWidget,
     UnfoldAdminTextareaWidget,
@@ -104,7 +108,6 @@ class CollectionAdminForm(forms.ModelForm):
             "ref", "name", "description", "parent",
             "valid_from", "valid_until", "sort_order", "is_active", "rule",
         )
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk and self.instance.rule:
@@ -190,11 +193,40 @@ class CollectionAdmin(BaseModelAdmin):
 # =============================================================================
 
 
+class ListingItemAdminForm(forms.ModelForm):
+    """O preço do item na lista em reais, como o preço base do produto.
+
+    O produto passou a pedir reais (ADM-09); com o item da lista ainda em
+    centavos, a mesma tela do produto mostrava "15,00" no preço base e "1500"
+    no preço do canal, duas grandezas para o mesmo número.
+    """
+
+    # Opcional: em branco, ``ListingAdmin.save_formset`` usa o preço base.
+    price_q = MoneyReaisField(
+        label="Preço",
+        required=False,
+        help_text="Em reais. Em branco, vale o preço base do produto.",
+    )
+
+    class Meta:
+        model = ListingItem
+        fields = "__all__"
+
+
+class ProductListingItemAdminForm(ListingItemAdminForm):
+    """Na tela do produto o item já existe: o preço é obrigatório."""
+
+    price_q = MoneyReaisField(label="Preço", help_text="Em reais. Ex.: 15,00.")
+
+
 class ListingItemInline(AutofillInlineMixin, BaseTabularInline):
     model = ListingItem
+    form = ListingItemAdminForm
     extra = 1
     autocomplete_fields = ["product"]
-    autofill_fields = {"product": {"price_q": "base_price_q"}}
+    # ``base_price`` (reais), não ``base_price_q``: o campo de destino é em reais,
+    # e copiar os centavos faria R$ 15,00 virar R$ 1.500,00.
+    autofill_fields = {"product": {"price_q": "base_price"}}
     fields = ["product", "price_q", "min_qty", "is_published", "is_sellable"]
 
 
@@ -285,6 +317,7 @@ class ProductCollectionItemInline(BaseTabularInline):
 class ProductListingItemInline(BaseTabularInline):
     """Inline to manage product's listing (per-channel pricing/visibility)."""
     model = ListingItem
+    form = ProductListingItemAdminForm
     extra = 0
     fields = ["listing", "price_q", "is_published", "is_sellable", "min_qty"]
     readonly_fields = ["listing"]
@@ -318,6 +351,31 @@ class ProductActionForm(ActionForm):
     )
 
 
+class ProductArchiveFilter(admin.SimpleListFilter):
+    """Esconde arquivados por padrão e só os revela por pedido explícito."""
+
+    title = _("Arquivamento")
+    parameter_name = "arquivados"
+
+    def lookups(self, request, model_admin):
+        return (("sim", _("Arquivados")), ("todos", _("Todos")))
+
+    def queryset(self, request, queryset):
+        if self.value() == "sim":
+            return queryset.archived()
+        if self.value() == "todos":
+            return queryset
+        return queryset.active()
+
+
+class ProductArchiveConfirmForm(BaseDialogForm):
+    """Confirmação nativa do Unfold para arquivar um produto."""
+
+
+class ProductUnarchiveConfirmForm(BaseDialogForm):
+    """Confirmação nativa do Unfold para desarquivar um produto."""
+
+
 @admin.register(Product)
 class ProductAdmin(_ProductImportExportBase):
     from shopman.offerman.contrib.admin_unfold.resources import ProductResource
@@ -331,7 +389,8 @@ class ProductAdmin(_ProductImportExportBase):
     form = ProductAdminForm
     resource_classes = [ProductResource]
 
-    autocomplete_extra_fields = ["base_price_q"]
+    # ``base_price`` em reais alimenta o preço do item da lista (ListingItemInline).
+    autocomplete_extra_fields = ["base_price_q", "base_price"]
     list_display = [
         "product_header",
         "formatted_price",
@@ -343,6 +402,7 @@ class ProductAdmin(_ProductImportExportBase):
     ]
     list_display_links = ["product_header"]
     list_filter = [
+        ProductArchiveFilter,
         "is_published",
         "is_sellable",
         "availability_policy",
@@ -365,7 +425,10 @@ class ProductAdmin(_ProductImportExportBase):
     @display(description="Margem (%)")
     def margin_percent_readonly(self, obj):
         margin = obj.margin_percent
-        return f"{margin:.1f}%" if margin is not None else "—"
+        if margin is not None:
+            return f"{margin:.1f}%"
+        gap = obj.reference_cost_gap
+        return f"Sem custo: {gap}" if gap else "—"
 
     @display(description="É perecível", boolean=True)
     def is_perishable_readonly(self, obj):
@@ -400,7 +463,6 @@ class ProductAdmin(_ProductImportExportBase):
                     "storage_tip",
                     "is_perishable_readonly",
                     "production_cycle_hours",
-                    "is_batch_produced",
                     "allows_next_day_sale",
                     "made_to_order",
                     "ready_from",
@@ -469,6 +531,9 @@ class ProductAdmin(_ProductImportExportBase):
         """Display visibility status with colored badges."""
         badges = []
 
+        if not obj.is_active:
+            badges.append(unfold_badge("Arquivado", "base"))
+
         if not obj.is_published:
             badges.append(unfold_badge("Oculto", "yellow"))
         if not obj.is_sellable:
@@ -486,7 +551,6 @@ class ProductAdmin(_ProductImportExportBase):
         return super().get_queryset(request).annotate(
             has_components=Exists(ProductComponent.objects.filter(parent=OuterRef("pk"))),
         )
-
     def get_list_display(self, request):
         """Custo e margem só entram na lista quando existe de onde tirá-los.
 
@@ -524,7 +588,14 @@ class ProductAdmin(_ProductImportExportBase):
     def cost_display(self, obj):
         cost_q = obj.reference_cost_q
         if cost_q is None:
-            return "—"
+            # Sem custo é falha que grita (ADR-023 §4), não um traço calado: o
+            # selo vermelho diz que falta, e o motivo do provedor vem no hover.
+            gap = obj.reference_cost_gap
+            if not gap:
+                return "—"
+            from django.utils.html import format_html
+
+            return format_html('<span title="{}">{}</span>', gap, unfold_badge("Sem custo", "red"))
         return f"R$ {format_money(cost_q)}"
 
     @display(description=_("Margem"))
@@ -561,6 +632,7 @@ class ProductAdmin(_ProductImportExportBase):
             return "—"
 
     action_form = ProductActionForm
+    actions_detail = ["archive_product", "unarchive_product"]
     actions = [
         "unpublish_products",
         "publish_products",
@@ -569,6 +641,64 @@ class ProductAdmin(_ProductImportExportBase):
         "update_price_percent",
         "add_to_collection",
     ]
+
+    def _change_url(self, object_id):
+        return reverse(
+            f"admin:{self.model._meta.app_label}_{self.model._meta.model_name}_change",
+            args=[object_id],
+        )
+    @action(
+        description=_("Arquivar"),
+        url_path="archive",
+        icon="archive",
+        variant=ActionVariant.DANGER,
+        permissions=["change"],
+        dialog={
+            "title": _("Arquivar este produto?"),
+            "description": _(
+                "Sai do cardápio, dos canais e das listas. O histórico e os vínculos ficam."
+            ),
+            "form_class": ProductArchiveConfirmForm,
+            "form_submit_text": _("Arquivar"),
+        },
+    )
+    def archive_product(self, request, form, object_id):
+        product = self.get_object(request, object_id)
+        if product is None:
+            messages.error(request, _("Produto não encontrado."))
+            return HttpResponseRedirect(self._change_url(object_id))
+        if product.is_active:
+            product.is_active = False
+            product.save(update_fields=["is_active"])
+            self.log_change(request, product, _("Produto arquivado."))
+            messages.success(request, _("Produto arquivado."))
+        return HttpResponseRedirect(self._change_url(object_id))
+
+    @action(
+        description=_("Desarquivar"),
+        url_path="unarchive",
+        icon="unarchive",
+        permissions=["change"],
+        dialog={
+            "title": _("Desarquivar este produto?"),
+            "description": _(
+                "Volta às listas com os estados de publicação e vendabilidade preservados."
+            ),
+            "form_class": ProductUnarchiveConfirmForm,
+            "form_submit_text": _("Desarquivar"),
+        },
+    )
+    def unarchive_product(self, request, form, object_id):
+        product = self.get_object(request, object_id)
+        if product is None:
+            messages.error(request, _("Produto não encontrado."))
+            return HttpResponseRedirect(self._change_url(object_id))
+        if not product.is_active:
+            product.is_active = True
+            product.save(update_fields=["is_active"])
+            self.log_change(request, product, _("Produto desarquivado."))
+            messages.success(request, _("Produto desarquivado."))
+        return HttpResponseRedirect(self._change_url(object_id))
 
     def _bulk_set(self, request, queryset, field, value, label):
         """Itera com save() (não queryset.update()) para disparar product_updated →
@@ -631,7 +761,6 @@ class ProductAdmin(_ProductImportExportBase):
                 "pct": percent,
             },
         )
-
     @admin.action(description=_("Adicionar à coleção"))
     def add_to_collection(self, request, queryset):
         collection_id = request.POST.get("collection_id", "").strip()

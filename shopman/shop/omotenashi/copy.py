@@ -111,7 +111,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         MOMENT_MANHA: {
             AUDIENCE_ANON: CopyEntry(
                 title="Sacola vazia",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
             AUDIENCE_RETURNING: CopyEntry(
                 title="Vamos montar seu café da manhã?",
@@ -119,7 +119,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
             WILDCARD: CopyEntry(
                 title="Vamos montar seu café da manhã?",
-                message="Pão fresquinho acabou de sair do forno.",
+                message="Pão fresquinho acabou de ficar pronto.",
             ),
         },
         MOMENT_ALMOCO: {
@@ -180,17 +180,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CHECKOUT_CONFIRM_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar pedido")},
-    },
-    # ``{name}`` / ``{price}`` interpolated by the checkout presentation.
-    "CHECKOUT_REPRICING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O preço de {name} mudou para {price}. Deseja continuar?")},
-    },
-    # ``{name}``, ``{qty}`` and ``{unit}`` interpolated; ``{qty}`` is the available count.
-    "CHECKOUT_STOCK_LIMITED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{name}: temos {qty} {unit} agora.")},
-    },
-    "CHECKOUT_STOCK_SOLD_OUT": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{name} está esgotado no momento.")},
     },
 
     # ── Cart microcopy ────────────────────────────────────────────
@@ -302,7 +291,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="todo dia")},
     },
     "HOME_MENU_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ver Cardápio")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ver cardápio")},
     },
     "HOME_BIRTHDAY_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ver minha oferta de aniversário")},
@@ -318,8 +307,26 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # O rail da home sem fornada recente nele: os mais pedidos e o cardápio.
+    "HOME_FEATURED_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Os mais pedidos",
+                message="Disponibilidade em tempo real",
+            ),
+        },
+    },
+    # O rail da home sem fornada recente e sem mais pedidos: a ordem do cardápio.
+    "HOME_MENU_RAIL_HEADING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Do nosso cardápio",
+                message="Disponibilidade em tempo real",
+            ),
+        },
+    },
     "HOME_HOW_IT_WORKS_HEADING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Como Funciona")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Como funciona")},
     },
     "HOME_FAQ_HEADING": {
         WILDCARD: {
@@ -384,7 +391,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Peça ao atendente. Preparamos na hora.")},
     },
     "HOW_PREORDER_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Pedidos para o dia seguinte até as 18h. Encomendas com até 7 dias de antecedência.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Encomendas com até {window} de antecedência.")},
     },
     "HOW_TRACKING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Use seu telefone para consultar o status dos pedidos a qualquer momento.")},
@@ -403,6 +410,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             WILDCARD: CopyEntry(
                 title="Dúvidas? Ou algum pedido especial?",
                 message="Respondemos rápido, de pessoa para pessoa.",
+            ),
+        },
+    },
+    # A mesma chamada quando a Concierge atende o WhatsApp da casa (OC-06): quem responde
+    # primeiro é a assistente virtual (R8), e a home não promete pessoa para pessoa.
+    "HOME_WHATSAPP_CTA_CONCIERGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Dúvidas? Ou algum pedido especial?",
+                message="Nossa assistente virtual responde e chama a equipe quando precisa. Se preferir falar com uma pessoa, é só pedir.",
             ),
         },
     },
@@ -480,26 +497,19 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_CANCEL_FAILED_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Não foi possível cancelar este pedido agora.")},
     },
-    "TRACKING_CANCEL_CONFIRM_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Cancelar pedido")},
+    # Antes de confirmar o cancelamento, o que acontece com o dinheiro. Antes do
+    # preparo o cliente cancela pago ou não, e o valor volta inteiro (dono, 06/11/2026).
+    "TRACKING_CANCEL_MONEY_REFUND_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo ainda não começou. Cancelamos agora e devolvemos os {amount} do seu Pix para a mesma conta.")},
     },
-    "TRACKING_CANCEL_WARNING_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Essa ação altera o pedido em andamento")},
+    "TRACKING_CANCEL_MONEY_REFUND_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo ainda não começou. Cancelamos agora e estornamos os {amount} no seu cartão.")},
     },
-    "TRACKING_CANCEL_WARNING_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="O cancelamento só é permitido enquanto o pagamento não foi capturado e a loja ainda permite reversão.")},
+    "TRACKING_CANCEL_MONEY_CARD_HOLD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="A reserva no seu cartão será desfeita, e nada será cobrado.")},
     },
-    "TRACKING_CANCEL_CONFIRM_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Confirme apenas se não quiser mais seguir com este pedido.")},
-    },
-    "TRACKING_CANCEL_ACK_LABEL": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Entendo que o pedido será cancelado e deixará de ser preparado.")},
-    },
-    "TRACKING_CANCEL_KEEP_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Manter pedido")},
-    },
-    "TRACKING_CANCEL_CONFIRM_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Confirmar cancelamento")},
+    "TRACKING_CANCEL_MONEY_NOTHING_CHARGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nada foi cobrado até agora.")},
     },
     "TRACKING_MOCK_PAYMENT_SUCCESS_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento teste capturado")},
@@ -528,8 +538,50 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_RATING_SUBMIT_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Enviar avaliação")},
     },
+    # Depois que o preparo começou, no lugar do cancelar: falar com o responsável.
+    "TRACKING_CANCELLATION_CONTACT_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quero falar com o responsável")},
+    },
+    "TRACKING_CANCELLATION_CONTACT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quer cancelar?")},
+    },
+    # Depois que o cliente pediu o contato, "Quer cancelar?" mente: a pergunta já
+    # foi respondida. O título vira a confirmação do que aconteceu.
+    "TRACKING_CANCELLATION_CONTACT_DONE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Contato solicitado")},
+    },
+    "TRACKING_CANCELLATION_CONTACT_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo já começou e o pedido é feito para você, então ele não pode mais ser cancelado. Se algo não está certo, fale com o responsável.")},
+    },
+    "TRACKING_RATING_CONTACT_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quero falar com o responsável")},
+    },
+    "TRACKING_RATING_CONTACT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Sentimos muito que não foi como você esperava")},
+    },
+    "TRACKING_RATING_CONTACT_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O responsável pela casa te chama no WhatsApp para entender o que houve.")},
+    },
+    "TRACKING_RATING_CONTACT_DONE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado. O responsável pela casa vai te chamar no WhatsApp.")},
+    },
+    "TRACKING_RATING_GOOGLE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Quer contar no Google também?")},
+    },
+    "TRACKING_RATING_GOOGLE_SHARE_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Coisa boa é pra compartilhar")},
+    },
+    "TRACKING_RATING_GOOGLE_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua opinião ajuda outras pessoas a conhecer a casa.")},
+    },
+    "TRACKING_RATING_GOOGLE_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Avaliar no Google")},
+    },
+    "TRACKING_RATING_GOOGLE_COPIED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Ao tocar, copiamos seu comentário. No Google, toque no campo de texto e cole.")},
+    },
     "TRACKING_SUPPORT_WHATSAPP_MESSAGE": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Oi! Posso ajudar com o pedido {order_ref}?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Oi! Preciso de ajuda com o pedido {order_ref}.")},
     },
     # Rótulo enxuto do countdown quando o prazo é a loja conferir disponibilidade
     # (deadline_kind="availability"). Consolidou o antigo par prefix/suffix num rótulo.
@@ -542,11 +594,21 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STATUS_PAYMENT_EXPIRED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento expirado")},
     },
+    # Pedido cancelado cujo dinheiro já voltou / ainda está voltando (lista da Conta).
+    "TRACKING_STATUS_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
+    "TRACKING_STATUS_REFUND_IN_PROGRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolução em andamento")},
+    },
     "TRACKING_STATUS_WAITING_STORE_CONFIRMATION": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando a loja")},
     },
     "TRACKING_STATUS_CARD_AUTHORIZED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pagamento autorizado")},
+    },
+    "TRACKING_STATUS_CARD_CAPTURE_FAILED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Cobrança não concluída")},
     },
     "TRACKING_STATUS_READY_DELIVERY": {
         WILDCARD: {WILDCARD: CopyEntry(title="Aguardando entregador")},
@@ -605,11 +667,58 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_READY_GENERIC": {
         WILDCARD: {WILDCARD: CopyEntry(title="Pronto")},
     },
+    # Pronto para entrega, um fato por momento da corrida até a coleta (L2 da
+    # revisão das Entregas, decisão 7 = B do dono, 16/11/2026). Sem "corrida",
+    # "aceite" nem o nome da empresa de entrega; sem prometer aviso. ``{driver}``
+    # é o primeiro nome do entregador ("o entregador" quando não há nome).
     "TRACKING_DELIVERY_WAITING_COURIER": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pronto para coleta",
-                message="Estamos aguardando um entregador.",
+                title="Seu pedido está pronto",
+                message="Logo sai para entrega.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_CALLED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Seu pedido está pronto",
+                message="Estamos chamando o entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_LATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Seu pedido está pronto",
+                message="Está demorando mais que o normal. Seguimos chamando o entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_REPLACED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} não pôde vir",
+                message="Estamos chamando outro entregador.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_COMING": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} vem buscar seu pedido",
+                message="Chega à loja por volta de {eta}.",
+            ),
+        },
+    },
+    "TRACKING_DELIVERY_COURIER_COMING_NO_ETA": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido está pronto.")},
+    },
+    "TRACKING_DELIVERY_COURIER_AT_STORE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="{driver} chegou à loja",
+                message="Logo sai com seu pedido.",
             ),
         },
     },
@@ -625,17 +734,41 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_CANCELLED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Cancelado")},
     },
+    # O dinheiro que voltou, como marco do Histórico do pedido (com valor e hora).
+    "TRACKING_STEP_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
+    },
     "TRACKING_CANCELLED_REASON_TITLE": {
         WILDCARD: {WILDCARD: CopyEntry(title="Motivo do cancelamento")},
     },
-    "TRACKING_REFUND_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso")},
+    # Pedido cancelado: o destino do dinheiro numa frase, com o valor. {amount}
+    # chega pronto ("R$ 13,60").
+    "TRACKING_MONEY_REFUNDED_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Devolvemos os {amount} do seu Pix para a mesma conta.")},
     },
-    "TRACKING_REFUND_STATUS_REFUNDED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso concluído")},
+    "TRACKING_MONEY_REFUNDED_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estornamos os {amount} no seu cartão. O valor volta na fatura no prazo do seu banco.")},
     },
-    "TRACKING_REFUND_STATUS_PROCESSING": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso em processamento")},
+    "TRACKING_MONEY_REFUNDING_PIX": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos devolvendo os {amount} do seu Pix para a mesma conta.")},
+    },
+    "TRACKING_MONEY_REFUNDING_CARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estamos estornando os {amount} no seu cartão. O valor volta na fatura no prazo do seu banco.")},
+    },
+    "TRACKING_MONEY_LATE_PIX_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu Pix de {amount} chegou depois do prazo, e devolvemos o valor para a mesma conta.")},
+    },
+    "TRACKING_MONEY_LATE_PIX_REFUNDING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu Pix de {amount} chegou depois do prazo. Estamos devolvendo o valor para a mesma conta.")},
+    },
+    "TRACKING_MONEY_CARD_HOLD_RELEASED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="A reserva no seu cartão foi desfeita, e nada foi cobrado.")},
+    },
+    "TRACKING_MONEY_NOTHING_CHARGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nada foi cobrado.")},
+    },
+    "TRACKING_PROMISE_COMPLETED_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Obrigada pela preferência!")},
     },
     "TRACKING_STEP_RETURNED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
@@ -643,7 +776,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PAYMENT_REQUESTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                title="Pague com Pix",
+                title="Falta só o pagamento",
             ),
         },
     },
@@ -688,6 +821,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    "TRACKING_PROMISE_CARD_MESSAGE_DEADLINE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Finalize no ambiente seguro até {deadline} para garantir o pedido.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_CARD_MESSAGE_ACCEPTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -717,6 +857,15 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_LINK_FOOTNOTE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo passar, liberamos a reserva e avisamos você.")},
+    },
+    # A mesma consequência quando a frase do estado não diz o prazo (cartão
+    # recusado, encomenda): a nota diz qual, para não apontar um prazo invisível.
+    "TRACKING_PROMISE_CARD_DEADLINE_FOOTNOTE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Se o pagamento não for feito até {deadline}, liberamos a reserva e avisamos você.",
+            ),
+        },
     },
     "TRACKING_PROMISE_CARD_PREORDER_MESSAGE": {
         WILDCARD: {
@@ -775,7 +924,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pagamento expirado",
-                message="O prazo acabou e cancelamos o pedido.",
+                message="O prazo para pagar acabou e cancelamos o pedido.",
             ),
         },
     },
@@ -783,6 +932,47 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 title="Pagamento autorizado",
+            ),
+        },
+    },
+    # A cobrança do cartão não passou depois do aceite e o cliente paga de novo.
+    "TRACKING_PROMISE_CARD_REPAYMENT_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A cobrança no cartão falhou")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_PIX_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com Pix ou com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_REPAYMENT_PIX_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
+    "TRACKING_PROMISE_CARD_REPAYMENT_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Nada foi cobrado. Pague com outro cartão até {deadline} para seguirmos com o seu pedido.",
+            ),
+        },
+    },
+    # A cobrança do cartão autorizado foi recusada no aceite.
+    "TRACKING_CARD_CAPTURE_FAILED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Não conseguimos cobrar o cartão",
+                message="A cobrança no seu cartão falhou, e nada foi cobrado. A loja já foi avisada; acompanhe por aqui.",
+            ),
+        },
+    },
+    # O pedido aberto só pelo link do aviso (DEV-2026-093): o convite para entrar no
+    # lugar de cancelar, avaliar e pedir de novo. ``{gestures}`` é a lista do que
+    # pede a entrada ("cancelar o pedido ou avaliar"); o título é o botão.
+    "TRACKING_LOGIN_INVITE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="Entrar com meu telefone",
+                message="Para {gestures}, entre com seu telefone.",
             ),
         },
     },
@@ -816,7 +1006,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_WAITLIST_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando sair.",
+                message="Sua reserva está na fila de espera da fornada prevista para {when}. Avisamos quando ficar pronta.",
             ),
         },
     },
@@ -827,12 +1017,30 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # Com o cartão da fila na tela (fornada de hoje, nada cobrado), a frase principal
+    # diz onde a reserva está e para quando é a fornada; quem promete o aviso é o
+    # cartão, logo abaixo. As duas frases de cima seguem para quando o cartão não
+    # aparece. "Fila de espera" e a data como previsão ficam (COPY-WAITLIST-001).
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada prevista para {when}.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_WAITLIST_MESSAGE_QUEUED_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Sua reserva está na fila de espera da fornada.",
+            ),
+        },
+    },
     "TRACKING_PROMISE_WAITLIST_MESSAGE_PAID": {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message=(
                     "Pagamento recebido. Sua reserva está na fila de espera da fornada "
-                    "prevista para {when}. Avisamos quando sair."
+                    "prevista para {when}. Avisamos quando ficar pronta."
                 ),
             ),
         },
@@ -861,17 +1069,76 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID": {
+    # Encomenda esperando a loja. Até quando a loja confirma ({until} = "até 8h40",
+    # "até amanhã, sexta, às 10h") e para quando é a encomenda são frases
+    # separadas (#2749): juntas, "A loja confirma sua encomenda para amanhã, a
+    # partir das 15h" lia como se a confirmação fosse amanhã às 15h. Sem prazo
+    # publicado há duas frases do aceite: ``_NO_UNTIL`` quando o dia da encomenda
+    # vem logo depois (em ``..._IS_FOR``) e, por isso, não nomeia a encomenda; e
+    # ``_NO_DATE`` quando não há dia combinado, e a frase a nomeia.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma {until} e avisa por aqui."),
+        },
+    },
+    # A mesma encomenda, já paga: o título diz "Pagamento recebido" e a frase
+    # promete a devolução se a loja não puder confirmar.
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
+                message="A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma e avisa por aqui."),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    # Para quando é ({when} = "amanhã, a partir das 15h"), em frase própria.
+    "TRACKING_PROMISE_PREORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua encomenda é para {when}.")},
+    },
+    "TRACKING_PROMISE_ORDER_IS_FOR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido é para {when}.")},
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_PAID_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_AWAITING_STORE_MESSAGE_NO_DATE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(message="A loja confirma sua encomenda e avisa por aqui."),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento recebido. A loja confirma {until} e avisa por aqui. Se não puder, devolvemos o valor.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Pagamento recebido. A loja confirma e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },
     "TRACKING_PROMISE_PREORDER_WAIT_MESSAGE_PAID_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Pagamento recebido. Sua encomenda está reservada. Preparamos tudo fresco no dia combinado.",
+                message="Pagamento recebido. A loja confirma sua encomenda e avisa por aqui. Se não puder, devolvemos o valor.",
             ),
         },
     },
@@ -880,6 +1147,41 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_NEXT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos fechados agora. Conferimos seu pedido quando abrirmos, {next}.")},
+    },
+    # Pago com a loja fechada: o pagamento entra na frase, como no store_checking.
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos fechados agora e conferimos seu pedido assim que abrirmos. Se não conseguirmos confirmar, devolvemos o valor.")},
+    },
+    "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE_PAID_NEXT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pagamento recebido. Estamos fechados agora e conferimos seu pedido quando abrirmos, {next}. Se não conseguirmos confirmar, devolvemos o valor.")},
+    },
+    # O último cartão foi recusado e a sessão segue aberta para outro.
+    "TRACKING_PROMISE_CARD_DECLINED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="O cartão não foi aprovado",
+                message="Nada foi cobrado. Tente de novo com outro cartão no ambiente seguro.",
+            ),
+        },
+    },
+    # Recusado, com o Pix como saída (decisão do dono, beta 06/11, F3).
+    "TRACKING_PROMISE_CARD_DECLINED_PIX": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                title="O cartão não foi aprovado",
+                message="Nada foi cobrado. Tente outro cartão no ambiente seguro ou pague com Pix.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_PIX_SWITCH_ACTION": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pagar com Pix")},
+    },
+    "TRACKING_PIX_SWITCH_REFUSED": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Não deu para trocar para Pix agora. Atualize a página e confira o pagamento.",
+            ),
+        },
     },
     # Preparo é o estado mais longo do pedido: a mensagem diz quando fica pronto e
     # promete o aviso, sem rótulo "Previsão:" no meio da frase.
@@ -892,8 +1194,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY": {
         WILDCARD: {WILDCARD: CopyEntry(message="Avisamos quando sair para entrega.")},
     },
+    # O {eta} é a hora em que o pedido fica PRONTO, e a frase diz isso.
     "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_ETA": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Deve sair para entrega às {eta}. Avisamos quando sair.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Fica pronto por volta de {eta}. Avisamos quando sair para entrega.")},
+    },
+    # Entrega com janela combinada: a promessa é a janela ({when} = "hoje, 15:00 às 15:30").
+    "TRACKING_PROMISE_PREPARING_MESSAGE_DELIVERY_WINDOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entrega combinada para {when}. Avisamos quando sair.")},
     },
     # Título do painel leva reticências ("em curso"); a etapa da linha do tempo
     # segue "Preparando", senão o passo concluído apareceria com check E reticências.
@@ -922,6 +1229,11 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PROMISE_READY_PICKUP_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Está esperando por você no balcão.")},
     },
+    # Pronto, mas a janela combinada não começou ou a loja está fechada
+    # ({when} = "hoje às 15h").
+    "TRACKING_PROMISE_READY_PICKUP_MESSAGE_FROM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Já está separado. Pode retirar a partir de {when}.")},
+    },
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_NEW": {
         WILDCARD: {WILDCARD: CopyEntry(message="Estamos conferindo a disponibilidade. Se não conseguirmos confirmar, devolvemos o valor.")},
     },
@@ -942,31 +1254,43 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE": {
+    # Cartão reservado esperando a loja: o prazo vai nesta frase, e o dia do
+    # pedido em ``TRACKING_PROMISE_ORDER_IS_FOR`` (#2749). O verbo é "confirmar",
+    # como na revisão do checkout e nas frases do Pix: um ato, um verbo só.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_UNTIL": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar, {until}.",
+            ),
+        },
+    },
+    # Sem prazo publicado e com o dia do pedido na frase seguinte: não nomeia o
+    # pedido, para o substantivo não se repetir. Sem dia combinado, ``_NO_DATE``.
+    "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_UNTIL": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera.",
+                message="O valor está reservado no seu cartão e só é cobrado quando a loja confirmar seu pedido.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                message="Pedido aceito para {when}. Estamos cobrando o valor reservado no seu cartão.",
             ),
         },
     },
     "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE_ACCEPTED_NO_DATE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Sua reserva está na fila de espera. Avisamos quando estiver pronto.",
+                message="Pedido aceito. Estamos cobrando o valor reservado no seu cartão.",
             ),
         },
     },
@@ -977,6 +1301,21 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_PROMISE_DISPATCHED_MESSAGE_ETA": {
         WILDCARD: {WILDCARD: CopyEntry(message="Chega por volta de {eta}. Confirme aqui quando receber.")},
+    },
+    # Com o nome de quem leva (decisão 7 = B): a frase aprovada pelo dono.
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_ETA": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está a caminho. Deve chegar por volta de {eta}.")},
+    },
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está a caminho.")},
+    },
+    # A posição do entregador vira texto (#2509): aos 80 m do endereço, a frase aprovada.
+    "TRACKING_PROMISE_DISPATCHED_MESSAGE_DRIVER_NEAR": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{driver} está chegando.")},
+    },
+    # Só quando a posição envelhece (passou de 1 min): a frase diz de quando é.
+    "TRACKING_PROMISE_DISPATCHED_POSITION_AGE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Última posição há {age}.")},
     },
     "TRACKING_ACTION_CONFIRM_RECEIVED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Recebi meu pedido")},
@@ -1031,15 +1370,28 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "TRACKING_WAITLIST_WAITING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+            message="Quando a fornada ficar pronta, avisamos para você confirmar. Nada foi cobrado ainda.",
         )},
     },
+    # O chamado é a frase principal do acompanhamento (título e mensagem da
+    # promessa, estado ``waitlist_confirming``); o cartão da fila fica com o
+    # relógio e o botão. {until} = "até 9h52". O título fala da cliente ("a sua
+    # vez"), não da fornada, que é da casa. A palavra é "vaga", a mesma das
+    # outras telas da fila ("A vaga passou a vez", "liberamos a sua vaga").
     "TRACKING_WAITLIST_CONFIRM_TITLE": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Sua fornada saiu!")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Chegou a sua vez!")},
     },
     "TRACKING_WAITLIST_CONFIRM_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(
-            message="Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+            message=(
+                "Confirme seu pedido {until} para garantir a sua vaga. "
+                "Depois desse horário, ela passa para a próxima pessoa da fila."
+            ),
+        )},
+    },
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Confirme seu pedido para garantir a sua vaga na fila.",
         )},
     },
     "TRACKING_WAITLIST_CONFIRM_CTA": {
@@ -1062,7 +1414,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_SHARE_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Enviar resumo")},
     },
 
     # ── Payment (bloco de Pix/cartão inline no acompanhamento) ────
@@ -1133,21 +1485,31 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         )},
     },
     # O QUE FAZER, em três passos (um por linha). A outra queixa: "o que eu tenho que
-    # fazer?". O terceiro passo é a promessa que a tela cumpre: a aba entra sozinha.
+    # fazer?". O terceiro passo nomeia o botão da resposta: ``{button}`` vira o rótulo
+    # que a mensagem traz ("Voltar à loja" no celular, "Liberar o Chrome" no computador).
     "LOGIN_WA_STEPS": {
         WILDCARD: {WILDCARD: CopyEntry(
             message=(
                 "Toque em “Abrir o WhatsApp”\n"
                 "Envie a mensagem que já está pronta\n"
-                "Volte para esta tela. A entrada será automática"
+                "Na resposta, toque em “{button}”"
             ),
         )},
     },
-    # Depois do toque: a tela espera a mensagem chegar e entra sem mais nada.
+    # Depois do toque, no COMPUTADOR: a liberação espera o botão, e esta aba entra assim
+    # que ele for tocado no celular.
     "LOGIN_WA_WAITING": {
         WILDCARD: {WILDCARD: CopyEntry(
             title="Mensagem enviada?",
-            message="Volte para esta tela. Estamos conferindo e vamos entrar automaticamente.",
+            message="Na resposta do WhatsApp, toque em “{button}”. Esta tela entra logo depois.",
+        )},
+    },
+    # Depois do toque, no CELULAR: nada é liberado para esta aba; a loja abre no
+    # navegador do botão, já com a pessoa dentro.
+    "LOGIN_WA_WAITING_PHONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Mensagem enviada?",
+            message="Na resposta do WhatsApp, toque em “{button}”. A loja abre com você dentro.",
         )},
     },
     # Envio manual (plano B da espera): título + instrução. ``{phone}`` vira o número
@@ -1171,15 +1533,8 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # O que o concierge diz SEM o modelo: abertura sugerida ao prompt e as saídas
     # fixas de política (modelo fora, mídia, equipe, teto diário, contato sem
     # telefone). Tudo aqui é lido por ``shopman/storefront/concierge/service.py`` via
-    # ``copy_message(key)``; a conversa em si é do modelo, com o dinheiro nas
-    # ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
-    # ``{shop_name}`` interpolado pelo prompt do agente (o nome da casa é dado do
-    # ``Shop``, nunca copy fixa; tenant é config, não código).
-    "CONCIERGE_GREETING": {
-        WILDCARD: {WILDCARD: CopyEntry(
-            message="Olá, aqui é a concierge da {shop_name}, uma assistente da casa. O que você gostaria de pedir hoje?",
-        )},
-    },
+    # ``copy_message(key)``; cada parte da conversa sai do executor da casa, com o
+    # dinheiro nas ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
     # Cortesia sem pergunta ("bom dia", "obrigado", "tchau"): resposta curta, sem
     # cardápio. O "Bom dia!" do começo sai do próprio cliente (small_talk.py).
     "CONCIERGE_SMALL_TALK_OFFER": {
@@ -1190,6 +1545,93 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     },
     "CONCIERGE_SMALL_TALK_HOW_ARE_YOU": {
         WILDCARD: {WILDCARD: CopyEntry(message="Tudo ótimo por aqui, obrigada.")},
+    },
+    "CONCIERGE_ENGINE_ASK_MORE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi bem. Pode me dizer o que você gostaria?")},
+    },
+    "CONCIERGE_ENGINE_TOTAL_CHANGED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="O total mudou; agora é {total}. Confira antes de confirmar.")},
+    },
+    "CONCIERGE_ENGINE_ORDER_PLACED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Total: {total}.\nAcompanhar: {track}")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, sua sacola ficou assim:\n{items}\nTotal: {total}\nQuer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_ENGINE_TERMS_CONFIRM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{items}\nTotal: {total}\n{fulfillment}{conditions}\nPosso registrar?")},
+    },
+    "CONCIERGE_ENGINE_PAYMENT_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {method}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_SET": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: entrega na {address}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_DETAILS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para a entrega, me diga {delivery_address_details}.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_DELIVERED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Esse endereço está fora da nossa área de entrega. Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, número, bairro e CEP.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_NOT_LOCATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui localizar esse endereço para calcular a entrega. Confira a rua, o número e o bairro, ou envie sua localização pelo WhatsApp.")},
+    },
+    "CONCIERGE_ENGINE_ADDRESS_COMPLEMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message='Tem complemento (apartamento, bloco, fundos)? Se não tiver, é só dizer "sem complemento".')},
+    },
+    "CONCIERGE_ENGINE_OFFER_TEAM": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Isso eu não consigo fazer por aqui. Quer que eu chame alguém da equipe?")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED_SHORT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada.")},
+    },
+    "CONCIERGE_ENGINE_ASK_DELIVERY_WINDOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual janela de entrega fica melhor? {delivery_window}")},
+    },
+    "CONCIERGE_ENGINE_CONFIRM_READING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Só para confirmar: {reading}?")},
+    },
+    "CONCIERGE_ENGINE_CART_UPDATED_TOTAL": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{done}, a sacola foi atualizada. Total: {total}.")},
+    },
+    "CONCIERGE_ENGINE_FULFILLMENT_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{noted}, atualizei o recebimento.")},
+    },
+    "CONCIERGE_ENGINE_ORDER_PLACED_SHORT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pedido {order} registrado. Acompanhar: {track}")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_PENDING": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Ainda estou concluindo isso. Te confirmo por aqui até {deadline}.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Até {deadline}, {owner} te responde por aqui.")},
+    },
+    "CONCIERGE_ENGINE_WAIT_OVERDUE_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora. Ainda estou esperando {owner} e te aviso por aqui assim que tiver a resposta.")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}?")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_OFFER_MANY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Entregamos no endereço do seu cadastro, {delivery_address_saved}? Se preferir outro endereço cadastrado, é só dizer qual.")},
+    },
+    "CONCIERGE_ENGINE_SAVED_ADDRESS_LIST": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Seus endereços cadastrados: {delivery_address_saved_options}. Em qual entregamos?")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_HELD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, anotei. Já te confirmo os detalhes por aqui.")},
+    },
+    "CONCIERGE_ENGINE_EFFECT_FAILED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não consegui concluir esta ação. Suas escolhas foram preservadas. Se quiser, chamo alguém da equipe.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. Se ninguém assumir até {deadline}, te aviso por aqui.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_ROUTED_NO_DEADLINE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento a {owner} e preservei suas escolhas. A equipe continuará por aqui conforme a disponibilidade.")},
+    },
+    "CONCIERGE_ENGINE_HANDOFF_NOT_ACCEPTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Solicitei atendimento humano e preservei suas escolhas. Enquanto ninguém assume, sigo com você por aqui e te dou notícia até {deadline}.")},
     },
     "CONCIERGE_SMALL_TALK_THANKS": {
         WILDCARD: {WILDCARD: CopyEntry(message="Nós que agradecemos! Qualquer coisa, é só chamar. 💛")},
@@ -1228,8 +1670,95 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_MEMORY_ASK_WHAT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Desculpe, não entendi a que você está respondendo. Pode me dizer o que você gostaria?")},
     },
+    # A sacola na conversa (WP-12). Quantidade e total vêm do serviço da loja.
+    "CONCIERGE_CART_UPDATED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, sua sacola ficou assim:")},
+    },
+    "CONCIERGE_CART_REMOVED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pronto, tirei {item}. Sua sacola ficou assim:")},
+    },
+    "CONCIERGE_CART_ASK_QTY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quantas unidades de {item} você quer?")},
+    },
+    "CONCIERGE_COMPLAINT_HEARD": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sinto muito por isso. Já levei à equipe e sigo com você por aqui.")},
+    },
+    "CONCIERGE_CART_NEXT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Quer mais alguma coisa? Quando terminar, é só escrever “pode fechar”.")},
+    },
+    "CONCIERGE_CART_NO_BATCH_ON_DAY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não há fornada de {item} {day}.")},
+    },
+    "CONCIERGE_CART_NEXT_BATCH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="A próxima sai {day}.")},
+    },
+    "CONCIERGE_CART_FULFILLMENT_NOTED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Combinado: {how} {when}.")},
+    },
+    "CONCIERGE_CART_NOW": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Sua sacola de agora:")},
+    },
+    "CONCIERGE_NOT_IN_MENU": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Não encontrei “{part}” no cardápio de hoje. O que temos agora:")},
+    },
+    "CONCIERGE_LATE_REPLY": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Desculpe a demora para responder.")},
+    },
+    "CONCIERGE_CART_UNAVAILABLE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{item}: Indisponível.")},
+    },
+    "CONCIERGE_ALTERNATIVES": {
+        WILDCARD: {WILDCARD: CopyEntry(message="No lugar, posso oferecer {options}. Quer algum?")},
+    },
+    "CONCIERGE_CLOSE_ASK_DATE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para quando é o pedido? Hoje, amanhã ou outro dia (dia/mês)?")},
+    },
+    "CONCIERGE_CLOSE_ASK_FULFILLMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Você vai retirar aqui na loja ou prefere entrega?")},
+    },
+    "CONCIERGE_CLOSE_ASK_SLOT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual horário de retirada fica melhor? {options}")},
+    },
+    "CONCIERGE_CLOSE_NO_SLOTS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Nesse dia não há mais horário de retirada. Para qual outro dia?")},
+    },
+    "CONCIERGE_CLOSE_SLOT_REFUSED": {
+        WILDCARD: {WILDCARD: CopyEntry(message="{slot} não está disponível: {reason}.")},
+    },
+    "CONCIERGE_CLOSE_NO_PICKUP_AT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Às {time} ainda não há retirada nesse dia.")},
+    },
+    "CONCIERGE_CLOSE_NO_DELIVERY_AT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Às {time} não entregamos nesse dia. As janelas de entrega são: {windows}. Qual delas fica melhor?")},
+    },
+    "CONCIERGE_CLOSE_ASK_ADDRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Qual é o endereço da entrega? Pode enviar a localização pelo WhatsApp ou escrever rua, número, bairro e CEP.")},
+    },
+    "CONCIERGE_CLOSE_ASK_PAYMENT": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Como você prefere pagar? {options}")},
+    },
+    "CONCIERGE_CLOSE_NO_CASH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Pelo WhatsApp não recebemos em dinheiro. Como você prefere pagar? {options}")},
+    },
+    "CONCIERGE_CLOSE_GAVE_UP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Tudo bem, fica sem pedido por agora. Os itens continuam na sacola, se mudar de ideia.")},
+    },
+    "CONCIERGE_CLOSE_CONFIRM_CODE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para registrar o pedido, responda: confirmo {code}")},
+    },
     "CONCIERGE_MEMORY_ASK_WHICH": {
         WILDCARD: {WILDCARD: CopyEntry(message="Qual deles? {options}")},
+    },
+    # Duas ou mais coisas pedidas, cada uma com mais de um item: uma linha por coisa, na
+    # ordem do pedido (#3597). {asked} é o que o cliente escreveu; {options}, "“A” ou “B”".
+    "CONCIERGE_MEMORY_ASK_WHICH_EACH": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Para “{asked}”: {options}?")},
+    },
+    "CONCIERGE_MEMORY_STILL_HERE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim!")},
+    },
+    "CONCIERGE_MEMORY_STILL_HERE_HELP": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Estou aqui, sim! Em que posso ajudar?")},
     },
     "CONCIERGE_MEMORY_ASK_PRODUCT": {
         WILDCARD: {WILDCARD: CopyEntry(message="De qual produto você está falando?")},
@@ -1309,6 +1838,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             message="Sobre o pedido, a equipe fecha com você por aqui.",
         )},
     },
+    # "Quanto custa a entrega?" (coordenação, 20/11/2026): a taxa depende do endereço. Sem o
+    # "Sim." da pergunta frequente, que responde a outra pergunta ("vocês fazem entrega?").
+    "CONCIERGE_DELIVERY_FEE_ASK_ADDRESS": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="A taxa de entrega depende do endereço. Me manda o endereço completo com número que eu calculo.",
+        )},
+    },
     "CONCIERGE_PARTS_NOT_FOUND": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Sobre “{part}”, não tenho essa informação aqui.",
@@ -1334,6 +1870,58 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CONCIERGE_PARTS_REPEAT_ASK": {
         WILDCARD: {WILDCARD: CopyEntry(
             message="Desculpe, não encontrei a sua pergunta aqui. Pode me mandar de novo?",
+        )},
+    },
+    # Vou verificar (WP-05, bloco 4 do V2): a parte sem fato vira pergunta à equipe no sino do
+    # Gestor, e a resposta volta ao cliente pela Concierge. {minutes} é o primeiro prazo do canal
+    # (ChannelConfig.confirmation.concierge_verify_nudge_minutes); {when} sai do calendário da casa
+    # ("amanhã às 7h10", "seg. 24/11 às 7h10").
+    "CONCIERGE_VERIFY_ASKED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já perguntei para a equipe e te respondo por aqui em até {minutes} minutos.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ASKED_LATER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Já deixei a pergunta com a equipe e te respondo por aqui até {when}.",
+        )},
+    },
+    "CONCIERGE_VERIFY_JOINED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Juntei isso à pergunta que já fiz para a equipe e te respondo tudo junto por aqui.",
+        )},
+    },
+    # Fora da janela de 24 horas do WhatsApp a resposta da equipe não chegaria: nada é prometido.
+    "CONCIERGE_VERIFY_NO_PROMISE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe, que volta {when}. Se puder, me escreva de novo nesse horário.",
+        )},
+    },
+    "CONCIERGE_VERIFY_NO_PROMISE_UNKNOWN": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Quem confirma isso é a equipe. Se puder, me escreva de novo no horário de atendimento da casa.",
+        )},
+    },
+    "CONCIERGE_VERIFY_WAITING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou esperando a equipe confirmar sobre “{part}”. Assim que chegar, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_ANSWER": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="A equipe confirmou: {answer}",
+        )},
+    },
+    # Os dois prazos sem resposta da equipe (WP-06): o aviso de uma vez só, e a conversa
+    # que passa para a equipe (também quando alguém assume pelo cartão).
+    "CONCIERGE_VERIFY_NUDGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Ainda estou confirmando com a equipe. Assim que eu tiver a resposta, te aviso por aqui.",
+        )},
+    },
+    "CONCIERGE_VERIFY_HANDOFF": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Alguém da equipe continua com você por aqui.",
         )},
     },
     "CONCIERGE_IDENTITY": {
@@ -1426,22 +2014,29 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Continuar")},
     },
     "LOGIN_AUTH_CONFIRMED": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Bem-vindo de volta", message="Tudo pronto. Levando você para a loja…")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Que bom te ver de novo", message="Tudo pronto. Levando você para a loja…")},
     },
     "DEVICE_TRUST_REDIRECTING": {
         WILDCARD: {WILDCARD: CopyEntry(message="Aparelho reconhecido. Entrando automaticamente…")},
     },
+    # ``{period}`` vira o prazo da confiança (DEVICE_TRUST_TTL_DAYS do doorman,
+    # "6 meses" com 180 dias). O prazo conta do ÚLTIMO uso, não da data em que o
+    # aparelho foi salvo: cada entrada o renova. A copy dizia "30 dias" fixos
+    # enquanto o doorman guardava 180 que se renovam (beta 06/11, SMS-09).
     "DEVICE_TRUST_PROMPT": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho?", message="Use só em um aparelho seu. Por 30 dias, você entra sem código.")},
+        WILDCARD: {WILDCARD: CopyEntry(
+            title="Salvar este aparelho?",
+            message="Use só em um aparelho seu. Você entra sem código enquanto voltar dentro de {period}.",
+        )},
     },
     "DEVICE_TRUST_CTA": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Salvar por 30 dias")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Salvar este aparelho")},
     },
     "DEVICE_TRUST_SKIP_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Agora não")},
     },
     "DEVICE_TRUST_SAVED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho salvo por 30 dias.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Aparelho salvo. Cada entrada renova o prazo de {period}.")},
     },
 
     # ── History / account empty states ────────────────────────────
@@ -1578,7 +2173,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ── Kintsugi ──────────────────────────────────────────────────
     # ── Rating ────────────────────────────────────────────────────
     "TRACKING_RATE_THANKS": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Obrigado!", message="Valorizamos muito seu retorno.")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Obrigada!", message="Valorizamos muito seu retorno.")},
     },
     # Agradecimento caloroso quando a nota é positiva (>= 4). Abaixo disso o
     # sheet usa o TRACKING_RATE_THANKS acima (sincero, mas sóbrio).
@@ -1623,16 +2218,23 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
     # ── Kintsugi ──────────────────────────────────────────────────
     "KINTSUGI_CANCEL_REFUSED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido já está sendo preparado. Fale conosco para ajustar.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="O preparo acabou de começar, e o pedido não pode mais ser cancelado. Se algo não está certo, fale com o responsável.")},
     },
     "KINTSUGI_SHORTAGE_GENERIC": {
         WILDCARD: {WILDCARD: CopyEntry(title="Ficou indisponível enquanto você escolhia.")},
     },
+    # A frase da folha quando nada sobrou: o título já disse "indisponível", e esta
+    # leva direto à lista, com o nome do item (#2907). ``{name}`` é o produto; "de"
+    # sem artigo, porque a loja não sabe o gênero de cada nome (da Tabatière, do Croissant).
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar de {name}?")},
     },
+    # O item acabou e há próximo lote: a folha diz quando ele fica disponível, e o
+    # botão é "Reservar" (dono, 24/11/2026, KISS). ``{when}`` é o pedaço da promessa
+    # do próximo lote: "a partir das 15h", "amanhã, quarta, a partir das 7h". Sobre o
+    # produto a loja fala de disponibilidade, nunca de prontidão.
     "KINTSUGI_PLANNED_OFFER": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Sai fresquinho no próximo lote. Quer garantir o seu?")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Disponível {when}")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────
@@ -1725,14 +2327,77 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
 
 # ── Resolver ───────────────────────────────────────────────────────────
 
-_DB_CACHE: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+#: A copy é lida em todo processo (``web-storefront``, ``web-operator``, worker),
+#: mas editada só no Admin, que mora em outro processo. Por isso o memo local de
+#: cada processo obedece a duas coisas:
+#:
+#: - uma **versão** no cache compartilhado do Django (Valkey em produção), trocada
+#:   a cada gravação (:func:`invalidate_cache`). Quem lê confere a versão uma vez
+#:   por request (``request_memo``) e, se mudou, relê o banco;
+#: - um **teto de idade** (:data:`LOCAL_MEMO_TTL`). Se o cache compartilhado cair,
+#:   ou alguém gravar por fora do ORM, o memo vence sozinho: copy velha dura no
+#:   máximo isso, nunca até o próximo deploy.
+COPY_VERSION_CACHE_KEY = "shopman:omotenashi_copy:version"
+LOCAL_MEMO_TTL = 60.0  # segundos
+
+#: A versão não pôde ser lida (cache compartilhado fora do ar).
+_UNREACHABLE = object()
+
+
+class _ProcessMemo:
+    """O memo de copy deste processo: as linhas ativas, de qual versão e de quando."""
+
+    __slots__ = ("rows", "version", "loaded_at")
+
+    def __init__(self) -> None:
+        self.rows: dict[str, dict[tuple[str, str], CopyEntry]] | None = None
+        self.version: object = None
+        self.loaded_at = 0.0
+
+    def is_fresh(self, version: object, now: float) -> bool:
+        if self.rows is None or now - self.loaded_at >= LOCAL_MEMO_TTL:
+            return False
+        # Sem versão legível, só o teto de idade decide.
+        return version is _UNREACHABLE or version == self.version
+
+    def clear(self) -> None:
+        self.rows = None
+
+
+_memo = _ProcessMemo()
+
+
+def _read_shared_version() -> object:
+    from django.core.cache import cache
+
+    try:
+        return cache.get(COPY_VERSION_CACHE_KEY)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: cache compartilhado ilegível; a copy editada no Admin "
+            "pode levar até %ss para chegar a este processo",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+        return _UNREACHABLE
+
+
+def _shared_version() -> object:
+    """A versão da copy no cache compartilhado, lida uma vez por request."""
+    from shopman.shop.request_memo import memoized
+
+    return memoized(COPY_VERSION_CACHE_KEY, _read_shared_version)
 
 
 def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
-    """Load all active DB overrides into memory. Lazily built, invalidated on save."""
-    global _DB_CACHE
-    if _DB_CACHE is not None:
-        return _DB_CACHE
+    """As linhas ativas do banco, do memo do processo enquanto ele valer."""
+    import time
+
+    memo = _memo
+    version = _shared_version()
+    now = time.monotonic()
+    if memo.is_fresh(version, now):
+        return memo.rows
 
     cache: dict[str, dict[tuple[str, str], CopyEntry]] = {}
     try:
@@ -1744,18 +2409,56 @@ def _load_db_cache() -> dict[str, dict[tuple[str, str], CopyEntry]]:
                 title=row.title or "",
                 message=row.message or "",
             )
-    except Exception:
+    except Exception:  # silêncio-deliberado: sem tabela (antes do migrate) ou sem banco, vale o padrão do código e o teto relê
         # Model not migrated yet, or DB not reachable — fall back to defaults.
         logger.debug("omotenashi.copy: DB cache load failed, using defaults", exc_info=True)
 
-    _DB_CACHE = cache
+    memo.rows = cache
+    memo.version = version
+    memo.loaded_at = now
     return cache
 
 
+def _publish_new_version() -> None:
+    import uuid
+
+    from django.core.cache import cache
+
+    from shopman.shop.request_memo import forget
+
+    _memo.clear()
+    forget(COPY_VERSION_CACHE_KEY)
+    try:
+        # Ficha nova, não contador: uma chave despejada e recriada nunca repete
+        # uma versão que algum processo ainda guarda.
+        cache.set(COPY_VERSION_CACHE_KEY, uuid.uuid4().hex, timeout=None)
+    except Exception:
+        logger.error(
+            "omotenashi.copy: não consegui publicar a versão nova da copy; os outros "
+            "processos só a veem quando o memo deles vencer (até %ss)",
+            int(LOCAL_MEMO_TTL),
+            exc_info=True,
+        )
+
+
 def invalidate_cache() -> None:
-    """Invalidate the in-process DB cache. Hooked on model save/delete."""
-    global _DB_CACHE
-    _DB_CACHE = None
+    """Faz todo processo reler a copy do banco. Chame depois de gravar ``OmotenashiCopy``.
+
+    Ligado ao ``post_save``/``post_delete`` do modelo; quem grava sem sinal
+    (``QuerySet.update()``, ação em lote do Admin) chama direto. Este processo
+    esquece o memo na hora; a versão compartilhada muda quando a transação
+    confirma, para que nenhum outro processo releia o banco antes do commit e
+    guarde o texto velho sob a versão nova.
+    """
+    from django.db import transaction
+
+    _memo.clear()
+    if transaction.get_connection().in_atomic_block:
+        transaction.on_commit(_publish_new_version)
+    else:
+        # Fora de transação não há commit a esperar (e ``on_commit`` abriria
+        # conexão só para descobrir isso).
+        _publish_new_version()
 
 
 def resolve_copy(

@@ -1,4 +1,12 @@
 import type { Action } from "~/generated/ordersContract";
+import {
+  COURIER_RIDE_PATH,
+  courierRideAction,
+  courierRideInputs,
+  courierRideResource,
+  type CourierRideCall,
+  type CourierRideResult,
+} from "~/presentation/courierRide";
 
 type Intention = {
   key: string;
@@ -6,7 +14,46 @@ type Intention = {
   body: Record<string, unknown>;
   method: "POST" | "PATCH";
 };
-type Result = { outcome?: string; detail?: string; count?: number };
+type Result = { outcome?: string; detail?: string; count?: number } & Omit<
+  CourierRideResult,
+  "outcome" | "detail"
+>;
+
+/** O que a incerteza é, dito pelo ato: "se o cancelamento foi gravado". */
+const ORDER_OPERATION_SUBJECT: Record<string, string> = {
+  cancel: "o cancelamento foi gravado",
+  return: "a devolução foi gravada",
+  "no-show": "o pedido foi encerrado como não retirado",
+  "refund-retry": "o estorno foi pedido de novo",
+  refund: "o estorno foi pedido",
+  reject: "a recusa foi gravada",
+  confirm: "o aceite foi gravado",
+  advance: "o avanço do pedido foi gravado",
+  notes: "a nota foi gravada",
+  comment: "o comentário foi gravado",
+  assign: "a atribuição foi gravada",
+  unassign: "a liberação do pedido foi gravada",
+  "settle-delivery-cash": "o recebimento foi gravado",
+  "resend-payment-link": "o reenvio do link foi gravado",
+  "requeue-fiscal": "o reprocessamento da NFC-e foi gravado",
+  "undo-handoff": "o desfazer da saída foi gravado",
+  "undo-ready": "o desfazer do pronto foi gravado",
+  "courier-close-here": "a corrida foi encerrada aqui",
+  "courier-custody": "o troco e a maquininha foram separados de novo",
+};
+
+/**
+ * A resposta não voltou e o recibo ainda não sabe: diga O QUE ficou incerto e o
+ * que fazer. A frase antiga ("Resultado ainda desconhecido. Verifique esta
+ * intenção…") não dizia nem uma coisa nem outra (dono, 07/11/2026).
+ */
+export function uncertainOutcomeMessage(
+  subject = "a alteração foi gravada",
+  where = "a tela",
+  slow = false,
+): string {
+  return `${slow ? "O sistema demorou a responder. " : ""}Não deu para confirmar se ${subject}. Atualize ${where} para ver o estado atual antes de tentar de novo.`;
+}
 
 /** Session-only, person-bound intentions. Unknown results never create a new key. */
 export function useOrderIntention() {
@@ -77,12 +124,22 @@ export function useOrderIntention() {
       | undefined,
     inputs: Record<string, unknown>,
     approval?: Record<string, string>,
+    uncertainty?: { subject?: string; where?: string },
   ) {
     const owner = session.value?.operator?.id;
     if (!owner) throw new Error("Identifique-se antes de continuar.");
     let intent = pending.value[resource];
     if (!intent) {
-      if (!action?.enabled || !action.payload_schema.base_revision) {
+      // O que a tela leu: a revisão do pedido, ou a de cada pedido da corrida
+      // (`base_revisions`, na chamada de uma corrida para vários).
+      const observed =
+        action?.payload_schema.base_revision ||
+        Object.keys(
+          (action?.payload_schema.base_revisions as
+            | Record<string, unknown>
+            | undefined) ?? {},
+        ).length > 0;
+      if (!action?.enabled || !observed) {
         throw new Error(
           action?.reason || "Atualize os dados antes de continuar.",
         );
@@ -118,7 +175,7 @@ export function useOrderIntention() {
         "Há uma gravação anterior sem resultado confirmado. Seu novo rascunho foi preservado.",
       );
     }
-    const finish = (result: Result) => {
+    const finish = (result: Result, slow = false) => {
       if (!samePerson())
         throw new Error(
           "A identificação mudou. Confira os dados antes de continuar.",
@@ -129,7 +186,7 @@ export function useOrderIntention() {
       }
       throw new Error(
         result.detail ||
-          "Resultado ainda desconhecido. Verifique esta intenção antes de uma nova ação.",
+          uncertainOutcomeMessage(uncertainty?.subject, uncertainty?.where, slow),
       );
     };
     try {
@@ -173,8 +230,12 @@ export function useOrderIntention() {
         throw error;
       }
       // A resposta pode ter se perdido depois do commit. Consultar não executa efeitos.
+      // É o caminho de toda falha SEM a declaração do servidor: 5xx do BFF (o
+      // Django não respondeu em 25 s: ``upstream_timeout``; a borda respondeu no
+      // lugar dele: ``upstream_unavailable``) ou queda de rede.
+      const slow = httpErrorCode(error) === "upstream_timeout";
       const result = await readReceipt(resource, path, current);
-      return finish(result);
+      return finish(result, slow);
     }
   }
   async function checkPath(resource: string, path: string) {
@@ -190,6 +251,26 @@ export function useOrderIntention() {
       Reflect.deleteProperty(pending.value, resource);
     return result;
   }
+  /** A ação de UM pedido, devolvendo o recibo do servidor (o estorno lê dele o resultado). */
+  async function executeReceipt(
+    ref_: string,
+    operation: string,
+    action: Action | undefined,
+    inputs: Record<string, unknown>,
+    approval?: Record<string, string>,
+  ) {
+    return await executePath(
+      `${ref_}:${operation}`,
+      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`,
+      action,
+      inputs,
+      approval,
+      {
+        subject: ORDER_OPERATION_SUBJECT[operation] ?? "a ação foi gravada",
+        where: "o pedido",
+      },
+    );
+  }
   async function execute(
     ref_: string,
     operation: string,
@@ -197,18 +278,36 @@ export function useOrderIntention() {
     inputs: Record<string, unknown>,
     approval?: Record<string, string>,
   ) {
-    await executePath(
-      `${ref_}:${operation}`,
-      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/${encodeURIComponent(operation)}/`,
-      action,
-      inputs,
-      approval,
-    );
+    await executeReceipt(ref_, operation, action, inputs, approval);
     return true;
+  }
+  /**
+   * Uma corrida da TaOn para vários pedidos (`courier-ride`), pela mesma
+   * intenção das outras ações: quem a tela leu, a revisão de CADA pedido e uma
+   * chave por corrida, guardada até a resposta definitiva (o toque repetido
+   * depois de rede caída reenvia a mesma chave e recebe a mesma corrida).
+   * `action` é a ação `courier-ride` da projeção. Devolve o que o servidor
+   * gravou: o número e a letra da corrida, ou `already_called` quando ela já
+   * existia com estes mesmos pedidos.
+   */
+  async function executeRide(
+    action: Parameters<typeof courierRideAction>[0],
+    call: CourierRideCall,
+  ): Promise<CourierRideResult> {
+    return await executePath(
+      courierRideResource(call.refs),
+      COURIER_RIDE_PATH,
+      courierRideAction(action, call.refs),
+      courierRideInputs(call),
+      undefined,
+      { subject: "a corrida foi chamada", where: "os pedidos" },
+    );
   }
   return {
     execute,
+    executeReceipt,
     executePath,
+    executeRide,
     checkPath,
     hasPending: computed(() => Object.keys(pending.value).length > 0),
   };

@@ -30,12 +30,14 @@ import type {
   SavedAddressProjection,
   StructuredAddressProjection,
 } from "~/types/pos";
+import type { ManagerApproval } from "~/composables/usePosCashSession";
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import { exceedsPaymentConstraint, pixProviderTestConstraint } from "~/presentation/paymentConstraints";
 import {
   cashNotesQ as contractCashNotesQ,
   cashNoteLabel,
   collectionsForFulfillment,
+  overPlanSummary,
   orderPaymentGuidance,
   paymentCollectionLabel,
   injectableMethods as toInjectableMethods,
@@ -44,14 +46,16 @@ import {
   firedPreorderBlocksPendingCharge,
   machineTenderLines,
   methodShortcuts,
+  isImplausibleChange,
   nonCashExcessQ,
   paymentConfirmView,
   paymentIcon,
   SPLIT_PRESETS,
+  splitBaseRemainingQ,
   splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
-import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
+import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty, unfiredCount } from "~/presentation/kitchen";
 import { lineQtyLabel, lineUnits } from "~/presentation/weighed";
 import { deliveryFeeWaiverShort } from "~/presentation/deliveryFeeWaiver";
 import {
@@ -70,9 +74,25 @@ import {
   receiptSaveSummary,
 } from "~/presentation/receiptContact";
 import { resolveWindowLabel, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict } from "~/presentation/schedule";
+import type { PosBalanceCharge } from "~/presentation/balanceCharge";
 import { toast } from "vue-sonner";
 
 const props = defineProps<{
+  /**
+   * RECEBER O SALDO de uma encomenda ("Receber e entregar", EXCELENCIA-PDV WP-E5).
+   * Gesto de dinheiro tem UMA tela (dono, 16/11/2026): é esta mesma, com o saldo
+   * que o servidor apurou como total, as mesmas formas, cédulas, Exato, divisão e
+   * conferência do troco alto. Some o que é da VENDA (desconto, nota, itens da
+   * comanda); a coluna do pedido mostra a encomenda. Ausente = a venda.
+   */
+  balance?: PosBalanceCharge | null;
+  /**
+   * A comanda pode mandar à cozinha AGORA (a Action `fire_tab` da projeção): a linha
+   * da cozinha abre e oferece "Enviar agora" para o que ainda não foi.
+   */
+  canFireNow?: boolean;
+  /** Para onde vai à cozinha cada SKU ao finalizar (`kitchenBoundSkus`). Ausente = todos. */
+  kitchenStations?: Record<string, string>;
   salesMode?: "counter" | "order";
   tabDisplay: string;
   items: POSCartItem[];
@@ -87,6 +107,8 @@ const props = defineProps<{
   customerRef?: string;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** A última busca de cliente falhou: a frase do porquê ("Não consegui buscar…"). */
+  searchError?: string;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
   /** Rascunho dos padrões do cliente NOVO — mora no shell, o modal só lê. */
@@ -101,9 +123,18 @@ const props = defineProps<{
   discountType: "percent" | "fixed";
   discountValue: string;
   discountReason: string;
-  managerUsername: string;
-  managerPin: string;
+  /**
+   * O gerente assinou O QUE ESTÁ NA TELA (o retrato de `usePosSale`). Muda o
+   * desconto, um item ou a forma, e isto volta a `false` sozinho: a tela pede
+   * o gerente de novo, com o valor novo (P0-1). O PIN não passa por aqui.
+   */
+  managerApproved: boolean;
+  /** Quem assinou (nome da lista de gerentes): a venda autorizada diz quem a
+   *  autorizou (#2666). Vazio enquanto ninguém assinou este retrato. */
+  managerApprovedBy?: string;
   managerApprovalError: string;
+  /** A autorização do gerente (PIN ou crachá) está sendo conferida no servidor (`checkManager`). */
+  managerCheckBusy?: boolean;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
   /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
@@ -135,6 +166,8 @@ const props = defineProps<{
   customerEmail: string;
   deliveryAddress: string;
   deliveryAddressStructured: StructuredAddressProjection;
+  /** O endereço acabou de ser tirado da entrega e ainda dá para devolver. */
+  canRestoreAddress?: boolean;
   deliveryStreetNumber: string;
   deliveryNeighborhood: string;
   deliveryComplement: string;
@@ -185,20 +218,33 @@ const props = defineProps<{
   reviewFailed?: boolean;
   /** Por que a revisão falhou, dito pelo servidor ou pela rede. */
   reviewFailureReason?: string;
+  /**
+   * A venda não segue AGORA: sem rede, com a venda sem conexão desligada na
+   * loja. Validar fica travado com esta razão escrita abaixo.
+   */
+  saleBlockedReason?: string;
 }>();
 
 const emit = defineEmits<{
+  /** Mandar à cozinha agora o que ainda não foi (o mesmo `fireTab` da comanda). */
+  fireNow: [];
   "update:discountType": ["percent" | "fixed"];
   "update:discountValue": [string];
   "update:discountReason": [string];
-  "update:managerUsername": [string];
-  "update:managerPin": [string];
   "update:fulfillmentType": ["pickup" | "delivery"];
   "update:fulfillmentConfirmed": [boolean];
   "update:paymentCollection": ["terminal" | "on_delivery"];
   addTender: [string];
   removeTender: [number];
   setSplitCount: [number];
+  /**
+   * Confere o gerente ANTES de seguir (beta test de 05/11/2026), pelo PIN
+   * (`{username, pin}`) ou pelo crachá (`{badge}`): o diálogo só fecha com `done(true)`. Recusado, ele fica aberto com o erro.
+   * Quem guarda a assinatura (na memória, presa ao retrato) é o `usePosSale`.
+   */
+  checkManager: [ManagerApproval, (ok: boolean) => void];
+  /** O diálogo do gerente fechou sem assinar: o erro velho não volta na próxima abertura. */
+  managerAuthDismissed: [];
   selectTender: [number];
   /** Numpad edits the SELECTED tender; decimal entry (reais first, comma → centavos). */
   tenderDigit: [string];
@@ -250,6 +296,10 @@ const emit = defineEmits<{
   /** Um padrão do cliente virado no modal: vale nesta venda, na hora. */
   applyPreference: [key: "cpf_na_nota" | "email_receipt", value: boolean];
   pickSavedAddress: [SavedAddressProjection];
+  /** Tira o endereço da entrega em edição (o cadastro do cliente não muda). */
+  clearAddress: [];
+  /** Desfaz o tirar: o endereço volta para a entrega. */
+  restoreAddress: [];
 }>();
 
 // TOTAL QUE AINDA PODE MUDAR NÃO APARECE COMO TOTAL (regra do dono). Sem a
@@ -262,14 +312,32 @@ const emit = defineEmits<{
 // Nota fiscal é SECUNDÁRIA: mora na coluna "Nota e comprovante" (não é botãozão
 // no grid) e só aparece quando a loja ofereceu NFC-e no PDV E o adapter fiscal
 // está configurado.
-const supportsFiscalDocument = computed(() => !!props.checkoutContract?.capabilities?.supports_fiscal_document);
+// No saldo da encomenda a nota já foi decidida na venda: a seção não existe.
+const supportsFiscalDocument = computed(
+  () => !props.balance && !!props.checkoutContract?.capabilities?.supports_fiscal_document,
+);
 const savedAddresses = computed(() => props.customerLookup?.saved_addresses || []);
-const needsReview = computed(() => !props.review);
-const approvalBlocking = computed(() =>
-  !!props.review?.requires_manager_approval
-  && (!props.managerUsername.trim() || !props.managerPin.trim()),
+// O total da tela é o do servidor ou nenhum: a review da venda, ou o saldo que a
+// encomenda já traz apurado (no saldo não há o que revisar).
+const totalConfirmed = computed(() => !!props.balance || !!props.review);
+const totalDisplay = computed(() => props.balance?.amountDisplay ?? props.review?.total_display ?? "");
+const needsReview = computed(() => !totalConfirmed.value);
+const approvalBlocking = computed(() => !!props.review?.requires_manager_approval && !props.managerApproved);
+// ENCOMENDA ACIMA DO PLANO (D-041, WP-E2): bloqueia e só o gerente libera, vendo
+// os dois números. Os números são do servidor (`review.preorder_over_plan`).
+const overPlanLines = computed(() =>
+  props.review?.approval_reasons?.includes("preorder_over_plan") ? (props.review.preorder_over_plan ?? []) : [],
+);
+const overPlanText = computed(() => overPlanSummary(overPlanLines.value));
+// No AVISO, os outros motivos seguem a copy do diálogo (`managerAuthReason`) e o do
+// plano fala pelos números, com a frase própria. O diálogo recebe todos: lá o do
+// plano tem nome na descrição e os números no contexto (#2676).
+const otherApprovalReasons = computed(() =>
+  (props.review?.approval_reasons ?? []).filter((reason) => reason !== "preorder_over_plan"),
 );
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
+// O desconto MANUAL (linha + venda) que o teto mede: é o número que o gerente assina.
+const manualDiscountQ = computed(() => (props.review?.line_discount_q || 0) + (props.review?.order_discount_q || 0));
 // AVISOS DA REVIEW QUE ESTA TELA NÃO CONSEGUE RENOVAR.
 //
 // A review só é refeita quando muda o CARRINHO (item, desconto, entrega). Mexer
@@ -298,6 +366,9 @@ const STALE_BY_CONSTRUCTION = new Set([
 // sobre o `paymentTotalQ` — com a review em trânsito, o total 0 fazia toda linha
 // digital virar "excedente" por meio segundo.
 const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
+// O troco grande que o operador JÁ conferiu, pelo valor: mudar o recebido pede a
+// conferência de novo (ver `isImplausibleChange`).
+const confirmedBigChangeQ = ref<number | null>(null);
 // Agendado sem cliente: o servidor recusa a encomenda anônima
 // (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
 // A REGRA é a mesma do chip que pulsa na barra do topo, e por isso vem da
@@ -326,9 +397,28 @@ const reviewWarnings = computed(() => {
       // bloqueio do Validar.
       && w.code !== "delivery_address_incomplete"
       && w.code !== "below_delivery_minimum"
-      && w.code !== "delivery_out_of_area",
+      && w.code !== "delivery_out_of_area"
+      // RESSALVA DE ITEM (estoque, cardápio, lote) é terciária: não vira caixa, vira
+      // sinal no item e o chip "N ressalvas" (dono, 03/11/2026: "vai virar ruído").
+      && !REMARK_CODES.has(w.code),
   );
   return fromServer;
+});
+// As ressalvas de item: a venda vale, é para conferir depois. Um chip só, com a frase
+// no toque, e o ⚠ no item da conta (pelo `sku` que a review manda).
+const REMARK_CODES = new Set(["item_low_stock", "item_not_ready"]);
+// A linha acima do plano já fala no bloqueio do Validar, com os dois números:
+// a ressalva dela não se repete no chip (nada é dito duas vezes na mesma tela).
+const remarks = computed(() => {
+  const overPlanSkus = new Set(overPlanLines.value.map((line) => line.sku));
+  return (props.review?.warnings ?? []).filter(
+    (w) => REMARK_CODES.has(w.code) && !(w.code === "item_low_stock" && w.sku && overPlanSkus.has(w.sku)),
+  );
+});
+const remarkBySku = computed(() => {
+  const map = new Map<string, string>();
+  for (const remark of remarks.value) if (remark.sku) map.set(remark.sku, remark.message);
+  return map;
 });
 
 // On-demand sale-data drawers (Odoo-style: customer/fulfillment/discount are
@@ -380,7 +470,14 @@ const digitKeys = ["1", "2", "3", "4", "5", "6", "7", "8", "9"];
 // com as notas BR como fallback; cada toque SOMA na linha de dinheiro
 // selecionada (o primeiro toque sobre valor automático substitui).
 const cashNotesQ = computed(() => contractCashNotesQ(props.checkoutContract));
-const cashSelected = computed(() => props.selectedTenderMethod === "cash");
+// Na retirada não se conta nota nenhuma agora: as cédulas são de quem recebe já.
+const cashSelected = computed(() => props.selectedTenderMethod === "cash" && props.paymentCollection !== "on_delivery");
+/** O rótulo do total: o que se cobra agora, ou o que se recebe na retirada/entrega. */
+const totalLabel = computed(() => {
+  if (props.balance) return "A receber";
+  if (props.paymentCollection !== "on_delivery") return "Total a cobrar";
+  return props.fulfillmentType === "delivery" ? "A receber na entrega" : "A receber na retirada";
+});
 
 // De onde a taxa saiu, em português de balcão. Quem cobra é a loja; a frase
 // existe para o operador saber DIZER isso ao cliente, em vez de repetir um
@@ -485,8 +582,11 @@ function setReceiptChannel(ref: string, on: boolean) {
 // operator needs right now, so the big number stays the (stable) sale total.
 const payState = computed<"pending" | "idle" | "short" | "change" | "ready">(() => {
   // Troco, restante e "coberto" são contas sobre o total: sem ele, nenhum vale.
-  if (!props.review) return "pending";
-  if (props.paymentChangeQ > 0) return "change";
+  if (!totalConfirmed.value) return "pending";
+  // Na retirada (ou na entrega) nada é recebido agora: não há troco nesta tela.
+  // O troco de quem leva mora no "Troco para quanto?" (beta test de 05/11/2026:
+  // "TROCO R$ 23,00" numa encomenda que só se paga na retirada).
+  if (props.paymentChangeQ > 0) return props.paymentCollection === "on_delivery" ? "ready" : "change";
   if (props.paymentCovered) return "ready";
   if (props.paymentTenders.length) return "short";
   return "idle";
@@ -526,8 +626,13 @@ const splitBadge = computed(() => (
 ));
 /** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
 function splitShareLabel(n: number): string {
-  if (!props.review) return "calculando";
-  return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
+  if (!totalConfirmed.value) return "calculando";
+  return formatBRL(splitShareQ(
+    props.paymentTotalQ,
+    n,
+    props.splitPaidCount,
+    splitBaseRemainingQ(props.paymentTenders, props.paymentTotalQ, props.paymentRemainingQ),
+  ));
 }
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
@@ -541,6 +646,10 @@ const summaryLines = computed(() =>
     // reaproveitar o nó errado ao reordenar o resumo.
     lineId: item.line_id,
     name: item.name,
+    /** A ressalva do item (estoque, cardápio, lote), se a review mandou uma. */
+    remark: remarkBySku.value.get(item.sku) || "",
+    /** Já está na cozinha (o ícone cheio) ou vai ao finalizar (vazado). */
+    fired: Boolean(item.fired),
     qty: item.qty,
     qtyLabel: lineQtyLabel(item),
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -579,7 +688,11 @@ const kitchenWaitsPayment = computed(() =>
   && chargeWaitsForProvider({ collection: props.paymentCollection, methods: tenderMethods.value }),
 );
 const kitchenNote = computed(() =>
-  kitchenHandoffNote(props.items, { deferred: kitchenDeferred.value, waitsPayment: kitchenWaitsPayment.value }),
+  kitchenHandoffNote(props.items, {
+    deferred: kitchenDeferred.value,
+    waitsPayment: kitchenWaitsPayment.value,
+    goesToKitchen: props.kitchenStations ? (item) => Boolean(props.kitchenStations?.[item.sku]) : undefined,
+  }),
 );
 
 // Payment by injection: methods become "add a tender" buttons; the operator
@@ -599,10 +712,13 @@ const labelledMethods = computed(() =>
 // forma é o gesto de TODA venda; era o único do checkout que exigia o mouse.
 const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, labelledMethods.value)));
+// Encomenda de outro dia não oferece "Na retirada" (D-041): é a mesma régua da
+// cozinha que espera a data (`kitchenDeferred`).
 const deliveryCollections = computed(() => collectionsForFulfillment(
   props.paymentCollections,
   props.fulfillmentType,
   props.salesMode,
+  kitchenDeferred.value,
 ));
 const paymentGuidance = computed(() => orderPaymentGuidance({
   salesMode: props.salesMode,
@@ -629,7 +745,7 @@ const paymentGuidance = computed(() => orderPaymentGuidance({
 // "o operador lembrou o valor".
 //
 // ⚠️ Sai de cena inteiro quando o TEF da Stone entrar: ali o terminal recebe o
-// valor pela API e não há o que conferir. Ver docs/plans/WP-PAGAMENTO-LINK-E-TEF.md.
+// valor pela API e não há o que conferir. Ver docs/plans/completed/WP-PAGAMENTO-LINK-E-TEF.md.
 const machineTenders = computed(() => machineTenderLines(tenderLines.value));
 // O Pix da venda MISTA entra no mesmo degrau (P1-7): sem provedor, quem atesta
 // que o dinheiro entrou é o operador, com o gesto "Recebi o Pix".
@@ -687,7 +803,14 @@ function onSplitKeydown(event: KeyboardEvent) {
   const n = splitCountFromKey(event.key);
   if (n === null) return;
   if (n === 0 ? !splitActive.value : hasLinkTender.value || hasPixProviderTestTender.value) return;
+  // A tecla é DESTE diálogo e morre aqui. Fechar o modal desmonta o diálogo
+  // antes de o evento chegar ao `window`, e o atalho global de pagamento
+  // (`globalKeysBlocked` consulta o DOM, que já não tem o diálogo) mandava o
+  // mesmo "2" para o valor da forma selecionada: Débito de R$ 12,00 virava
+  // R$ 2,00 (beta test de 05/11/2026).
   event.preventDefault();
+  event.stopPropagation();
+  event.stopImmediatePropagation();
   emit("setSplitCount", n);
   splitSheetOpen.value = false;
 }
@@ -725,9 +848,12 @@ function awaitingReviewReason(): string | undefined {
 function paymentMethodBlockedReason(ref: string): string | undefined {
   const awaiting = awaitingReviewReason();
   if (awaiting) return awaiting;
+  // No saldo da encomenda, o servidor diz quando o Pix não cobra (parte já paga,
+  // teto do Pix de testes): a forma fica apagada com a frase dele.
+  if (props.balance && ref === "pix" && props.balance.pixBlockedReason) return props.balance.pixBlockedReason;
   if (blockedForDelivery(ref)) {
     const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-    return `PIX Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
+    return `Pix Efí e pagamentos online precisam da confirmação automática antes da ${handoff}. Escolha o recebimento antecipado.`;
   }
   if (blockedByLink(ref)) return "O link de pagamento cobra a venda inteira";
   if (blockedByPixProviderTest(ref)) {
@@ -758,7 +884,9 @@ const ctaLabel = computed(() => {
   // (`onCta` → `managerAuthOpen = true`). Quem conclui é o gerente digitando o
   // PIN, que é, corretamente, o último passo — e só o último passo diz o verbo
   // do ato. Dizia "Autorizar e validar" e entregava uma terceira coisa.
-  return needsAuth.value ? "Pedir autorização" : "Validar";
+  if (needsAuth.value) return "Pedir autorização";
+  // No saldo da encomenda o botão diz o gesto inteiro: receber e entregar.
+  return props.balance ? "Receber e entregar" : "Validar";
 });
 // O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
 // a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
@@ -800,6 +928,7 @@ function returnToCart() {
   emit("back");
 }
 
+/** O saldo em Pix: tira as outras linhas e a divisão, e o Pix assume o valor inteiro. */
 // TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
 // sete portões; a tela apresenta a mesma recusa e o caminho para resolvê-la.
 //
@@ -811,11 +940,17 @@ const ctaBlock = computed<{
   action?: CheckoutAction;
   actions?: CheckoutAction[];
 } | null>(() => {
-  if (!props.items.length) {
+  if (!props.balance && !props.items.length) {
     return {
       message: "Comanda vazia.",
       hint: "Não há o que cobrar.",
       action: { label: "Voltar à comanda", run: () => { emit("back"); } },
+    };
+  }
+  if (props.saleBlockedReason) {
+    return {
+      message: props.saleBlockedReason,
+      hint: "Esta loja não vende sem conexão. Os itens ficam na comanda até a rede voltar.",
     };
   }
   if (props.reviewFailed) {
@@ -941,7 +1076,13 @@ const ctaBlock = computed<{
       action: { label: "Preencher", run: () => { focusByAriaLabel("E-mail que recebe a nota"); } },
     };
   }
-  if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  if (!props.paymentTenders.length) {
+    return {
+      message: onDelivery.value
+        ? `Escolha como o cliente vai pagar na ${props.fulfillmentType === "delivery" ? "entrega" : "retirada"}.`
+        : "Escolha a forma de pagamento.",
+    };
+  }
   // `preorder_fired_unpaid` — a gêmea. Encomenda que já está na cozinha não
   // valida com Pix ou link pendentes (encomenda cobra antes).
   if (firedPreorderBlocksPendingCharge({
@@ -992,6 +1133,14 @@ const ctaBlock = computed<{
   if (!props.paymentCovered) {
     return { message: `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para validar.` };
   }
+  if (isImplausibleChange(props.paymentChangeQ) && confirmedBigChangeQ.value !== props.paymentChangeQ) {
+    const changeQ = props.paymentChangeQ;
+    return {
+      message: `Troco de ${formatBRL(changeQ)}.`,
+      hint: "Confira o valor recebido: troco desse tamanho costuma ser um zero a mais.",
+      action: { label: "O troco está certo", run: () => { confirmedBigChangeQ.value = changeQ; } },
+    };
+  }
   return null;
 });
 // ── A FAIXA DE AVISOS ────────────────────────────────────────────────────────
@@ -1007,6 +1156,16 @@ const ctaBlock = computed<{
 // do valor — e rouba a largura das três colunas para isso.
 //
 // Nada é dito duas vezes na mesma tela.
+/** O que o gerente assina, fora a encomenda acima do plano (que tem a própria frase). */
+const approvalReasonText = computed(() => (otherApprovalReasons.value.length
+  ? managerAuthReason({
+    reasons: otherApprovalReasons.value,
+    thresholdQ: managerThresholdQ.value,
+    discountQ: manualDiscountQ.value,
+    houseAccountLimit: props.review?.house_account_limit,
+  })
+  : ""));
+
 type CheckoutNotice = {
   key: string;
   icon: string;
@@ -1025,7 +1184,7 @@ function noticeActions(note: CheckoutNotice): CheckoutAction[] {
 }
 
 // Saldo na RETIRADA se recebe no próprio PDV: Encomendas → "Receber e
-// entregar" (`PosPreorderHandOverDialog`). O aviso dizia "registre no Gestor",
+// entregar", que abre esta mesma tela com o saldo (`balance`). O aviso dizia "registre no Gestor",
 // do tempo em que o balcão não recebia encomenda; mandar o operador a outro app
 // para um gesto que mora aqui era o desvio.
 
@@ -1042,25 +1201,41 @@ const notices = computed<CheckoutNotice[]>(() => {
     // Sem botão próprio de propósito: o caminho É o botão do rodapé, que neste
     // estado se chama "Pedir autorização". Um segundo botão fazendo o mesmo
     // gesto duplicaria a ação mais delicada da tela — a que chama um gerente.
+    // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
+    // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
+    // chamar o gerente para só então descobrir o motivo.
+    const others = approvalReasonText.value;
     notes.push({
       key: "auth",
       tone: "block",
       icon: "lucide:shield-check",
-      message: "Esta venda precisa de um gerente.",
-      // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
-      // o diálogo já os traduz; o aviso os ignorava, e o operador tinha de
-      // chamar o gerente para só então descobrir o motivo.
-      hint: managerAuthReason({
-        reasons: props.review?.approval_reasons,
-        thresholdQ: managerThresholdQ.value,
-        houseAccountLimit: props.review?.house_account_limit,
-      }),
+      // Acima do plano, o aviso nomeia o porquê e os números (D-041): "200 pedidas,
+      // 22 planejadas para 17/11". Só o gerente libera.
+      message: overPlanLines.value.length
+        ? "A encomenda passa do plano. Só o gerente libera."
+        : "Esta venda precisa de um gerente.",
+      hint: [overPlanText.value, others].filter(Boolean).join(" "),
+    });
+  }
+  // Autorizada: a faixa do gerente não some calada (#2666). Diz quem assinou e o
+  // quê, e some junto com a assinatura quando a venda muda (o retrato).
+  else if (props.review?.requires_manager_approval && props.managerApproved && props.managerApprovedBy) {
+    notes.push({
+      key: "auth-ok",
+      icon: "lucide:shield-check",
+      message: `Autorizada por ${props.managerApprovedBy}.`,
+      hint: [overPlanText.value, approvalReasonText.value].filter(Boolean).join(" "),
     });
   }
   // Nada trava: entra quanto pedir à pessoa da vez. É a frase que o operador
   // fala em voz alta, e ela some sozinha quando a conta fecha.
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
+  }
+  // O que receber o saldo VAI fazer com a encomenda: a cobrança do cliente que o
+  // balcão cancela, a encomenda que sai da tela da cozinha. Frases do servidor.
+  for (const note of props.balance?.notices ?? []) {
+    notes.push({ key: `balance-${note.key}`, icon: note.icon, message: note.message, ...(note.tone ? { tone: note.tone } : {}) });
   }
   if (hasPixProviderTestTender.value && !pixProviderTestMixed.value && !pixProviderTestExceeded.value) {
     notes.push({
@@ -1137,12 +1312,32 @@ const notices = computed<CheckoutNotice[]>(() => {
   return notes;
 });
 
+// O que ainda não foi à cozinha e pode ir AGORA, da linha da cozinha (acordeão). Não
+// quando a cozinha espera por regra (encomenda de outro dia, Pix ou link a entrar).
+const pendingKitchen = computed(() =>
+  props.canFireNow && !kitchenDeferred.value && !kitchenWaitsPayment.value
+    ? props.items.filter((item) => !item.fired)
+    : [],
+);
+// Os dois desenhos dos avisos: o que trava (caixa) e o resto (linhas iguais).
+const blockNotices = computed(() => notices.value.filter((note) => note.tone === "block"));
+const lineNotices = computed(() => notices.value.filter((note) => note.tone !== "block"));
+const kitchenLine = computed(() => lineNotices.value.find((note) => note.key === "kitchen") ?? null);
+const firedKitchen = computed(() => props.items.filter((item) => item.fired));
+const kitchenOpen = ref(false);
+const remarksOpen = ref(false);
+// A linha da cozinha vira acordeão quando há o que mandar agora; senão é linha comum.
+const plainLineNotices = computed(() =>
+  lineNotices.value.filter((note) => !(note.key === "kitchen" && pendingKitchen.value.length)),
+);
+
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
 const ctaDisabled = computed(() => {
   // Salvar/editar cliente é parte do fechamento: enquanto o resolve está em
   // voo, nem o clique nem o atalho Enter podem concluir com o cadastro antigo.
-  if (!props.items.length || props.loading || props.lookupBusy) return true;
+  if ((!props.balance && !props.items.length) || props.loading || props.lookupBusy) return true;
+  if (props.saleBlockedReason) return true;
   // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
   if (props.reviewFailed) return false;
   if (needsReview.value) return true;
@@ -1165,11 +1360,27 @@ function proceed() {
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
-  emit("update:managerUsername", username);
-  emit("update:managerPin", pin);
-  managerAuthOpen.value = false;
-  proceed();
+  checkManager({ username, pin });
 }
+// O crachá é a MESMA autorização, pela outra porta (#2691): o diálogo convidava a
+// passar o crachá e a tela não escutava o `authorize-badge`, então o gerente com o
+// crachá no pescoço digitava o PIN mesmo assim. O servidor resolve a pessoa pelo
+// token, exige a mesma permissão e devolve o mesmo carimbo.
+function onManagerBadge(badge: string) {
+  checkManager({ badge });
+}
+function checkManager(approval: ManagerApproval) {
+  // Conferido AQUI, com o diálogo aberto: errado, o erro aparece nele e nada
+  // adiante (maquininha, "Recebi o Pix") chegou a acontecer.
+  emit("checkManager", approval, (ok) => {
+    if (!ok) return;
+    managerAuthOpen.value = false;
+    proceed();
+  });
+}
+watch(managerAuthOpen, (open, wasOpen) => {
+  if (wasOpen && !open && props.managerApprovalError) emit("managerAuthDismissed");
+});
 function onMachineConfirmed() {
   machineConfirmOpen.value = false;
   if (pixTenders.value.length) emit("confirmPix");
@@ -1230,7 +1441,7 @@ defineExpose({
     }
     if (blockedForDelivery(ref)) {
       const handoff = props.fulfillmentType === "pickup" ? "retirada" : "entrega";
-      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. PIX Efí exige confirmação automática.`);
+      toast.info(`Na ${handoff}, use dinheiro ou cartão na maquininha. Pix Efí exige confirmação automática.`);
       return true;
     }
     if (blockedByLink(ref) || blockedByPixProviderTest(ref)) return true;
@@ -1358,8 +1569,10 @@ defineExpose({
              contrato, só Desconto fica desabilitado. Na entrega o grupo ganha
              os dois botões que definem quando receber. -->
         <section class="grid gap-1.5" aria-label="Ajustes da conta">
-          <div class="grid grid-cols-2 gap-1.5">
+          <div class="grid gap-1.5" :class="balance ? 'grid-cols-1' : 'grid-cols-2'">
+            <!-- No saldo da encomenda não há desconto: o preço foi fechado na venda. -->
             <NuxtButton
+              v-if="!balance"
               :disabled="!discountTypes.length"
               :title="!discountTypes.length ? 'Nenhum desconto disponível para esta loja' : undefined"
               :color="hasDiscount ? 'primary' : 'neutral'"
@@ -1616,55 +1829,112 @@ defineExpose({
              botão que ele destrava. É esse o corte entre as duas faixas, e não
              a severidade — um aviso com botão longe do botão principal é o
              operador olhando para dois lugares na mesma decisão. -->
-        <ul
-          v-if="notices.length"
-          class="flex shrink-0 flex-col gap-1.5"
+        <!-- OS AVISOS EM DOIS DESENHOS (dono, 03/11/2026). O que TRAVA é a única caixa,
+             em destaque. O resto é uma lista de linhas IGUAIS (mesmo corpo, mesmo
+             espaço, mesma cor de texto): o que muda é só o ícone. A ressalva de item é
+             a última linha, e abre a frase no toque. -->
+        <div
+          v-if="notices.length || remarks.length"
+          class="flex shrink-0 flex-col gap-2"
+          role="group"
           aria-label="Avisos"
           aria-live="polite"
         >
-          <li
-            v-for="note in notices"
-            :key="note.key"
-            class="flex flex-wrap items-center gap-3 rounded-md border p-3"
-            :class="note.tone === 'block'
-              ? 'border-warning bg-warning/10 text-warning'
-              : note.tone === 'warn'
-                ? 'border-warning/60 bg-warning/10 text-warning'
-                : 'border-border bg-muted text-muted-foreground'"
-          >
-            <Icon
-              :name="note.icon"
-              class="shrink-0"
-              :class="[note.tone === 'block' ? 'size-6' : 'size-4', note.accent || '']"
-            />
-            <span class="min-w-0 flex-1">
-              <span
-                class="block leading-snug"
-                :class="note.tone === 'block' ? 'text-lg font-semibold' : 'text-sm font-medium'"
-              >{{ note.message }}</span>
-              <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ note.hint }}</span>
-            </span>
-            <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do
-                 aviso. Ao lado, ele disputava a linha com a frase: na coluna do
-                 meio de um balcão de 1024px, "Entrega com nota fiscal: falta o
-                 CPF…" virava uma palavra por linha, espremida pelo botão. -->
-            <div
-              v-if="noticeActions(note).length"
-              class="flex w-full flex-wrap gap-2"
+          <ul v-if="blockNotices.length" class="flex flex-col gap-1.5">
+            <li
+              v-for="note in blockNotices"
+              :key="note.key"
+              class="flex flex-wrap items-center gap-3 rounded-md border border-warning bg-warning/10 p-3 text-warning"
             >
-              <UiButton
-                v-for="action in noticeActions(note)"
-                :key="action.label"
-                size="lg"
-                variant="outline"
-                class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
-                @click="action.run()"
+              <Icon :name="note.icon" class="size-6 shrink-0" :class="note.accent || ''" />
+              <!-- O porquê leva os números (os dois do plano, o valor do desconto): letra
+                   menor, nunca mais clara. Com `opacity-80` o âmbar sobre o âmbar dava
+                   3,7:1, abaixo do mínimo (auditoria da prévia do WP-E2). -->
+              <span class="min-w-0 flex-1">
+                <span class="block text-lg leading-snug font-semibold">{{ note.message }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-sm leading-snug">{{ note.hint }}</span>
+              </span>
+              <!-- O toque que resolve vai EMBAIXO da frase, na largura toda do aviso. -->
+              <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2">
+                <NuxtButton
+                  v-for="action in noticeActions(note)"
+                  :key="action.label"
+                  size="xl"
+                  color="neutral" variant="outline"
+                  class="h-auto min-h-8 max-w-full whitespace-normal py-2 text-left"
+                  @click="action.run()"
+                >
+                  {{ action.label }}
+                </NuxtButton>
+              </div>
+            </li>
+          </ul>
+          <ul v-if="lineNotices.length || remarks.length" class="flex flex-col" data-checkout-lines>
+            <!-- A COZINHA, quando há o que mandar agora: a mesma linha, que abre o modal
+                 da cozinha (dono, 03/11/2026: modal, no desktop e no celular). Os itens
+                 também vão sozinhos ao Validar. -->
+            <li v-if="kitchenLine && pendingKitchen.length">
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                block
+                :icon="kitchenLine.icon.replace('lucide:', 'i-lucide-')"
+                trailing-icon="i-lucide-chevron-right"
+                class="h-auto min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: `size-4 ${kitchenLine.accent || 'text-muted'}`, trailingIcon: 'ms-auto size-4 text-muted' }"
+                data-checkout-kitchen
+                @click="kitchenOpen = true"
               >
-                {{ action.label }}
-              </UiButton>
-            </div>
-          </li>
-        </ul>
+                <!-- No slot, e não no `label`: o rótulo do botão corta numa linha, e
+                     "Ao finalizar, o item vai…" saía cortado em 1024 px (PDV-16). -->
+                <span class="min-w-0 flex-1 text-left whitespace-normal" data-checkout-kitchen-message>{{ kitchenLine.message }}</span>
+              </NuxtButton>
+            </li>
+            <li
+              v-for="note in plainLineNotices"
+              :key="note.key"
+              class="flex flex-wrap items-start gap-2.5 px-1 py-1.5 text-sm leading-snug text-default"
+              :data-checkout-line="note.key"
+            >
+              <Icon
+                :name="note.icon"
+                class="mt-0.5 size-4 shrink-0"
+                :class="note.accent || (note.tone === 'warn' ? 'text-warning' : 'text-muted')"
+              />
+              <span class="min-w-0 flex-1">
+                <span class="block">{{ note.message }}</span>
+                <span v-if="note.hint" class="mt-0.5 block text-xs text-muted">{{ note.hint }}</span>
+              </span>
+              <div v-if="noticeActions(note).length" class="flex w-full flex-wrap gap-2 pl-6.5">
+                <NuxtButton
+                  v-for="action in noticeActions(note)"
+                  :key="action.label"
+                  color="neutral" variant="outline"
+                  class="h-auto min-h-11 max-w-full whitespace-normal text-left"
+                  @click="action.run()"
+                >
+                  {{ action.label }}
+                </NuxtButton>
+              </div>
+            </li>
+            <!-- A ressalva de item: a mesma linha, que abre o modal das ressalvas. O item da
+                 conta leva o mesmo ⚠. Não trava nada: a venda vale. -->
+            <li v-if="remarks.length">
+              <NuxtButton
+                color="neutral"
+                variant="ghost"
+                block
+                icon="i-lucide-triangle-alert"
+                trailing-icon="i-lucide-chevron-right"
+                :label="remarks.length === 1 ? '1 ressalva nos itens' : `${remarks.length} ressalvas nos itens`"
+                class="min-h-9 justify-start gap-2.5 px-1 py-1.5 text-sm leading-snug font-normal text-default"
+                :ui="{ leadingIcon: 'size-4 text-warning', trailingIcon: 'ms-auto size-4 text-muted', label: 'text-left' }"
+                data-checkout-remarks
+                @click="remarksOpen = true"
+              />
+            </li>
+          </ul>
+        </div>
 
         <!-- O NÚMERO QUE MUDA É O HERÓI. O total é estável — o operador já o leu
              em voz alta na tela de venda, e ele volta nas linhas de pagamento e
@@ -1676,18 +1946,18 @@ defineExpose({
              recolhe para uma linha de conferência. -->
         <section
           class="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
-          :aria-label="payState === 'change' ? 'Troco' : 'Total a cobrar'"
+          :aria-label="payState === 'change' ? 'Troco' : totalLabel"
           :aria-busy="payState === 'pending' && !reviewFailed ? 'true' : undefined"
           aria-live="polite"
           data-pos-total
-          :data-pos-total-state="review ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
+          :data-pos-total-state="totalConfirmed ? 'confirmed' : reviewFailed ? 'failed' : 'calculating'"
         >
           <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
-            {{ payState === "change" ? "Troco" : "Total a cobrar" }}
+            {{ payState === "change" ? "Troco" : totalLabel }}
           </p>
           <!-- Sem a revisão do servidor, NENHUM número no lugar do total: o
                que aparece é o estado (ver `needsReview`). -->
-          <template v-if="!review">
+          <template v-if="!totalConfirmed">
             <p
               v-if="reviewFailed"
               class="mt-1 text-3xl font-semibold text-destructive xl:text-4xl"
@@ -1714,10 +1984,10 @@ defineExpose({
               class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
               :class="payState === 'change' ? 'text-primary' : ''"
             >
-              {{ payState === "change" ? formatBRL(paymentChangeQ) : review.total_display }}
+              {{ payState === "change" ? formatBRL(paymentChangeQ) : totalDisplay }}
             </p>
             <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
-              Total a cobrar {{ review.total_display }}
+              {{ totalLabel }} {{ totalDisplay }}
             </p>
           </template>
         </section>
@@ -1774,7 +2044,7 @@ defineExpose({
                nem encolhe sozinho, o valor VAZAVA por cima do botão Validar, na
                coluna vizinha. Quebrando, o número desce para a própria linha em
                vez de invadir o botão que fecha a venda. -->
-          <div v-if="payState !== 'change'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
+          <div v-if="payState !== 'change' && paymentCollection !== 'on_delivery'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
             <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
               class="ml-auto text-3xl font-bold tabular-nums"
@@ -1814,7 +2084,49 @@ defineExpose({
              sem lixeira: aqui não se edita o pedido (para isso existe o Voltar),
              só se confere. Rola quando a comanda é grande; subtotal, desconto e
              taxa ficam colados embaixo, fora da rolagem. -->
-        <section class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
+        <!-- A ENCOMENDA, no saldo: de quem é, o que foi pedido e a conta que fecha
+             no que falta receber. Os números são do servidor; aqui só se confere. -->
+        <section v-if="balance" class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo da encomenda" data-balance-summary>
+          <h3 class="flex items-baseline gap-2 px-1">
+            <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Encomenda {{ balance.orderRef }}</span>
+          </h3>
+          <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
+            <p class="border-b px-3 py-2 text-sm font-semibold" data-balance-customer>{{ balance.customerName }}</p>
+            <ul v-if="balance.lines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
+              <li v-for="line in balance.lines" :key="line.key" class="flex items-baseline gap-2 px-3 py-2">
+                <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
+                <span class="min-w-0 flex-1 text-sm">{{ line.name }}</span>
+                <strong class="shrink-0 text-sm font-semibold tabular-nums">{{ line.totalDisplay }}</strong>
+              </li>
+            </ul>
+            <dl class="grid gap-1 border-t px-3 py-2 text-sm" data-balance-totals>
+              <!-- Os itens vêm a preço de tabela: o desconto mora na própria linha,
+                   para os itens, o desconto e o total fecharem a conta à vista. -->
+              <div
+                v-for="adjustment in balance.adjustments"
+                :key="adjustment.key"
+                class="flex items-baseline justify-between gap-2 text-primary"
+                data-balance-adjustment
+              >
+                <dt>{{ adjustment.label }}</dt>
+                <dd class="tabular-nums">{{ adjustment.amountDisplay }}</dd>
+              </div>
+              <div class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Total da encomenda</dt>
+                <dd class="tabular-nums">{{ balance.orderTotalDisplay }}</dd>
+              </div>
+              <div v-if="balance.paidDisplay" class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted-foreground">Já pago</dt>
+                <dd class="tabular-nums">{{ balance.paidDisplay }}</dd>
+              </div>
+              <div class="flex items-baseline justify-between gap-2 border-t pt-1 font-semibold">
+                <dt>A receber</dt>
+                <dd class="tabular-nums">{{ balance.amountDisplay }}</dd>
+              </div>
+            </dl>
+          </div>
+        </section>
+        <section v-else class="flex min-h-0 flex-1 flex-col gap-1.5" aria-label="Resumo do pedido">
           <h3 class="flex items-baseline gap-2 px-1">
             <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Resumo do pedido</span>
             <span v-if="summaryUnits" class="ml-auto text-xs tabular-nums text-muted-foreground">
@@ -1827,7 +2139,22 @@ defineExpose({
               <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="min-w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qtyLabel }}</span>
-                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.name">{{ line.name }}</span>
+                  <!-- Foguinho só no que JÁ está na cozinha; sem ícone, vai ao finalizar. -->
+                  <Icon
+                    v-if="line.fired"
+                    name="lucide:flame"
+                    class="size-3.5 shrink-0 self-center text-primary"
+                    aria-label="Na cozinha"
+                    data-summary-kitchen
+                  />
+                  <span class="min-w-0 flex-1 truncate text-sm" :title="line.remark || line.name">{{ line.name }}</span>
+                  <Icon
+                    v-if="line.remark"
+                    name="lucide:triangle-alert"
+                    class="size-3.5 shrink-0 self-center text-warning"
+                    :aria-label="line.remark"
+                    data-summary-remark
+                  />
                   <span
                     v-if="line.listDisplay"
                     class="shrink-0 text-xs tabular-nums text-muted-foreground line-through"
@@ -2054,16 +2381,17 @@ defineExpose({
              setinha de todas as telas do sistema — e um segundo botão de voltar
              ao lado do que FECHA a venda é o clique errado do balcão cheio.
              O Esc continua valendo. -->
-        <UiButton
-          size="lg"
+        <NuxtButton
+          size="xl"
           class="h-14 w-full shrink-0 gap-2 text-base"
+          data-payment-cta
           :disabled="ctaDisabled"
           :loading="(loading || needsReview) && !reviewFailed"
           @click="onCta"
         >
           {{ ctaLabel }}
           <OperatorKbd variant="inverse" aria-hidden="true">Enter</OperatorKbd>
-        </UiButton>
+        </NuxtButton>
       </div>
     </div>
 
@@ -2083,6 +2411,7 @@ defineExpose({
     :saved-addresses="savedAddresses"
     :address-autocomplete="addressAutocomplete"
     :delivery-address="deliveryAddress"
+    :delivery-address-structured="deliveryAddressStructured"
     :delivery-street-number="deliveryStreetNumber"
     :delivery-neighborhood="deliveryNeighborhood"
     :delivery-complement="deliveryComplement"
@@ -2096,6 +2425,7 @@ defineExpose({
     :delivery-fee-status="review ? 'resolved' : reviewFailed ? 'failed' : 'calculating'"
     :delivery-distance-km="deliveryDistanceKm"
     :order-notes="orderNotes"
+    :can-restore-address="canRestoreAddress"
     @update:fulfillment-type="$emit('update:fulfillmentType', $event)"
     @update:delivery-address="$emit('update:deliveryAddress', $event)"
     @update:delivery-address-structured="$emit('update:deliveryAddressStructured', $event)"
@@ -2107,6 +2437,8 @@ defineExpose({
     @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
     @update:order-notes="$emit('update:orderNotes', $event)"
     @pick-saved-address="$emit('pickSavedAddress', $event)"
+    @clear-address="$emit('clearAddress')"
+    @restore-address="$emit('restoreAddress')"
     @open-schedule="scheduleSheetOpen = true"
   />
 
@@ -2136,7 +2468,9 @@ defineExpose({
   <!-- O comprovante DESTA venda (impressa / e-mail / CPF na nota) mora na
        coluna "Nota e comprovante" acima; o modal cuida do cadastro e dos
        PADRÕES do cliente. Nada de comprovante viaja para ele. -->
+  <!-- No saldo da encomenda o cliente já é o da encomenda: não há o que escolher. -->
   <PosCustomerModal
+    v-if="!balance"
     v-model:open="customerSheetOpen"
     :customer-name="customerName"
     :customer-phone="customerPhone"
@@ -2145,6 +2479,7 @@ defineExpose({
     :customer-lookup="customerLookup"
     :search-results="searchResults"
     :search-busy="searchBusy"
+    :search-error="searchError"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
     :new-customer-prefs="newCustomerPrefs"
@@ -2175,6 +2510,70 @@ defineExpose({
        atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
        certo — se a maquininha recusar, o operador fecha o diálogo e troca a
        forma; a venda ainda não foi registrada. -->
+  <!-- MODAL: a cozinha da comanda (dono, 03/11/2026). O que já está lá, o que vai ao
+       finalizar, e "Enviar agora" para adiantar enquanto o cliente paga. -->
+  <NuxtModal
+    v-model:open="kitchenOpen"
+    title="Cozinha"
+    :description="kitchenLine?.message"
+    :ui="{ content: 'sm:max-w-md' }"
+    data-checkout-kitchen-modal
+  >
+    <template #body>
+      <div class="grid gap-4 text-sm">
+        <section v-if="firedKitchen.length" class="grid gap-1.5">
+          <h3 class="flex items-center gap-2 font-semibold text-highlighted">
+            <Icon name="lucide:flame" class="size-4 text-primary" aria-hidden="true" />Já na cozinha
+          </h3>
+          <ul class="grid gap-1 ps-6 text-muted">
+            <li v-for="item in firedKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+          </ul>
+        </section>
+        <section v-if="pendingKitchen.length" class="grid gap-1.5" data-checkout-kitchen-pending>
+          <h3 class="font-semibold text-highlighted">Vai ao validar</h3>
+          <ul class="grid gap-1 ps-6 text-muted">
+            <li v-for="item in pendingKitchen" :key="item.line_id">{{ lineQtyLabel(item) }} {{ item.name }}</li>
+          </ul>
+        </section>
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex w-full flex-col gap-2">
+        <NuxtButton
+          size="xl"
+          block
+          color="primary"
+          icon="i-lucide-chef-hat"
+          :label="`Enviar agora (${unfiredCount(pendingKitchen)})`"
+          data-checkout-fire-now
+          @click="emit('fireNow'); kitchenOpen = false"
+        />
+        <NuxtButton block color="neutral" variant="ghost" label="Fechar" @click="kitchenOpen = false" />
+      </div>
+    </template>
+  </NuxtModal>
+
+  <!-- MODAL: as ressalvas de item. A venda vale; é para conferir o cadastro depois. -->
+  <NuxtModal
+    v-model:open="remarksOpen"
+    :title="remarks.length === 1 ? 'Ressalva nos itens' : 'Ressalvas nos itens'"
+    description="A venda vale. Confira o cadastro ou o estoque depois."
+    :ui="{ content: 'sm:max-w-md' }"
+    data-checkout-remarks-modal
+  >
+    <template #body>
+      <ul class="grid gap-3 text-sm" data-checkout-remarks-list>
+        <li v-for="(remark, index) in remarks" :key="index" class="flex items-start gap-2">
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <span>{{ remark.message }}</span>
+        </li>
+      </ul>
+    </template>
+    <template #footer>
+      <NuxtButton block color="neutral" variant="outline" label="Fechar" @click="remarksOpen = false" />
+    </template>
+  </NuxtModal>
+
   <NuxtModal
     v-model:open="machineConfirmOpen"
     :title="confirmView.title"
@@ -2188,13 +2587,15 @@ defineExpose({
              mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
              e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
              cheia: é a primeira escolha no teclado do terminal, e a única que a
-             maquininha não perdoa em silêncio. -->
+             maquininha não perdoa em silêncio. Selo com maiúscula só na
+             primeira letra (dono, 16/11/2026) e a grafia da casa: "Pix",
+             "Crédito", "Débito", nunca em caixa alta. -->
         <div
           v-for="(line, idx) in confirmTenders"
           :key="`${line.method}-${idx}`"
           class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
-          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold text-primary-foreground" data-pos-confirm-method>
             <Icon :name="line.icon" class="size-5 shrink-0" />
             {{ line.label }}
           </p>
@@ -2239,11 +2640,11 @@ defineExpose({
           <!-- Cada preset mostra QUANTO FICA CADA PARTE. Sem isso o operador
                escolhe o número e só descobre o valor ao lançar a primeira
                forma — com o cliente já perguntando "quanto deu o meu?". -->
-          <UiButton
+          <NuxtButton
             v-for="n in SPLIT_PRESETS"
             :key="n"
             type="button"
-            variant="outline"
+            color="neutral" variant="outline"
             class="h-14 flex-col gap-0.5 p-0 tabular-nums"
             :class="splitCount === n ? 'border-primary bg-primary/5' : ''"
             :disabled="hasLinkTender"
@@ -2253,7 +2654,7 @@ defineExpose({
           >
             <span class="text-lg font-semibold leading-none">{{ n }}</span>
             <span class="text-xs font-normal leading-none text-muted-foreground">{{ splitShareLabel(n) }}</span>
-          </UiButton>
+          </NuxtButton>
         </div>
       </div>
     </template>
@@ -2280,38 +2681,38 @@ defineExpose({
   <NuxtModal
     v-model:open="discountSheetOpen"
     title="Desconto"
-    description="Tipo, valor e motivo. A loja confere e aplica."
+    description="Escolha o tipo, o valor e o motivo."
     :ui="{ content: 'sm:max-w-md' }"
     data-pos-discount-modal
   >
     <template #body>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
-            <UiButton
+            <NuxtButton
               v-for="option in discountTypes"
               :key="option.ref"
-              variant="outline"
+              color="neutral" variant="outline"
               :class="discountType === option.ref ? 'border-primary bg-primary/5' : ''"
               @click="$emit('update:discountType', option.ref === 'fixed' ? 'fixed' : 'percent')"
             >
               {{ option.label }}
-            </UiButton>
+            </NuxtButton>
           </div>
           <label class="grid gap-1 text-xs">
             <span class="font-medium text-muted-foreground">{{ discountType === "fixed" ? "Valor (R$)" : "Percentual (%)" }}</span>
             <UiInput :model-value="discountValue" inputmode="decimal" placeholder="0" @update:model-value="$emit('update:discountValue', String($event || ''))" />
           </label>
           <div v-if="discountReasons.length" class="flex flex-wrap gap-2">
-            <UiButton
+            <NuxtButton
               v-for="reason in discountReasons"
               :key="reason.ref"
-              variant="outline"
-              size="sm"
+              color="neutral" variant="outline"
+              size="md"
               :class="discountReason === reason.ref ? 'border-primary bg-primary/5' : ''"
               @click="$emit('update:discountReason', reason.ref)"
             >
               {{ reason.label }}
-            </UiButton>
+            </NuxtButton>
           </div>
         </div>
     </template>
@@ -2330,12 +2731,30 @@ defineExpose({
     v-model:open="managerAuthOpen"
     action="sale_approval"
     :threshold-q="managerThresholdQ"
-    :reasons="review?.approval_reasons"
+    :discount-q="manualDiscountQ"
+    :reasons="review?.approval_reasons || []"
     :house-account-limit="review?.house_account_limit"
     :operator-name="operatorName || ''"
     :managers="managers"
-    :busy="loading"
+    :busy="loading || managerCheckBusy"
     :error="managerApprovalError"
     @authorize="onManagerAuthorize"
-  />
+    @authorize-badge="onManagerBadge"
+  >
+    <!-- Encomenda acima do plano: o gerente vê os dois números de cada linha
+         ANTES de assinar (D-041). O carimbo vale só para eles. -->
+    <template v-if="overPlanLines.length" #context>
+      <div class="grid gap-1 rounded-md border border-warning/50 bg-warning/10 px-3 py-2" data-over-plan-context>
+        <p class="text-sm font-semibold text-foreground">A encomenda passa do plano</p>
+        <p
+          v-for="line in overPlanLines"
+          :key="line.sku"
+          class="text-sm text-foreground tabular-nums"
+          data-over-plan-line
+        >
+          {{ overPlanSummary([line]) }}
+        </p>
+      </div>
+    </template>
+  </OperatorManagerAuth>
 </template>

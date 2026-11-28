@@ -51,7 +51,7 @@ Minha leitura objetiva é esta:
 Os pacotes centrais estão, em geral, mais consistentes do que as superfícies:
 
 - `orderman` tem um modelo canônico claro de sessão, pedido, diretiva, idempotência e eventos.
-- `payman` tem uma mutation surface limpa e única em [`packages/payman/shopman/payman/service.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/payman/shopman/payman/service.py:1).
+- `payman` tem uma mutation surface limpa e única em [`packages/payman/shopman/payman/service.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/payman/shopman/payman/service.py#L1).
 - `stockman` tem invariantes reais de hold, quant, planning e concorrência, com preocupação explícita com locking e lifecycle.
 
 Em termos arquiteturais, isso é bom sinal: o centro do sistema não nasceu aleatório.
@@ -60,10 +60,10 @@ Em termos arquiteturais, isso é bom sinal: o centro do sistema não nasceu alea
 
 A base não depende apenas de README. Há intenção registrada no runtime:
 
-- `ChannelConfig` como mecanismo declarativo por canal em [`shopman/shop/config.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/config.py:1)
-- registry/protocols em [`packages/orderman/shopman/orderman/registry.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/registry.py:1)
-- guardrails de arquitetura em [`shopman/shop/tests/test_architecture.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_architecture.py:1) e [`shopman/shop/tests/test_invariants.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_invariants.py:1)
-- system checks em [`shopman/shop/checks.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/checks.py:1)
+- `ChannelConfig` como mecanismo declarativo por canal em [`shopman/shop/config.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/config.py#L1)
+- registry/protocols em [`packages/orderman/shopman/orderman/registry.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/orderman/shopman/orderman/registry.py#L1)
+- guardrails de arquitetura em [`shopman/shop/tests/test_architecture.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/tests/test_architecture.py#L1) e [`shopman/shop/tests/test_invariants.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/tests/test_invariants.py#L1)
+- system checks em [`shopman/shop/checks.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/checks.py#L1)
 
 Isso melhora onboarding técnico e reduz a chance de a arquitetura virar só discurso.
 
@@ -71,10 +71,10 @@ Isso melhora onboarding técnico e reduz a chance de a arquitetura virar só dis
 
 Pontos positivos concretos:
 
-- autenticação de webhooks por token com `hmac.compare_digest` em [`shopman/shop/webhooks/efi.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/efi.py:97) e [`shopman/shop/webhooks/ifood.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/ifood.py:137)
-- verificação de assinatura Stripe em [`shopman/shop/webhooks/stripe.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/webhooks/stripe.py:45)
-- `Doorman` com token lookup por hash e fluxo de autenticação relativamente disciplinado em [`packages/doorman/shopman/doorman/services/access_link.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/doorman/shopman/doorman/services/access_link.py:156)
-- checks de produção para `SECRET_KEY`, `ALLOWED_HOSTS`, adapters mock e tokens ausentes em [`shopman/shop/checks.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/checks.py:26)
+- autenticação de webhooks por token com `hmac.compare_digest` em [`shopman/shop/webhooks/efi.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/webhooks/efi.py#L97) e [`shopman/shop/webhooks/ifood.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/webhooks/ifood.py#L137)
+- verificação de assinatura Stripe em [`shopman/shop/webhooks/stripe.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/webhooks/stripe.py#L45)
+- `Doorman` com token lookup por hash e fluxo de autenticação relativamente disciplinado em [`packages/doorman/shopman/doorman/services/access_link.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/doorman/shopman/doorman/services/access_link.py#L156)
+- checks de produção para `SECRET_KEY`, `ALLOWED_HOSTS`, adapters mock e tokens ausentes em [`shopman/shop/checks.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/checks.py#L26)
 
 Isso não elimina riscos, mas mostra maturidade rara em um projeto novo.
 
@@ -84,7 +84,7 @@ Isso não elimina riscos, mas mostra maturidade rara em um projeto novo.
 
 Este é, hoje, o problema técnico mais grave da camada Shopman.
 
-Em [`shopman/shop/services/stock.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/stock.py:223), `_adopt_holds_for_qty()` aceita explicitamente adotar mais do que a quantidade pedida. O comentário diz que esse excesso é “absorvido”. Só que o consumo posterior do hold não é parcial: em [`packages/stockman/shopman/stockman/services/holds.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/stockman/shopman/stockman/services/holds.py:300), `fulfill()` cria `Move(delta=-hold.quantity)`, ou seja, baixa o hold inteiro.
+Em [`shopman/shop/services/stock.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/services/stock.py#L223), `_adopt_holds_for_qty()` aceita explicitamente adotar mais do que a quantidade pedida. O comentário diz que esse excesso é “absorvido”. Só que o consumo posterior do hold não é parcial: em [`packages/stockman/shopman/stockman/services/holds.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/stockman/shopman/stockman/services/holds.py#L300), `fulfill()` cria `Move(delta=-hold.quantity)`, ou seja, baixa o hold inteiro.
 
 O efeito prático é simples:
 
@@ -95,7 +95,7 @@ O efeito prático é simples:
 
 Isso não é apenas imperfeição contábil. É **sangria real de estoque**.
 
-Pior: a suíte documenta esse comportamento como aceitável em [`shopman/shop/tests/test_hold_adoption.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/tests/test_hold_adoption.py:129).
+Pior: a suíte documenta esse comportamento como aceitável em [`shopman/shop/tests/test_hold_adoption.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/tests/test_hold_adoption.py#L129).
 
 Impacto:
 
@@ -109,13 +109,13 @@ Julgamento: este ponto contradiz diretamente a promessa de resolução confiáve
 
 Há uma inconsistência séria entre o cuidado com `Directive` e o cuidado com `Order`.
 
-`Directive` é processada com `transaction.on_commit()` em [`packages/orderman/shopman/orderman/dispatch.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/dispatch.py:110).  
+`Directive` é processada com `transaction.on_commit()` em [`packages/orderman/shopman/orderman/dispatch.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/orderman/shopman/orderman/dispatch.py#L110).
 Já `order_changed` é emitido sincronicamente:
 
-- em [`packages/orderman/shopman/orderman/services/commit.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/services/commit.py:362)
-- em [`packages/orderman/shopman/orderman/models/order.py`](/Users/pablovalentini/Dev/Claude/django-shopman/packages/orderman/shopman/orderman/models/order.py:227)
+- em [`packages/orderman/shopman/orderman/services/commit.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/orderman/shopman/orderman/services/commit.py#L362)
+- em [`packages/orderman/shopman/orderman/models/order.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/packages/orderman/shopman/orderman/models/order.py#L227)
 
-Esse sinal é ligado diretamente ao `dispatch()` de Shopman em [`shopman/shop/apps.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/apps.py:118), e o `dispatch()` já dispara:
+Esse sinal é ligado diretamente ao `dispatch()` de Shopman em [`shopman/shop/apps.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/apps.py#L118), e o `dispatch()` já dispara:
 
 - `customer.ensure`
 - `stock.hold`
@@ -123,7 +123,7 @@ Esse sinal é ligado diretamente ao `dispatch()` de Shopman em [`shopman/shop/ap
 - `fulfillment.create`
 - transições adicionais de status
 
-Referência: [`shopman/shop/lifecycle.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/lifecycle.py:175)
+Referência: [`shopman/shop/lifecycle.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/lifecycle.py#L175)
 
 Isso enfraquece a robustez de duas formas:
 
@@ -134,7 +134,7 @@ Para um orquestrador, isso é um problema de desenho, não um detalhe.
 
 ### 4.3. Alto: o guard de pagamento para canais externos está quebrado por misuse de tipo e `except` amplo
 
-Em [`shopman/shop/lifecycle.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/lifecycle.py:121), `ensure_payment_captured()` tenta fazer:
+Em [`shopman/shop/lifecycle.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/lifecycle.py#L121), `ensure_payment_captured()` tenta fazer:
 
 ```python
 if (config.payment or {}).get("timing") == "external":
@@ -153,9 +153,9 @@ Isso é precisamente o tipo de bug que mina confiança em uma arquitetura “con
 
 No storefront, `CartService` chama `availability.reserve()` ou `availability.reconcile()` antes de `ModifyService.modify_session()`:
 
-- [`shopman/storefront/cart.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:119)
-- [`shopman/storefront/cart.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:174)
-- [`shopman/storefront/cart.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:213)
+- [`shopman/storefront/cart.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/cart.py#L119)
+- [`shopman/storefront/cart.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/cart.py#L174)
+- [`shopman/storefront/cart.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/cart.py#L213)
 
 Se a reserva passa e a mutação da sessão falha depois, o hold já foi criado e não há rollback compensatório local. Na prática:
 
@@ -169,8 +169,8 @@ Para uma superfície crítica como carrinho/checkout, isso ainda está aquém do
 
 ### 4.5. Médio-alto: a camada de configuração de adapters não é confiável como plano de controle
 
-`get_adapter()` promete resolução por `Shop.integrations` > settings > defaults em [`shopman/shop/adapters/__init__.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:89).  
-Mas `_from_shop_integrations()` captura qualquer exceção e volta silenciosamente para o fallback em [`shopman/shop/adapters/__init__.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:61).
+`get_adapter()` promete resolução por `Shop.integrations` > settings > defaults em [`shopman/shop/adapters/__init__.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/adapters/__init__.py#L89).
+Mas `_from_shop_integrations()` captura qualquer exceção e volta silenciosamente para o fallback em [`shopman/shop/adapters/__init__.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/adapters/__init__.py#L61).
 
 Problema:
 
@@ -180,9 +180,9 @@ Problema:
 
 Além disso, a experiência de onboarding fica pior por inconsistência de nomenclatura no fiscal:
 
-- `SHOPMAN_FISCAL_ADAPTER` em [`shopman/shop/adapters/__init__.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:27)
-- `SHOPMAN_FISCAL_BACKEND` em [`shopman/shop/handlers/__init__.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/handlers/__init__.py:149)
-- `SHOPMAN_FISCAL_BACKENDS` em [`shopman/shop/fiscal.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/fiscal.py:15)
+- `SHOPMAN_FISCAL_ADAPTER` em [`shopman/shop/adapters/__init__.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/adapters/__init__.py#L27)
+- `SHOPMAN_FISCAL_BACKEND` em [`shopman/shop/handlers/__init__.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/handlers/__init__.py#L149)
+- `SHOPMAN_FISCAL_BACKENDS` em [`shopman/shop/fiscal.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/fiscal.py#L15)
 
 Isso não é elegante nem intuitivo. É ruído de adoção.
 
@@ -192,9 +192,9 @@ O projeto melhorou bastante na direção de projections e services, mas a camada
 
 Exemplos claros:
 
-- POS inteiro em uma view operacional grande em [`shopman/backstage/views/pos.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/backstage/views/pos.py:110)
-- checkout web ainda centraliza bastante coordenação HTTP + pós-commit em [`shopman/storefront/views/checkout.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/views/checkout.py:130)
-- cart agrega estoque, reconciliação, pricing, transparência e enriquecimento de produto em [`shopman/storefront/cart.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/cart.py:246)
+- POS inteiro em uma view operacional grande em [`shopman/backstage/views/pos.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/backstage/views/pos.py#L110)
+- checkout web ainda centraliza bastante coordenação HTTP + pós-commit em [`shopman/storefront/views/checkout.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/views/checkout.py#L130)
+- cart agrega estoque, reconciliação, pricing, transparência e enriquecimento de produto em [`shopman/storefront/cart.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/cart.py#L246)
 
 Essas superfícies já reutilizam bem o core, mas ainda carregam trabalho demais para serem chamadas de “só superfície”.
 
@@ -208,10 +208,10 @@ O número de `except Exception` no runtime (`265`) não é só detalhe cosmétic
 
 Isso aparece com força em:
 
-- [`shopman/shop/services/customer.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/customer.py:57)
-- [`shopman/shop/services/payment.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/services/payment.py:53)
-- [`shopman/shop/adapters/__init__.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/shop/adapters/__init__.py:61)
-- [`shopman/storefront/services/storefront_context.py`](/Users/pablovalentini/Dev/Claude/django-shopman/shopman/storefront/services/storefront_context.py:52)
+- [`shopman/shop/services/customer.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/services/customer.py#L57)
+- [`shopman/shop/services/payment.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/services/payment.py#L53)
+- [`shopman/shop/adapters/__init__.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/shop/adapters/__init__.py#L61)
+- [`shopman/storefront/services/storefront_context.py`](https://github.com/nelsonboulangerie/django-shopman/blob/82dc111b0b9ddc49a05e40b7b52dabca2cfa802f/shopman/storefront/services/storefront_context.py#L52)
 
 Isso é confortável para demo e para não quebrar UX, mas enfraquece a confiabilidade como plataforma.  
 Em um orquestrador, o princípio deveria ser:

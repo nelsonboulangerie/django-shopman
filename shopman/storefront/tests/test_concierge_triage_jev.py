@@ -2,8 +2,8 @@
 
 Duas metades, sem rede (o Jev é um transporte falso):
 
-1. **A troca.** Com ``triage_classifier = "jev"`` a intenção é a mais provável do
-   Jev acima do corte; o sensível da regra local continua vencendo; falha, chave
+1. **O Jev decide.** Com ``triage_with_model`` ligado a intenção é a mais provável do
+   Jev acima do corte (é o único classificador desde o WP-08); o sensível da regra local continua vencendo; falha, chave
    ausente ou nenhuma intenção acima do corte devolvem a decisão à regra; o texto
    sai redigido.
 2. **A sombra.** O ciclo do piloto grava, em cada mensagem nova, a decisão da
@@ -18,6 +18,7 @@ import pytest
 from django.core.management import call_command
 
 from shopman.shop.models import ConversationMessage
+from shopman.shop.tests.ai_support import configure_jev
 from shopman.storefront.concierge import intent_pilot, triage
 from shopman.storefront.concierge.intent_benchmark import ContenderNotConfigured, Prediction
 from shopman.storefront.tests.test_concierge_engine import CONCIERGE_SETTINGS
@@ -50,17 +51,16 @@ def jev_on(settings):
     settings.SHOPMAN_CONCIERGE = {
         **CONCIERGE_SETTINGS,
         "triage_with_model": True,
-        "triage_classifier": "jev",
     }
 
 
-# ── 1. A troca ───────────────────────────────────────────────────────
+# ── 1. O Jev decide ────────────────────────────────────────────────────
 
 
 def test_jev_decides_the_intent_when_chosen(jev_on):
     jev = FakeJev({"partnership": 0.93, "hours_delivery": 0.4})
 
-    decision = triage.decide("vocês abrem domingo? queria gravar um vídeo", client=jev)
+    decision = triage.decide("vocês abrem domingo? queria gravar um vídeo", contender=jev)
 
     assert (decision.intent, decision.source, decision.destination) == ("partnership", "jev", "other_desk")
     assert decision.urgency == "can_wait"  # o Jev não dá urgência: vale a da tabela
@@ -69,7 +69,7 @@ def test_jev_decides_the_intent_when_chosen(jev_on):
 def test_sensitive_from_the_rules_still_wins_over_jev(jev_on):
     jev = FakeJev({"order": 0.99})
 
-    decision = triage.decide("quero falar com um atendente", client=jev)
+    decision = triage.decide("quero falar com um atendente", contender=jev)
 
     assert (decision.intent, decision.source, decision.destination) == ("human", "rules", "team")
 
@@ -84,7 +84,7 @@ def test_sensitive_from_the_rules_still_wins_over_jev(jev_on):
     ids=["falha", "sem-chave", "abaixo-do-corte"],
 )
 def test_without_a_useful_answer_from_jev_the_rules_decide(jev_on, jev):
-    decision = triage.decide("que horas vocês abrem?", client=jev)
+    decision = triage.decide("que horas vocês abrem?", contender=jev)
 
     assert (decision.intent, decision.source) == ("hours_delivery", "rules")
 
@@ -92,22 +92,26 @@ def test_without_a_useful_answer_from_jev_the_rules_decide(jev_on, jev):
 def test_the_text_goes_to_jev_redacted(jev_on):
     jev = FakeJev({"order": 0.9})
 
-    triage.decide("quero 2 pães, meu cpf é 123.456.789-09", client=jev)
+    triage.decide("quero 2 pães, meu cpf é 123.456.789-09", contender=jev)
 
     assert "123.456.789-09" not in jev.texts[0]
     assert "2 pães" in jev.texts[0]
 
 
-def test_the_default_classifier_is_still_anthropic(settings):
-    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "triage_with_model": True}
-    assert triage.classifier() == "anthropic"
+def test_the_switch_is_on_by_default_and_jev_is_the_only_classifier():
+    """Sem env nenhuma, a triagem pergunta ao Jev; não existe outro classificador para escolher."""
+    from config import settings as project_settings
+
+    assert project_settings.SHOPMAN_CONCIERGE["triage_with_model"] is True
+    assert "triage_classifier" not in project_settings.SHOPMAN_CONCIERGE
+    assert not hasattr(triage, "classify_with_model")
 
 
 def test_model_switch_off_keeps_jev_out(settings):
-    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "triage_with_model": False, "triage_classifier": "jev"}
+    settings.SHOPMAN_CONCIERGE = {**CONCIERGE_SETTINGS, "triage_with_model": False}
     jev = FakeJev({"partnership": 0.99})
 
-    decision = triage.decide("que horas vocês abrem?", client=jev)
+    decision = triage.decide("que horas vocês abrem?", contender=jev)
 
     assert decision.source == "rules" and jev.texts == []
 
@@ -140,11 +144,11 @@ def test_provider_failure_stops_the_batch_without_stamping():
     assert not ConversationMessage.objects.filter(envelope__has_key="triage_shadow").exists()
 
 
-def test_shadow_needs_the_approved_provider(settings):
-    settings.SHOPMAN_INTENT_PILOT_PROVIDERS_APPROVED = frozenset({"anthropic"})
+def test_shadow_needs_the_connection_cleared_for_customer_text():
+    configure_jev("jev-chave", customer_text=False)
     _inbound("que horas vocês abrem?")
 
-    with pytest.raises(ContenderNotConfigured):
+    with pytest.raises(ContenderNotConfigured, match="não está liberada"):
         intent_pilot.shadow_triage()
 
 

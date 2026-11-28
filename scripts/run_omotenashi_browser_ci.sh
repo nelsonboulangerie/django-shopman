@@ -55,10 +55,13 @@ export SHOPMAN_KDS_BASE_URL="http://127.0.0.1:${KDS_PORT}"
 export SHOPMAN_PRODUCTION_BASE_URL="http://127.0.0.1:${PRODUCTION_PORT}"
 export SHOPMAN_POS_BASE_URL="http://127.0.0.1:${POS_PORT}"
 
+BUILD_LOG="${SHOPMAN_QA_BUILD_LOG:-/tmp/shopman-omotenashi-browser-ci-builds.log}"
+
 DJANGO_PID=""
+BUILD_PID=""
 NUXT_PIDS=()
 cleanup() {
-  for pid in "${NUXT_PIDS[@]:-}" "${DJANGO_PID}"; do
+  for pid in "${BUILD_PID}" "${NUXT_PIDS[@]:-}" "${DJANGO_PID}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" >/dev/null 2>&1 || true
       wait "${pid}" >/dev/null 2>&1 || true
@@ -84,10 +87,6 @@ wait_for() {
   tail -120 "${log}" >&2 || true
   return 1
 }
-
-# ── Django: migrate + canonical seed (deterministic Omotenashi scenarios) ──
-"${PYTHON_BIN}" manage.py migrate --noinput
-"${PYTHON_BIN}" manage.py seed --flush
 
 # ── Superfícies Nuxt: instalar (se preciso) + build de produção ──
 # Os apps de operador estendem a layer `operator-kit`, cujo node_modules precisa
@@ -117,11 +116,37 @@ if [[ ! -d "surfaces/operator-kit/node_modules" ]]; then
   (cd surfaces/operator-kit && npm ci)
 fi
 
-build_surface "${NUXT_DIR}" "loja Nuxt"
-build_surface "surfaces/orders-nuxt" "Gestor de Pedidos"
-build_surface "surfaces/kds-nuxt" "KDS"
-build_surface "surfaces/production-nuxt" "Produção"
-build_surface "surfaces/pos-nuxt" "PDV"
+# ── Builds EM PARALELO com migrate + seed (DEV-2026-098) ──
+# Medido em 25/11/2026 na fila: este passo levava 6,9 min, com migrate (~35 s) +
+# seed (~1,5 min) e DEPOIS os cinco builds (~3 min), em série. O build não lê o
+# banco: nenhum app pré-renderiza contra o Django (o DJANGO_BASE_URL é de
+# runtime). Então os builds correm em segundo plano enquanto o Django migra e
+# semeia; o script espera os dois antes de subir qualquer servidor. Build que
+# falha reprova o gate com o log inteiro; seed que falha mata os builds (trap).
+(
+  build_surface "${NUXT_DIR}" "loja Nuxt"
+  build_surface "surfaces/orders-nuxt" "Gestor de Pedidos"
+  build_surface "surfaces/kds-nuxt" "KDS"
+  build_surface "surfaces/production-nuxt" "Produção"
+  build_surface "surfaces/pos-nuxt" "PDV"
+) >"${BUILD_LOG}" 2>&1 &
+BUILD_PID=$!
+BUILD_STARTED=${SECONDS}
+
+# ── Django: migrate + canonical seed (deterministic Omotenashi scenarios) ──
+"${PYTHON_BIN}" manage.py migrate --noinput
+"${PYTHON_BIN}" manage.py seed --flush
+echo "── Django migrado e semeado em $((SECONDS - BUILD_STARTED)) s; esperando os builds ──"
+
+if ! wait "${BUILD_PID}"; then
+  BUILD_PID=""
+  echo "Build das superfícies FALHOU (log inteiro abaixo; arquivo: ${BUILD_LOG})" >&2
+  cat "${BUILD_LOG}" >&2
+  exit 1
+fi
+BUILD_PID=""
+echo "── Builds das superfícies prontos em $((SECONDS - BUILD_STARTED)) s (log: ${BUILD_LOG}) ──"
+cat "${BUILD_LOG}"
 
 # ── Start Django (API + Admin/Unfold) ──
 "${PYTHON_BIN}" manage.py runserver --noreload "127.0.0.1:${DJANGO_PORT}" >"${DJANGO_LOG}" 2>&1 &

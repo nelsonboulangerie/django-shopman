@@ -9,7 +9,7 @@ def test_authenticated_customer_is_resolved_once_per_request(monkeypatch):
     customer = object()
     resolver = MagicMock(return_value=customer)
     monkeypatch.setattr(auth_service, "customer_by_uuid", resolver)
-    request = SimpleNamespace(customer=SimpleNamespace(uuid="customer-uuid"))
+    request = SimpleNamespace(customer=SimpleNamespace(subject_id="customer-uuid"))
 
     assert get_authenticated_customer(request) is customer
     assert get_authenticated_customer(request) is customer

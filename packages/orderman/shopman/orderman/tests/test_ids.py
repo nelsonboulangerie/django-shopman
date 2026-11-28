@@ -112,13 +112,29 @@ def test_final_already_taken_by_another_channel_is_drawn_again(monkeypatch):
     assert generate_order_ref(channel_ref="web", business_date=date(2026, 5, 4)) == "WEB-260504-B22"
 
 
-def test_same_final_on_another_day_is_free(monkeypatch):
+def test_same_final_on_another_day_is_free_once_that_order_is_closed(monkeypatch):
     from shopman.orderman.models import Order
 
-    Order.objects.create(ref="POS-260503-A17", channel_ref="POS", session_key="k1", total_q=0)
+    Order.objects.create(
+        ref="POS-260503-A17", channel_ref="POS", session_key="k1", total_q=0, status=Order.Status.COMPLETED,
+    )
     monkeypatch.setattr("shopman.orderman.ids._order_ref_candidate", lambda ch, day: "WEB-260504-A17")
 
     assert generate_order_ref(channel_ref="web", business_date=date(2026, 5, 4)) == "WEB-260504-A17"
+
+
+def test_final_of_an_open_order_from_another_day_is_drawn_again(monkeypatch):
+    """Beta 06/11, F7: WEB-261105-K49 (aceito, ainda aberto) e NB-261106-K49 na
+    mesma tela do Gestor. O código de um pedido aberto não se repete, de nenhum dia."""
+    from shopman.orderman.models import Order
+
+    Order.objects.create(
+        ref="WEB-260503-A17", channel_ref="web", session_key="k1", total_q=0, status=Order.Status.ACCEPTED,
+    )
+    seq = iter(["NB-260506-A17", "NB-260506-B22"])  # 1º repete o código do aberto
+    monkeypatch.setattr("shopman.orderman.ids._order_ref_candidate", lambda ch, day: next(seq))
+
+    assert generate_order_ref(channel_ref="nb", business_date=date(2026, 5, 6)) == "NB-260506-B22"
 
 
 def test_preferred_suffix_ignores_house_finals():

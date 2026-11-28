@@ -464,11 +464,22 @@ def _check_order_intent_amounts(
     settled = [intent for intent in order_intents if intent.status in _SETTLED_STATUSES]
     order_total_q = order_composition.effective_total_q(order)
     adjusted = order_composition.is_adjusted(order)
+    # O pagamento digital que chegou DEPOIS de o balcão receber (#1176, #2346) não
+    # pagou o pedido: o cliente pagou duas vezes e esse dinheiro volta inteiro, no
+    # mesmo meio. Entra pelo líquido: devolvido, soma zero; estorno que falhou
+    # continua somando e a divergência aparece, como deve.
+    late = [intent for intent in settled if _late_takeover_payment(order, intent)]
+    settled = [intent for intent in settled if intent not in late]
 
-    if settled:
+    if settled or late:
         settled_q = sum(int(intent.amount_q or 0) for intent in settled)
         if adjusted:
             settled_q -= sum(PaymentService.refunded_total(intent.ref) for intent in settled)
+        late_net_q = sum(
+            int(intent.amount_q or 0) - PaymentService.refunded_total(intent.ref) for intent in late
+        )
+        settled_q += late_net_q
+        settled = settled + [intent for intent in late if int(intent.amount_q or 0) > PaymentService.refunded_total(intent.ref)]
         if settled_q != order_total_q:
             context: dict[str, int | str] = {
                 "order_total_q": order_total_q,
@@ -575,6 +586,7 @@ def _check_intent(
         data_intent_ref
         and intent.order_ref == order.ref
         and intent.ref not in _referenced_intent_refs(payment)
+        and not _replaced_by_counter_takeover(order, intent)
     ):
         issues.append(
             FinancialReconciliationIssue(
@@ -678,7 +690,11 @@ def _check_intent(
             )
         )
 
-    if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED) and net_q > 0:
+    if (
+        order.status in (Order.Status.CANCELLED, Order.Status.RETURNED)
+        and net_q > 0
+        and not _net_is_the_retained_no_show_amount(order)
+    ):
         issues.append(
             FinancialReconciliationIssue(
                 code="terminal_order_with_captured_balance",
@@ -930,6 +946,42 @@ def _check_courier_change(
             },
         )
     )
+
+
+def _late_takeover_payment(order: Order, intent: PaymentIntent) -> bool:
+    """O pagamento que chegou depois de o balcão receber o pedido (#1176)."""
+    from shopman.shop.services import counter_takeover
+
+    return counter_takeover.late_payment_of_takeover(order, intent)
+
+
+def _replaced_by_counter_takeover(order: Order, intent: PaymentIntent) -> bool:
+    """A cobrança online que o balcão cancelou ao receber, ou o pagamento tardio dela.
+
+    Os dois são do pedido e não são o que ``Order.data.payment`` aponta (quem pagou
+    foi o balcão): a referência diferente é o estado certo, não um defeito.
+    """
+    from shopman.shop.services import counter_takeover
+
+    return counter_takeover.cancelled_by_takeover(order, intent.ref) or _late_takeover_payment(order, intent)
+
+
+def _net_is_the_retained_no_show_amount(order: Order) -> bool:
+    """O saldo que ficou é exatamente o que a loja retém de um pedido não retirado?
+
+    No "Não retirado" (WP-G11) o dinheiro segue o produto: o valor das linhas
+    que se perderam fica com a loja, por decisão assinada por um Gerente e
+    gravada em ``order.data["no_show"]``. Saldo capturado igual ao retido é o
+    estado CERTO, não um estorno esquecido. Qualquer outro saldo (o devolvível
+    que ainda não saiu, ou estorno a mais) continua sendo divergência. A conta
+    é do pedido inteiro, não do intent: a venda mista retém numa forma só.
+    """
+    from shopman.shop.services import payment as payment_service
+
+    kept_q = payment_service.retained_q(order)
+    if kept_q <= 0:
+        return False
+    return payment_service.captured_balance_q(order) == kept_q
 
 
 def _referenced_intent_refs(payment: dict) -> set[str]:

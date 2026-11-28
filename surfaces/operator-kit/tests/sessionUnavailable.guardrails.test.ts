@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { OPERATOR_SURFACES } from "./support/surfaceRegistry";
+import { OPERATOR_KIT_SURFACES } from "./support/surfaceRegistry";
 
 // ERRO DE REDE NÃO É SESSÃO MORTA.
 //
@@ -29,7 +29,7 @@ const GATE_OVERRIDES: Record<string, string> = {
   "pos-nuxt": "app/components/PosOperatorShell.vue",
 };
 const GATES: Record<string, string> = Object.fromEntries(
-  OPERATOR_SURFACES.map((app) => [app, GATE_OVERRIDES[app] ?? "app/app.vue"]),
+  OPERATOR_KIT_SURFACES.map((app) => [app, GATE_OVERRIDES[app] ?? "app/app.vue"]),
 );
 
 /**

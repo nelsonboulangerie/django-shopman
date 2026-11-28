@@ -54,8 +54,16 @@ from shopman.shop.services import (
     payment_gate,
     stock,
 )
-from shopman.shop.services.business_calendar import next_operational_deadline
-from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date, is_counter_takeaway
+from shopman.shop.services.business_calendar import (
+    current_business_state,
+    next_operational_deadline,
+)
+from shopman.shop.services.order_helpers import (
+    customer_holds_the_goods,
+    get_commitment_date,
+    is_counter_takeaway,
+    is_test_order,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -90,17 +98,16 @@ def ensure_confirmable(order, *, channel_config=None) -> None:
     if has_availability_approval(order):
         return
 
-    try:
-        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
-        if config.payment.timing == "external":
-            return
-    except Exception:
-        # Config lookup failed — fall through to strict path (require approval).
-        logger.warning("ensure_confirmable: config lookup failed for channel=%s", order.channel_ref)
+    config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
+    if config.payment.timing == "external":
+        return
 
     raise InvalidTransition(
         code="availability_not_approved",
-        message="O pedido não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. Atualize o quadro.",
+        message=(
+            "O pedido ainda não pode ser aceito: a disponibilidade dos itens ainda não foi confirmada. "
+            "Tente de novo em instantes; se continuar, recuse com o motivo."
+        ),
         context={
             "order_ref": order.ref,
             "status": order.status,
@@ -138,22 +145,12 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
 
     # External timing channels (iFood, POS) manage payment outside Shopman;
     # the guard doesn't apply.
-    config_failed = False
-    try:
-        config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
-        if config.payment.timing == "external":
-            return
-    except Exception:
-        logger.warning("ensure_payment_captured: config lookup failed for channel=%s", order.channel_ref)
-        # Config lookup falhou. NÃO confiar no default permissivo (post_commit →
-        # "não requer captura"), senão o guard abre a porta para CONFIRMED sem
-        # captura com um Shop.defaults corrompido. Fail-closed: seguir para a
-        # checagem de captura de verdade.
-        config = ChannelConfig()
-        config_failed = True
+    config = channel_config if channel_config is not None else ChannelConfig.for_channel(order.channel_ref)
+    if config.payment.timing == "external":
+        return
 
     requires_upfront_payment = _requires_captured_payment_before_confirmation(order, config)
-    if not requires_upfront_payment and not config_failed:
+    if not requires_upfront_payment:
         return
 
     method = _payment_method(order, config)
@@ -164,7 +161,7 @@ def ensure_payment_captured(order, *, payment_reads=None, channel_config=None) -
     if (_payment_is_captured(order) if payment_reads is None else
             payment_gate.payment_is_captured(order, payment_reads=payment_reads)):
         return
-    if method == "card" and not config_failed and _card_authorization_is_held(order, payment_reads=payment_reads):
+    if method == "card" and _card_authorization_is_held(order, payment_reads=payment_reads):
         # Cartão autorizado no pedido (captura manual): o dinheiro está reservado
         # e o aceite é que cobra (``_on_accepted`` → ``payment.capture``). Exigir
         # captura ANTES do aceite travava o pedido: ninguém conseguia aceitar.
@@ -203,7 +200,7 @@ def secure_stock(order) -> None:
     reserva desfaz a transação inteira e o pedido nunca nasce. Isso é o que
     impede oversell sob concorrência — o ``select_for_update`` de Quant no
     Stockman serializa os commits do mesmo SKU, e o checkout que chega sem
-    estoque falha com ``ValidationError(insufficient_stock)`` em vez de criar
+    estoque falha com a recusa externa de falta de estoque em vez de criar
     um pedido impossível de separar (e de cobrar o cliente por ele).
 
     Escopo segue o mesmo critério de ``ensure_confirmable``:
@@ -222,12 +219,7 @@ def secure_stock(order) -> None:
     transação do pedido, um crash entre o COMMIT e o dispatch nunca deixa
     pedido sem reserva (o sweeper re-despacha o resto).
     """
-    try:
-        config = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        # Fail-closed: sem config legível, os defaults exigem reserva.
-        logger.warning("secure_stock: config lookup failed for channel=%s", order.channel_ref)
-        config = ChannelConfig()
+    config = ChannelConfig.for_channel(order.channel_ref)
 
     if config.payment.timing == "external":
         return
@@ -276,6 +268,47 @@ QUEUED_PHASES = frozenset({"on_preparing", "on_ready", "on_dispatched", "on_deli
 DURABLE_PHASES = frozenset({"on_commit", "on_accepted", "on_paid", "on_cancelled"}) | QUEUED_PHASES
 LIFECYCLE_DATA_KEY = "lifecycle"
 PHASE_DONE = "done"
+
+
+#: O pedido já fechou: o trabalho do preparo (cozinha e aviso) não é mais devido.
+_CLOSED_STATUSES = frozenset({"completed", "cancelled", "returned"})
+#: Quem fecha o pedido por REPARO: os fatos do iFood aplicados quando chegam ou
+#: depois (``ifood_events``, ``reconcile_ifood_orders``), com ``system:ifood:<fato>``.
+_REPAIR_ACTOR_PREFIX = "system:ifood"
+
+
+def phase_superseded(order, phase: str) -> bool:
+    """A fase chegou tarde e não deve mais nada: fecha sem alerta crítico (#3029).
+
+    Dois casos, medidos nos alertas de 19/11/2026:
+
+    - o pedido de TESTE (``is_test_order``): é inerte, não deve cozinha, nota nem
+      aviso a ninguém;
+    - o preparo que encontra o pedido FECHADO POR REPARO. O reparo do iFood (#2817)
+      leva o pedido de ``accepted`` a ``completed`` num instante, e a fase do
+      preparo, enfileirada, chega depois. Quem fechou foi o fato do iFood, não a casa.
+
+    O preparo obsoleto de um pedido real fechado pela casa (cancelado no Gestor,
+    concluído no balcão) continua visível: a tarefa falha e o alerta sai, porque
+    alguém precisa saber que a cozinha nunca recebeu aquele pedido. Fase que não
+    pode mais rodar num pedido real é travamento, com o alerta crítico.
+    """
+    if is_test_order(order):
+        return True
+    if phase != "on_preparing" or order.status not in _CLOSED_STATUSES:
+        return False
+    return _closed_by_repair(order)
+
+
+def _closed_by_repair(order) -> bool:
+    """O último ``status_changed`` que levou o pedido ao estado atual veio do reparo?"""
+    actor = (
+        order.events.filter(type="status_changed", payload__new_status=order.status)
+        .order_by("-seq")
+        .values_list("actor", flat=True)
+        .first()
+    )
+    return bool(actor) and str(actor).startswith(_REPAIR_ACTOR_PREFIX)
 
 
 def phase_complete(order, phase: str) -> bool:
@@ -333,6 +366,21 @@ def dispatch(order, phase: str) -> None:
     handler(order, config)
     if phase in DURABLE_PHASES:
         _mark_phase_complete(order, phase)
+    if phase != "on_commit":
+        _resolve_acceptance_alerts(order)
+
+
+def _resolve_acceptance_alerts(order) -> None:
+    """O pedido saiu de ``new``: os avisos de aceite no bolso somem (#2324)."""
+    if order.status == Order.Status.NEW:
+        return
+    try:
+        from shopman.shop.services import order_acceptance_alerts
+
+        order_acceptance_alerts.resolve(order)
+    except Exception:
+        # O sino reconcilia na leitura; aviso preso não pode derrubar a transição.
+        logger.exception("order_acceptance_alerts.resolve_failed order=%s", order.ref)
 
 
 # ── Phase handlers ──
@@ -357,21 +405,16 @@ def _on_commit(order, config: ChannelConfig) -> None:
 
     decisions = (order.data or {}).get("availability_decision", {}).get("decisions")
     if not decisions:
-        decisions = [
-            {
-                "approved": True,
-                "sku": item.get("sku"),
-                "requested_qty": item.get("qty"),
-                "available_qty": item.get("qty"),
-                "reason_code": None,
-                "is_paused": False,
-                "is_planned": False,
-                "target_date": get_commitment_date(order).isoformat() if get_commitment_date(order) else None,
-                "failed_sku": None,
-                "source": "stock.hold",
-            }
-            for item in order.snapshot.get("items", [])
-        ]
+        # O disponível é o que a reserva achou, não o pedido (#2559): sem portão
+        # no commit, ``available_qty`` saía igual ao pedido e a demanda sem
+        # fornada sumia da decisão.
+        decisions = stock.availability_decisions_from_holds(order)
+    if not defer_hold:
+        try:
+            stock.alert_demand_over_plan(order)
+        except Exception:
+            # O aviso é rastro para a Produção; não pode derrubar o commit.
+            logger.exception("stock.alert_demand_over_plan_failed order=%s", order.ref)
     _record_availability_decision(
         order,
         approved=True,
@@ -411,6 +454,16 @@ def _mark_phase_complete(order, phase: str) -> None:
     from shopman.shop.services.order_helpers import merge_order_data
 
     merge_order_data(order, {phase: PHASE_DONE}, block=LIFECYCLE_DATA_KEY)
+    if phase == "on_ready":
+        # A TV do salão espera esta fase para dizer "Pronto para retirar" (a janela
+        # de desfazer do pronto, #3167). Sem o aviso, o número só subia na leitura
+        # de reserva, até 30 s depois do aviso ao cliente.
+        try:
+            from shopman.shop.handlers._sse_emitters import emit_pickup_board_changed
+
+            emit_pickup_board_changed()
+        except Exception:
+            logger.warning("lifecycle.pickup_board_emit_failed order=%s", order.ref, exc_info=True)
 
 
 def _record_coupon_use(order) -> None:
@@ -510,7 +563,7 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     # Encomenda: pedido para data FUTURA confirma hoje, mas o trabalho físico
     # (KDS) e a baixa de estoque só disparam NA data — a directive é o
     # despertador. O pedido de sábado não pode ir pra cozinha na terça.
-    if _physical_work_deferred(order):
+    if awaits_kitchen_release(order):
         _schedule_preorder_activation(order)
         notification.send(order, "order_accepted")
         return
@@ -518,12 +571,12 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
         stock.hold(order)
 
-    # prep_start="operator": pago/aceito NÃO vai sozinho pra cozinha — espera o
-    # operador dar "Iniciar preparo" no gestor (a transição para PREPARING é que
-    # dispara o KDS, via _on_preparing). Honesto com o cliente remoto.
-    physical_work_dispatched = (
-        _dispatch_physical_work(order) if _prep_starts_automatically(config) else False
-    )
+    # Aceito vai para a Cozinha AGORA, em todo canal (decisão do dono,
+    # 06/11/2026: "a verdade é da cozinha, o gestor é um atalho"). Com
+    # prep_start="operator" os tickets esperam "Iniciar preparo" no posto e o
+    # pedido segue Aceito; é o início do ticket (ou o atalho do Gestor, que
+    # chama o mesmo ato) que o põe em preparo. Honesto com o cliente remoto.
+    physical_work_dispatched = _dispatch_physical_work(order)
 
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order)
@@ -538,7 +591,8 @@ def _on_accepted(order, config: ChannelConfig) -> None:
         notification.send(order, "order_accepted")
 
     if physical_work_dispatched:
-        _mark_preparing_after_physical_work_dispatch(order)
+        if _prep_starts_automatically(config):
+            _mark_preparing_after_physical_work_dispatch(order)
         return
 
     # Venda de balcão sem trabalho físico: o pão já saiu pela porta. Não há
@@ -589,7 +643,7 @@ def _on_paid(order, config: ChannelConfig) -> None:
             )
         notification.send(order, "payment_confirmed")
         return
-    if _physical_work_deferred(order):
+    if awaits_kitchen_release(order):
         # Encomenda paga antes da data: a baixa e o KDS esperam o dia certo.
         _schedule_preorder_activation(order)
         notification.send(order, "payment_confirmed")
@@ -597,12 +651,13 @@ def _on_paid(order, config: ChannelConfig) -> None:
     if ifood_schedule.is_scheduled(order) and "hold_ids" not in (order.data or {}):
         stock.hold(order)
     physical_work_dispatched = False
-    if order.status == Order.Status.ACCEPTED and _prep_starts_automatically(config):
+    if order.status == Order.Status.ACCEPTED:
         physical_work_dispatched = _dispatch_physical_work(order)
     stock.fulfill(order)
     notification.send(order, "payment_confirmed")
     if physical_work_dispatched:
-        _mark_preparing_after_physical_work_dispatch(order)
+        if _prep_starts_automatically(config):
+            _mark_preparing_after_physical_work_dispatch(order)
     elif (
         order.status == Order.Status.ACCEPTED
         and _counter_handoff(order)
@@ -612,13 +667,14 @@ def _on_paid(order, config: ChannelConfig) -> None:
 
 
 def _on_preparing(order, config: ChannelConfig) -> None:
-    """Order entered preparation: dispatch the physical work (KDS) + notify.
+    """Order entered preparation: garante o trabalho físico (KDS) + notify.
 
-    Este é o momento em que a cozinha é acionada. Com ``prep_start="operator"``
-    o pedido chega aqui pela ação "Iniciar preparo" do gestor (``advance_order``),
-    e é AQUI que os tickets nascem. Com ``prep_start="auto"`` os tickets já foram
-    criados no ``on_paid``/``on_accepted``; a chamada aqui é idempotente
-    (``kds.dispatch`` só fira linhas ainda não firadas), então não duplica.
+    Os tickets nascem no aceite (``on_accepted``/``on_paid``), em todo canal.
+    Com ``prep_start="operator"`` o pedido chega aqui pelo "Iniciar preparo" da
+    Cozinha (``kds.start_ticket``) ou pelo atalho do Gestor, que chama o mesmo
+    ato (``kds.start_order_tickets``). A chamada aqui é idempotente
+    (``kds.dispatch`` só fira linhas ainda não firadas), então não duplica; ela
+    cobre o pedido que entrou em preparo sem ter passado pelo aceite de hoje.
     """
     if _ifood_cancellation_pending(order):
         return
@@ -643,7 +699,7 @@ def _on_ready(order, config: ChannelConfig) -> None:
     if config.fulfillment.courier == "auto":
         from shopman.shop.services import courier
 
-        courier.request_dispatch(order, actor="lifecycle.on_ready")
+        courier.request_auto_dispatch(order)
 
 
 def _on_dispatched(order, config: ChannelConfig) -> None:
@@ -690,6 +746,10 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # chega — release é no-op em hold FULFILLED. Devolver ao ledger, senão o
     # sistema fica abaixo do físico a cada erro de digitação cancelado.
     stock.revert_fulfilled(order)
+    # O insumo do feito na hora: o que a cozinha não começou volta ao estoque, o
+    # que ela preparou é perda (dono, 20/10/2026; ADR-040). Directive: o acerto
+    # lê os tickets do KDS e nunca segura o cancelamento.
+    stock.settle_made_to_order_cancellation(order)
     _release_coupon_use(order)
     _settle_cancelled_payment(order)
     fiscal.cancel(order)
@@ -704,6 +764,9 @@ def _on_cancelled(order, config: ChannelConfig) -> None:
     # E os pontos que o cliente RESGATOU como desconto também: o débito só é
     # justo se a venda existiu.
     loyalty.restore(order, reason="cancelled")
+    # O pedido cancelado deixa de ser compra no histórico do cliente: o insight
+    # (contagem, ticket médio, favorito, RFM) é recalculado sem ele.
+    customer.refresh_insights(order)
 
     # Venda de balcão cancelada não vira aviso: o cliente está na frente do
     # caixa e vê o cancelamento acontecer. "Seu pedido foi cancelado" chega a
@@ -755,7 +818,12 @@ def _alert_if_card_authorization_held(order) -> None:
     if (payment.get_payment_status(order) or "").lower() != "authorized":
         return
     from shopman.shop.services import card_authorization
+    from shopman.shop.services.order_helpers import merge_order_data
 
+    # O aviso ao cliente sai logo depois e não pode dizer que a reserva foi
+    # desfeita: o carimbo troca a frase por "a loja vai liberar" (nunca afirmar
+    # falso). ``cancel_reasons.reason_key_of`` lê.
+    merge_order_data(order, {"hold_release_failed_at": timezone.now().isoformat()}, block="payment")
     card_authorization.alert_release_failed(
         order, intent_ref=str(payment_data.get("intent_ref") or ""),
     )
@@ -773,6 +841,7 @@ def _on_returned(order, config: ChannelConfig) -> None:
         stock.revert(order)
         payment.refund(order)
     fiscal.cancel(order)
+    customer.refresh_insights(order)
     loyalty.revoke(order, reason="returned")
     loyalty.restore(order, reason="returned")
 
@@ -819,16 +888,8 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
       explicitly confirms or cancels. No timeout.
     """
     mode = config.confirmation.mode
-    if mode == "immediate":
-        from shopman.shop.services.pos_sales_mode import is_pos_order_mode
-
-        # O canal PDV compartilha dois contratos: Balcão documenta uma entrega
-        # imediata; Encomenda registra uma solicitação que ainda precisa do aceite
-        # humano. A marca está no snapshot desde o commit, então a distinção não
-        # depende da escrita operacional posterior em Order.data.
-        if is_pos_order_mode(order):
-            mode = "manual"
-
+    # A encomenda do PDV segue o canal (``immediate``), como o Balcão: quem a
+    # registrou É o operador, e não há a quem pedir aceite (dono, 27/10/2026).
     if mode == "immediate":
         ensure_confirmable(order)
         from shopman.orderman.exceptions import InvalidTransition
@@ -837,7 +898,9 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
             ensure_payment_captured(order)
         except InvalidTransition as exc:
             if getattr(exc, "code", "") == "payment_not_captured":
-                _create_alert(order, "payment_awaiting_confirmation")
+                # Ainda sem dinheiro: não há o que aceitar. O alerta "já está
+                # pago e espera você aceitar" nasce quando o pagamento cai
+                # (``_on_paid``); aqui ele mentia (DEV-2026-091).
                 notification.send(order, "order_received")
                 return
             raise
@@ -853,7 +916,10 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
         _schedule_confirmation_timeout(order, config, action=action, source="order_commit")
         return
 
-    # manual: aguarda operador, mas agenda alerta de "stale" se configurado.
+    # manual: aguarda operador. Com prazo de fora (iFood), o pedido novo vai ao
+    # bolso de quem atende como Web Push crítico (#2324).
+    _notify_new_order_awaiting_acceptance(order, config)
+    # E agenda alerta de "stale" se configurado.
     stale_minutes = getattr(config.confirmation, "stale_new_alert_minutes", 0)
     if stale_minutes and stale_minutes > 0:
         alert_at = timezone.now() + timedelta(minutes=stale_minutes)
@@ -867,6 +933,16 @@ def _handle_confirmation(order, config: ChannelConfig) -> None:
         )
 
 
+def _notify_new_order_awaiting_acceptance(order, config: ChannelConfig) -> None:
+    try:
+        from shopman.shop.services import order_acceptance_alerts
+
+        order_acceptance_alerts.notify_new_order(order, config)
+    except Exception:
+        # O pedido segue no quadro e o aviso de 5 min tenta de novo; o commit não cai.
+        logger.exception("order_acceptance_alerts.notify_new_failed order=%s", order.ref)
+
+
 def start_acceptance_deadline(order) -> None:
     """O cartão foi autorizado: começa o prazo de aceite da loja (``auto_cancel``).
 
@@ -877,11 +953,7 @@ def start_acceptance_deadline(order) -> None:
     """
     if order.status != Order.Status.NEW:
         return
-    try:
-        config = ChannelConfig.for_channel(order.channel_ref)
-    except Exception:
-        logger.warning("lifecycle.acceptance_deadline_config_failed order=%s", order.ref, exc_info=True)
-        return
+    config = ChannelConfig.for_channel(order.channel_ref)
     if config.confirmation.mode != "auto_cancel":
         return
     _schedule_confirmation_timeout(order, config, action="cancel", source="card_authorized")
@@ -912,10 +984,22 @@ def _should_initiate_payment_on_commit(order, config: ChannelConfig) -> bool:
     if config.payment.timing == "external":
         return False
     if config.payment.timing == "at_commit":
-        return True
-    if config.payment.timing == "post_commit":
-        return _payment_method(order, config) == "card"
-    return False
+        wanted = True
+    elif config.payment.timing == "post_commit":
+        wanted = _payment_method(order, config) == "card"
+    else:
+        wanted = False
+    if not wanted:
+        return False
+    # Fornada de hoje não cobra para garantir vaga (política da casa,
+    # 28/08/2026): o pedido que entrou na fila da fornada de HOJE não nasce
+    # cobrado; a cobrança nasce quando o cliente confirma a vaga
+    # (``waitlist.confirm``). Roda depois de ``stock.hold``: é a reserva que
+    # diz se o pedido está na fila. A encomenda não está na fila e segue
+    # cobrando aqui.
+    from shopman.shop.policies.waitlist_charge import charge_waits_for_the_queue
+
+    return not charge_waits_for_the_queue(order)
 
 
 def _requires_captured_payment_before_confirmation(order, config: ChannelConfig) -> bool:
@@ -986,10 +1070,11 @@ def _dispatch_physical_work(order) -> bool:
 
 
 def _prep_starts_automatically(config: ChannelConfig) -> bool:
-    """True quando a cozinha é acionada sozinha ao aceitar/pagar (iFood/PDV/balcão).
+    """True quando o pedido entra em preparo sozinho ao aceitar/pagar (iFood/PDV/balcão).
 
-    ``prep_start="operator"`` (web/loja) inverte: o pago fica em "Aceito" e a
-    cozinha só é acionada quando o operador dá "Iniciar preparo" no gestor.
+    ``prep_start="operator"`` (web/loja): os tickets nascem no aceite do mesmo
+    jeito, mas o pedido fica em "Aceito" até o "Iniciar preparo" da Cozinha (ou
+    do atalho do Gestor, que é o mesmo ato).
     """
     return config.fulfillment.prep_start != "operator"
 
@@ -1022,29 +1107,118 @@ def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     return _payment_is_captured(order)
 
 
-def _physical_work_deferred(order) -> bool:
-    """True quando o pedido é para data FUTURA (encomenda): KDS e baixa esperam o dia."""
+def awaits_kitchen_release(order) -> bool:
+    """True enquanto a encomenda não chegou à hora de ir para a Cozinha.
+
+    Data FUTURA espera o dia. NO dia, a encomenda (``is_preorder`` gravado no
+    commit, ou despertador vivo) espera ``preorder_activation_at``: hora
+    combinada − preparo − antecedência (decisão do dono, 09/11/2026). O pedido
+    feito hoje PARA hoje com hora combinada espera pela mesma régua
+    (:func:`_promised_for_today`, #2548): o pão feito na hora não sai horas
+    antes do combinado. Pedido do dia sem hora combinada, e a venda de balcão,
+    vão para a Cozinha no aceite. Depois que a Cozinha recebeu
+    (``kitchen_released_at``), nada mais espera.
+    """
     from shopman.shop.services.order_helpers import get_commitment_date
 
     if ifood_schedule.is_scheduled(order):
         return not ifood_schedule.is_due(order)
     target = get_commitment_date(order)
-    return target is not None and target > timezone.localdate()
+    if target is None:
+        return False
+    today = timezone.localdate()
+    if target != today:
+        return target > today
+    data = order.data or {}
+    if data.get(KITCHEN_RELEASED_AT_KEY):
+        return False
+    from shopman.shop.services.order_helpers import is_preorder
+
+    if not (is_preorder(order) or _has_live_preorder_alarm(order) or _promised_for_today(order, target)):
+        return False
+    available_at, _ = preorder_activation_at(order)
+    return available_at is not None and available_at > timezone.now()
+
+
+def _promised_for_today(order, today) -> bool:
+    """O pedido de hoje combinou uma hora de hoje (#2548, coordenação 21/11/2026).
+
+    ``is_preorder`` é falso no mesmo dia (o commit só o grava para data futura),
+    e sem esta pergunta o pedido feito às 9h para as 17h ia à Cozinha no aceite.
+    A hora é a mesma que :func:`kitchen_release_at` usa (``promised_at``). A
+    venda de balcão fica de fora: o cliente leva agora, não há hora a esperar.
+    """
+    from shopman.shop.services.fulfillment_window import promised_at
+    from shopman.shop.services.order_helpers import is_counter_takeaway
+
+    if is_counter_takeaway(order):
+        return False
+    promised = promised_at(order)
+    return promised is not None and timezone.localtime(promised).date() == today
+
+
+#: ``Order.data`` — ISO datetime em que a encomenda saiu da espera e entrou no
+#: fluxo do dia: tickets na Cozinha (se houver item de cozinha) e baixa. O
+#: despertador tocou, ou alguém a liberou antes (``release_preorder_now``).
+#: Base da espera na Cozinha no B.I. (``backstage/projections/bi_preorder_kitchen``).
+KITCHEN_RELEASED_AT_KEY = "kitchen_released_at"
+
+
+def _has_live_preorder_alarm(order) -> bool:
+    from shopman.shop.directives import PREORDER_ACTIVATE
+
+    ref = getattr(order, "ref", None)
+    if not ref:
+        return False
+    return Directive.objects.filter(
+        topic=PREORDER_ACTIVATE,
+        dedupe_key=f"preorder.activate:{ref}",
+        status__in=("queued", "running"),
+    ).exists()
+
+
+def kitchen_release_at(order, target):
+    """A hora em que a encomenda do dia ``target`` chega à Cozinha.
+
+    Com hora combinada: ``hora − preparo − antecedência``
+    (``preorder_kitchen_policy``), nunca antes de 00:05 do dia. Sem hora
+    combinada: a abertura da loja no dia; sem expediente declarado, 00:05.
+    """
+    from datetime import datetime
+    from datetime import time as time_type
+
+    from shopman.shop.policies.preorder_kitchen_policy import resolve_preorder_kitchen_policy
+    from shopman.shop.services import business_calendar
+    from shopman.shop.services.fulfillment_window import promised_at
+
+    floor = timezone.make_aware(datetime.combine(target, time_type(0, 5)))
+    promised = promised_at(order)
+    if promised is not None and timezone.localtime(promised).date() == target:
+        policy = resolve_preorder_kitchen_policy()
+        skus = list(order.items.values_list("sku", flat=True)) if order.pk else []
+        minutes = policy.prep_minutes_for(skus) + policy.lead_minutes
+        return max(floor, promised - timedelta(minutes=minutes))
+    try:
+        hours = business_calendar.selling_hours_for(target)
+    except Exception:
+        logger.warning("lifecycle.kitchen_release_at: calendar unreadable for %s", target, exc_info=True)
+        hours = None
+    if hours is not None:
+        return max(floor, timezone.make_aware(datetime.combine(target, hours[0])))
+    return floor
 
 
 def preorder_activation_at(order):
     """Quando o despertador da encomenda deve tocar: ``(available_at, data)``.
 
-    Madrugada (00:05) da data combinada; iFood agendado toca no início do preparo
-    que o próprio iFood informa. ``(None, None)`` quando não há data (ou o
+    No dia combinado, a hora em que o card chega à Cozinha
+    (:func:`kitchen_release_at`); iFood agendado toca no início do preparo que
+    o próprio iFood informa. ``(None, None)`` quando não há data (ou o
     agendamento do iFood é ilegível — quem agenda decide o que fazer com isso).
     Uma régua só para quem cria (``_schedule_preorder_activation``), quem move
     (``services.reschedule``) e quem re-enfileira o toque cedo demais
     (``PreorderActivateHandler``).
     """
-    from datetime import datetime
-    from datetime import time as time_type
-
     from shopman.shop.services.order_helpers import get_commitment_date
 
     if ifood_schedule.is_scheduled(order):
@@ -1055,15 +1229,15 @@ def preorder_activation_at(order):
     target = get_commitment_date(order)
     if target is None:
         return None, None
-    return timezone.make_aware(datetime.combine(target, time_type(0, 5))), target
+    return kitchen_release_at(order, target), target
 
 
 def _schedule_preorder_activation(order) -> None:
-    """Agenda o despertador da encomenda: directive na meia-noite da data.
+    """Agenda o despertador da encomenda: directive na hora de ir para a Cozinha.
 
     Dedupe por pedido — confirmado e pago agendam o mesmo despertador uma vez.
-    O worker de directives (``process_directives``) entrega na manhã da data;
-    o handler dispara KDS + baixa pelo caminho normal.
+    O worker de directives (``process_directives``) entrega na hora de
+    ``preorder_activation_at``; o handler dispara KDS + baixa pelo caminho normal.
     """
     from shopman.shop.directives import PREORDER_ACTIVATE, create_deduped
 
@@ -1090,28 +1264,33 @@ def _schedule_preorder_activation(order) -> None:
     )
 
 
-def activate_preorder(order) -> None:
-    """Dispara o trabalho físico adiado de uma encomenda NA data dela.
+def activate_preorder(order, *, early: bool = False) -> None:
+    """Dispara o trabalho físico adiado de uma encomenda NA hora dela.
 
     Chamado pelo handler da directive ``preorder.activate``: cria os tickets
-    de KDS, baixa o estoque (se o pagamento permite) e marca PREPARING —
-    exatamente o que ``_on_accepted`` teria feito se a data fosse hoje.
-    A baixa tolera holds ainda não materializados (fornada da manhã): o
-    receiver de ``holds_materialized`` completa quando o pão existir.
+    de KDS e baixa o estoque (se o pagamento permite). NÃO marca PREPARING, em
+    canal nenhum (decisão do dono, 09/11/2026): chegar à Cozinha não é "Em
+    preparo", o pedido fica Aceito até o "Iniciar" do posto (ou o atalho do
+    Gestor, que é o mesmo ato). A baixa tolera holds ainda não materializados
+    (fornada da manhã): o receiver de ``holds_materialized`` completa quando o
+    pão existir.
     """
     if order.status not in (Order.Status.ACCEPTED, Order.Status.PREPARING):
         logger.info(
             "lifecycle.activate_preorder: skip order=%s status=%s", order.ref, order.status
         )
         return
-    if _physical_work_deferred(order):
-        # Antes do dia nada dispara. Quem garante que o despertador toque de novo
-        # na data certa é o ``PreorderActivateHandler``: ele confere a data antes
-        # de chamar esta função e re-enfileira a PRÓPRIA directive (uma só, o
-        # dedupe do Core recusaria uma segunda enquanto esta está viva). Chegar
-        # aqui cedo por outro caminho (``holds_materialized``) não perde nada: o
-        # despertador daquele pedido continua na fila.
-        logger.warning("lifecycle.activate_preorder: too early order=%s", order.ref)
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if awaits_kitchen_release(order) and not (early and get_commitment_date(order) == timezone.localdate()):
+        # Antes da hora nada dispara (``early`` antecipa só a HORA, no dia; outra
+        # data segue esperando). Quem garante que o despertador toque de novo na
+        # hora certa é o ``PreorderActivateHandler``: ele confere antes de chamar
+        # esta função e re-enfileira a PRÓPRIA directive (uma só, o dedupe do
+        # Core recusaria uma segunda enquanto esta está viva). Chegar aqui cedo
+        # por outro caminho (``holds_materialized``, a fornada da manhã) não perde
+        # nada: o despertador daquele pedido continua na fila.
+        logger.info("lifecycle.activate_preorder: too early order=%s", order.ref)
         return
 
     if _ifood_cancellation_pending(order):
@@ -1131,15 +1310,55 @@ def activate_preorder(order) -> None:
         _create_alert(order, "preorder_activation_blocked_unpaid")
         notification.send(order, "payment_requested")
         return
-    # Mesmo knob do mesmo-dia: canal "operator" não forna sozinho nem na data da
-    # encomenda — no dia ela fica "pronta pra fornar" (Aceito) e o operador dispara.
-    physical_work_dispatched = (
-        _dispatch_physical_work(order) if _prep_starts_automatically(config) else False
-    )
+    # A encomenda chega à Cozinha e fica Aceita, esperando o "Iniciar" do posto,
+    # em TODO canal: o ``prep_start`` não vale aqui (decisão do dono, 09/11).
+    _dispatch_physical_work(order)
+    _stamp_kitchen_released(order)
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order, pending_materialization_ok=True)
-    if physical_work_dispatched:
-        _mark_preparing_after_physical_work_dispatch(order)
+
+
+def _stamp_kitchen_released(order) -> None:
+    if getattr(order, "pk", None) is None:
+        return
+    data = dict(order.data or {})
+    if data.get(KITCHEN_RELEASED_AT_KEY):
+        return
+    data[KITCHEN_RELEASED_AT_KEY] = timezone.now().isoformat()
+    order.data = data
+    order.save(update_fields=["data", "updated_at"])
+
+
+def release_preorder_now(order) -> bool:
+    """Leva a encomenda do dia à Cozinha AGORA, antes da hora do despertador.
+
+    Para quem age antes da hora: o "Iniciar" do Gestor e a entrega no balcão do
+    cliente que chegou cedo. Sem isso, o pedido iria a preparo (ou seria
+    entregue) sem ticket e sem baixa. Só vale NO dia: encomenda de outra data
+    segue esperando (o caminho é reagendar). Encerra o despertador vivo e
+    chama ``activate_preorder``. True quando a encomenda foi liberada agora.
+    """
+    from shopman.shop.directives import PREORDER_ACTIVATE
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    if ifood_schedule.is_scheduled(order):
+        return False
+    if get_commitment_date(order) != timezone.localdate():
+        return False
+    if not awaits_kitchen_release(order):
+        return False
+    activate_preorder(order, early=True)
+    order.refresh_from_db()
+    if not (order.data or {}).get(KITCHEN_RELEASED_AT_KEY):
+        # Não foi (pagamento pendente, cancelamento do iFood): o despertador
+        # continua valendo.
+        return False
+    Directive.objects.filter(
+        topic=PREORDER_ACTIVATE,
+        dedupe_key=f"preorder.activate:{order.ref}",
+        status="queued",
+    ).update(status="done", last_error="", updated_at=timezone.now())
+    return True
 
 
 def _mark_preparing_after_physical_work_dispatch(order) -> bool:
@@ -1158,10 +1377,16 @@ def _schedule_confirmation_timeout(
     action: str,
     source: str,
 ) -> Directive | None:
-    """Schedule or rebase the store-decision timer for a NEW order."""
-    expires_at, calendar_state = next_operational_deadline(
-        timeout=timedelta(minutes=config.confirmation.timeout_minutes),
-    )
+    """Schedule or rebase the store-decision timer for a NEW order.
+
+    O prazo é do PEDIDO: a encomenda para outro dia tem o dela
+    (``confirmation.preorder_timeout_minutes``), e o pedido que chega com a casa
+    fechada também; o pedido do dia feito com a casa aberta, o do canal.
+    """
+    scheduled_at = timezone.now()
+    timeout_minutes = acceptance_timeout_minutes(order, config, now=scheduled_at)
+    timeout = timedelta(minutes=timeout_minutes)
+    expires_at, calendar_state = next_operational_deadline(timeout=timeout, now=scheduled_at)
     if expires_at is None:
         logger.warning(
             "confirmation_timeout_not_scheduled_no_next_opening order=%s action=%s source=%s",
@@ -1174,6 +1399,9 @@ def _schedule_confirmation_timeout(
         "order_ref": order.ref,
         "action": action,
         "expires_at": expires_at.isoformat(),
+        # O prazo que este timer conta, gravado na hora de agendar: a meta do
+        # pedido no Gestor sai daqui, não de uma segunda leitura da data.
+        "timeout_minutes": timeout_minutes,
         "source": source,
     }
     if calendar_state.is_closed:
@@ -1214,24 +1442,48 @@ def _schedule_confirmation_timeout(
             payload=payload,
             available_at=expires_at,
         )
-    if action == "cancel":
-        _schedule_stale_alert_before_deadline(order, config, deadline=expires_at)
+    if action == "cancel" and timeout_minutes > 0:
+        # A mesma régua do prazo (tempo de loja aberta), a partir do mesmo instante.
+        alert_at, _ = next_operational_deadline(
+            timeout=timeout / STALE_ALERT_FRACTION_OF_DEADLINE, now=scheduled_at,
+        )
+        if alert_at is not None:
+            _schedule_stale_alert_before_deadline(order, alert_at=alert_at, deadline=expires_at)
     return timer
 
 
-def _schedule_stale_alert_before_deadline(order, config: ChannelConfig, *, deadline) -> None:
+def acceptance_timeout_minutes(order, config: ChannelConfig, *, now=None) -> int:
+    """Minutos de loja aberta que a casa tem para aceitar ESTE pedido.
+
+    O prazo curto (``timeout_minutes``) é só do pedido para o MESMO dia que chega
+    com a casa ABERTA: é quando o cliente está esperando a resposta e a equipe
+    está na tela. Fora disso vale o prazo longo do canal
+    (``preorder_timeout_minutes``): encomenda para outro dia, e pedido que chega
+    com a casa fechada, mesmo sendo para hoje (dono, 09/11/2026). ``now`` é o
+    instante em que o prazo começa a contar. Uma régua só para quem agenda o
+    prazo e para quem mostra a meta do pedido novo no Gestor.
+    """
+    moment = now or timezone.now()
+    target = get_commitment_date(order)
+    preorder = target is not None and target > timezone.localdate(moment)
+    long_deadline = preorder or current_business_state(now=moment).is_closed
+    return config.confirmation.acceptance_timeout_minutes(long_deadline=long_deadline)
+
+
+#: O aviso de pedido parado sai a 1/3 do prazo de aceite do próprio pedido (a ADR-036
+#: fazia 10 de 30): no pedido do dia de 5 min, 1min40s; na encomenda de 60, aos 20.
+STALE_ALERT_FRACTION_OF_DEADLINE = 3
+
+
+def _schedule_stale_alert_before_deadline(order, *, alert_at, deadline) -> None:
     """O aviso de pedido parado DENTRO do prazo de aceite, dizendo até quando.
 
     No ``auto_cancel`` o pedido some sozinho no fim do prazo (e o dinheiro volta
-    ao cliente): o Gestor precisa saber antes. O aviso sai ``stale_new_alert_minutes``
-    depois do início do prazo (em horário de loja aberta, como o próprio prazo) e
+    ao cliente): o Gestor precisa saber antes. O aviso sai a 1/3 do prazo deste
+    pedido (``STALE_ALERT_FRACTION_OF_DEADLINE``), na mesma régua dele (tempo de
+    loja aberta: quem calcula ``alert_at`` é ``next_operational_deadline``), e
     anda junto quando o prazo é reagendado (o pagamento chegou).
     """
-    stale_minutes = int(getattr(config.confirmation, "stale_new_alert_minutes", 0) or 0)
-    timeout_minutes = int(config.confirmation.timeout_minutes or 0)
-    if stale_minutes <= 0 or stale_minutes >= timeout_minutes:
-        return
-    alert_at = deadline - timedelta(minutes=timeout_minutes - stale_minutes)
     payload = {
         "order_ref": order.ref,
         "alert_at": alert_at.isoformat(),
@@ -1294,7 +1546,11 @@ def _check_availability(order, config: ChannelConfig) -> bool:
 def _verify_holds(order) -> bool:
     """Defense-in-depth: verify held SKUs match ordered SKUs after stock.hold().
     Returns False if order was cancelled."""
-    held_skus = {h.get("sku") for h in (order.data or {}).get("hold_ids", []) if h.get("hold_id") or h.get("untracked")}
+    held_skus = {
+        h.get("sku")
+        for h in (order.data or {}).get("hold_ids", [])
+        if h.get("hold_id") or stock.is_untracked_hold_entry(h)
+    }
     ordered_skus = {item["sku"] for item in order.snapshot.get("items", [])}
     missing = ordered_skus - held_skus
 
@@ -1385,6 +1641,11 @@ def _create_alert(order, alert_type: str) -> None:
 
     message = _ALERT_MESSAGES[alert_type].format(ref=order.ref)
     try:
+        # Uma causa aberta por pedido: o sweeper re-despacha a fase (crash
+        # pós-commit) e o alerta nascia de novo ao lado do que ninguém resolveu
+        # ainda (beta 06/11, W7). Resolvido, o próximo fato volta a alertar.
+        if alert_adapter.recent_exists(alert_type, None, order_ref=order.ref):
+            return
         alert_adapter.create(alert_type, "warning", message, order_ref=order.ref)
     except Exception:
         logger.exception("lifecycle._create_alert: failed for order %s", order.ref)

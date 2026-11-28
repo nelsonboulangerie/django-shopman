@@ -34,6 +34,7 @@ def _form_data(recipe: Recipe, **overrides) -> dict:
         "name": recipe.name,
         "output_sku": recipe.output_sku,
         "batch_size": "1",
+        "production_mode": "batch",
         "is_active": "on",
         "production_lifecycle": "standard",
     }

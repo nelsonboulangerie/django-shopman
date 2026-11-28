@@ -83,8 +83,8 @@ class Collection(models.Model):
         from shopman.offerman.smart_collection import resolve_products
 
         if self.is_smart:
-            return resolve_products(self.rule)
-        return Product.objects.filter(collection_items__collection=self).distinct()
+            return resolve_products(self.rule).active()
+        return Product.objects.active().filter(collection_items__collection=self).distinct()
 
     def clean(self):
         """Validate no circular parent reference, max depth, and smart rule."""
@@ -114,7 +114,6 @@ class Collection(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
-
     @property
     def full_path(self) -> str:
         """Returns full path: 'Category > Subcategory > Collection'."""

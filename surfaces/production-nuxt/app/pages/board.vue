@@ -3,15 +3,34 @@
 // · página à parte, sem o chrome do backstage (o link de entrada vive na
 //   aba "Painel" da UI normal); botão de tela cheia para a TV;
 // · tipografia Oswald (grotesca condensada de painel), DUAS escalas apenas:
-//   display (título · relógio) e linha (todas as palhetas);
-// · NOME do produto nas palhetas (SKU saiu); quantidade com UN embutido
-//   ("12 UN" — doze o quê? unidades); horário como estava;
+//   display (título · relógio) e linha (todas as palhetas). As duas crescem
+//   com a ALTURA da tela, sem teto de tablet: numa TV de 1080 a linha tem 48px
+//   e se lê a dois metros (WP-F04). A largura só limita quando os nomes do dia
+//   não caberiam; a hora guarda o "h" minúsculo ("6h42");
+// · NOME do produto nas palhetas (SKU saiu), na largura do maior nome do dia;
+//   quantidade com a unidade que a projeção traz ("12 UN", "18,5 KG");
+// · sem conexão, o último quadro fica no ar e o aviso, com a hora da leitura,
+//   é o primeiro conteúdo da tela, numa linha de palhetas âmbar;
 // · atrasado não pisca: as palhetas RE-GIRAM periodicamente até o mesmo
 //   valor, como os painéis mecânicos reais fazem;
 // · ordem de aeroporto: cronológica pelo horário — status muda cor, nunca
 //   posição; confirmados saem pelo TTL.
-import type { ForecastStatus } from "~/types/production";
+import type {
+  ForecastStatus,
+  ProductionForecastProjection,
+} from "~/types/production";
 import {
+  BOARD_ETA_CHARS,
+  BOARD_STATUS_CHARS,
+  STORE_TIME_ZONE,
+  boardNameChars,
+  boardNameLines,
+  boardQtyChars,
+  boardQtyLabel,
+  boardRowSpoken,
+  boardStaleFlaps,
+  boardStaleNotice,
+  forecastTimeTone,
   fullDateLabel,
   isStale,
   isoForOffset,
@@ -22,18 +41,58 @@ import {
   periodOfDay,
   type PeriodSelection,
 } from "../../../operator-kit/app/presentation/dates";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
-const { rows, selectedDate, pending, error } = useProductionForecast();
-// Kiosk aberto o dia todo: se o sinal cair, mantém o último quadro no ar (dado velho
-// visível > tela em branco) e acende um aviso discreto de "sem sinal".
+const { forecast, selectedDate, pending, error } = useProductionForecast();
+// Kiosk aberto o dia todo: se a conexão cair, mantém o último quadro no ar (dado
+// velho visível > tela em branco). O `useFetch` zera o dado quando a leitura falha,
+// então o Letreiro guarda a última leitura boa; trocar de data a descarta.
+const lastRead = shallowRef<ProductionForecastProjection | null>(null);
+watch(
+  forecast,
+  (next) => {
+    if (next) lastRead.value = next;
+  },
+  { immediate: true },
+);
+watch(selectedDate, () => {
+  lastRead.value = null;
+});
+const rows = computed(() => lastRead.value?.rows ?? []);
 const stale = computed(() =>
   isStale({ error: !!error.value, hasData: rows.value.length > 0 }),
 );
+const staleNotice = computed(() =>
+  boardStaleNotice(lastRead.value?.generated_at_display ?? ""),
+);
+const staleFlaps = computed(() =>
+  boardStaleFlaps(lastRead.value?.generated_at_display ?? ""),
+);
+// O aviso fecha no X e VOLTA enquanto a causa durar (regra da casa, #2095): na
+// próxima leitura que falhar, ou depois de um minuto, se a conexão seguir caída.
+const STALE_RETURN_MS = 60_000;
+const staleDismissed = ref(false);
+let staleReturnTimer: ReturnType<typeof setTimeout> | null = null;
+function dismissStale(): void {
+  staleDismissed.value = true;
+  if (staleReturnTimer) clearTimeout(staleReturnTimer);
+  staleReturnTimer = setTimeout(() => {
+    staleDismissed.value = false;
+  }, STALE_RETURN_MS);
+}
+// Cada leitura que falha traz um erro novo: o aviso fechado volta.
+watch(error, (next) => {
+  if (next) staleDismissed.value = false;
+});
+const showStale = computed(() => stale.value && !staleDismissed.value);
 const sound = useFlapClack();
 
 // Paginação de aeroporto: N linhas fixas (medidas na tela), excedente vira
 // páginas em ciclo de 12s — manhã cheia não rola, VIRA, com clac-storm.
-const pages = useBoardPages(rows);
+const pages = useBoardPages(
+  rows,
+  (row) => boardNameLines(row.recipe_name, NAME_CHARS.value).length,
+);
 function setBoardList(el: unknown) {
   pages.listEl.value = (el as HTMLElement | null) ?? null;
 }
@@ -67,9 +126,8 @@ let respinTimer: ReturnType<typeof setInterval> | null = null;
 onMounted(() => {
   sound.unlock();
   const tick = () => {
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, "0");
-    clock.value = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+    // O relógio da padaria, não o do dispositivo (TV configurada em outro fuso).
+    clock.value = formatClock(new Date(), STORE_TIME_ZONE) || "--:--";
     rollDay(); // vira o dia à meia-noite (a TV não amanhece em ontem)
   };
   tick();
@@ -81,6 +139,7 @@ onMounted(() => {
 onUnmounted(() => {
   if (clockTimer) clearInterval(clockTimer);
   if (respinTimer) clearInterval(respinTimer);
+  if (staleReturnTimer) clearTimeout(staleReturnTimer);
 });
 
 // ── Tela cheia (kiosk de verdade na TV) ─────────────────────────────────────
@@ -94,34 +153,53 @@ async function toggleFullscreen() {
   else await kiosk.enter();
 }
 
-// ── Status → cor (uma cor, um significado) ─────────────────────────────────
-const STATUS_TONE: Record<ForecastStatus, string> = {
-  scheduled: "tone-neutral",
-  in_progress: "tone-cyan",
-  delayed: "tone-amber",
-  arrived: "tone-green",
+// ── Status → cor do tempo (o mesmo mapa do Gestor e da Cozinha) ────────────
+const TIME_TONE_CLASS: Record<ReturnType<typeof forecastTimeTone>, string> = {
+  late: "tone-red",
+  warning: "tone-amber",
+  neutral: "tone-neutral",
+  ready: "tone-green",
 };
+const statusToneClass = (status: ForecastStatus) =>
+  TIME_TONE_CLASS[forecastTimeTone(status)];
 
-const NAME_CHARS = 22; // maior nome atual: "Pão de Forma Artesanal"
-const QTY_CHARS = 6; // "999 UN"
-const STATUS_CHARS = 10; // CONFIRMADO
+// As colunas medem o dia: o maior nome e a maior quantidade cabem inteiros.
+const NAME_CHARS = computed(() => boardNameChars(rows.value));
+const QTY_CHARS = computed(() => boardQtyChars(rows.value));
+const STATUS_CHARS = BOARD_STATUS_CHARS;
+const ETA_CHARS = BOARD_ETA_CHARS;
+// A escala divide a largura útil pelo total de palhetas da linha (TV: uma linha só;
+// celular: o nome em cima, os três mostradores embaixo). Só depois de montar: a
+// hidratação do Vue não corrige `style` divergente do HTML do servidor, e a
+// escala medida lá (sem as linhas do dia) ficaria valendo na TV.
+const scaleReady = ref(false);
+onMounted(() => {
+  scaleReady.value = true;
+});
+const boardScale = computed(() => !scaleReady.value ? {} : ({
+  "--row-chars": NAME_CHARS.value + QTY_CHARS.value + ETA_CHARS + STATUS_CHARS,
+  "--row-chars-narrow": Math.max(
+    NAME_CHARS.value,
+    QTY_CHARS.value + ETA_CHARS + STATUS_CHARS + 3,
+  ),
+}));
 </script>
 
 <template>
-  <main class="board flex min-h-screen flex-col">
+  <main class="board flex h-dvh flex-col overflow-hidden" :style="boardScale">
+    <!-- Altura da tela, nunca mais: o kiosk não rola, o excedente vira página. -->
     <header class="flex flex-col gap-2 px-4 pb-2 pt-4 md:px-8">
       <div class="board-labels flex flex-wrap items-center gap-x-3 gap-y-2">
+        <NuxtButton
+          to="/"
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-arrow-left"
+          aria-label="Voltar à produção"
+          title="Voltar à produção"
+          class="board-key"
+        />
         <span>{{ fullDateLabel(selectedDate) }}</span>
-        <span
-          v-if="stale"
-          role="status"
-          aria-live="polite"
-          class="inline-flex items-center gap-1.5 tone-amber"
-          title="Sem sinal: mostrando o último quadro"
-        >
-          <Icon name="lucide:wifi-off" class="size-4" />
-          <span>sem sinal</span>
-        </span>
         <span aria-hidden="true">·</span>
         <!-- O controle de período da casa, vestido com a paleta do painel. -->
         <OperatorPeriodPicker
@@ -162,10 +240,13 @@ const STATUS_CHARS = 10; // CONFIRMADO
         </div>
       </div>
 
-      <div class="flex items-baseline justify-between gap-6">
-        <h1 class="board-title">Lotes</h1>
+      <div class="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <!-- O título também em palhetas, pretas, com letra de latão (dono). -->
+        <h1 class="board-title" aria-label="Produção do dia">
+          <SplitFlap value="Produção do dia" aria-hidden="true" />
+        </h1>
         <ClientOnly>
-          <SplitFlap :value="clock" :chars="5" class="board-display" />
+          <SplitFlap :value="clock" :chars="5" :upper="false" align="right" class="board-display ml-auto" />
         </ClientOnly>
       </div>
     </header>
@@ -173,11 +254,40 @@ const STATUS_CHARS = 10; // CONFIRMADO
     <section
       class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4 pt-4 md:px-8"
     >
+      <!-- Sem conexão: uma linha do próprio Letreiro, em palhetas âmbar (o dono:
+           "mais fidedigno"), primeiro conteúdo abaixo do topo, com a hora da
+           leitura que continua no ar. Some quando a leitura seguinte dá certo;
+           o X fecha, e ele volta enquanto a causa durar. -->
+      <div
+        v-if="showStale"
+        role="alert"
+        data-board-stale
+        class="board-stale mb-4 flex shrink-0 items-center gap-3"
+      >
+        <span data-board-stale-text class="sr-only">{{ staleNotice }}</span>
+        <SplitFlap
+          :value="staleFlaps"
+          :upper="false"
+          aria-hidden="true"
+          class="board-flap board-stale-flaps min-w-0 flex-1"
+        />
+        <NuxtButton
+          color="neutral"
+          variant="ghost"
+          square
+          icon="i-lucide-x"
+          aria-label="Fechar aviso"
+          title="Fechar aviso"
+          class="board-stale-close shrink-0"
+          @click="dismissStale()"
+        />
+      </div>
+
       <p v-if="pending && !rows.length" class="board-labels py-8">
         Carregando…
       </p>
       <p v-else-if="error && !rows.length" class="board-labels py-8">
-        Sinal perdido. Reconectando…
+        Sem conexão. Tentando ler de novo…
       </p>
 
       <div
@@ -193,37 +303,41 @@ const STATUS_CHARS = 10; // CONFIRMADO
           <TransitionGroup
             tag="div"
             name="board-row"
-            class="relative flex flex-col gap-1.5"
+            class="board-rows relative flex flex-col"
           >
             <article
               v-for="row in pages.visible.value"
               :key="row.ref"
               data-board-row
+              :data-board-lines="boardNameLines(row.recipe_name, NAME_CHARS).length"
               class="board-row"
-              :aria-label="`${row.recipe_name}: ${row.qty} unidades às ${row.eta_display}, ${row.status_label}`"
+              :aria-label="boardRowSpoken(row)"
             >
+              <div data-board-name class="board-name flex min-w-0 flex-col">
+                <SplitFlap
+                  v-for="(line, index) in boardNameLines(row.recipe_name, NAME_CHARS)"
+                  :key="index"
+                  :value="line"
+                  :chars="NAME_CHARS"
+                  class="board-flap min-w-0"
+                />
+              </div>
               <SplitFlap
-                :value="row.recipe_name"
-                :chars="NAME_CHARS"
-                class="board-flap min-w-0"
-              />
-              <SplitFlap
-                :value="`${row.qty} UN`"
+                :value="boardQtyLabel(row.qty, row.unit)"
                 :chars="QTY_CHARS"
                 align="right"
                 class="board-flap"
               />
               <SplitFlap
                 :value="row.eta_display"
-                :chars="5"
+                :chars="ETA_CHARS"
+                :upper="false"
                 align="right"
                 class="board-flap"
                 :class="
                   row.status === 'delayed'
-                    ? 'tone-amber'
-                    : row.eta_is_actual
-                      ? 'tone-green'
-                      : ''
+                    ? 'tone-red'
+                    : 'tone-neutral'
                 "
               />
               <SplitFlap
@@ -231,7 +345,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
                 :chars="STATUS_CHARS"
                 align="right"
                 class="board-flap"
-                :class="STATUS_TONE[row.status]"
+                :class="statusToneClass(row.status)"
                 :pulse="row.status === 'delayed' ? respinTick : 0"
               />
             </article>
@@ -282,15 +396,29 @@ const STATUS_CHARS = 10; // CONFIRMADO
   --board-amber: #f2c46b;
   --board-cyan: #6fa0c0;
 
-  /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). */
-  --scale-display: clamp(1.9rem, 4vw, 2.6rem);
-  --scale-row: clamp(1.05rem, 2vw, 1.5rem);
+  /* DUAS escalas, e só: display (título · relógio) e linha (palhetas). A linha
+     cresce com a altura da tela até 48px (3rem, uma TV de 1080 lida a 2 m; a
+     Oswald é condensada e aguenta, escolha do dono). A largura entra só como
+     limite: o total de palhetas da linha (`--row-chars`, medido no dia) × 0,87em
+     (célula + vão), menos o vão depois da última palheta de cada uma das quatro
+     colunas (0,36em), mais a moldura fixa (margens, bordas e vãos entre
+     colunas, ~8,5rem) cabe em 100vw. */
+  --row-chars: 42;
+  --row-chars-narrow: 24;
+  --scale-display: clamp(1.9rem, 4.4vh, 3rem);
+  --scale-row: max(
+    1rem,
+    min(3rem, 4.5vh, calc((100vw - 8.5rem) / (var(--row-chars) * 0.87 - 0.36)))
+  );
+  --scale-label: clamp(0.85rem, 1.9vh, 1.4rem);
 
   background:
     radial-gradient(120% 90% at 50% 0%, #2b1d16 0%, var(--board-bg) 60%),
     var(--board-bg);
   color: var(--board-text);
-  font-family: var(--font-sans);
+  /* Oswald, a grotesca condensada de painel que o dono escolheu para o Letreiro
+     (mais estreita que a fonte da suíte, como a palheta real). */
+  font-family: Oswald, "Arial Narrow", "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
@@ -299,11 +427,19 @@ const STATUS_CHARS = 10; // CONFIRMADO
   font-size: var(--scale-display);
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -0.01em;
+}
+/* Latão discreto: separa o título das linhas sem tomar o âmbar do aviso nem o
+   vermelho do atraso. */
+.board-title :deep(.flap-cell) {
+  color: #c4a265;
 }
 .board-display {
   font-size: var(--scale-display);
   font-weight: 600;
+}
+.board-name {
+  gap: 0.12em;
+  font-size: var(--scale-row);
 }
 .board-flap {
   font-size: var(--scale-row);
@@ -311,7 +447,7 @@ const STATUS_CHARS = 10; // CONFIRMADO
 }
 
 .board-labels {
-  font-size: 0.78rem;
+  font-size: var(--scale-label);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -332,6 +468,47 @@ const STATUS_CHARS = 10; // CONFIRMADO
   --ring: var(--board-text);
   letter-spacing: normal;
   text-transform: none;
+}
+
+/* O aviso de conexão é uma linha do Letreiro: a mesma moldura, a mesma Oswald,
+   as mesmas palhetas, só que âmbar com letra escura (alto contraste). */
+.board-stale {
+  font-size: var(--scale-row);
+  border: 1px solid var(--board-line);
+  border-radius: 0.75rem;
+  background: var(--board-panel);
+  padding: 0.5rem 1rem;
+}
+.board-stale-flaps {
+  overflow: hidden;
+}
+.board-stale-flaps :deep(.flap-cell) {
+  color: var(--board-bg);
+  background: linear-gradient(180deg, #f6d185 0%, #f2c46b 48%, #d9a94f 52%, #eebd60 100%);
+}
+/* O espaço também é palheta âmbar, no mesmo tom das letras (dono). */
+.board-stale-flaps :deep(.flap-cell--blank) {
+  background: linear-gradient(180deg, #f6d185 0%, #f2c46b 48%, #d9a94f 52%, #eebd60 100%);
+}
+/* O X discreto no fim da linha, na cor dos rótulos; alvo de 44px. */
+.board-stale-close {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  border-radius: 0.5rem;
+  color: var(--board-dim);
+  background: transparent;
+}
+.board-stale-close:hover {
+  color: var(--board-text);
+  background: var(--board-line);
+}
+.board-stale-close :deep(.iconify),
+.board-stale-close :deep(svg) {
+  width: 1.5rem;
+  height: 1.5rem;
 }
 
 .board-key {
@@ -380,15 +557,22 @@ const STATUS_CHARS = 10; // CONFIRMADO
 }
 
 /* ── Grade: TV = uma linha; celular = nome em cima, mostradores embaixo ── */
+/* O vão entre um lote e outro cresce com a letra (dono: melhora a leitura). A
+   paginação mede este vão na tela. */
+.board-rows {
+  gap: max(0.375rem, calc(var(--scale-row) * 0.3));
+}
 .board-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 1.25rem;
+  /* As palhetas em branco já separam as colunas; o vão fica curto para a letra
+     crescer. */
+  gap: 0.75rem;
   align-items: center;
   border: 1px solid var(--board-line);
   border-radius: 0.75rem;
   background: var(--board-panel);
-  padding: 0.7rem 1rem;
+  padding: 0.5rem 1rem;
 }
 
 .tone-green :deep(.flap-cell) {
@@ -396,6 +580,9 @@ const STATUS_CHARS = 10; // CONFIRMADO
 }
 .tone-amber :deep(.flap-cell) {
   color: var(--board-amber);
+}
+.tone-red :deep(.flap-cell) {
+  color: var(--destructive);
 }
 .tone-cyan :deep(.flap-cell) {
   color: var(--board-cyan);
@@ -446,7 +633,17 @@ const STATUS_CHARS = 10; // CONFIRMADO
     grid-area: status;
   }
   .board {
-    --scale-row: 0.92rem;
+    /* Celular: o nome ocupa a linha de cima sozinho; a escala divide a largura
+       pela maior das duas linhas (nome, ou os três mostradores). */
+    --scale-row: max(
+      0.85rem,
+      min(1.6rem, calc((100vw - 6rem) / (var(--row-chars-narrow) * 0.87)))
+    );
+    --scale-display: clamp(1.6rem, 8vw, 2.4rem);
+  }
+  /* Celular: o título (15 palhetas) cabe na largura; o relógio desce. */
+  .board-title {
+    font-size: min(var(--scale-display), calc((100vw - 2rem) / 13.2));
   }
 }
 </style>

@@ -3,8 +3,9 @@ Menuboard projection — o quadro de cardápio numa TV da loja.
 
 Um canal de exibição (``Channel`` com ``commerce_policy="display"`` e formato vazio)
 compõe N coleções; no menuboard cada coleção é uma SEÇÃO (Pães, Doces, Bebidas…).
-Pausar o produto globalmente tira do quadro; pausar em ``display.paused_skus`` tira
-só deste quadro.
+Pausar o produto globalmente apaga o item no quadro; pausar em ``display.paused_skus``
+apaga só neste quadro. Ocultar (o produto, ou em ``display.hidden_skus`` só aqui) tira
+o item da tela.
 
 **O preço vem do canal apontado por ``display.prices_from``, não de
 ``Product.base_price_q``.** A TV do balcão aponta para o PDV porque está na loja e
@@ -173,6 +174,7 @@ def build_menuboard(ref: str, *, now=None) -> MenuboardProjection:
     display = _display(channel)
     collection_refs = list(display.get("collections") or [])
     paused = set(display.get("paused_skus") or [])
+    hidden = set(display.get("hidden_skus") or [])
 
     # Coleções na ordem do canal; ordenação de exibição = sort_order da coleção.
     colls = {c.ref: c for c in Collection.objects.filter(ref__in=collection_refs)}
@@ -199,7 +201,9 @@ def build_menuboard(ref: str, *, now=None) -> MenuboardProjection:
             continue
         items: list[MenuboardItem] = []
         for product in by_collection.get(coll_ref, []):
-            available = product.is_published and product.is_sellable and product.sku not in paused
+            if not product.is_published or product.sku in hidden:
+                continue
+            available = product.is_sellable and product.sku not in paused
             if available:
                 available_count += 1
             items.append(

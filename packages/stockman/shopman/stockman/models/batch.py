@@ -53,8 +53,8 @@ class Batch(models.Model):
     """
     Batch/lot for traceability of products with expiry.
 
-    A Batch groups stock by production lot. Each Quant can optionally
-    reference a Batch via FK (Quant.batch → Batch).
+    A Batch groups stock by production lot. A Quant references a Batch by
+    its ``ref`` (``Quant.batch`` é texto, não FK; o motivo está no campo).
     """
 
     ref = models.CharField(
@@ -98,6 +98,15 @@ class Batch(models.Model):
         blank=True,
         default="",
         verbose_name=_("Observações"),
+    )
+
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        verbose_name=_("Metadados"),
+        help_text=_(
+            "Proveniência imutável do lote, como ordem de produção, versão da receita e composição executada."
+        ),
     )
 
     # Qualidade (ADR-017): o LOTE é o dono do fato comercial congelado. O grau

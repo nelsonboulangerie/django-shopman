@@ -1,0 +1,50 @@
+{
+  "antes-light": [
+    {
+      "dark": false,
+      "text": "Amanhã",
+      "classes": "text-base font-semibold leading-tight text-primary",
+      "fontPx": 16,
+      "color": "#8b6b2e",
+      "background": "#f9f8f5",
+      "border": "rgb(139, 107, 46)",
+      "contrast": 4.65
+    }
+  ],
+  "depois-light": [
+    {
+      "dark": false,
+      "text": "Amanhã",
+      "classes": "text-base font-semibold leading-tight text-(--primary-ink)",
+      "fontPx": 16,
+      "color": "#7f612c",
+      "background": "#f9f8f5",
+      "border": "rgb(139, 107, 46)",
+      "contrast": 5.39
+    }
+  ],
+  "antes-dark": [
+    {
+      "dark": true,
+      "text": "Amanhã",
+      "classes": "text-base font-semibold leading-tight text-primary",
+      "fontPx": 16,
+      "color": "#d4a53f",
+      "background": "#332418",
+      "border": "rgb(212, 165, 63)",
+      "contrast": 6.58
+    }
+  ],
+  "depois-dark": [
+    {
+      "dark": true,
+      "text": "Amanhã",
+      "classes": "text-base font-semibold leading-tight text-(--primary-ink)",
+      "fontPx": 16,
+      "color": "#d4a53f",
+      "background": "#332418",
+      "border": "rgb(212, 165, 63)",
+      "contrast": 6.58
+    }
+  ]
+}

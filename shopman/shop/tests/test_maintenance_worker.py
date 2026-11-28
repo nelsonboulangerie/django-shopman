@@ -547,15 +547,19 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # Depois de liberar reservas: reserva que expira sai por update em massa,
         # sem signal, então é aqui que a volta do produto é percebida.
         call("reconcile_shelf_outages"),
+        # Rede de segurança do envio ao Google e à Meta (o envio é na hora).
+        call("sync_platform_catalogs"),
         call("stamp_business_days"),
         call("detect_operation_episodes"),
         call("sweep_stale_oven_runs"),
         # A série diária materializada do B.I. acompanha o dia (P3 da fundação).
         call("refresh_bi_daily_series"),
         call("evaluate_bi_alerts"),
-        # O placar do de-para: semanal, com gabarito mínimo (cadência no comando).
-        call("run_alias_benchmark"),
+        # A cabeça do snapshot público do cardápio sara aqui: o GET só lê.
+        call("refresh_catalog_structure"),
         call("expire_stale_announcements"),
+        # Experimento de versão vencido: o aviso sai do worker, nunca do GET (OC-20).
+        call("alert_expired_experiments"),
         call("process_marketing_outbox", quiet_disabled=True),
         call(
             "process_marketing_delivery",
@@ -573,6 +577,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # divergência vira OperatorAlert (dedupe/debounce no serviço).
         call("reconcile_financial_day"),
         call("sweep_stuck_orders"),
+        # Só no alpha: a fornada diária da TRADI (cadência e portão no comando).
+        call("bake_alpha_tradi_daily"),
         # O mesmo resgate do lado da produção: fornada concluída cujo ledger
         # de estoque não fechou volta a ser realizada.
         call("sweep_unrealized_production"),
@@ -581,10 +587,22 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_dead_production_stock"),
         call("sweep_waitlist_windows"),
         call("recover_concierge"),
+        call("concierge_verification_sweep"),
+        call("concierge_reading_check"),
+        call("concierge_inbound_sweep"),
+        call("concierge_corpus_copy"),
         call("cleanup_concierge_observations"),
+        # A decisão em sombra: depois da limpeza, nunca decide sobre o que acabou de vencer.
+        call("concierge_shadow_decisions"),
+        # Os prazos do motor: atrás das chaves da Shop e da frase da Nice para o aviso.
+        call("concierge_engine_tick"),
+        # A PTAX final dos dias com gasto de IA: o B.I. só lê a cotação.
+        call("record_usd_brl_quotes"),
         # Piloto de intenções: depois da limpeza, nunca sorteia o que acabou de vencer.
         call("run_intent_pilot"),
         call("check_directive_health"),
+        # O alerta pessoal cuja causa acabou sem o signal do produtor (era o GET do sino).
+        call("reconcile_user_notifications"),
         call("check_stock_alert_delivery_sla"),
         # Checagem de ESTADO, não de evento: produto que já está invisível hoje
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por
@@ -594,9 +612,15 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("check_geoip_freshness"),
         # A loja no iFood contra a casa: calado quando IFOOD_MERCHANT_SYNC está fora.
         call("check_ifood_store"),
+        # Fato do iFood parado no pedido: aplica se recente, avisa se velho.
+        call("reconcile_ifood_orders"),
+        # O sinal de vida do polling do iFood: calado sem credencial.
+        call("check_ifood_polling"),
+        call("act_on_incidents"),
         call("check_card_machines_out"),
         call("sweep_danfe_print_jobs"),
         call("sweep_kitchen_print_jobs"),
+        call("sweep_drawer_pulse_jobs"),
         # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
         # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
         # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio
@@ -716,3 +740,91 @@ def test_interval_respects_floor_of_30_seconds(requested, effective):
         call_command("maintenance_worker", "--interval", str(requested), stdout=StringIO())
 
     sleep.assert_called_once_with(effective)
+
+
+# ── (d) Tarefa pendurada não congela o ciclo; processo pendurado morre ───────
+#
+# O5 do laudo de 23/10: ~45 comandos em série, sem prazo. Uma tarefa pendurada
+# (HTTP sem timeout, lock no banco) segurava o ciclo inteiro e o heartbeat junto.
+
+
+def test_hung_task_is_interrupted_logged_and_the_cycle_goes_on(caplog, monkeypatch):
+    import time as real_time
+
+    from shopman.shop.management.commands import maintenance_worker as worker
+
+    monkeypatch.setattr(worker, "COMMAND_TIMEOUT_SECONDS", 0.2)
+    monkeypatch.setattr(worker, "COMMAND_TIMEOUTS", {})
+    pendurado = MAINTENANCE_COMMANDS[0]
+    chamados = []
+
+    def fake(command, *args, **kwargs):
+        chamados.append(command)
+        if command == pendurado:
+            # Engolir `Exception` não salva a tarefa do prazo: ele é BaseException.
+            try:
+                real_time.sleep(30)
+            except Exception:
+                pass
+
+    started = real_time.monotonic()
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.call_command", side_effect=fake),
+        _capture_worker_logs(caplog),
+    ):
+        _run_once()
+    elapsed = real_time.monotonic() - started
+
+    assert elapsed < 10, elapsed
+    assert len(chamados) == len(MAINTENANCE_COMMANDS)
+    estouros = [r for r in caplog.records if "estourou o prazo" in r.getMessage()]
+    assert len(estouros) == 1
+    assert estouros[0].levelno == logging.ERROR
+    assert pendurado in estouros[0].getMessage()
+
+
+def test_time_limit_restores_a_timer_that_was_already_armed():
+    import signal
+
+    from shopman.shop.management.commands.maintenance_worker import _time_limit
+
+    disparos = []
+    anterior = signal.signal(signal.SIGALRM, lambda *a: disparos.append(1))
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 50)
+        with _time_limit(5):
+            pass
+        restante, _ = signal.getitimer(signal.ITIMER_REAL)
+        assert 40 < restante <= 50
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, anterior)
+    assert disparos == []
+
+
+def test_loop_runs_under_a_watchdog_fed_before_each_task_and_stopped_on_exit():
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.Watchdog") as watchdog_cls,
+        patch("shopman.shop.management.commands.maintenance_worker.call_command"),
+        patch(
+            "shopman.shop.management.commands.maintenance_worker.time.sleep",
+            side_effect=_StopLoop(),
+        ),
+        pytest.raises(_StopLoop),
+    ):
+        call_command("maintenance_worker", stdout=StringIO())
+
+    watchdog = watchdog_cls.return_value.start.return_value
+    # Um sinal na abertura do ciclo, um por tarefa e um antes de dormir.
+    assert watchdog.feed.call_count == len(MAINTENANCE_COMMANDS) + 2
+    watchdog.stop.assert_called_once()
+
+
+def test_once_runs_without_a_watchdog():
+    with (
+        patch("shopman.shop.management.commands.maintenance_worker.Watchdog") as watchdog_cls,
+        patch("shopman.shop.management.commands.maintenance_worker.call_command"),
+    ):
+        _run_once()
+
+    watchdog_cls.assert_not_called()

@@ -64,6 +64,18 @@ def test_gate_uses_exact_instant_including_same_day(delta, expected):
     assert ifood_schedule.is_due(_order(), now=now) is expected
 
 
+@pytest.mark.parametrize("delta,expected", [(29 * 60, True), (30 * 60 - 1, True), (30 * 60, False), (90 * 60, False)])
+def test_dispatch_waits_for_the_customer_delivery_window(delta, expected):
+    """Homologação 07/11/2026: despachar o agendado antes da janela do cliente reprova."""
+    now = START + timedelta(seconds=delta)
+    assert ifood_schedule.dispatch_before_window(_order(), now=now) is expected
+
+
+def test_dispatch_window_does_not_apply_without_a_readable_schedule():
+    assert ifood_schedule.dispatch_before_window(_order(timing="IMMEDIATE"), now=START) is False
+    assert ifood_schedule.dispatch_before_window(_order({"preparation_start_at": "bad"}), now=START) is False
+
+
 @pytest.mark.parametrize("value", [None, "", "not-a-date", "2026-09-14T18:15:00", "2026-99-99T99:00:00Z", 123])
 def test_missing_malformed_or_naive_preparation_time_blocks_explicitly(value):
     order = _order({"preparation_start_at": value})
@@ -104,6 +116,12 @@ def test_ingest_persists_schedule_without_preventing_receipt_confirmation():
     assert order.data["ifood"]["schedule"] == _schedule()
     assert order.snapshot["data"]["ifood"]["schedule"] == _schedule()
     assert order.data["delivery_date"] == "2026-09-14"
+    # O mesmo carimbo do commit, que a régua única de "é encomenda?" lê (#3163).
+    from datetime import date
+
+    from django.utils import timezone
+
+    assert order.data["is_preorder"] is (date(2026, 9, 14) > timezone.localdate())
     assert order.status == Order.Status.NEW
     with patch.object(ifood_schedule.timezone, "now", return_value=START - timedelta(hours=1)):
         lifecycle.ensure_payment_captured(order)
@@ -189,7 +207,8 @@ def test_stock_and_kitchen_wait_until_due_then_fulfill_only_once(settings):
             lifecycle.activate_preorder(order)
         order.refresh_from_db()
         hold.refresh_from_db()
-        assert order.status == Order.Status.PREPARING
+        # Chegar à Cozinha não é "Em preparo", nem no iFood (dono, 09/11/2026).
+        assert order.status == Order.Status.ACCEPTED
         assert hold.status == HoldStatus.FULFILLED
         assert hold.quant.quantity == Decimal("1")
         assert kitchen.called
@@ -208,7 +227,7 @@ def test_delivery_date_uses_shop_timezone_and_exact_gate_overrides_delivery_day(
         due = datetime(2026, 9, 15, 2, 30, tzinfo=UTC)
         with patch.object(ifood_schedule.timezone, "now", return_value=due):
             assert timezone.localdate().isoformat() == "2026-09-14"
-            assert lifecycle._physical_work_deferred(order) is False
+            assert lifecycle.awaits_kitchen_release(order) is False
         earlier_window = {**schedule, "preparation_start_at": "2026-09-15T01:00:00Z",
                           "delivery_start_at": "2026-09-15T02:00:00Z"}
         assert ifood_schedule.delivery_date_from_payload(earlier_window).isoformat() == "2026-09-14"

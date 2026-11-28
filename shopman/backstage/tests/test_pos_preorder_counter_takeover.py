@@ -32,7 +32,7 @@ from shopman.shop.services import notification as notification_svc
 from shopman.shop.services import payment as payment_svc
 from shopman.shop.services.pix_confirmation import confirm_pix
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web", "ifood")]
 
 STRIPE_SETTINGS = {
     "secret_key": "sk_test_fake",
@@ -371,6 +371,69 @@ def test_pix_que_chega_depois_do_balcao_e_estornado_no_pix_e_alerta(balcao):
     assert PaymentService.refunded_total(booked.ref) == 3600
 
 
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS)
+def test_pix_tardio_que_o_gateway_recusou_devolver_ganha_o_gesto_do_gestor(balcao, operator):
+    """#2727: a cobrança assumida no balcão, e o estorno do Pix tardio recusado.
+
+    A linha "Estorno não saiu" ganha o "Tentar o estorno de novo" com o valor do Pix
+    tardio (o dinheiro recebido no balcão fica). A 1ª tentativa reapresenta a chave do
+    estorno automático (o aviso não diz se ele foi recusado ou ficou sem resposta);
+    recusada de novo, a seguinte leva chave nova. O dinheiro sai uma vez só.
+    """
+    from shopman.backstage.projections.order_queue import build_operator_order
+    from shopman.backstage.services import refund_retry
+
+    order, _intent = _pix_order("PIX-TARDIO-RECUSA")
+    _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="t-pix-tardio-recusa")
+    refused = PaymentResult(success=False, error_code="E_DECLINED", message="saldo insuficiente na conta")
+    with patch.object(payment_mock, "refund", return_value=refused), pytest.raises(counter_takeover.LateRefundPending):
+        confirm_pix(txid=f"txid-{order.ref}", e2e_id="E2E-RECUSA", amount="36.00")
+
+    booked = PaymentService.get_by_order(order.ref).get(gateway_data__booked_by="pix_confirmation")
+    cash_intent = PaymentService.get_by_order(order.ref).get(method="cash")
+    order.refresh_from_db()
+    assert order.status == "completed"
+    assert payment_svc.gateway_refund_owed_q(order) == 3600
+    current = refund_retry.plan(order)
+    assert (current.block_reason, current.amount_q, current.method) == ("", 3600, "pix")
+    assert [leg.intent_ref for leg in current.legs] == [booked.ref]
+    line = {item.key: item for item in build_operator_order(order, user=operator).pending}["refund"]
+    assert line.reason == "A devolução de R$ 36,00 não chegou ao Pix do cliente."
+    assert [(action.ref, action.enabled) for action in line.actions] == [("refund-retry", True)]
+    alert = OperatorAlert.objects.get(type="payment_refund_failed", order_ref=order.ref)
+    assert payment_svc.REFUND_FAILED_RETRY_HERE in alert.message
+
+    keys: list[str] = []
+    accept = payment_mock.refund
+
+    def gateway(intent_ref, **kwargs):
+        keys.append(kwargs["idempotency_key"])
+        return refused if len(keys) == 1 else accept(intent_ref, **kwargs)
+
+    with patch.object(payment_mock, "refund", side_effect=gateway):
+        first = refund_retry.retry(
+            order, actor="marina", approved_by="joyce", attempt_key="tentativa-1",
+            expected_revision=refund_retry.revision(order),
+        )
+        order.refresh_from_db()
+        second = refund_retry.retry(
+            order, actor="marina", approved_by="joyce", attempt_key="tentativa-2",
+            expected_revision=refund_retry.revision(order),
+        )
+
+    assert (first["outcome"], second["outcome"]) == ("refused", "refunded")
+    assert keys == [
+        counter_takeover.late_refund_key(booked.ref),
+        refund_retry.fresh_gateway_key(order.ref, booked.ref, "tentativa-2"),
+    ]
+    assert PaymentService.refunded_total(booked.ref) == 3600
+    assert PaymentService.refunded_total(cash_intent.ref) == 0
+    order.refresh_from_db()
+    assert payment_svc.gateway_refund_owed_q(order) == 0
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+
+
 # ── Link do Stripe pendente → balcão recebe ───────────────────────────────
 
 
@@ -403,7 +466,7 @@ def test_link_pendente_expira_a_sessao_e_o_balcao_recebe_no_debito(balcao):
 
     # A nota fiscal lê o meio EFETIVO: débito do balcão, não o link cancelado.
     forms = fiscal_focusnfe._payment_forms(fiscal._fiscal_payment(order, order.data))
-    assert forms == [{"forma_pagamento": "04", "valor_pagamento": "36.00"}]
+    assert forms == [{"forma_pagamento": "04", "valor_pagamento": "36.00", "tipo_integracao": "2"}]
 
 
 @override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS, SHOPMAN_STRIPE=STRIPE_SETTINGS)
@@ -503,3 +566,66 @@ def test_autorizacao_do_link_depois_do_balcao_e_anulada(balcao):
     stripe.PaymentIntent.cancel.assert_called_once_with("pi_aut")
     stripe.Refund.create.assert_not_called()
     assert "anulada" in OperatorAlert.objects.get(type="payment_after_cancel", order_ref=order.ref).message
+
+
+# ── #2346: o pagamento tardio fecha em zero na conciliação do dia ─────────────
+
+
+def _issues_of(order: Order) -> list[str]:
+    from shopman.backstage.services.financial_reconciliation import build_financial_reconciliation
+
+    report = build_financial_reconciliation(reconciliation_date=timezone.localdate())
+    return [issue.code for issue in report.issues if issue.order_ref == order.ref]
+
+
+def test_pix_tardio_estornado_fecha_em_zero_na_conciliacao_e_nao_vira_pagamento_simulado(balcao):
+    from shopman.shop.services.payment_provenance import is_simulated_order_payment
+
+    order, _intent = _pix_order("PIX-TARDIO-CONCILIA")
+    _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="t-pix-concilia")
+    confirm_pix(txid=f"txid-{order.ref}", e2e_id="E2E-CONCILIA", amount="36.00")
+
+    assert _issues_of(order) == []
+    order.refresh_from_db()
+    # Pago em dinheiro no balcão: o Pix que chegou depois e voltou não torna a venda
+    # "simulada", senão o B.I. a tiraria da receita.
+    assert not is_simulated_order_payment(order)
+
+
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS=ADAPTERS, SHOPMAN_STRIPE=STRIPE_SETTINGS)
+def test_link_tardio_estornado_no_cartao_fecha_em_zero_na_conciliacao(balcao, client):
+    order, intent = _link_order("LINK-TARDIO-CONCILIA", session_id="cs_concilia")
+    stripe = MagicMock()
+    stripe.checkout.Session.retrieve.return_value = _open_session("cs_concilia")
+    with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+        assert _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}],
+                          request_id="t-link-concilia").status_code == 200
+    event = MagicMock()
+    event.id = "evt_link_concilia"
+    event.type = "payment_intent.succeeded"
+    event.data.object = SimpleNamespace(id="pi_concilia", metadata={"shopman_ref": intent.ref})
+    stripe = MagicMock()
+    stripe.Webhook.construct_event.return_value = event
+    stripe.PaymentIntent.retrieve.return_value = SimpleNamespace(status="succeeded", amount_received=3600)
+    stripe.Refund.create.return_value = SimpleNamespace(id="re_concilia", amount=3600)
+    with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+        client.post("/api/webhooks/stripe/", data=json.dumps({"type": event.type}).encode(),
+                    content_type="application/json", HTTP_STRIPE_SIGNATURE="valid-sig")
+
+    booked = PaymentService.get_by_order(order.ref).get(gateway_data__booked_by="counter_takeover")
+    assert booked.status == "refunded"
+    assert _issues_of(order) == []
+
+
+def test_pix_tardio_que_nao_voltou_segue_acusado_na_conciliacao(balcao):
+    """O dinheiro em dobro que ainda não voltou ao cliente é divergência de verdade."""
+    order, _intent = _pix_order("PIX-TARDIO-PRESO")
+    _hand_over(balcao, order, tenders=[{"method": "cash", "amount_q": 3600}], request_id="t-pix-preso")
+    refused = PaymentResult(success=False, error_code="E_DECLINED", message="saldo insuficiente na conta")
+    with patch.object(payment_mock, "refund", return_value=refused), pytest.raises(counter_takeover.LateRefundPending):
+        confirm_pix(txid=f"txid-{order.ref}", e2e_id="E2E-PRESO", amount="36.00")
+
+    issues = _issues_of(order)
+    assert "intent_amount_mismatch" in issues
+    # A referência continua certa: quem pagou foi o balcão.
+    assert "order_intent_ref_mismatch" not in issues

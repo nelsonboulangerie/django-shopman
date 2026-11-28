@@ -1,9 +1,9 @@
-// O ⋯ "Mais ações", um só para a suíte (WP-FASE2-UX-OPERADOR, A14 e D9).
+// O ⋮ "Mais ações", um só para a suíte (WP-FASE2-UX-OPERADOR, A14 e D9).
 //
-// Antes dele, a mesma atividade tinha uma peça por lugar: o ⋯ do cabeçalho, o da fila
+// Antes dele, a mesma atividade tinha uma peça por lugar: o ⋮ do cabeçalho, o da fila
 // (`outline`), o do catálogo (`outline`), o da linha da tabela (`ellipsis-vertical`), o do
 // quadro de leitura, cada um com o seu botão e o seu menu. Agora a tela declara as ações
-// como DADOS e a peça (`OperatorMoreMenu`) desenha o mesmo ⋯ no celular e na mesa.
+// como DADOS e a peça (`OperatorMoreMenu`) desenha o mesmo ⋮ no celular e na mesa.
 //
 // O formato é o do item do `NuxtDropdownMenu` (grupos são listas de listas; o rótulo de um
 // grupo é um item `type: "label"`), com uma coisa a mais: `reason`, o motivo de uma ação
@@ -14,7 +14,7 @@
 // sem montar nada.
 import type { DropdownMenuItem } from "@nuxt/ui";
 
-/** Um item do ⋯. O formato do `NuxtDropdownMenu`, mais o motivo de quando não pode. */
+/** Um item do ⋮. O formato do `NuxtDropdownMenu`, mais o motivo de quando não pode. */
 export interface OperatorMoreMenuItem extends DropdownMenuItem {
   /**
    * Por que a ação não pode agora. Só vale com `disabled`: aparece escrito sob o rótulo
@@ -54,7 +54,7 @@ function showsSomething(item: DropdownMenuItem): boolean {
 }
 
 /**
- * Os grupos do ⋯, prontos para o `NuxtDropdownMenu`: sempre lista de listas, sem grupo
+ * Os grupos do ⋮, prontos para o `NuxtDropdownMenu`: sempre lista de listas, sem grupo
  * vazio (nem grupo que só tem o rótulo), e o motivo escrito em cada ação que não pode.
  */
 export function moreMenuGroups(items: OperatorMoreMenuItems): DropdownMenuItem[][] {
@@ -62,7 +62,7 @@ export function moreMenuGroups(items: OperatorMoreMenuItems): DropdownMenuItem[]
   return groups.map((group) => group.map(moreMenuItem)).filter((group) => group.some(showsSomething));
 }
 
-/** Quantas ações o ⋯ guarda (rótulos de grupo e separadores não contam). */
+/** Quantas ações o ⋮ guarda (rótulos de grupo e separadores não contam). */
 export function moreMenuActionCount(items: OperatorMoreMenuItems): number {
   return moreMenuGroups(items).reduce(
     (total, group) =>

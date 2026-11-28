@@ -22,6 +22,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from shopman.doorman.models import PinCredential
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,42 @@ User = get_user_model()
 
 OPERATE_POS = "cashman.operate_pos"
 ADJUST_SHIFT = "cashman.adjust_shift"
+
+#: O PIN da casa tem EXATAMENTE 4 dígitos (dono, 22/11/2026, #3223: "já estava
+#: decidido"). A regra mora aqui e não no doorman: o doorman sabe só o mínimo
+#: (``DOORMAN.PIN_MIN_LENGTH``), e todo PIN que esta casa grava passa por esta
+#: camada (troca, reset, PIN provisório, ``set_operator_pin``). O PIN antigo, de
+#: até 8, continua abrindo até a troca, que é obrigatória (``backstage.0101``).
+OPERATOR_PIN_DIGITS = 4
+
+
+def validate_operator_pin(raw_pin: str) -> str:
+    """O PIN novo, se tem exatamente :data:`OPERATOR_PIN_DIGITS` dígitos; senão recusa."""
+    from shopman.doorman.models import PinCredentialError
+
+    pin = str(raw_pin or "").strip()
+    if len(pin) != OPERATOR_PIN_DIGITS or not pin.isdigit():
+        raise PinCredentialError(f"O PIN tem {OPERATOR_PIN_DIGITS} dígitos.")
+    return pin
+
+
+def pin_digits(user) -> int | None:
+    """O PIN desta pessoa é de 4 fixos? :data:`OPERATOR_PIN_DIGITS`, ou ``None``.
+
+    É a marca que deixa o teclado enviar sozinho no último dígito. Toda credencial
+    que existia antes da regra nasceu com troca obrigatória (``backstage.0101``), e
+    todo PIN gravado depois passa por :func:`validate_operator_pin` ou é o
+    provisório (que também pede troca). Então a credencial SEM troca pendente é,
+    por construção, de 4 fixos. Sem credencial, ou com troca pendente, ``None``:
+    o teclado segue com o Confirmar, e o PIN antigo de 6 continua entrando.
+    """
+    try:
+        credential = user.pin_credential
+    except (PinCredential.DoesNotExist, AttributeError):
+        return None
+    if not credential.pin_hash or credential.must_change:
+        return None
+    return OPERATOR_PIN_DIGITS
 
 
 def operator_card(user) -> dict:
@@ -43,6 +80,8 @@ def operator_card(user) -> dict:
         "id": user.pk,
         "username": user.get_username(),
         "name": user.get_full_name().strip() or user.get_username(),
+        # O teclado envia sozinho no último dígito de quem tem PIN de 4 fixos (#3223).
+        "pin_digits": pin_digits(user),
     }
 
 
@@ -99,6 +138,35 @@ def _verify_with_perm(user, raw_pin: str, perm: str | None) -> bool:
     return cred.verify(raw_pin)
 
 
+def is_eligible_operator(user, *, required_perm: str | None = OPERATE_POS) -> bool:
+    """True if ``user`` may operate with ``required_perm`` (sem olhar o PIN)."""
+    return _eligible(user, required_perm)
+
+
+def pin_locked_until(user):
+    """Até quando o PIN de ``user`` está bloqueado por tentativas, ou ``None``."""
+    if user is None:
+        return None
+    try:
+        cred = user.pin_credential
+    except PinCredential.DoesNotExist:
+        return None
+    return cred.locked_until if cred.is_locked else None
+
+
+def pin_locked_message(locked_until) -> str:
+    """A frase do PIN bloqueado: até que horas, e quem resolve antes disso.
+
+    Uma frase só para a trava, a troca de PIN e o "Perdi meu crachá". Antes do
+    beta de 05/11 a trava respondia "Identificação inválida." também para o PIN
+    CERTO de quem estava bloqueado, e a pessoa seguia tentando, o que estende o
+    bloqueio (ele é progressivo).
+    """
+
+    hora = format_clock(locked_until)
+    return f"PIN bloqueado por tentativas até {hora}. Peça a um gerente para desbloquear."
+
+
 def verify_operator_pin(user, raw_pin: str, *, required_perm: str | None = OPERATE_POS) -> bool:
     """True if ``user`` is an eligible operator (for ``required_perm``) and the PIN matches."""
     return _verify_with_perm(user, raw_pin, required_perm)
@@ -114,6 +182,32 @@ def resolve_operator_by_badge(raw_token: str, *, required_perm: str | None = OPE
     return user if _eligible(user, required_perm) else None
 
 
+def unlock_refusal_detail(target_user, *, badge: bool) -> str:
+    """A frase da recusa do destrave, dita a quem está no balcão.
+
+    "Identificação inválida." não dizia se foi o PIN, nem que a trava vem depois
+    de poucas tentativas (beta 05/11/2026, PDV-24). O PIN errado diz quantas
+    restam; a conta travada diz que esperar resolve. Lida DEPOIS da verificação,
+    que já contou a falha.
+    """
+    if badge:
+        return "Crachá não reconhecido. Passe de novo ou digite o PIN."
+    try:
+        credential = PinCredential.objects.get(user=target_user) if target_user is not None else None
+    except PinCredential.DoesNotExist:
+        credential = None
+    if credential is None:
+        return "PIN incorreto. Confira e tente de novo."
+    if credential.is_locked:
+        return "PIN travado por excesso de tentativas. Aguarde alguns minutos ou chame o gerente."
+    remaining = credential.max_attempts - credential.attempts
+    if remaining == 1:
+        return "PIN incorreto. Resta 1 tentativa antes da trava."
+    if remaining > 1:
+        return f"PIN incorreto. Restam {remaining} tentativas antes da trava."
+    return "PIN incorreto. Confira e tente de novo."
+
+
 def verify_manager_pin(user, raw_pin: str) -> bool:
     """True if ``user`` may authorize overrides (cash-shift adjust) and the PIN matches.
 
@@ -121,6 +215,27 @@ def verify_manager_pin(user, raw_pin: str) -> bool:
     refund/cancel, cash-out/no-sale).
     """
     return _verify_with_perm(user, raw_pin, ADJUST_SHIFT)
+
+
+#: Quem assina o fechamento de um lote com falta de insumo (decisão 3 do dono,
+#: D-042): a Gerente e o Dono, escolhidos da lista, cada um com o próprio PIN.
+OVERRIDE_PRODUCTION_SHORTAGE = "backstage.override_production_shortage"
+
+
+def shortage_authorizers() -> list[dict]:
+    """A lista de quem pode autorizar a falta de insumo, para o operador escolher."""
+    return [operator_card(user) for user in eligible_operators(perm=OVERRIDE_PRODUCTION_SHORTAGE)]
+
+
+def shortage_authorizer(username: str):
+    """O usuário que ainda pode autorizar a falta, ou ``None``."""
+    user = User.objects.filter(username=str(username or "").strip()).first()
+    return user if _eligible(user, OVERRIDE_PRODUCTION_SHORTAGE) else None
+
+
+def verify_shortage_authorizer_pin(user, raw_pin: str) -> bool:
+    """True se ``user`` pode autorizar a falta e o PIN é o dele."""
+    return _verify_with_perm(user, raw_pin, OVERRIDE_PRODUCTION_SHORTAGE)
 
 
 # ── PIN self-service (change) + manager reset ────────────────────────────────
@@ -180,23 +295,23 @@ def change_own_pin(user, current_pin: str, new_pin: str) -> None:
             "no_credential", "Você ainda não tem um PIN. Peça ao gerente para provisionar."
         ) from None
     if cred.is_locked:
-        raise PinChangeError(
-            "locked", "PIN bloqueado por tentativas. Aguarde ou peça desbloqueio ao gerente."
-        )
+        raise PinChangeError("locked", pin_locked_message(cred.locked_until))
     if not cred.verify(current_pin):
         raise PinChangeError("invalid_current", "PIN atual incorreto.")
-    # validate_raw (via set_pin) raises PinCredentialError before mutating on policy failure.
-    cred.set_pin(new_pin)
+    # Trocar pelo mesmo PIN não é troca: a tela diria "PIN atualizado" e nada mudou
+    # (beta 05/11, PDV-26). Conferido DEPOIS de provar o atual, para a recusa não
+    # virar um oráculo do PIN de ninguém.
+    if new_pin.strip() == current_pin.strip():
+        raise PinChangeError("same_pin", "Escolha um PIN diferente do atual.")
+    # O novo tem 4 dígitos (#3223); o doorman confere o resto (só dígitos) no set_pin.
+    cred.set_pin(validate_operator_pin(new_pin))
 
 
 def _generate_temp_pin() -> str:
-    """A random numeric temp PIN that satisfies the configured minimum length."""
+    """A random numeric temp PIN with the house length (:data:`OPERATOR_PIN_DIGITS`)."""
     import secrets
 
-    from shopman.doorman.conf import doorman_settings
-
-    length = max(4, doorman_settings.PIN_MIN_LENGTH)
-    return "".join(secrets.choice("0123456789") for _ in range(length))
+    return "".join(secrets.choice("0123456789") for _ in range(OPERATOR_PIN_DIGITS))
 
 
 def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
@@ -226,7 +341,7 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
             "Esta conta administra o sistema: o PIN dela só pode ser criado ou "
             "trocado pela própria pessoa, em \"Criar ou trocar meu PIN\".",
         )
-    temp = (temp_pin or "").strip() or _generate_temp_pin()
+    temp = validate_operator_pin(temp_pin) if (temp_pin or "").strip() else _generate_temp_pin()
     PinCredential.validate_raw(temp)  # policy check before writing (raises PinCredentialError)
     PinCredential.set_for(target_user, temp, must_change=True)
     return temp

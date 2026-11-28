@@ -195,10 +195,10 @@ A regra do projeto ("todo TTL que afeta alguém precisa de UI explícita";
 - **[P1] `OperatorLoginView` sem rate-limit/lockout/2FA** — brute-force de senha de
   staff/admin na API pública; o próprio docstring reconhece a dívida (coincide com o
   Lote C pendente do GO-LIVE-READINESS). `backstage/api/operations.py:311-339`.
-- **[P1] Template de produção `.do/app.subdomains.yaml` ainda é staging** —
-  `SHOPMAN_ENVIRONMENT=staging` + `payment_mock` + `SHOPMAN_EXPOSE_DEBUG_OTP=true`.
-  Como E003/E010 só mordem em `production`, promover esse spec passaria no pre-deploy
-  com pagamento mock e OTP logado. `.do/app.subdomains.yaml:146,173-179`.
+- **[P1, resolvido] Template de produção não pode nascer como staging** — o
+  contrato atual removeu qualquer exposição de OTP em HTTP/log e mantém gates
+  próprios para adapters de pagamento mock. As linhas citadas abaixo são
+  evidência histórica, não configuração operacional vigente.
 - **[P1] Sem `AUTH_PASSWORD_VALIDATORS`** — grep vazio; senhas de staff aceitam
   qualquer coisa e `check --deploy` não acusa.
 - **[P1] Zero error tracking** — nenhum Sentry/Rollbar; um 500 no checkout só aparece

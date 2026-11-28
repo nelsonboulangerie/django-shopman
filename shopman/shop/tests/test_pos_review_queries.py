@@ -133,6 +133,43 @@ def test_aviso_de_falta_sai_para_quem_falta_e_so_para_quem_falta(balcao):
     avisos = [w["message"] for w in review.warnings if w["code"] == "item_low_stock"]
     com_falta = {f"P{i:02d}" for i in range(LINHAS) if i % 3 == 1} | {"FORA"}
     assert {msg.split(":", 1)[0] for msg in avisos} == com_falta
+    # O aviso traz o sku: a tela marca o próprio item da conta (dono, 03/11/2026).
+    assert {w["sku"] for w in review.warnings if w["code"] == "item_low_stock"} == com_falta
+
+
+@pytest.fixture
+def lote_de_hoje(balcao):
+    """Um item prometido só pelo lote de hoje, que ainda está na Produção."""
+    listing = Listing.objects.get(ref="pdv")
+    producao = Position.objects.create(
+        ref="producao", name="Produção", kind=PositionKind.PHYSICAL, is_saleable=False,
+    )
+    product = Product.objects.create(
+        sku="LOTE", name="Croissant", base_price_q=900, is_published=True, is_sellable=True,
+    )
+    ListingItem.objects.create(listing=listing, product=product, price_q=900)
+    stock.receive(
+        quantity=Decimal("20"), sku="LOTE", position=producao,
+        target_date=date.today(), reason="Produção planejada",
+    )
+
+
+def _avisos_de_lote(review) -> list[str]:
+    return [w["message"] for w in review.warnings if w["code"] == "item_not_ready"]
+
+
+def test_item_do_lote_diz_planejado_nao_pronto(lote_de_hoje):
+    """Prometido pelo lote, mas não pronto: a venda vale, e o operador vê em
+    que ponto da Produção o item está para combinar a espera (28/10/2026)."""
+    review = _review(["LOTE", "P00"])
+    assert _avisos_de_lote(review) == ["LOTE: Planejado, não pronto"]
+    # O que está pronto não ganha aviso, e o lote não é tratado como falta.
+    assert not [w for w in review.warnings if w["code"] == "item_low_stock"]
+
+
+def test_lote_aberto_diz_previsto_nao_pronto(lote_de_hoje, monkeypatch):
+    monkeypatch.setattr(pos_service, "_started_lot_qty", lambda skus, target: {"LOTE": Decimal("20")})
+    assert _avisos_de_lote(_review(["LOTE"])) == ["LOTE: Previsto, não pronto"]
 
 
 # ── O lote responde o MESMO que a pergunta linha a linha ─────────────────────
@@ -234,3 +271,71 @@ def test_get_line_prices_responde_o_mesmo_que_get_price(vitrine_variada):
         kwargs = {"customer": customer} if customer is not None else {}
         um_a_um = [backend.get_price(sku, canal, qty=qty, **kwargs) for sku, qty in linhas]
         assert backend.get_line_prices(linhas, canal, customer=customer) == um_a_um
+
+
+def test_pricing_backend_propaga_falha_do_kernel(monkeypatch):
+    """Erro técnico não preserva silenciosamente preço ingressado ou antigo."""
+    from shopman.offerman.service import CatalogService
+
+    from shopman.shop.handlers.pricing import OffermanPricingBackend
+
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("offerman indisponível")
+
+    monkeypatch.setattr(CatalogService, "unit_prices", fail)
+    backend = OffermanPricingBackend()
+    channel = Channel(ref="pdv", name="PDV")
+
+    with pytest.raises(RuntimeError, match="offerman indisponível"):
+        backend.get_line_prices([("P00", Decimal("1"))], channel)
+    with pytest.raises(RuntimeError, match="offerman indisponível"):
+        backend.get_price("P00", channel, qty=Decimal("1"))
+
+
+def test_pricing_backend_preserva_none_para_sku_ausente(monkeypatch):
+    """Ausência de SKU é resultado de domínio, diferente de falha técnica."""
+    from shopman.offerman.service import CatalogService
+
+    from shopman.shop.handlers.pricing import OffermanPricingBackend
+
+    monkeypatch.setattr(CatalogService, "unit_prices", lambda *_args, **_kwargs: [None])
+
+    assert OffermanPricingBackend().get_price("NAO_EXISTE", None) is None
+
+
+def test_item_pricing_entrega_quantidade_fracionaria_intacta_ao_kernel():
+    """O orquestrador não arredonda 0,312 para escolher a faixa de 1 unidade."""
+    from shopman.shop.handlers.pricing import ItemPricingModifier
+
+    class Backend:
+        seen = None
+
+        def get_line_prices(self, lines, channel, customer=None):
+            self.seen = lines
+            return [800]
+
+    class Session:
+        pricing_policy = "internal"
+        pricing_trace = []
+        items = [
+            {
+                "line_id": "L1",
+                "sku": "PESO",
+                "qty": Decimal("0.312"),
+                "unit_price_q": 1200,
+                "line_total_q": 374,
+                "meta": {},
+            }
+        ]
+
+        def update_items(self, items):
+            self.items = items
+
+    backend = Backend()
+    session = Session()
+
+    ItemPricingModifier(backend).apply(channel=None, session=session, ctx={})
+
+    assert backend.seen == [("PESO", Decimal("0.312"))]
+    assert session.items[0]["unit_price_q"] == 800
+    assert session.items[0]["line_total_q"] == 250

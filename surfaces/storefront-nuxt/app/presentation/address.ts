@@ -25,13 +25,16 @@ export {
   emptyAddressDraft,
   looksLikeCep,
   maskCepInput,
+  mergeCepLookup,
   mergeReverseGeocode,
   nextFocusAfterSuggestion,
+  stillFailingErrors,
   viaCepSummary
 } from './addressForm'
 export type {
   AddressCoordinatesSource,
   AddressDraft,
+  CepFilledFields,
   GoogleAddressComponent,
   GooglePlaceFields,
   ViaCepPayload
@@ -183,7 +186,68 @@ export function addressLabelDisplay (key: AddressLabelKey, custom = ''): string 
   return key === 'work' ? 'Trabalho' : 'Casa'
 }
 
-export function savedAddressDisplayLabel (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
-  if (address.label_key === 'other' && address.label_custom) return address.label_custom
-  return address.label || 'Endereço'
+// A etiqueta que o cliente deu ao endereço ("Casa", "Trabalho", "Casa da mãe"), ou
+// vazio quando não há. "Outro" sem nome não é etiqueta: é o endereço que ninguém
+// etiquetou, como o que um pedido de entrega grava sozinho (#2775). Sem etiqueta,
+// quem fala na tela é o próprio endereço.
+export function savedAddressTag (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
+  if (address.label_key === 'other') return (address.label_custom || '').trim()
+  return (address.label || '').trim()
+}
+
+// As linhas de um endereço salvo numa lista, montadas num lugar só para a conta e
+// para o checkout (#2775), no mesmo formato em que o PDV lista o mesmo endereço:
+// a rua com o número e o complemento ("Rua Belo Horizonte, 540, Apto 12") e, embaixo,
+// o bairro e a cidade ("Centro · Londrina/PR"). O CEP não aparece.
+//   com etiqueta: a etiqueta, a rua, o bairro e a cidade (três linhas);
+//   sem etiqueta: a rua, o bairro e a cidade (duas linhas; quem fala é o endereço).
+// Cadastro sem a rua separada (antigo, ou reduzido, sem rua): a linha da rua é o
+// endereço inteiro, com o complemento, e não há linha de bairro e cidade.
+export function savedAddressLines (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom' | 'formatted_address' | 'complement' | 'route' | 'street_number' | 'neighborhood' | 'city' | 'state_code'>): { title: string, lines: string[] } {
+  const clean = (value: unknown) => String(value ?? '').replace(/\s+/g, ' ').trim()
+  const complement = clean(address.complement)
+  const route = clean(address.route)
+  let street: string
+  let place = ''
+  if (route) {
+    street = [route, clean(address.street_number), complement].filter(Boolean).join(', ')
+    const cityState = [clean(address.city), clean(address.state_code)].filter(Boolean).join('/')
+    place = [clean(address.neighborhood), cityState].filter(Boolean).join(' · ')
+  } else {
+    street = [clean(address.formatted_address), complement].filter(Boolean).join(', ')
+  }
+  const tag = savedAddressTag(address)
+  const all = [tag, street, place].filter(Boolean)
+  return { title: all[0] || '', lines: all.slice(1) }
+}
+
+// A frase da busca por CEP sem resultado (beta SMS-01). "Não achamos" só quando o
+// serviço disse que o CEP não existe; quando a consulta nem aconteceu, a falha é
+// da loja e a frase não manda conferir números que estão certos.
+export function cepSearchIssue (unavailable: boolean): string {
+  return unavailable
+    ? 'Não conseguimos consultar o CEP agora. Toque em "Preencher manualmente" e escreva o endereço.'
+    : 'Não achamos esse CEP. Confira os números ou toque em "Preencher manualmente" e escreva o endereço.'
+}
+
+// O formulário do picker aberto com algo que o checkout ainda não recebeu (beta
+// SMS-15). Enquanto isso, o "Continuar" do card não pode seguir com o endereço
+// ANTIGO: a edição sumia sem aviso. Editar um salvo conta como pendente até
+// salvar ou fechar; endereço novo, quando difere da seleção em vigor.
+export interface PickerDraftPendingInput {
+  context: 'checkout' | 'account'
+  mode: 'saved' | 'search' | 'form'
+  editingSaved: boolean
+  draft: AddressDraft
+  selection: AddressSelection | null | undefined
+}
+
+export function pickerDraftPending ({ context, mode, editingSaved, draft, selection }: PickerDraftPendingInput): boolean {
+  if (context !== 'checkout' || mode !== 'form') return false
+  if (editingSaved) return true
+  if (!selection) return false
+  const next = selectionFromDraft(draft, selection.savedAddressId)
+  return next.formattedAddress !== selection.formattedAddress ||
+    next.complement !== selection.complement ||
+    next.deliveryInstructions !== selection.deliveryInstructions
 }

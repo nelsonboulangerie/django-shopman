@@ -1,4 +1,4 @@
-"""Shopman middleware — App Platform host probe, access log, API version header, operator cookie domain.
+"""Shopman middleware — App Platform host probe, access log, API version header, operator cookie domain, Admin CSRF cookie.
 
 As superfícies de cliente/operador são apps Nuxt; a captura de ?channel=, o
 onboarding e o welcome-gate vivem nos apps de superfície (storefront/backstage) —
@@ -12,7 +12,7 @@ import time
 from ipaddress import ip_address, ip_network
 
 from django.conf import settings
-from django.core.exceptions import MiddlewareNotUsed
+from django.core.exceptions import DisallowedHost, MiddlewareNotUsed
 
 API_V1_PREFIX = "/api/v1/"
 API_VERSION = "1"
@@ -228,15 +228,25 @@ class APIVersionHeaderMiddleware:
     ``surfaces/storefront-nuxt/server/utils/apiVersion.ts``). Applied to the
     whole versioned API (`/api/v1/`, storefront and backstage); OpenAPI
     schema/docs and core-app APIs are unaffected.
+
+    The same responses also carry ``X-Shopman-Release`` (WP-RELEASE-01 R1) when the
+    image has a release identity, so support can name the build that answered a
+    request from the browser's network tab. Read once per process: the value is
+    baked into the image and never changes while it runs.
     """
 
     def __init__(self, get_response):
+        from shopman.watchman.release import current_release
+
         self.get_response = get_response
+        self.release_id = current_release(default_component="web").release_id
 
     def __call__(self, request):
         response = self.get_response(request)
         if request.path.startswith(API_V1_PREFIX):
             response["X-API-Version"] = API_VERSION
+            if self.release_id:
+                response["X-Shopman-Release"] = self.release_id
         return response
 
 
@@ -290,8 +300,70 @@ class OperatorSessionDomainMiddleware:
         # `.boulangerie.com.br` e o Admin não morava lá; o host `admin.` foi
         # criado em 15/08 e herdou o sufixo em silêncio. Sessão de Admin é
         # host-only, como a do cliente.
-        admin_host = (getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip().lower()
-        if admin_host and host == admin_host:
+        if _is_admin_host(request):
             return False
         bare = cookie_domain.lstrip(".").lower()
         return host == bare or host.endswith("." + bare)
+
+
+def _is_admin_host(request) -> bool:
+    """O request chegou no host canônico do Admin (``SHOPMAN_ADMIN_HOST``)?
+
+    Sem o host configurado (dev local, deployment antigo) nada é host do Admin, e
+    todo cookie segue com o nome e o comportamento padrão do Django.
+    """
+    admin_host = (getattr(settings, "SHOPMAN_ADMIN_HOST", "") or "").strip().lower()
+    if not admin_host:
+        return False
+    try:
+        host = request.get_host()
+    except DisallowedHost:
+        return False
+    return _strip_port(host).lower() == admin_host
+
+
+ADMIN_CSRF_COOKIE_NAME = "shopman_admin_csrftoken"
+
+
+class AdminCsrfCookieNameMiddleware:
+    """No host do Admin, o cookie de CSRF do navegador tem nome próprio (#3372).
+
+    Até 17/09/2026 o Admin herdava o domínio-pai da zona de operador e gravava o
+    ``csrftoken`` com ``Domain=.boulangerie.com.br`` (ver
+    ``OperatorSessionDomainMiddleware._is_operator_host``). O cookie de CSRF vive
+    um ano, e os navegadores da equipe ainda o guardam: no host do Admin chegam
+    DOIS ``csrftoken``, o host-only e o velho do domínio-pai, o Django lê um só, e
+    todo POST cai em "Verificação CSRF falhou" (medido no Chrome do dono em
+    23/11/2026, travando a inscrição do 2FA).
+
+    O mesmo desenho do BFF dos apps de operador (``shopman_operator_csrftoken``):
+    o navegador guarda ``shopman_admin_csrftoken``, e só dentro do Django ele se
+    chama ``csrftoken``. Na ida, o ``csrftoken`` que o navegador mandar, de
+    qualquer domínio, é descartado e o nome próprio toma o lugar; na volta, o
+    ``Set-Cookie`` do Django sai com o nome próprio. O ``CsrfViewMiddleware`` do
+    Django segue intocado (e as checagens do ``check --deploy`` que o procuram
+    pelo nome). Fora do host do Admin, e com ``CSRF_USE_SESSIONS``, nada muda.
+
+    Fica ACIMA do ``CsrfViewMiddleware`` em ``MIDDLEWARE``: troca o nome antes de
+    ele ler o cookie e depois de ele gravar.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if settings.CSRF_USE_SESSIONS or not _is_admin_host(request):
+            return self.get_response(request)
+        django_name = settings.CSRF_COOKIE_NAME
+        request.COOKIES.pop(django_name, None)
+        if ADMIN_CSRF_COOKIE_NAME in request.COOKIES:
+            request.COOKIES[django_name] = request.COOKIES[ADMIN_CSRF_COOKIE_NAME]
+        response = self.get_response(request)
+        if django_name in response.cookies:
+            morsel = response.cookies.pop(django_name)
+            response.cookies[ADMIN_CSRF_COOKIE_NAME] = morsel.value
+            renamed = response.cookies[ADMIN_CSRF_COOKIE_NAME]
+            for attribute, value in morsel.items():
+                if value:
+                    renamed[attribute] = value
+        return response

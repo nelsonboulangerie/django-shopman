@@ -19,6 +19,7 @@ from django.utils import timezone
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from shopman.utils.formatting import format_local
 
 from shopman.backstage.api.marketing_cursor import (
     InvalidMarketingCursor,
@@ -122,9 +123,7 @@ def _notification_dict(
         "resolved_at": notification.resolved_at.isoformat() if notification.resolved_at else None,
         "version": notification.version,
         "created_at": notification.created_at.isoformat(),
-        "created_at_display": timezone.localtime(notification.created_at).strftime(
-            "%d/%m às %H:%M"
-        ),
+        "created_at_display": format_local(notification.created_at, "%d/%m às {clock}"),
         "actions": projection_data(actions),
     }
 
@@ -149,9 +148,9 @@ class NotificationListView(APIView):
     permission_classes = [IsBackstageOperator]
 
     def get(self, request):
-        # Um push perdido não deixa card zumbi: o fetch sempre reconcilia com a
-        # condição canônica antes de projetar a caixa do owner.
-        notification_lifecycle.reconcile_user_notifications(user=request.user)
+        # Leitura não produz efeito. O alerta cuja causa acabou é fechado pelo
+        # próprio produtor (signal) e, na falha dele, pelo
+        # ``reconcile_user_notifications`` do maintenance_worker.
         queryset = _own(request)
         if not _flag(request, "all"):
             queryset = queryset.filter(is_read=False)
@@ -214,7 +213,6 @@ class NotificationListV2View(APIView):
     permission_classes = [IsBackstageOperator]
 
     def get(self, request):
-        notification_lifecycle.reconcile_user_notifications(user=request.user)
         limit = _limit(request)
         raw_cursor = str(request.query_params.get("cursor") or "").strip()
         try:

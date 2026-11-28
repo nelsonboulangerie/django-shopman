@@ -60,8 +60,27 @@ class TestAuthCustomerMiddleware:
         middleware.process_request(request)
 
         assert request.customer is not None
-        assert request.customer.uuid == customer.uuid
+        assert request.customer.subject_id == customer.uuid
         assert request.customer.name == "Ana"
+
+    def test_inactive_linked_customer_is_not_attached_to_request(
+        self, rf, middleware, django_user
+    ):
+        from shopman.guestman.models import Customer
+
+        customer = Customer.objects.create(
+            ref="MW-INACTIVE",
+            first_name="Inactive",
+            phone="5543999990077",
+            is_active=False,
+        )
+        CustomerUser.objects.create(user=django_user, customer_id=customer.uuid)
+        request = rf.get("/")
+        request.user = django_user
+
+        middleware.process_request(request)
+
+        assert request.customer is None
 
     @pytest.mark.parametrize(
         "path",
@@ -111,7 +130,7 @@ class TestAuthCustomerMiddleware:
         middleware.process_request(request)
 
         assert request.customer is not None
-        assert request.customer.uuid == customer.uuid
+        assert request.customer.subject_id == customer.uuid
 
     def test_cache_avoids_repeated_queries(self, rf, middleware, django_user):
         """Second call uses cached value on user, no extra query."""
@@ -139,7 +158,7 @@ class TestAuthCustomerMiddleware:
         # Second call — should use cache (same result)
         middleware.process_request(request)
         assert request.customer is not None
-        assert request.customer.uuid == customer.uuid
+        assert request.customer.subject_id == customer.uuid
 
     def test_no_user_attribute_gets_none(self, rf, middleware):
         """Request without user attribute → None."""

@@ -125,6 +125,63 @@ def test_chamar_com_troco_leva_da_gaveta_e_a_coleta_nao_duplica(client, operator
     assert operator_orders.courier_change(order).back_q == 2600
 
 
+def test_cancelado_depois_da_coleta_devolve_o_troco_sem_registrar_a_venda_e_uma_vez(client, operator):
+    _order("DLV-CANCEL", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-CANCEL", change_out="26,00").status_code == 200
+    order = _collect("DLV-CANCEL")
+
+    # O cancelamento canônico preserva a custódia que já saiu com o entregador.
+    # O lifecycle e a autorização do cancelamento têm testes próprios; aqui o
+    # estado reproduz exatamente a fronteira posterior à coleta.
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+    order.refresh_from_db()
+
+    detail = _detail(client, order.ref)
+    action = next(action for action in detail["actions"] if action["ref"] == "courier-back")
+    assert detail["courier_return_lines"] == ["R$ 26,00 de troco"]
+    payload = {**action["payload_schema"], "idempotency_key": "cancelado-pos-coleta"}
+    url = reverse("api-backstage-order-courier-back", args=[order.ref])
+
+    first = client.post(url, payload, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancelado-pos-coleta")
+    replay = client.post(url, payload, content_type="application/json", HTTP_IDEMPOTENCY_KEY="cancelado-pos-coleta")
+    assert first.status_code == replay.status_code == 200
+    assert first.json()["closed"] == replay.json()["closed"] == [order.ref]
+
+    order.refresh_from_db()
+    change = operator_orders.courier_change(order)
+    assert order.status == Order.Status.CANCELLED
+    assert not order.data["payment"].get("cod_settled_at")
+    assert (change.out_q, change.back_q, change.pending) == (2600, 2600, False)
+    assert order.data["dispatch"]["courier_back_at"]
+    out = Entry.objects.get(kind=Entry.Kind.COURIER_OUT, order_ref=order.ref)
+    (back,) = Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref=order.ref)
+    assert (back.amount_q, back.parent_id, back.payload) == (
+        2600,
+        out.pk,
+        {"courier_out_id": out.pk, "settled_by": "marina", "cancelled_after_collection": True},
+    )
+
+
+def test_cancelado_depois_da_coleta_exige_permissao_para_devolver_o_troco(client, operator):
+    _order("DLV-CANCEL-PERM", method="cash", total_q=7400, change_for_q=10000)
+    assert _call(client, "DLV-CANCEL-PERM", change_out="26,00").status_code == 200
+    order = _collect("DLV-CANCEL-PERM")
+    Order.objects.filter(pk=order.pk).update(status=Order.Status.CANCELLED)
+
+    without_permission = User.objects.create_user("sem-permissao", password="pw", is_staff=True)
+    client.force_login(without_permission)
+    response = client.post(
+        reverse("api-backstage-order-courier-back", args=[order.ref]),
+        {"expected_actor_id": without_permission.pk, "base_revision": "x", "idempotency_key": "sem-permissao"},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="sem-permissao",
+    )
+    assert response.status_code == 403
+    order.refresh_from_db()
+    assert operator_orders.courier_change(order).pending is True
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_IN, order_ref=order.ref).exists()
+
+
 def test_chamar_com_cartao_reserva_a_maquininha_e_a_volta_libera(client, operator, machines):
     azul, _ = machines
     _order("DLV-0415")
@@ -302,3 +359,249 @@ def test_corrida_recusada_nao_tira_nada_da_gaveta(client, operator):
         orders_service.courier_dispatch(Order.objects.get(ref="DLV-0440"), actor="marina",
             operator=operator, change_out_raw="26,00")
     assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+
+
+# ── Uma corrida para vários pedidos: a corrida é uma saída ─────────────────
+
+
+def _ride(client, refs, **body):
+    """A chamada como a tela a faz: quem ela leu, a revisão de cada pedido e uma chave."""
+    import uuid
+
+    revisions = {order.ref: courier.dispatch_revision(order) for order in Order.objects.filter(ref__in=refs)}
+    return client.post(reverse("api-backstage-order-courier-ride"),
+        {"refs": refs, "base_revisions": revisions, "expected_actor_id": int(client.session["_auth_user_id"]), **body},
+        content_type="application/json", HTTP_IDEMPOTENCY_KEY=uuid.uuid4().hex)
+
+
+def test_corrida_conjunta_leva_troco_de_cada_pedido_e_uma_maquininha_so(client, operator, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    _order("RIDE-C", method="debit")
+    azul = machines[0]
+
+    response = _ride(client, ["RIDE-A", "RIDE-B", "RIDE-C"],
+        change_out={"RIDE-B": "26,00"}, machine=f"{PREFIX}{azul.ref}")
+    assert response.status_code == 200, response.json()
+
+    # Uma solicitação, que pede retorno: a maquininha e o dinheiro voltam à loja.
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+    (ride,) = courier_mock.rides().values()
+    assert ride["payload"]["retorno"] is True
+    assert len(ride["payload"]["paradas"]) == 3
+
+    # O troco sai da gaveta só pelo pedido que pede, no turno de quem chamou.
+    (line,) = Entry.objects.filter(kind=Entry.Kind.COURIER_OUT)
+    assert (line.order_ref, line.amount_q) == ("RIDE-B", -2600)
+    # Uma maquininha para a corrida: o primeiro pedido de cartão a reserva, o
+    # outro entra nela. Os três pedidos são a mesma saída.
+    a, b, c = (Order.objects.get(ref=ref) for ref in ("RIDE-A", "RIDE-B", "RIDE-C"))
+    azul.refresh_from_db()
+    assert azul.current_order_id == a.pk
+    assert a.data["dispatch"]["device_ref"] == c.data["dispatch"]["device_ref"] == str(azul.ref)
+    assert "equipment" not in b.data["dispatch"]
+    assert {operator_orders.trip_id(order) for order in (a, b, c)} == {"RIDE-A"}
+
+    # A TaOn coleta: os três saem, sem lançar nada de novo.
+    for order in (a, b, c):
+        courier.apply_status(order, "E", source="webhook")
+        order.refresh_from_db()
+        assert order.status == "dispatched"
+    assert Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).count() == 1
+
+    # A maquininha volta uma vez, para os dois pedidos de cartão.
+    operator_orders.mark_equipment_returned(c, actor="operator:marina")
+    azul.refresh_from_db()
+    assert azul.current_order_id is None
+    for order in (a, c):
+        order.refresh_from_db()
+        assert operator_orders.equipment_custody(order).pending is False
+
+
+def test_corrida_conjunta_sem_maquininha_ou_sem_troco_nao_chama_nem_tira_da_gaveta(client, operator, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+
+    response = _ride(client, ["RIDE-A", "RIDE-B"], change_out={"RIDE-B": "26,00"})
+    assert response.status_code == 400
+    assert response.json()["outcome"] == "not_applied"
+    assert "Pedido A" in response.json()["detail"]
+
+    response = _ride(client, ["RIDE-A", "RIDE-B"], machine=f"{PREFIX}{machines[0].ref}")
+    assert response.status_code == 400
+    assert response.json()["code"] == "change_out_required"
+    assert "O pedido B pede troco" in response.json()["detail"]
+
+    assert not Directive.objects.filter(topic=COURIER_DISPATCH).exists()
+    assert not Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).exists()
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id is None
+
+
+def test_fila_diz_o_que_cada_entrega_da_corrida_pergunta(client, operator):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    queue = client.get(reverse("api-backstage-orders")).json()["queue"]
+    asks = [(row["ref"], row["change_out_suggested_q"], row["needs_machine"], row["stage"])
+            for row in queue["ride_candidates"]]
+    assert asks == [("RIDE-A", 0, True, "Pronto"), ("RIDE-B", 2600, False, "Pronto")]
+    assert queue["ride_candidates"][0]["label"] == "Pedido A · Ana"
+
+
+def test_detalhe_do_pedido_nao_monta_mais_a_oferta_de_corrida(client, operator):
+    # #3003: o Painel e o detalhe chamam pelo MESMO sheet das Entregas (#2876), que lê o
+    # plano e as paradas da projeção das Entregas. O bloco do entregador do detalhe não
+    # traz mais quem vai junto nem a sugestão, e a ação de corrida do detalhe saiu.
+    _order("RIDE-A", method="pix", collection="")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    detail = _detail(client, "RIDE-A")
+    assert "ride_offer" not in detail["courier"] and "ride_suggestion" not in detail["courier"]
+    assert "courier-ride" not in [action["ref"] for action in detail["actions"]]
+
+
+# ── A corrida conjunta que não anda: a custódia volta, de todos ─────────────
+
+
+def _ride_with_custody(client, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    response = _ride(client, ["RIDE-A", "RIDE-B"], change_out={"RIDE-B": "26,00"},
+        machine=f"{PREFIX}{machines[0].ref}")
+    assert response.status_code == 200, response.json()
+    return Directive.objects.get(topic=COURIER_DISPATCH)
+
+
+def _cancel(ref):
+    """O pedido cancelado (o lifecycle de cancelamento é de outro teste): só o status."""
+    Order.objects.filter(ref=ref).update(status="cancelled")
+    return Order.objects.get(ref=ref)
+
+
+def _drawer_balance():
+    return sum(entry.amount_q for entry in Entry.objects.filter(kind__in=[Entry.Kind.COURIER_OUT, Entry.Kind.COURIER_IN]))
+
+
+def test_corrida_conjunta_nao_atendida_pela_leitura_devolve_a_custodia_de_todos(client, operator, machines):
+    from shopman.shop.handlers.courier_sync import CourierSyncHandler
+
+    CourierDispatchHandler().handle(message=_ride_with_custody(client, machines), ctx={})
+    (ride_id,) = courier_mock.rides()
+    courier_mock.set_status(ride_id, "N")
+    CourierSyncHandler().handle(message=Directive.objects.filter(topic="courier.sync").latest("pk"), ctx={})
+
+    for ref in ("RIDE-A", "RIDE-B"):
+        order = Order.objects.get(ref=ref)
+        assert not courier.has_active_ride(order)
+        assert "trip_ref" not in (order.data.get("dispatch") or {})
+    assert _drawer_balance() == 0
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id is None
+
+
+def test_corrida_conjunta_que_falha_na_taon_devolve_a_custodia_e_avisa(client, operator, machines, monkeypatch):
+    from shopman.orderman.exceptions import DirectiveTerminalError
+
+    from shopman.backstage.models import OperatorAlert
+    from shopman.shop.adapters.courier_machine import CourierError
+
+    def refuse(payload):
+        raise CourierError("[12] Parada fora da área", transient=False)
+
+    monkeypatch.setattr(courier_mock, "dispatch", refuse)
+    task = _ride_with_custody(client, machines)
+    with pytest.raises(DirectiveTerminalError):
+        CourierDispatchHandler().handle(message=task, ctx={})
+
+    assert _drawer_balance() == 0
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id is None
+    # A próxima chamada pergunta a custódia de novo, pedido a pedido.
+    assert operator_orders.partner_custody_asks(Order.objects.get(ref="RIDE-A"))["needs_machine"] is True
+    assert set(OperatorAlert.objects.filter(type="courier_dispatch_failed").values_list("order_ref", flat=True)) == {
+        "RIDE-A", "RIDE-B"}
+
+
+def test_pedido_cancelado_antes_de_o_trabalho_rodar_nao_prende_a_custodia_do_outro(client, operator, machines):
+    from shopman.backstage.models import OperatorAlert
+
+    task = _ride_with_custody(client, machines)
+    b = _cancel("RIDE-B")
+    courier.on_order_cancelled(b)
+    CourierDispatchHandler().handle(message=task, ctx={})
+
+    assert not courier_mock.rides()
+    assert _drawer_balance() == 0
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id is None
+    assert OperatorAlert.objects.filter(type="courier_dispatch_failed", order_ref="RIDE-A").exists()
+
+
+def test_pedido_cancelado_antes_da_coleta_devolve_o_troco_e_a_maquininha_segue_com_a_corrida(client, operator, machines):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    _order("RIDE-C", method="debit")
+    assert _ride(client, ["RIDE-A", "RIDE-B", "RIDE-C"], change_out={"RIDE-B": "26,00"},
+        machine=f"{PREFIX}{machines[0].ref}").status_code == 200
+    CourierDispatchHandler().handle(message=Directive.objects.get(topic=COURIER_DISPATCH), ctx={})
+
+    # B (o troco) e A (quem segura a maquininha) são cancelados antes da coleta.
+    for ref in ("RIDE-B", "RIDE-A"):
+        courier.on_order_cancelled(_cancel(ref))
+
+    assert _drawer_balance() == 0
+    machines[0].refresh_from_db()
+    c = Order.objects.get(ref="RIDE-C")
+    assert machines[0].current_order_id == c.pk
+    assert operator_orders.equipment_custody(c).pending is True
+    assert courier.has_active_ride(c)
+
+
+def test_chamar_de_novo_uma_corrida_conjunta_chama_a_mesma_corrida(client, operator, machines):
+    task = _ride_with_custody(client, machines)
+    task.payload = {**task.payload, "dispatch_attempt": {"state": "unknown"}}
+    task.status = "failed"
+    task.save(update_fields=["payload", "status"])
+
+    again = courier.release_unresolved_dispatch(Order.objects.get(ref="RIDE-A"), actor="operator:marina")
+    assert again.payload["order_refs"] == ["RIDE-A", "RIDE-B"]
+    # A custódia que já saiu segue a mesma: nada sai de novo da gaveta.
+    assert Entry.objects.filter(kind=Entry.Kind.COURIER_OUT).count() == 1
+
+
+def test_maquininha_da_corrida_nunca_fica_com_o_pedido_em_dinheiro(client, operator, machines):
+    _order("RIDE-B", method="cash", total_q=7400, change_for_q=10000)
+    _order("RIDE-A", method="credit")
+    assert _ride(client, ["RIDE-B", "RIDE-A"], change_out={"RIDE-B": "26,00"},
+        machine=f"{PREFIX}{machines[0].ref}").status_code == 200
+    machines[0].refresh_from_db()
+    assert machines[0].current_order_id == Order.objects.get(ref="RIDE-A").pk
+    assert "equipment" not in Order.objects.get(ref="RIDE-B").data["dispatch"]
+
+
+def test_cotacao_da_corrida_conjunta_diz_valor_ordem_e_retorno(client, operator):
+    _order("RIDE-A", method="credit")
+    _order("RIDE-B", method="pix", collection="")
+    url = reverse("api-backstage-order-courier-ride-quote")
+    body = client.get(url, {"refs": ["RIDE-A", "RIDE-B"]}).json()["estimate"]
+    assert body["display"] == "R$ 16,50 · 24 min · 5,7 km · ida e volta"
+    assert body["route"] == "A → B"
+    # Um pedido só também cota (F4b, P1-10): a página Entregas mostra o preço de toda corrida.
+    assert client.get(url, {"refs": ["RIDE-A"]}).json()["estimate"]["stops"] == ["RIDE-A"]
+    assert client.get(url).status_code == 400
+
+
+def test_chamar_entregador_ja_marca_o_companheiro_da_sugestao_da_casa(client, operator):
+    # Decisão 1 = A do dono (16/11): cotada e mais barata junta, a sugestão já vem marcada.
+    # O sheet único (#2876) lê o plano da projeção das Entregas.
+    from shopman.backstage.projections.deliveries import build_deliveries
+
+    _order("RIDE-A", method="pix", collection="")
+    _order("RIDE-B", method="pix", collection="")
+    suggestions = build_deliveries().ride_plan.suggestions
+    assert len(suggestions) == 1
+    suggestion = suggestions[0]
+    assert sorted(suggestion.codes) == ["A", "B"]
+    assert (suggestion.quoted, suggestion.suggested) == (True, True)
+    assert (suggestion.separate_q, suggestion.saving_q) == (2500, 850)
+    # O Painel conta a mesma sugestão: "Montar corridas (1 sugerida)".
+    assert client.get(reverse("api-backstage-orders")).json()["queue"]["ride_suggestions"] == 1

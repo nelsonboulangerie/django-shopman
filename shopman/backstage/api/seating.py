@@ -3,9 +3,11 @@
 GET  /api/v1/backstage/pos/seating/  → a planta de hoje, o total do B.I. e o histórico
 POST /api/v1/backstage/pos/seating/  → grava a planta (um salvar só)
 
-Quem opera o PDV pode redesenhar o salão (decisão do dono, 04/10/2026), então a
-régua é a do balcão (``cashman.operate_pos``). Toda gravação fica registrada no
-``LogEntry`` com quem, quando e o antes/depois (``services/seating.py``).
+Quem opera o PDV LÊ o salão (``cashman.operate_pos``); só o Gerente e o Dono o
+redesenham (``pos_settings.SETUP_PERMISSION``; decisão do dono, 05/11/2026, que
+substitui a de 04/10: a capacidade oficial alimenta o B.I.). A leitura diz à tela
+se ela pode gravar (``can_edit``). Toda gravação fica registrada no ``LogEntry``
+com quem, quando e o antes/depois (``services/seating.py``).
 
 Corpo do POST::
 
@@ -21,10 +23,12 @@ from __future__ import annotations
 
 import logging
 
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from shopman.backstage.projections.seating import build_seating
+from shopman.backstage.services import pos_settings
 from shopman.backstage.services import seating as seating_service
 
 from .permissions import HasBackstagePermission
@@ -46,10 +50,15 @@ class POSSeatingView(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = SEATING_PERMISSION
 
+    def _read(self, request) -> dict:
+        return {**build_seating(), "can_edit": pos_settings.can_manage_setup(request.user)}
+
     def get(self, request):
-        return Response(build_seating())
+        return Response(self._read(request))
 
     def post(self, request):
+        if not pos_settings.can_manage_setup(request.user):
+            raise PermissionDenied(pos_settings.SETUP_REFUSAL)
         body = request.data if isinstance(request.data, dict) else {}
         expected = body.get("revision")
         if not isinstance(expected, str) or not expected:
@@ -77,5 +86,5 @@ class POSSeatingView(APIView):
                 "versioned": result.versioned,
                 "removed": result.removed,
             },
-            **build_seating(),
+            **self._read(request),
         })

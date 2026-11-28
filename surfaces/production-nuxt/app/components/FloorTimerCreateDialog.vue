@@ -4,7 +4,7 @@
 // digitar como etiqueta nova. Guardar é uma escolha explícita e a tela diz o
 // que ela significa: a etiqueta fica para todo o fournil, não para este tablet.
 //
-// O numpad é o mesmo gesto do timer do forno (Fechamento) e do PDV, e o teclado
+// O numpad é o mesmo gesto do timer do forno (Finalização) e do PDV, e o teclado
 // físico alimenta ele — o painel de parede tem teclado numérico e não tem dedo
 // sobrando. O atributo ``data-production-timer-dialog`` mantém a exclusão mútua
 // com o numpad do forno (ver presentation/keyboard.ts).
@@ -127,7 +127,7 @@ const PAD_ADD_UI = {
   <NuxtModal
     v-model:open="open"
     title="Novo timer"
-    description="Lembrete deste dispositivo. Não trava lote, QC nem Continuar."
+    description="Lembrete só deste dispositivo. Não muda nada no lote."
     class="sm:max-w-md"
     :content="TIMER_DIALOG_CONTENT"
   >
@@ -218,6 +218,7 @@ const PAD_ADD_UI = {
           type="text"
           placeholder="Nome (opcional), ex.: Croissant"
           aria-label="Nome do timer"
+          :maxlength="40"
           @keydown.enter.prevent="start()"
         />
 

@@ -16,7 +16,7 @@ const { default: Panel } = await import("../../app/components/OrderCourierPanel.
 
 const ride = (extra: Partial<CourierBlock>) =>
   ({
-    status: "A",
+    status: "A", ride_state: "assigned", service_name: "TaOn",
     status_label: "Entregador a caminho da loja",
     active: true,
     can_quote: false,
@@ -42,18 +42,43 @@ describe("andamento da corrida", () => {
     );
     const progress = wrapper.get('[data-testid="courier-progress"]').text();
     expect(progress).toContain("Chega para coletar em ~7 min");
-    expect(progress).toContain("Entrega prevista ~15:58");
+    expect(progress).toContain("Entrega prevista para as 15h58");
     expect(wrapper.find('[data-testid="courier-stale"]').exists()).toBe(false);
     wrapper.unmount();
   });
 
   it("sem notícias da TaOn: aviso com a hora", () => {
     const wrapper = mountPanel(
-      ride({ status: "D", status_label: "Procurando entregador", sync_since: "2026-10-13T18:41:46+00:00" }),
+      ride({ status: "D", ride_state: "searching", status_label: "Procurando entregador", sync_since: "2026-10-13T18:41:46+00:00" }),
     );
     const stale = wrapper.get('[data-testid="courier-stale"]');
-    expect(stale.text()).toContain("A TaOn não informa a corrida desde 15:41.");
+    expect(stale.text()).toContain("A TaOn não informa a corrida desde 15h41.");
     expect(stale.text()).toContain("Confira no painel da TaOn.");
+    wrapper.unmount();
+  });
+
+  it("o entregador desistiu: a linha diz quem, quando e que a TaOn já procura outro", () => {
+    const wrapper = mountPanel(
+      ride({
+        status: "D", ride_state: "searching", status_label: "Procurando outro entregador",
+        reopened_at: "2026-10-13T17:32:00+00:00", reopened_driver: "Diego",
+      }),
+    );
+    expect(wrapper.get('[data-testid="courier-waiting"]').text()).toBe(
+      "Diego desistiu às 14h32. A TaOn já procura outro.",
+    );
+    expect(wrapper.text()).toContain("Procurando outro entregador");
+    // A corrida segue chamada: nenhum botão de chamar outra.
+    expect(wrapper.text()).not.toContain("Chamar de novo");
+    expect(wrapper.text()).not.toContain("Chamar entregador");
+    wrapper.unmount();
+  });
+
+  it("a TaOn juntou com outra corrida: diz que ela já tem entregador", () => {
+    const wrapper = mountPanel(ride({ status: "U", ride_state: "grouped", status_label: "Junto com outra corrida" }));
+    expect(wrapper.get('[data-testid="courier-waiting"]').text()).toBe(
+      "A TaOn juntou com outra corrida. Ela já tem entregador.",
+    );
     wrapper.unmount();
   });
 

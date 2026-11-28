@@ -2,7 +2,10 @@
 KDS (Kitchen Display System) dispatch service.
 
 Bridge: KDS is reactive to the order lifecycle (unidirecional Order→KDS):
-- dispatch()         — cria tickets quando o trabalho físico é liberado; o lifecycle grava PREPARING em seguida
+- dispatch()         — cria tickets quando o pedido é aceito (o trabalho físico é liberado); no
+                       canal ``prep_start="operator"`` eles esperam "Iniciar preparo" no posto
+- start_ticket()     — "Iniciar preparo" da Cozinha: a verdade; põe o pedido em PREPARING
+- start_order_tickets() — o mesmo ato pelo atalho do Gestor, em todos os tickets do pedido
 - cancel_tickets()   — cancela tickets abertos quando Order é CANCELLED
 - on_all_tickets_done() — transiciona Order para READY; balcão encerra no próprio KDS
 
@@ -115,8 +118,8 @@ def dispatch(order) -> list:
 def _customer_holds_the_goods(order) -> bool:
     """Venda de balcão presencial: item de prateleira já saiu pela porta.
 
-    Nessa venda só o que tem RECEITA vai à cozinha (o lanche a montar); o pão
-    pronto não vira ticket de picking — a estação "Encomendas" é para pedido
+    Nessa venda só o feito na hora vai à cozinha (o café, o lanche a montar); o
+    pão pronto não vira ticket de picking — a estação "Separação" é para pedido
     remoto/agendado que alguém precisa separar, não para a sacola que o cliente
     já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
     de 5 minutos para uma mercadoria já entregue.
@@ -139,13 +142,14 @@ def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) 
     a dict ``{line_id, sku, name, qty, notes, meta}``.
 
     For each routable item:
-    - active Recipe → type "prep"; otherwise "picking"
-    - match to KDSInstance by type + collection overlap, preferring a
+    - ficha vigente "Na hora" (``Recipe.production_mode``) → type "prep";
+      em lote ou revenda → "picking"
+    - match to KDSInstance of the SAME type by collection, preferring a
       collection-specific station over a generic catch-all
 
-    ``prep_only=True`` (venda de balcão presencial): itens sem receita são
-    pulados em silêncio — nem ticket de picking, nem alerta de item sem estação.
-    A mercadoria já está com o cliente; só a cozinha tem trabalho a fazer.
+    ``prep_only=True`` (venda de balcão presencial): só o feito na hora vai à
+    cozinha; o resto (pão de lote, revenda) é pulado em silêncio, sem ticket de
+    separação nem alerta. A mercadoria já está com o cliente.
 
     Idempotent per ``line_id``: a line already on a live (non-cancelled) ticket
     is skipped; a cancelled line may re-fire (reprint). Returns created tickets.
@@ -209,9 +213,8 @@ def _fire_lines_locked(*, session_key: str, lines: list[dict], get_adapter, kds_
     # Bulk-query primary collections: sku → collection_id
     sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
 
-    # Bulk-query recipes: set of SKUs that need prep
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(skus) if production else set()
+    # O modo de produção da ficha decide preparo × separação (ADR-040).
+    prep_skus = _made_to_order_skus(get_adapter("production"), skus)
 
     # Build instance lookup: (type, collection_id) → [instance, ...]
     type_col_map = defaultdict(list)
@@ -294,8 +297,9 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
     automático da estação (``KDSInstance.config["auto_fire"]``, opcional por
     estação e desligado por padrão; PDV › Ajustes › Envio à cozinha).
 
-    Leitura pura, sem ticket: a MESMA precedência do ``fire_lines`` (receita
-    decide prep × picking, coleção decide a estação, catch-all por último) e a
+    Leitura pura, sem ticket: a MESMA precedência do ``fire_lines`` (o modo
+    de produção decide prep × picking, a coleção decide a estação do mesmo tipo,
+    catch-all por último) e a
     mesma expansão de combo (o combo vai à cozinha se algum componente vai). O
     PDV usa para dizer "vai à cozinha" na linha nova antes do envio. SKU sem
     estação fica de fora (é mercadoria que o cliente já leva).
@@ -319,8 +323,7 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
 
     catalog = get_adapter("catalog")
     sku_to_collection = catalog.bulk_sku_to_collection_id(concrete)
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(concrete) if production else set()
+    prep_skus = _made_to_order_skus(get_adapter("production"), concrete)
 
     type_col_map = defaultdict(list)
     catchall_map = defaultdict(list)
@@ -350,6 +353,12 @@ def kitchen_routes_for_skus(skus: list[str]) -> dict[str, dict]:
                 "station": str(found[0].name),
                 # Combo: vai sozinho só se TODAS as estações dele forem automáticas.
                 "auto_fire": all(bool((inst.config or {}).get("auto_fire")) for inst in found),
+                # Feito na hora (estação de preparo)? Na venda de balcão em que o
+                # cliente leva a mercadoria, SÓ isto vai à cozinha ao finalizar
+                # (``dispatch`` com ``prep_only``); o de separação já está na mão
+                # dele. O PDV lê para não prometer cozinha ao pão de vitrine (beta
+                # 05/11, PDV-09).
+                "prep": any(inst.type == "prep" for inst in found),
             }
     return out
 
@@ -359,65 +368,6 @@ def fired_line_ids(session_key: str) -> set:
     from shopman.shop.adapters import kds as kds_adapter
 
     return kds_adapter.fired_line_ids_for_session(session_key)
-
-
-def preview_order_for_instance(order, instance) -> list[dict]:
-    """Route an order for a read-only future KDS preview, without firing it.
-
-    Future preorders must be inspectable from the KDS date picker, but creating a
-    ``KDSTicket`` would turn a preview into live kitchen work and emit the very
-    alert we are trying to defer. This uses the same bundle expansion and station
-    precedence as ``fire_lines`` and returns only the items owned by ``instance``.
-    """
-    from shopman.shop.adapters import get_adapter
-    from shopman.shop.adapters import kds as kds_adapter
-
-    lines = _order_to_lines(order)
-    if not lines:
-        return []
-
-    instances = kds_adapter.get_active_prep_instances()
-    if not instances or not any(candidate.pk == instance.pk for candidate in instances):
-        return []
-
-    catalog = get_adapter("catalog")
-    routable_items = _build_routable_items(lines)
-    skus = list({item["sku"] for item in routable_items})
-    sku_to_collection = catalog.bulk_sku_to_collection_id(skus)
-    production = get_adapter("production")
-    prep_skus = production.get_prep_skus(skus) if production else set()
-
-    type_col_map = defaultdict(list)
-    catchall_map = defaultdict(list)
-    for candidate in instances:
-        collection_ids = {collection.pk for collection in candidate.collections.all()}  # usa o prefetch
-        if collection_ids:
-            for collection_id in collection_ids:
-                type_col_map[(candidate.type, collection_id)].append(candidate)
-        else:
-            catchall_map[candidate.type].append(candidate)
-
-    preview: list[dict] = []
-    for item in routable_items:
-        item_type = "prep" if item["sku"] in prep_skus else "picking"
-        matched = _match_instances(
-            item_type=item_type,
-            collection_id=sku_to_collection.get(item["sku"]),
-            type_col_map=type_col_map,
-            catchall_map=catchall_map,
-        )
-        if not any(candidate.pk == instance.pk for candidate in matched):
-            continue
-        preview.append(
-            {
-                "sku": item["sku"],
-                "name": item["name"],
-                "qty": item["qty"],
-                "notes": item["notes"],
-                "line_id": item["line_id"],
-            }
-        )
-    return preview
 
 
 def unfire_lines(*, session_key: str, line_ids: list[str], fractions: dict | None = None) -> dict:
@@ -468,6 +418,16 @@ def order_lines(order) -> list[dict]:
     return _order_to_lines(order)
 
 
+def _made_to_order_skus(production, skus) -> set[str]:
+    """Os SKUs feitos na hora: vão à estação de preparo; o resto é separação.
+
+    A leitura é o modo de produção da ficha vigente (``Recipe.production_mode``),
+    a mesma que a baixa de insumo na venda usa. Em lote e revenda não são
+    preparo: o pão já está pronto, a água já está na geladeira.
+    """
+    return production.get_made_to_order_skus(list(skus)) if production else set()
+
+
 def _match_instances(
     *,
     item_type: str,
@@ -475,30 +435,19 @@ def _match_instances(
     type_col_map: dict,
     catchall_map: dict,
 ) -> list:
-    """Return KDS instances for one routable item.
+    """As estações de UM item: do mesmo tipo do item, sempre.
 
-    Recipe tells whether an item is batch production. Collection tells which
-    real workstation owns the item. A collection-specific station must win
-    over a generic catch-all, otherwise drinks and made-to-order items without
-    a Recipe end up in the "Encomendas" bucket.
+    O modo de produção diz o tipo (feito na hora = preparo; em lote e revenda =
+    separação); a coleção diz QUAL estação daquele tipo (Cafés × Lanches). A
+    estação da coleção vence a genérica (sem coleção) do mesmo tipo. Um item
+    nunca cai em estação de outro tipo: o feito na hora sem estação de preparo
+    fica sem rota e vira alerta de configuração, em vez de virar separação.
     """
     if collection_id:
         exact = type_col_map.get((item_type, collection_id), [])
         if exact:
             return exact
-
-        fallback_type = "prep" if item_type == "picking" else "picking"
-        collection_specific = type_col_map.get((fallback_type, collection_id), [])
-        if collection_specific:
-            return collection_specific
-
-    catchall = catchall_map.get(item_type, [])
-    if catchall:
-        return catchall
-
-    if item_type == "prep":
-        return catchall_map.get("picking", [])
-    return []
+    return catchall_map.get(item_type, [])
 
 
 def _build_routable_items(lines: list[dict]) -> list[dict]:
@@ -541,9 +490,9 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
             for comp_sku, comp_name, comp_qty in components:
                 routable_items.append({
                     "sku": comp_sku,
-                    "name": f"{comp_name} ({name})",
+                    "name": _component_line_name(comp_name, name, single=len(components) == 1),
                     "qty": json_quantity(qty * comp_qty),
-                    "notes": notes,
+                    "notes": _join_notes(_package_note(qty, comp_qty, single=len(components) == 1), notes),
                     "parent_sku": ln["sku"],
                     "line_id": line_id,
                 })
@@ -558,6 +507,44 @@ def _build_routable_items(lines: list[dict]) -> list[dict]:
             "line_id": line_id,
         })
     return routable_items
+
+
+def _component_line_name(comp_name: str, package_name: str, *, single: bool) -> str:
+    """O nome que a cozinha lê para um componente de pacote ou combo.
+
+    Pacote de um componente só (``Brioche Burger Bun (pc. 2un.)`` = 2× Brioche
+    Burger Bun): o nome do componente basta, e o pacote vai para a nota. Com
+    ``Componente (Pacote)`` o card dizia ``2× Brioche Burger Bun (Brioche Burger
+    Bun (pc. 2un.))``, e o cozinheiro podia ler "2 pacotes de 2" e fazer 4 (beta
+    05/11, KDS-03). Combo de vários componentes: ``Componente · Combo``, sem
+    parênteses aninhados.
+    """
+    comp_name = str(comp_name or "").strip()
+    package_name = str(package_name or "").strip()
+    if single or not package_name or package_name.startswith(comp_name):
+        return comp_name or package_name
+    return f"{comp_name} · {package_name}"
+
+
+def _package_note(qty: Decimal, comp_qty, *, single: bool) -> str:
+    """``1 pacote de 2``: quantos pacotes saíram e quantas unidades cada um leva.
+
+    Só no pacote de um componente, onde o nome do pacote saiu da linha; o total já
+    está na quantidade do item.
+    """
+    if not single:
+        return ""
+    packages = json_quantity(qty)
+    per_package = json_quantity(Decimal(str(comp_qty)))
+    # Fração (a granel, por kg) não é pacote: a quantidade do item já diz tudo.
+    if not isinstance(packages, int) or not isinstance(per_package, int) or per_package <= 1:
+        return ""
+    word = "pacote" if packages == 1 else "pacotes"
+    return f"{packages} {word} de {per_package}"
+
+
+def _join_notes(*parts: str) -> str:
+    return " · ".join(part for part in parts if part)
 
 
 def cancel_tickets(order) -> int:
@@ -711,7 +698,7 @@ def kitchen_done_session_keys(session_keys) -> set[str]:
     return done - open_
 
 
-def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None) -> bool:
+def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id: int | None = None, via: str = "station") -> bool:
     """
     Check if all KDS tickets are done and transition order to READY.
 
@@ -731,6 +718,9 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
     fechou o pedido, e o que sai da casa (aviso de pronto, iFood) espera a
     janela (``order_undo``). Com ``auto_ready`` desligado, o pedido fica em
     preparo e o Gestor marca pronto à mão.
+
+    ``via`` é a porta do toque que fechou a última estação (``complete_ticket``):
+    vai para o registro, para a tela dizer quem marcou o pronto.
     """
     if order.session_key not in kitchen_done_session_keys([order.session_key]):
         return False
@@ -750,7 +740,7 @@ def on_all_tickets_done(order, *, actor: str = "kds.all_done", trigger_ticket_id
         return False
 
     if not counter:
-        order_undo.record_auto_ready(order, ticket_ids=[trigger_ticket_id], actor=actor)
+        order_undo.record_auto_ready(order, ticket_ids=[trigger_ticket_id], actor=actor, via=via)
     order.transition_status(Order.Status.READY, actor=actor)
     logger.info("kds.on_all_tickets_done: order %s → READY", order.ref)
 
@@ -902,6 +892,41 @@ def _start_ticket_locked(ticket, *, source, actor: str) -> bool:
     return True
 
 
+def start_order_tickets(order, *, actor: str) -> int:
+    """O "Iniciar preparo" do Gestor: o MESMO ato da Cozinha, nas estações do pedido.
+
+    Decisão do dono (06/11/2026): a verdade é da Cozinha, o Gestor é um atalho.
+    O pedido aceito já está na Cozinha, com os tickets esperando "Iniciar
+    preparo" no posto; o gerente que adianta pelo Gestor faz exatamente o que o
+    operador do posto faria, em cada ticket que ainda espera: põe em preparo com
+    ``started_by`` = quem tocou, e o pedido entra em preparo junto
+    (``_start_ticket_locked``). Nunca cria ticket: quem cria é o aceite.
+
+    Idempotente: ticket que a Cozinha já iniciou fica como está (o primeiro toque
+    é o que vale), e um segundo toque não acha ticket esperando. Retorna quantos
+    tickets este toque iniciou; 0 quando o pedido não tem item de cozinha.
+    """
+    from django.db import transaction
+
+    from shopman.shop.adapters import kds as kds_adapter
+
+    if not order.session_key:
+        return 0
+    started = 0
+    with transaction.atomic():
+        source = _lock_source_for_session(order.session_key)
+        if not isinstance(source, Order):
+            return 0
+        waiting = list(kds_adapter.get_tickets(source).filter(status="pending").order_by("created_at", "pk"))
+        for ticket in waiting:
+            ticket = _lock_ticket_after_source(ticket)
+            if ticket.status == "pending" and _start_ticket_locked(ticket, source=source, actor=actor):
+                started += 1
+    if started:
+        logger.info("kds.start_order_tickets: %d ticket(s) order=%s actor=%s", started, order.ref, actor)
+    return started
+
+
 def _record_ticket_start(order, ticket, *, actor: str) -> None:
     """Quem iniciou o ticket e quando, em ``Order.data["kds_started"]``.
 
@@ -979,7 +1004,7 @@ def _complete_ticket_locked(ticket, *, source, actor: str, via: str = "station")
 
     logger.info("kds_done ticket=%d session=%s via=%s", ticket.pk, ticket.session_key, via)
     if order is not None:
-        on_all_tickets_done(order, actor=actor, trigger_ticket_id=ticket.pk)
+        on_all_tickets_done(order, actor=actor, trigger_ticket_id=ticket.pk, via=via)
     return True
 
 

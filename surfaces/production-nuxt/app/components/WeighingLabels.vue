@@ -35,7 +35,7 @@ const labelStyle = computed(() => ({
 }));
 
 // O QR do lote na etiqueta de preparo (o mesmo conteúdo da impressão pelo relay):
-// o Fechamento lê ("Ler etiqueta do lote"). Gerado no navegador, só quando há
+// a Finalização lê ("Ler etiqueta do lote"). Gerado no navegador, só quando há
 // etiqueta de preparo a imprimir.
 const qrSvgs = ref<Record<string, string>>({});
 async function renderQrs() {

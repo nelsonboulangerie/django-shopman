@@ -1,7 +1,7 @@
 // Roteador por Host: um servidor HTTP na porta do App Platform que encaminha
 // cada pedido, byte a byte, para o Nitro do app dono daquele hostname.
 //
-// O que ele NÃO faz, de propósito (ADR-026 e ADR-030):
+// O que ele NÃO faz, de propósito (ADR-038 e ADR-030):
 // - não reescreve cabeçalho de segurança, CSP/nonce, cookie nem corpo — cada
 //   Nitro continua gerando o seu envelope;
 // - não acrescenta `X-Forwarded-For`: o Django conta saltos dessa cadeia

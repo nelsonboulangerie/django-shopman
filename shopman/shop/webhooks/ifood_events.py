@@ -42,9 +42,6 @@ answering it is the whole job. The reply lists, in ``merchantIds``, the
 merchants this deployment declares online; iFood generates a heartbeat only for
 those. A reply that omits a merchant takes that store offline on the platform,
 so the list is built conservatively — see :func:`_presence_body`.
-
-This is distinct from the legacy :class:`~shopman.shop.webhooks.ifood.IFoodWebhookView`
-(dev simulation / normalized hub payload), which is left untouched.
 """
 
 from __future__ import annotations
@@ -243,6 +240,11 @@ class IFoodEventsWebhookView(APIView):
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
+
+        if order_events:
+            from shopman.shop.services import observability
+
+            observability.record_webhook_success("ifood")
 
         if keepalives:
             body = _presence_body(keepalives)

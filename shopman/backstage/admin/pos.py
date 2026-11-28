@@ -14,10 +14,13 @@ from shopman.backstage.models import POSTab
 
 @admin.register(POSTab)
 class POSTabAdmin(ModelAdmin):
+    """Read-only audit of POS tabs; the POS surface owns their lifecycle."""
+
     list_display = ("ref", "display_ref", "label", "state_display", "is_active_display")
     list_filter = ("is_active",)
     search_fields = ("ref", "label")
     ordering = ("ref",)
+    readonly_fields = ("ref", "label", "is_active", "created_at", "updated_at")
     compressed_fields = True
     list_fullwidth = True
 
@@ -45,14 +48,11 @@ class POSTabAdmin(ModelAdmin):
     def is_active_display(self, obj):
         return unfold_badge("ativa" if obj.is_active else "inativa", "green" if obj.is_active else "base")
 
-    def has_view_permission(self, request, obj=None):
-        return request.user.has_perm("cashman.operate_pos")
-
     def has_add_permission(self, request):
-        return request.user.has_perm("cashman.operate_pos")
+        return False
 
     def has_change_permission(self, request, obj=None):
-        return request.user.has_perm("cashman.operate_pos")
+        return False
 
     def has_delete_permission(self, request, obj=None):
-        return request.user.has_perm("cashman.operate_pos")
+        return False

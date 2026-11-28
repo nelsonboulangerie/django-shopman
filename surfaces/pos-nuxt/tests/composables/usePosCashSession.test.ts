@@ -73,12 +73,15 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("falha vira toast e devolve false (sem engolir silenciosamente)", async () => {
+  it("falha vira aviso no diálogo e devolve false (sem engolir silenciosamente)", async () => {
     const actionCall = vi.fn().mockRejectedValue(new Error("boom"));
     const { session, refresh } = makeCashSession({ actionCall });
     const ok = await session.closeCashShift({ amount: "10", notes: "" });
     expect(ok).toBe(false);
-    expect(toast.error).toHaveBeenCalled();
+    // O diálogo do fechamento está aberto: o aviso mora nele, não num toast atrás do véu.
+    expect(session.cashFailure.value?.gesture).toBe("close_shift");
+    expect(session.cashFailure.value?.message).toContain("O caixa não fechou.");
+    expect(toast.error).not.toHaveBeenCalled();
     expect(refresh).not.toHaveBeenCalled();
     expect(session.busy.value).toBe(false);
   });
@@ -94,6 +97,46 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
   // O "fechar turno bloqueante" saiu com a custódia da gaveta: não existe mais
   // turno de outra pessoa segurando o terminal, então não há o que destravar.
   // Fechar o caixa é um caminho só (`closeCashShift`), e é da gerência.
+
+  it("venda sem conexão a conferir: o fechamento pede o gerente e reenvia com a assinatura", async () => {
+    const actionCall = vi.fn()
+      .mockRejectedValueOnce({
+        status: 422,
+        data: {
+          detail: "1 venda sem conexão está a conferir: o caixa só fecha com o gerente.",
+          error: { code: "manager_approval_required" },
+        },
+      })
+      .mockResolvedValueOnce({});
+    const { session } = makeCashSession({ actionCall });
+
+    const refused = await session.closeCashShift({ amount: "100,01", notes: "" });
+    expect(refused).toBe(false);
+    expect(session.managerChallenge.value?.code).toBe("manager_approval_required");
+    expect(toast.error).not.toHaveBeenCalled();
+
+    const ok = await session.closeCashShift({
+      amount: "100,01",
+      notes: "",
+      managerApproval: { username: "joyce", pin: "4321" },
+    });
+    expect(ok).toBe(true);
+    expect(actionCall).toHaveBeenLastCalledWith(
+      "/api/v1/backstage/pos/cash/close/",
+      { body: expect.objectContaining({ closing_amount: "100,01", manager_approval: { username: "joyce", pin: "4321" } }) },
+    );
+  });
+
+  it("as vendas a conferir vêm do turno da projeção", () => {
+    const sale = {
+      order_ref: "ORD-1", sku: "PAO", name: "Pão", qty_display: "1",
+      catalog_price_display: "R$ 12,00", charged_price_display: "R$ 0,01", operator: "marina",
+    };
+    const projection = makeProjection();
+    projection.cash_runtime = { ...(projection.cash_runtime as object), offline_review_sales: [sale] } as POSProjection["cash_runtime"];
+    const { session } = makeCashSession({ projection });
+    expect(session.offlineReviewSales.value).toEqual([sale]);
+  });
 
   it("movimento envia kind/valor/motivo", async () => {
     const { session, actionCall } = makeCashSession();
@@ -465,6 +508,42 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     const first = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
     const second = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
     expect(second).toBe(first);
+  });
+
+  it("o reenvio ASSINADO pelo gerente, e o retry depois da rede cortada, usam a MESMA chave (P1-5)", async () => {
+    // Sem gerente o servidor pede a assinatura; com ela a resposta se perde; a
+    // Caixa toca de novo, agora sem a assinatura. Os três são um lançamento só.
+    const actionCall = vi.fn().mockRejectedValue(new Error("timeout"));
+    const { session } = makeCashSession({ actionCall });
+    const movement = { kind: "sangria", amount: "50,00", reason: "Sangria" };
+
+    await session.registerCashMovement(movement);
+    await session.registerCashMovement({ ...movement, managerApproval: { username: "joyce", pin: "1234" } });
+    await session.registerCashMovement(movement);
+
+    const keys = actionCall.mock.calls.map((call) => (call[1].body as Record<string, unknown>).client_request_id);
+    expect(new Set(keys).size).toBe(1);
+    expect(actionCall.mock.calls[1]![1].body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+  });
+
+  it("o aviso da saída aparece na falha e some quando a repetição confirma", async () => {
+    const actionCall = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("rede caiu"))
+      .mockResolvedValueOnce({ entry_id: 7 })
+      .mockResolvedValue({ payload_b64: "", title: "" });
+    const { session } = makeCashSession({ actionCall });
+    const movement = { kind: "sangria", amount: "50,00", reason: "Sangria" };
+
+    expect(await session.registerCashMovement(movement)).toBe(false);
+    expect(session.cashFailure.value).toEqual({
+      gesture: "movement",
+      message: expect.stringContaining("Tente de novo agora"),
+    });
+    expect(toast.error).not.toHaveBeenCalled();
+
+    expect(await session.registerCashMovement(movement)).toBe(true);
+    expect(session.cashFailure.value).toBeNull();
   });
 
   it("depois do SUCESSO a chave é descartada — duas sangrias iguais são duas linhas", async () => {

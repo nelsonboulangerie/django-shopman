@@ -14,12 +14,13 @@
 #   🔴 SEM PR        branch com delta real sobre o main e nenhum PR
 #   🔴 NÃO EMPURRADA commits locais que o origin não tem
 #   ⚠️ DELTA PÓS-PR  PR mergeado, mas o branch tem commits além dele
-#   🟢 VERDE FORA DA FILA  PR limpo, checks verdes, auto-merge desligado → `gh pr merge <N>`
+#   🟢 VERDE FORA DA FILA  PR limpo, checks verdes, auto-merge desligado → `make ready pr=<N>`
 #   🚦 NA FILA       auto-merge ligado, a fila é dona
 #   🔴 VERMELHO      check reprovado — nomeie a causa ou conserte
 #   ⚠️ CONFLITO      PR não funde com o main — resolva no branch
 #   ◷  RODANDO       check pendente
 #   📝 DRAFT         WIP declarado (estado aceitável de fim de sessão)
+#   📌 FICOU DE FORA issue aberta com o label ficou-de-fora: adiado de propósito, com dono
 #   ✓  ENTREGUE      branch mergeada ou merge no-op — não aparece, só conta
 #
 # Uso:  make inflight   (ou)   scripts/inflight.sh
@@ -160,7 +161,7 @@ done < <(git worktree list --porcelain | awk '
 
 echo
 echo "${bold}Em voo — worktrees e branches locais (base ${BASE})${reset}"
-echo "${dim}🔴 exige ação: commit por arquivo nomeado → push → gh pr create → gh pr merge <N>. ⚠️ pede olhar. ✓ só conta.${reset}"
+echo "${dim}🔴 exige ação: commit por arquivo nomeado → make preflight → push → gh pr create → make ready pr=<N>. ⚠️ pede olhar. ✓ só conta.${reset}"
 echo
 {
   printf 'STATUS\tBRANCH\tDETALHE\tWORKTREE\n'
@@ -202,12 +203,30 @@ printf '%s' "${OPEN}" | jq -r '
         elif .fail>0 then "🔴 VERMELHO (\(.fail) check)"
         elif .queued then "🚦 NA FILA"
         elif .total==0 or .pend>0 then "◷  RODANDO"
-        elif .mergeStateStatus=="CLEAN" or .mergeStateStatus=="BEHIND" or .mergeStateStatus=="UNSTABLE" then "🟢 VERDE FORA DA FILA → gh pr merge \(.number)"
+        elif .mergeStateStatus=="CLEAN" or .mergeStateStatus=="BEHIND" or .mergeStateStatus=="UNSTABLE" then "🟢 VERDE FORA DA FILA → make ready pr=\(.number)"
         else "?  \(.mergeStateStatus)" end) as $tag
      | "\($tag)\t#\(.number)\t\(.updatedAt[:10])\t\(.headRefName)\t\(.title[:56])"
     ),
     "\($bots) PR(s) do Dependabot omitidos (freeze, issue #574)\t\t\t\t"
 ' | { printf 'STATUS\tPR\tATUALIZADO\tBRANCH\tTÍTULO\n'; cat; } | column -t -s $'\t'
+
+echo
+echo "${bold}Ficou de fora — o que um PR decidiu NÃO fazer e ainda espera dono${reset}"
+echo "${dim}(issues abertas com o label ficou-de-fora; a trava é scripts/check_ficou_de_fora.py)${reset}"
+echo
+n_left=0
+if command -v gh >/dev/null 2>&1; then
+  LEFT="$(gh issue list --label ficou-de-fora --state open --limit 200 \
+    --json number,title,createdAt 2>/dev/null || echo '[]')"
+  n_left="$(printf '%s' "${LEFT}" | jq 'length')"
+  if [ "${n_left}" -gt 0 ]; then
+    printf '%s' "${LEFT}" | jq -r 'sort_by(.createdAt) | .[]
+      | "#\(.number)\t\(.createdAt[:10])\t\(.title[:80])"' \
+      | { printf 'ISSUE\tDESDE\tO QUE FALTA\n'; cat; } | column -t -s $'\t'
+  else
+    echo "${green}nenhuma${reset}"
+  fi
+fi
 
 echo
 if [ "${n_red}" -eq 0 ]; then

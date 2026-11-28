@@ -225,3 +225,73 @@ def test_a_excecao_da_data_nao_abre_passagem_para_telefone():
     assert "[phone]" in redact_text("código 4399-12-32")
     # Data grudada em mais dígitos não é data isolada.
     assert "[phone]" in redact_text("número 2026-09-21-4321")
+
+
+# ── forma JSON: o corpo do webhook da TaOn ──────────────────────────
+
+#: O aviso de aceite (``A``) como a doc da TaOn o descreve, com o entregador.
+#: A doc manda não logar ``pix_key`` nem ``photo_url``; nome, telefone, CPF e
+#: placa também são dado pessoal dele.
+TAON_ACCEPTED_BODY = json.dumps({
+    "datetime": "2026-10-01T13:20:05Z",
+    "event_id": "550e8400-e29b-41d4-a716-446655440000",
+    "company_id": 8,
+    "request_id": 184532,
+    "status_code": "A",
+    "status_label": "ACCEPTED",
+    "driver": {
+        "id": 8101,
+        "name": "Diego Ferreira",
+        "phone": "43998761203",
+        "cpf": "12345678910",
+        "pix_key": "diego.ferreira@pix.example",
+        "photo_url": "https://cdn.taon.example/drivers/8101.jpg?sig=abc",
+    },
+    "vehicle": {"model": "Honda CG", "color": "Prata", "vehicle_plate": "ABC1D23"},
+    "coordinates": {"latitude": -23.3045, "longitude": -51.1696},
+})
+
+_TAON_PERSONAL = (
+    "Diego Ferreira", "43998761203", "12345678910", "diego.ferreira", "8101.jpg", "ABC1D23", "-23.3045", "-51.1696",
+)
+
+
+def test_redact_text_cuts_the_value_of_a_quoted_json_key():
+    """``"pix_key": "..."`` passava inteiro: a aspa que fecha a chave parava as expressões."""
+    cleaned = redact_text(TAON_ACCEPTED_BODY)
+
+    for personal in _TAON_PERSONAL:
+        assert personal not in cleaned
+    # O que é técnico fica: é o que casa o log com o envio da TaOn.
+    assert '"request_id": 184532' in cleaned
+    assert '"status_code": "A"' in cleaned
+    assert f'"pix_key": "{REDACTED}"' in cleaned
+    assert redact_text('{"token" : "segredo-do-webhook", "kind": "status"}') == (
+        f'{{"token": "{REDACTED}", "kind": "status"}}'
+    )
+
+
+def test_ride_reference_survives_but_a_loose_phone_does_not():
+    """O id da corrida na TaOn tem nove dígitos e saía ``ride_ref=[phone]``."""
+    line = "courier.sync_failed order=PDV-1 ride_ref=776753357 request=776753357 sha256=123456789012 size=342"
+    assert redact_text(line) == line
+    assert redact_text("ligar 776753357") == "ligar [phone]"
+    assert redact_text("ride_ref=776753357 fone 43999998888") == "ride_ref=776753357 fone [phone]"
+
+
+def test_both_formatters_keep_the_taon_driver_out_of_the_log():
+    """Se alguém voltar a logar o corpo cru do webhook, os dois formatters seguram."""
+
+    def _record():
+        return logging.LogRecord(
+            name="shopman.shop.webhooks.machine", level=logging.INFO, pathname=__file__, lineno=1,
+            msg="machine.webhook raw=%s", args=(TAON_ACCEPTED_BODY,), exc_info=None,
+        )
+
+    as_json = JsonLogFormatter().format(_record())
+    as_text = PrivacySafeFormatter("{levelname} {name} {message}", style="{").format(_record())
+
+    for rendered in (as_json, as_text):
+        for personal in _TAON_PERSONAL:
+            assert personal not in rendered
+        assert "184532" in rendered

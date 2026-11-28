@@ -9,9 +9,8 @@ depois que o padeiro olhou.
 
 Três limites escritos:
 
-- **O transporte é o da casa.** Mesma credencial do ``copy_assist``
-  (``AI_ASSIST_API_KEY``), mesmo modelo (``AI_ASSIST_MODEL``), mesmo provedor.
-  Fala com o SDK direto em vez de passar por ``copy_assist.suggest`` porque a
+- **O transporte é o da casa.** A conexão de IA do propósito ``recipe``
+  (``shopman.shop.ai``), configurável no Admin como as demais. Fala com o SDK direto em vez de passar por ``copy_assist.suggest`` porque a
   foto exige bloco de imagem, e ``suggest`` só transporta texto.
 - **JSON estrito, validado, nunca engolido.** Mesmo padrão de
   ``bi/scenarios.py``: cerca de código é tolerada, resto é erro. O que a
@@ -30,14 +29,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
-from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from shopman.backstage.services.exceptions import AiAssistError, AiAssistNotConfigured
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "claude-opus-5"
 # Folgado de propósito: o raciocínio do modelo sai do mesmo orçamento que o
 # texto, e uma receita com vinte ingredientes e dez passos, transcrita e
 # traduzida, passa fácil de 2000 tokens só de resposta.
@@ -143,7 +140,7 @@ def is_configured() -> bool:
     """Há credencial para ler receita neste ambiente? Mesmo pino do ``copy_assist``."""
     from shopman.shop.services.copy_assist import is_configured as assist_configured
 
-    return assist_configured()
+    return assist_configured("recipe")
 
 
 # ── Validação da resposta ───────────────────────────────────────────────────
@@ -202,8 +199,8 @@ def _coerce_choice(value: Any, allowed: tuple[str, ...], label: str) -> tuple[st
     return "other", f"{label} '{value}' fora da lista; marcado como other"
 
 
-def _join_notes(*parts: str) -> str:
-    return "; ".join(part.strip() for part in parts if part and part.strip())
+def _join_notes(*preps: str) -> str:
+    return "; ".join(prep.strip() for prep in preps if prep and prep.strip())
 
 
 class CaptureItem(BaseModel):
@@ -306,7 +303,7 @@ def parse_response(raw: str) -> CapturedRecipe:
         payload = CapturePayload.model_validate(data)
     except ValidationError as exc:
         first = exc.errors()[0] if exc.errors() else {}
-        where = ".".join(str(part) for part in first.get("loc", ())) or "resposta"
+        where = ".".join(str(prep) for prep in first.get("loc", ())) or "resposta"
         raise RecipeCaptureError(
             f"A resposta do assistente não tem o formato esperado em '{where}': {first.get('msg', '')}."
         ) from exc
@@ -390,17 +387,14 @@ def read_recipe(
         if len(image_base64) > MAX_IMAGE_BASE64_BYTES:
             raise RecipeCaptureError("Imagem grande demais (acima de 5 MB). Reduza a foto antes de enviar.")
 
-    api_key = (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip()
-    if not api_key:
-        raise RecipeCaptureNotConfigured("Leitura de receita por IA não configurada. Defina AI_ASSIST_API_KEY.")
-    provider = getattr(settings, "AI_ASSIST_PROVIDER", "anthropic")
-    if provider != "anthropic":
-        raise RecipeCaptureError(f"Provedor de IA '{provider}' não suportado.")
-
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
-    model = getattr(settings, "AI_ASSIST_MODEL", "") or DEFAULT_MODEL
+    from shopman.shop import ai
+
+    try:
+        client, model = ai.anthropic_client("recipe")
+    except ai.AINotConfigured as exc:
+        raise RecipeCaptureNotConfigured(f"Leitura de receita por IA não configurada: {exc}.") from exc
     content = _build_content(
         text=text, image_base64=image_base64, image_media_type=image_media_type, language_hint=language_hint,
     )

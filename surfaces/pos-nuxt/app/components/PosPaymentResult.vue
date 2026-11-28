@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // Payment proof (spec §2.4 + PCI SAQ A): renders the gateway's digital payment
-// data returned by close_sale — the PIX QR + copia-e-cola, or the card checkout
+// data returned by close_sale — the Pix QR + copia-e-cola, or the card checkout
 // link. The screen ONLY DISPLAYS this; it never captures card data. The webhook
 // is the authoritative confirmation, so the copy is "aguarde confirmação".
 import { toast } from "vue-sonner";
 import type { PaymentProofView } from "~/presentation/payment";
 import type { POSPaymentDeliveryProjection } from "~/types/pos";
 
-// `status` = estado do polling PIX vindo do composable: 'polling' (aguardando),
+// `status` = estado do polling Pix vindo do composable: 'polling' (aguardando),
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
 // não pollam → 'idle'. `large` = palco da tela de resultado: QR maior, para o
 // cliente escanear de longe.
@@ -32,6 +32,12 @@ const deliveryIcon = computed(() => {
   return "lucide:message-circle-more";
 });
 
+// O Pix que venceu (ou foi cancelado) NÃO é mais pagável: o QR e o copia-e-cola
+// saem da tela, porque o cliente escanearia um código que o banco recusa. O que
+// fazer (gerar outro Pix, receber de outra forma, abrir o pedido) é o aviso de
+// quem usa o cartão, um só por tela; aqui fica apenas o fato, em tom neutro.
+const pixExpired = computed(() => props.proof.isPix && props.proof.hasProof && props.status === "expired");
+
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
   warning: "border-warning/30 bg-warning/10 text-warning",
@@ -44,7 +50,7 @@ async function copyCode() {
   if (!props.proof.copyPaste) return;
   try {
     await navigator.clipboard.writeText(props.proof.copyPaste);
-    toast.success("Código PIX copiado");
+    toast.success("Código Pix copiado");
   } catch {
     toast.error("Não foi possível copiar. Selecione e copie manualmente.");
   }
@@ -62,7 +68,7 @@ async function copyLink() {
 </script>
 
 <template>
-  <!-- PIX confirmado: o polling detectou o pagamento — troca a tela por "Pago". -->
+  <!-- Pix confirmado: o polling detectou o pagamento — troca a tela por "Pago". -->
   <div
     v-if="proof.isPix && status === 'paid'"
     class="grid gap-1 rounded-md border border-success/40 bg-success/10 p-3 text-success dark:text-lime-300"
@@ -71,26 +77,26 @@ async function copyLink() {
   >
     <div class="flex items-center gap-2">
       <Icon name="lucide:circle-check-big" class="size-5" />
-      <p class="text-sm font-semibold tabular-nums">Pagamento PIX confirmado · {{ proof.amountDisplay }}</p>
+      <p class="text-sm font-semibold tabular-nums">Pagamento Pix confirmado · {{ proof.amountDisplay }}</p>
     </div>
   </div>
 
-  <div v-else class="grid gap-3 rounded-md border p-3" :class="TONE_CLASS[proof.tone]">
+  <div v-else class="grid gap-3 rounded-md border p-3" :class="TONE_CLASS[pixExpired ? 'neutral' : proof.tone]" :data-payment-proof-expired="pixExpired || undefined">
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold tabular-nums">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <p class="text-sm font-semibold tabular-nums">{{ proof.isPix ? "Pagamento Pix" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
              (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
              WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
              manual como rede, não como gesto padrão.
              (2) A mensagem do servidor ("Pagamento criado. Aguarde confirmação
-             do gateway...") é jargão e, no PIX com prova viva, repete o que a
+             do gateway...") é jargão e, no Pix com prova viva, repete o que a
              linha de baixo já diz em cinco palavras, com o giro do polling ao
              lado. Três frases para um fato é o operador parando de ler as três.
              Ela volta a aparecer quando NÃO há prova: aí é a única voz. -->
         <p
-          v-if="delivery?.notice"
+          v-if="delivery?.notice && !pixExpired"
           class="mt-0.5 flex items-start gap-1 text-xs opacity-90"
           :class="delivery.status === 'failed' || delivery.status === 'skipped' ? 'text-warning' : ''"
           data-payment-delivery
@@ -111,29 +117,30 @@ async function copyLink() {
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> O cliente lê o QR. A confirmação chega aqui sozinha.
         </p>
-        <!-- Desistiu (expirado/cancelado): acusa honestamente, sem prometer o que não cumpre. -->
-        <p v-else-if="proof.isPix && proof.hasProof && status === 'expired'" class="mt-0.5 flex items-center gap-1 text-xs font-medium text-warning">
-          <Icon name="lucide:clock-alert" class="size-3.5" /> Não confirmamos o PIX automaticamente. Confira no gestor ou gere um novo pagamento.
+        <!-- Venceu (expirado/cancelado): só o fato, para o QR não ser mostrado
+             ao cliente. O aviso com o botão que resolve é da tela, não do cartão. -->
+        <p v-else-if="pixExpired" class="mt-0.5 text-xs text-muted-foreground" data-payment-proof-expired-note>
+          Este Pix não pode mais ser pago.
         </p>
       </div>
     </div>
 
-    <!-- PIX: QR + copia-e-cola -->
-    <template v-if="proof.isPix && proof.hasProof">
+    <!-- Pix: QR + copia-e-cola, só enquanto ainda pode ser pago -->
+    <template v-if="proof.isPix && proof.hasProof && !pixExpired">
       <!-- Fundo branco proposital: preservar leitura óptica do QR em ambos os temas. -->
       <img
         v-if="proof.qrCodeSrc"
         :src="proof.qrCodeSrc"
-        alt="QR Code PIX"
+        alt="QR Code Pix"
         class="mx-auto rounded-md border bg-white p-2"
         :class="large ? 'size-64' : 'size-44'"
       >
       <div v-if="proof.copyPaste" class="grid gap-1.5">
         <p class="break-all rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.copyPaste }}</p>
-        <UiButton variant="outline" size="sm" class="gap-2" @click="copyCode">
+        <NuxtButton color="neutral" variant="outline" size="md" class="gap-2" @click="copyCode">
           <Icon name="lucide:copy" class="size-4" />
-          Copiar código PIX
-        </UiButton>
+          Copiar código Pix
+        </NuxtButton>
       </div>
     </template>
 
@@ -151,18 +158,19 @@ async function copyLink() {
          e o botão sai pela borda. -->
     <div v-else-if="proof.isLink && proof.checkoutUrl" class="flex min-w-0 items-center gap-2">
       <p class="min-w-0 flex-1 truncate rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.checkoutUrl }}</p>
-      <UiButton variant="outline" size="sm" class="shrink-0 gap-2" @click="copyLink">
+      <NuxtButton color="neutral" variant="outline" size="md" class="shrink-0 gap-2" @click="copyLink">
         <Icon name="lucide:copy" class="size-4" />
         Copiar link
-      </UiButton>
+      </NuxtButton>
     </div>
 
     <!-- O servidor escolhe o template e informa se o gesto seguro é enviar ou
          reenviar. A UI não presume canal nem afirma entrega antes do adapter. -->
-    <UiButton
-      v-if="delivery?.action"
-      variant="outline"
-      size="sm"
+    <!-- Pix vencido não se manda ao cliente: o código morreu junto com o QR. -->
+    <NuxtButton
+      v-if="delivery?.action && !pixExpired"
+      color="neutral" variant="outline"
+      size="md"
       class="gap-2"
       :disabled="resending"
       data-action="send-payment-notice"
@@ -170,7 +178,7 @@ async function copyLink() {
     >
       <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
       {{ delivery.action_label }}
-    </UiButton>
+    </NuxtButton>
 
     <!-- Card: hosted checkout link (delegated; no capture here) -->
     <a

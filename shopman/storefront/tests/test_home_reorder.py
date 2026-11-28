@@ -18,6 +18,7 @@ from django.utils import timezone
 from shopman.guestman.models import Customer, PriceTier
 from shopman.orderman.models import Order, OrderItem
 
+from shopman.shop.services import customer_orders
 from shopman.storefront.presentation.home import _reorder_context
 
 # A "sufficiently old" offset; the suggestion has no age gate (min_days=0).
@@ -37,10 +38,8 @@ def _make_request(customer_uuid=None, customer_name=None):
     req.session = {}
     if customer_uuid is not None:
         req.customer = SimpleNamespace(
-            uuid=customer_uuid,
+            subject_id=customer_uuid,
             name=customer_name or "Test Customer",
-            phone="+5543999990001",
-            email="",
         )
     else:
         req.customer = None
@@ -60,14 +59,14 @@ class ReorderContextTests(TestCase):
             price_tiers=tier,
         )
 
-    def _create_order(self, days_ago: int, items=None) -> Order:
+    def _create_order(self, days_ago: int, items=None, *, status=Order.Status.COMPLETED, ref=None) -> Order:
         created = timezone.now() - timedelta(days=days_ago)
         raw_items = ITEMS if items is None else items
         order = Order.objects.create(
-            ref=f"ORD-RO-{days_ago}d",
+            ref=ref or f"ORD-RO-{days_ago}d",
             channel_ref="web",
-            session_key=f"sk-ro-{days_ago}d",
-            status=Order.Status.COMPLETED,
+            session_key=f"sk-ro-{ref or days_ago}",
+            status=status,
             snapshot={"items": raw_items, "pricing": {"total_q": 2000}},
             data={"customer_ref": self.customer.ref},
             total_q=2000,
@@ -140,6 +139,37 @@ class ReorderContextTests(TestCase):
         # ref still returned even with empty items
         self.assertIsNotNone(ref)
         self.assertFalse(items)
+
+    # ── Só pedido concluído é oferecido (#3560) ──────────────────────────
+
+    def test_pedido_saiu_para_entrega_nao_e_oferecido_e_o_concluido_anterior_e(self):
+        concluido = self._create_order(days_ago=3, ref="ORD-RO-CONCLUIDO")
+        self._create_order(days_ago=0, status=Order.Status.DISPATCHED, ref="ORD-RO-A-CAMINHO")
+        ref, items = _reorder_context(_make_request(customer_uuid=self.customer.uuid))
+        self.assertEqual(ref, concluido.ref)
+        self.assertEqual(len(items), len(ITEMS))
+
+    def test_sem_pedido_concluido_nada_e_oferecido(self):
+        for idx, status in enumerate(customer_orders.ACTIVE_STATUSES):
+            self._create_order(days_ago=idx, status=status, ref=f"ORD-RO-{status}")
+        self._create_order(days_ago=5, status=Order.Status.CANCELLED, ref="ORD-RO-CANCELADO")
+        self._create_order(days_ago=6, status=Order.Status.RETURNED, ref="ORD-RO-DEVOLVIDO")
+        ref, items = _reorder_context(_make_request(customer_uuid=self.customer.uuid))
+        self.assertIsNone(ref)
+        self.assertFalse(items)
+
+    def test_entregue_conta_como_concluido(self):
+        entregue = self._create_order(days_ago=1, status=Order.Status.DELIVERED, ref="ORD-RO-ENTREGUE")
+        self._create_order(days_ago=0, status=Order.Status.PREPARING, ref="ORD-RO-PREPARO")
+        ref, _ = _reorder_context(_make_request(customer_uuid=self.customer.uuid))
+        self.assertEqual(ref, entregue.ref)
+
+    def test_o_de_sempre_da_nice_tambem_pula_o_pedido_em_andamento(self):
+        # A Nice ("o de sempre", ``tools.last_order``) pergunta pela mesma função.
+        concluido = self._create_order(days_ago=2, ref="ORD-RO-SEMPRE")
+        self._create_order(days_ago=0, status=Order.Status.DISPATCHED, ref="ORD-RO-SAIU")
+        ref, _ = customer_orders.last_reorder_context(customer_uuid=self.customer.uuid, min_days=0)
+        self.assertEqual(ref, concluido.ref)
 
     # ── Orders from other customers are excluded ──────────────────────────
 

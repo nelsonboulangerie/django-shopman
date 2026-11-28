@@ -174,7 +174,12 @@ class CraftPlanning:
         The BOM snapshot freezes recipe items at plan time so that
         finish() uses the recipe as-it-was, not as-it-is-now.
         """
-        from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+        from shopman.craftsman.models import ProductionMode, WorkOrder, WorkOrderEvent
+
+        # O feito na hora é puxado pela venda: não se planeja nem tem ordem de
+        # produção, e a venda é quem baixa os insumos dele (ADR-040).
+        if getattr(recipe, "production_mode", ProductionMode.BATCH) == ProductionMode.MADE_TO_ORDER:
+            raise CraftError("MADE_TO_ORDER_RECIPE", recipe=recipe.ref)
 
         wo_kwargs = {}
         for key in ("source_ref", "position_ref", "operator_ref", "meta"):
@@ -619,13 +624,14 @@ def _validate_downstream_deficit(order, new_quantity: Decimal, *, force: bool) -
     Graceful: skipped if an unexpected error occurs.
     """
     try:
-        from shopman.craftsman.models import Recipe, WorkOrder
+        from shopman.craftsman.models import ProductionMode, Recipe, WorkOrder
 
         # Is this WO's output used as an input in other recipes?
         downstream_recipes = list(
             Recipe.objects.filter(
                 items__input_sku=order.output_sku,
                 is_active=True,
+                production_mode=ProductionMode.BATCH,
             )
             .distinct()
             .prefetch_related("items")

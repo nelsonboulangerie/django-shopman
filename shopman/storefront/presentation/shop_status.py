@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from shopman.utils.formatting import format_clock
+
+from shopman.shop.projections.opening_hours import entry_shifts, format_shifts
+
 DAY_NAMES_PT = {
     "monday": "Segunda",
     "tuesday": "Terça",
@@ -16,7 +20,7 @@ DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday",
 def _shop_status() -> dict:
     """Return shop open/closed status based on Shop.opening_hours.
 
-    Returns dict: {is_open, opens_at, closes_at, message}
+    Returns dict: {is_open, label, next_opening, opens_at, closes_at, message}
     """
     from shopman.shop.projections.shop_status import business_state
 
@@ -24,6 +28,9 @@ def _shop_status() -> dict:
     return {
         "is_open": state.is_open,
         "label": _status_label(state),
+        # Só a próxima abertura ("amanhã às 9h"), sem o prefixo do selo: a PDP e
+        # quem mais precisar escrevem a própria frase com o mesmo dado da home.
+        "next_opening": None if state.is_open else (_next_opening_display(state) or None),
         "opens_at": state.opens_at,
         "closes_at": state.closes_at,
         "message": _status_message(state),
@@ -131,10 +138,7 @@ def _closing_soon(state, *, threshold_min: int = 60) -> bool:
 
 def _human_time(hhmm: str | None) -> str:
     """Format a "HH:MM" clock string as "19h" / "19h30", matching opening hours."""
-    if not hhmm or ":" not in hhmm:
-        return hhmm or ""
-    hour, minute = hhmm.split(":", 1)
-    return f"{int(hour)}h" if minute == "00" else f"{int(hour)}h{minute}"
+    return format_clock(hhmm, empty=hhmm or "")
 
 
 def _format_opening_hours() -> list[dict]:
@@ -152,21 +156,12 @@ def _format_opening_hours() -> list[dict]:
     if not shop or not shop.opening_hours:
         return []
 
-    def _fmt_time(t: str) -> str:
-        """'06:00' -> '6h', '20:00' -> '20h', '07:30' -> '7h30'."""
-        parts = t.split(":")
-        h = int(parts[0])
-        m = int(parts[1]) if len(parts) > 1 else 0
-        if m:
-            return f"{h}h{m:02d}"
-        return f"{h}h"
-
     # Build (day, hours_str) pairs in order
     day_hours: list[tuple[str, str]] = []
     for day in DAY_ORDER:
-        info = shop.opening_hours.get(day)
-        if info and info.get("open") and info.get("close"):
-            day_hours.append((day, f"{_fmt_time(info['open'])} às {_fmt_time(info['close'])}"))
+        shifts = entry_shifts(shop.opening_hours.get(day))
+        if shifts:
+            day_hours.append((day, format_shifts(shifts)))
         else:
             day_hours.append((day, "Fechado"))
 

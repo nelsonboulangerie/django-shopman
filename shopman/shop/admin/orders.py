@@ -66,7 +66,7 @@ def _order_data_rows(data: dict):
         add("Presente para", " · ".join(p for p in (rname, rphone) if p) or "Sim")
         add("Mensagem do presente", data.get("gift_message"))
         if data.get("gift_hide_values"):
-            add("Presente", "Ocultar valores na nota/etiqueta")
+            add("Presente", "Sem preços no papel")
 
     return rows
 
@@ -83,6 +83,29 @@ class OrderAdmin(_OrdermanOrderAdmin):
         (_("Resumo"), {"fields": ("order_data_display",), "classes": ("tab",)}),
         (_("Pagamentos"), {"fields": ("payment_info",), "classes": ("tab",)}),
     )
+
+    # O valor de cada pedido é do Gerente; o panorama do faturamento, não. Dono,
+    # 21/11/2026: "O problema seria poder ver valores de vários registros agregados,
+    # sobretudo de clientes diferentes, soma de um período, etc." O filtro por faixa
+    # de valor recorta e ordena pedidos de clientes diferentes pelo dinheiro (um
+    # ranking), então só aparece a quem audita o caixa. A coluna do total, o filtro
+    # por data e a navegação por data ficam para todos.
+    # A pergunta é a mesma de ``backstage.permissions.can_audit_cash``; o shop não
+    # importa o backstage, então ela se repete aqui com a mesma permissão.
+    _MONEY_FILTER_FIELDS = frozenset({"total_q"})
+
+    def _audits_cash(self, request) -> bool:
+        user = getattr(request, "user", None)
+        return bool(getattr(user, "is_superuser", False)) or bool(user and user.has_perm("cashman.audit_shift"))
+
+    def get_list_filter(self, request):
+        filters = super().get_list_filter(request)
+        if self._audits_cash(request):
+            return filters
+        return tuple(
+            entry for entry in filters
+            if not (isinstance(entry, (tuple, list)) and entry and entry[0] in self._MONEY_FILTER_FIELDS)
+        )
 
     @display(description=_("entrega"))
     def delivery_date_display(self, obj: Order) -> str:

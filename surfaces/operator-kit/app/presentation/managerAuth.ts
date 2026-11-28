@@ -23,8 +23,17 @@ export type ManagerAction =
   | "serve_change"
   | "refund_cash"
   | "cancel_sale"
+  | "cancel_order"
+  | "order_return"
+  | "order_no_show"
+  | "refund_retry"
   | "order_edit_refund"
   | "card_machine_refund"
+  | "settle_account"
+  | "close_shift_review"
+  | "day_closing_production"
+  | "day_closing_not_picked_up"
+  | "production_shortage"
   | "sale_approval"
   | "emit_fiscal"
   | "channel_off"
@@ -64,6 +73,33 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
     title: "Autorizar cancelamento",
     reason: "A venda já foi fechada.",
   },
+  // Cancelar pedido pago no Gestor. O "A venda já foi fechada." do PDV mentia
+  // para um pedido só autorizado; o motivo é o que acontece com o dinheiro, e
+  // ele vem da projeção do pedido em `detail` (beta 06/11, F5).
+  cancel_order: {
+    title: "Autorizar cancelamento",
+    reason: "O pedido já foi pago.",
+  },
+  // Devolução depois da venda, no Gestor (decisão do dono, 17/11/2026). O valor e
+  // o destino do dinheiro vêm prontos em `detail`, da prévia do servidor.
+  order_return: {
+    title: "Autorizar a devolução",
+    reason: "Volta dinheiro ou produto do cliente.",
+  },
+  // Pedido pronto que o cliente não veio buscar, encerrado no Gestor (WP-G11). O
+  // que volta ao cliente e o que fica com a loja vêm prontos em `detail`, da
+  // prévia do servidor (`money_sentence`).
+  order_no_show: {
+    title: "Autorizar encerrar como não retirado",
+    reason: "O cliente não veio buscar o pedido.",
+  },
+  // O estorno do pedido cancelado que o meio de pagamento recusou, pedido de novo no
+  // Gestor (WP-G13, decisão do dono de 17/11/2026). O valor vem pronto em `detail`,
+  // da faixa do pedido.
+  refund_retry: {
+    title: "Autorizar tentar o estorno de novo",
+    reason: "O estorno do pedido cancelado não saiu.",
+  },
   order_edit_refund: {
     title: "Autorizar a devolução",
     reason: "A encomenda paga ficou mais barata.",
@@ -71,6 +107,38 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
   card_machine_refund: {
     title: "Autorizar o estorno",
     reason: "Volta dinheiro para o cartão do cliente.",
+  },
+  // Conta na casa acertada em Pix, cartão ou "outro": nada passa pela gaveta, e
+  // nada no fim do turno confere que o dinheiro entrou (beta 07/11).
+  settle_account: {
+    title: "Autorizar o acerto",
+    reason: "O acerto não passa pela gaveta.",
+  },
+  // Venda sem conexão cobrada por um preço que o catálogo não explica: a venda
+  // entrou, e o caixa só fecha com o gerente que conferiu.
+  close_shift_review: {
+    title: "Autorizar o fechamento",
+    reason: "Há venda sem conexão a conferir.",
+  },
+  // Fechar o dia com produção aberta (decisão do dono, 05/11/2026): impede, e o
+  // gerente libera com o PIN e o motivo. O que fica aberto vem em `detail`.
+  day_closing_production: {
+    title: "Autorizar fechar o dia",
+    reason: "Há produção aberta.",
+  },
+  // O gesto em lote do fechamento (#2684): encerra como não retirado os prontos que
+  // ninguém veio buscar. Opcional: fechar o dia não depende dele (decisão da
+  // coordenação em 22/11/2026). Quais e com que dinheiro vem em `detail`.
+  day_closing_not_picked_up: {
+    title: "Encerrar como não retirado",
+    reason: "Pedido pronto que ninguém veio buscar.",
+  },
+  // Fechar um lote da Produção com falta de insumo (decisão 3 do dono, D-042,
+  // WP-F11): a Gerente ou o Dono assina. O que falta vem em `detail`, na medida da
+  // bancada ("Falta 300 g de manteiga."), que é o fato do lote, não a política.
+  production_shortage: {
+    title: "Autorizar fechar com falta",
+    reason: "Falta insumo para fechar o lote.",
   },
   sale_approval: {
     title: "Autorizar a venda",
@@ -98,9 +166,17 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
  * casos, e o gerente autorizava sem saber o que estava assinando.
  */
 const REASON_COPY: Record<string, (input: ManagerAuthReasonInput) => string> = {
-  discount_over_threshold: (input) => `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
+  // O VALOR primeiro: "Desconto acima de R$ 5,00" fazia o gerente assinar uma
+  // cortesia de R$ 12,00 (ou de R$ 300,00) sem ver o número (beta 07/11).
+  discount_over_threshold: (input) =>
+    typeof input.discountQ === "number" && input.discountQ > 0
+      ? `Desconto de ${formatBRL(input.discountQ)}, acima de ${formatBRL(input.thresholdQ ?? 0)}.`
+      : `Desconto acima de ${formatBRL(input.thresholdQ ?? 0)}.`,
   // Conta na casa com limite (decisão do dono, 14/10/2026): o gerente vê o saldo
   // de hoje, o limite e quanto esta venda passa ANTES de assinar.
+  // Encomenda acima do plano (WP-E2, #2676): a descrição diz o motivo pelo nome; os
+  // números (pedidas, planejadas, a data) vêm no contexto do próprio diálogo.
+  preorder_over_plan: () => "Encomenda acima do plano da data.",
   house_account_over_limit: (input) => {
     const limit = input.houseAccountLimit;
     if (!limit) return "Conta na casa acima do limite.";
@@ -125,9 +201,20 @@ export interface HouseAccountLimitInput {
 export interface ManagerAuthReasonInput {
   /** O ato, quando a tela sabe qual é. */
   action?: ManagerAction;
+  /**
+   * O valor que o gerente assina, em centavos. Nos atos em que dinheiro sai, o
+   * número é a frase: a sangria de "5000" (R$ 5.000,00 lido de um R$ 50,00)
+   * passou pelo PIN porque o diálogo dizia só "Sai dinheiro da gaveta" (beta
+   * 05/11, PDV-09).
+   */
+  amountQ?: number | null;
+  /** O complemento do ato, na voz da tela (o motivo da sangria, as ordens abertas). */
+  detail?: string;
   /** Códigos vindos da review (`approval_reasons`). */
   reasons?: string[];
   thresholdQ?: number;
+  /** Com o motivo `discount_over_threshold`: o desconto manual que a venda leva. */
+  discountQ?: number | null;
   /** Com o motivo `house_account_over_limit`: saldo, limite e quanto passa. */
   houseAccountLimit?: HouseAccountLimitInput | null;
 }
@@ -137,11 +224,44 @@ export function managerAuthTitle(action?: ManagerAction): string {
   return (action && MANAGER_ACTIONS[action]?.title) || "Autorização do gerente";
 }
 
+/**
+ * Os atos em que o gerente assina um VALOR: a frase nomeia o valor primeiro.
+ * Sem valor (a tela não sabe), cai na frase fixa do ato.
+ */
+const AMOUNT_COPY: Partial<Record<ManagerAction, (amount: string, detail: string) => string>> = {
+  // O gesto do caixa é "Saída de caixa", o nome que o PDV dá ao botão (suite-vocabulary,
+  // 22/11): "Saída" sozinha é a estação do KDS, e "Retirada" é a forma de receber (#2690).
+  cash_out: (amount, detail) => `Saída de caixa de ${amount}${detail ? ` (${detail})` : ""}.`,
+  refund_cash: (amount) => `Devolução de ${amount} em dinheiro.`,
+  serve_change: (amount) => `Troco de ${amount}. Atender abre a gaveta.`,
+  card_machine_refund: (amount) => `Estorno de ${amount} no cartão do cliente.`,
+  settle_account: (amount, detail) => `Acerto de ${amount}${detail ? ` em ${detail}` : ""}: não passa pela gaveta.`,
+  order_edit_refund: (amount) => `Devolução de ${amount}: a encomenda paga ficou mais barata.`,
+};
+
 export function managerAuthReason(input: ManagerAuthReasonInput): string {
   const listed = (input.reasons ?? [])
     .map((code) => REASON_COPY[code]?.(input))
     .filter(Boolean);
   if (listed.length) return listed.join(" ");
+  const detail = String(input.detail ?? "").trim();
+  const withAmount = input.action && AMOUNT_COPY[input.action];
+  if (withAmount && typeof input.amountQ === "number" && input.amountQ > 0) {
+    return withAmount(formatBRL(input.amountQ), detail);
+  }
+  if (
+    detail
+    && (
+      input.action === "day_closing_production"
+      || input.action === "day_closing_not_picked_up"
+      || input.action === "cancel_order"
+      || input.action === "order_return"
+      || input.action === "order_no_show"
+      || input.action === "refund_retry"
+      || input.action === "production_shortage"
+    )
+  )
+    return detail;
   const fixa = input.action && MANAGER_ACTIONS[input.action]?.reason;
   if (fixa) return fixa;
   // Genérico é a última linha, nunca a primeira: dizer pouco é melhor que dizer

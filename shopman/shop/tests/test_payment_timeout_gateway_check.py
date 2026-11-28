@@ -42,9 +42,7 @@ def overdue_pix_order(db):
     from shopman.payman import PaymentService
 
     Channel.objects.create(ref="web", name="Web")
-    PaymentService.create_intent(
-        "ORD-PIX-TIMEOUT", 5000, "pix", gateway="efi", ref="INT-PIX-1"
-    )
+    PaymentService.create_intent("ORD-PIX-TIMEOUT", 5000, "pix", gateway="efi", ref="INT-PIX-1")
     expired = (timezone.now() - timedelta(minutes=5)).isoformat()
     return Order.objects.create(
         ref="ORD-PIX-TIMEOUT",
@@ -172,8 +170,10 @@ def test_paid_promotion_dispatches_on_paid_once_under_double_resolve(overdue_pix
     paid = SimpleNamespace(success=True, transaction_id="txid-1", amount_q=5000, error_code="")
     adapter = _stub_adapter("captured", paid)
     calls = []
-    with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter), \
-         patch("shopman.shop.lifecycle.dispatch", side_effect=lambda o, p: calls.append(p)):
+    with (
+        patch.object(payment_service, "_adapter_for_persisted_intent", return_value=adapter),
+        patch("shopman.shop.lifecycle.dispatch", side_effect=lambda o, p: calls.append(p)),
+    ):
         s1 = payment_service.settle_from_gateway(overdue_pix_order)
         # Segundo resolver, mesmo pedido, já promovido.
         overdue_pix_order.refresh_from_db()
@@ -190,9 +190,7 @@ def test_adapter_without_read_verb_never_invents_payment(overdue_pix_order):
     é isto que impede a regressão de voltar por um adapter novo que esqueça o
     verbo de leitura.
     """
-    exploded = SimpleNamespace(
-        capture=lambda intent_ref: pytest.fail("capture() não pode ser chamado para PERGUNTAR")
-    )
+    exploded = SimpleNamespace(capture=lambda intent_ref: pytest.fail("capture() não pode ser chamado para PERGUNTAR"))
     with patch.object(payment_service, "_adapter_for_persisted_intent", return_value=exploded):
         state = payment_service.settle_from_gateway(overdue_pix_order)
 
@@ -312,16 +310,16 @@ def test_simulated_capture_follows_the_adapter_not_the_method_name():
 @override_settings(DEBUG=False, SHOPMAN_EXPOSE_MOCK_CAPTURE=True, SHOPMAN_PAYMENT_ADAPTERS=_HIBRIDO)
 def test_tracking_screen_offers_simulation_only_for_the_simulated_method(overdue_pix_order):
     """A tela do acompanhamento respeita a mesma régua."""
-    from shopman.shop.projections.order_tracking import _can_mock_confirm_payment
+    from shopman.shop.projections.order_tracking import _mock_confirmation_projection_value
 
-    assert _can_mock_confirm_payment(overdue_pix_order) is True
+    assert _mock_confirmation_projection_value(overdue_pix_order) is True
 
     data = dict(overdue_pix_order.data)
     data["payment"] = {**data["payment"], "method": "card"}
     overdue_pix_order.data = data
     overdue_pix_order.save(update_fields=["data"])
 
-    assert _can_mock_confirm_payment(overdue_pix_order) is False
+    assert _mock_confirmation_projection_value(overdue_pix_order) is False
 
 
 @override_settings(DEBUG=False, SHOPMAN_EXPOSE_MOCK_CAPTURE=True, SHOPMAN_PAYMENT_ADAPTERS=_HIBRIDO)

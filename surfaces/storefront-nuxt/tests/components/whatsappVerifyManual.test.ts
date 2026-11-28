@@ -45,6 +45,66 @@ describe('WhatsappVerifyPanel — envio manual', () => {
     expect(wrapper.find('[data-login-whatsapp-reopen]').exists()).toBe(true)
   })
 
+  it('conferiu e não chegou: a tela diz, em vez de só girar o botão (beta 05/11)', async () => {
+    const quiet = await mountSuspended(WhatsappVerifyPanel, { props: base })
+    expect(quiet.find('[data-login-whatsapp-not-arrived]').exists()).toBe(false)
+
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, { props: { ...base, notArrived: true } })
+    expect(wrapper.find('[data-login-whatsapp-not-arrived]').text()).toContain('ainda não chegou')
+
+    const busy = await mountSuspended(WhatsappVerifyPanel, { props: { ...base, notArrived: true, checking: true } })
+    expect(busy.find('[data-login-whatsapp-not-arrived]').exists()).toBe(false)
+  })
+
+  it('a mensagem chegou e falta liberar: a tela diz o que é verdade e o que falta (#3271)', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: {
+        ...base,
+        returnState: 'slow',
+        notArrived: true,
+        awaitingRelease: true,
+        arrivedMessage: 'Agora, na resposta do WhatsApp, toque em “Liberar o Chrome”. Esta tela entra logo depois.'
+      }
+    })
+    const waiting = wrapper.find('[data-login-whatsapp-waiting]')
+    expect(wrapper.find('[data-login-whatsapp-arrived]').exists()).toBe(true)
+    expect(waiting.text()).toContain('Sua mensagem chegou')
+    expect(waiting.text()).toContain('toque em “Liberar o Chrome”')
+    // Nada de "ainda não chegou", nem de "demorando", nem do plano B de reenviar.
+    expect(waiting.text()).not.toContain('ainda não chegou')
+    expect(waiting.text()).not.toContain('Está demorando')
+    expect(wrapper.find('[data-login-whatsapp-not-arrived]').exists()).toBe(false)
+    expect(wrapper.find('[data-login-whatsapp-manual]').exists()).toBe(false)
+    const check = wrapper.find('[data-login-whatsapp-check]')
+    expect(check.text()).toBe('Já liberei. Conferir agora')
+    await check.trigger('click')
+    expect(wrapper.emitted('check')).toHaveLength(1)
+    // O ícone não gira: não há mais o que esperar da mensagem.
+    expect(waiting.find('.animate-spin').exists()).toBe(false)
+  })
+
+  it('a falha de rede fala mais alto que "a mensagem chegou": a última conferência não respondeu', async () => {
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, {
+      props: { ...base, returnState: 'offline-or-error', awaitingRelease: true }
+    })
+    expect(wrapper.find('[data-login-whatsapp-waiting]').text()).toContain('Não consegui conferir agora')
+    expect(wrapper.find('[data-login-whatsapp-check]').text()).toBe('Já enviei. Conferir agora')
+  })
+
+  it('a mensagem do plano B é uma frase inteira: quebra a linha, nunca se corta (#3271)', async () => {
+    const message = 'Olá! Quero entrar no site da Nelson Boulangerie (ref. NB-HAKZKG)'
+    const wrapper = await mountSuspended(WhatsappVerifyPanel, { props: { ...base, message } })
+    const shown = wrapper.find('[data-login-whatsapp-manual-message]')
+    expect(shown.text()).toBe(message)
+    expect(shown.classes()).not.toContain('truncate')
+    expect(shown.classes()).toContain('break-words')
+    // A referência não se parte no hífen.
+    expect(shown.find('[data-login-whatsapp-manual-ref]').text()).toBe('NB-HAKZKG')
+    expect(shown.find('[data-login-whatsapp-manual-ref]').classes()).toContain('whitespace-nowrap')
+    // O botão de copiar continua ao lado.
+    expect(wrapper.find('[data-login-whatsapp-manual] button[aria-label="Copiar mensagem"]').exists()).toBe(true)
+  })
+
   it('na demora explica que não é para reenviar e permite conferir agora', async () => {
     const wrapper = await mountSuspended(WhatsappVerifyPanel, {
       props: { ...base, returnState: 'slow' }

@@ -181,6 +181,12 @@ def operator_cancel_policy(order) -> OperatorCancelPolicy:
     if order.status == Order.Status.CANCELLED:
         return OperatorCancelPolicy(allowed=False, reason="Este pedido já está cancelado.")
 
+    from shopman.shop.policies.ifood_concluded import concluded_refusal
+
+    concluded = concluded_refusal(order)
+    if concluded:
+        return OperatorCancelPolicy(allowed=False, reason=concluded)
+
     if not order.can_transition_to(Order.Status.CANCELLED):
         return OperatorCancelPolicy(
             allowed=False,

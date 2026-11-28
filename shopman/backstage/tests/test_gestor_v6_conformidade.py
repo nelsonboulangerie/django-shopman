@@ -16,17 +16,18 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 from shopman.orderman.models import Order, OrderItem
+from shopman.utils.formatting import format_clock
 
 from shopman.backstage.presentation.status import OPERATOR_ORDER_STATUS_LABELS, order_status_label
-from shopman.backstage.projections.order_attention import PrepExpectation, prep_expectation, ready_eta
 from shopman.backstage.projections.order_queue import (
     board_rail_counts,
     build_operator_order,
     build_order_card,
     build_two_zone_queue,
 )
+from shopman.shop.services.kitchen_eta import PrepExpectation, prep_expectation, ready_eta
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 def _order(ref: str, status: str, *, channel_ref: str = "web", payment: dict | None = None, data_extra: dict | None = None) -> Order:
@@ -69,7 +70,7 @@ def test_pix_block_is_written_with_the_charge_times():
 
     assert card.advance_block_label == "Aguardando Pix"
     assert card.advance_block_reason == (
-        f"gerado às {timezone.localtime(created):%H:%M} · expira às {timezone.localtime(created + timedelta(minutes=30)):%H:%M}"
+        f"gerado às {format_clock(created)} · expira às {format_clock(created + timedelta(minutes=30))}"
         " · avança sozinho quando cair"
     )
 
@@ -103,7 +104,7 @@ def test_ready_eta_uses_the_real_start_and_the_measured_time():
     goal = ready_eta(order, PrepExpectation(minutes=None, samples=0), now=now)
 
     assert measured == started + timedelta(minutes=10)
-    assert goal == started + timedelta(minutes=15)  # a meta padrão da estação (dono, 04/10)
+    assert goal == started + timedelta(minutes=30)  # sem mediana nem meta configurada: a promessa da loja (#3178)
     assert ready_eta(_order("V6-DONE", "ready"), PrepExpectation(minutes=10, samples=5), now=now) is None
 
 
@@ -174,3 +175,13 @@ def test_rail_counts_follow_the_board():
     counts = board_rail_counts()
     assert counts == {"intake": len(queue.intake), "exit": queue.expedition_count}
     assert counts == {"intake": 1, "exit": 2}
+
+
+def test_rail_counts_new_preorder_in_the_intake():
+    """A encomenda nova tem prazo de aceite: conta na Entrada como no quadro (beta 09/11)."""
+    order = _order("V6-R-ENC", "new")
+    order.data["delivery_date"] = (timezone.localdate() + timedelta(days=2)).isoformat()
+    order.save(update_fields=["data"])
+    queue = build_two_zone_queue()
+    assert [card.ref for card in queue.intake] == ["V6-R-ENC"]
+    assert board_rail_counts() == {"intake": 1, "exit": 0}

@@ -37,6 +37,8 @@ class CraftError(BaseError):
         "INSUFFICIENT_MATERIALS": "Insufficient shared ingredients for rescheduled quantity",
         "DOWNSTREAM_DEFICIT": "Reducing this work order creates ingredient shortage for downstream production",
         "IDEMPOTENCY_CONFLICT": "Idempotency key was already used for another work order",
+        "MADE_TO_ORDER_RECIPE": "A ficha é feita na hora: não tem ordem de produção.",
+        "EVENT_KIND_NOT_RECORDABLE": "This event kind is written only by the verb that makes the transition",
     }
 
 

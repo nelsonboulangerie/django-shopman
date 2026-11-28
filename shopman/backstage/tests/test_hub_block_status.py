@@ -142,6 +142,8 @@ def test_marketing_diz_as_decisoes_da_fila_e_as_campanhas_ligadas(client):
 
     assert marketing["status_attention"] == "1 decisão"
     assert marketing["status_summary"] == "1 campanha ligada"
+    # O número no canto do ícone na Central conta o mesmo que a frase.
+    assert marketing["attention_count"] == 1
 
 
 # ── B.I. ──────────────────────────────────────────────────────────────────────
@@ -245,18 +247,6 @@ def test_cada_bloco_so_aparece_com_estado_para_quem_abre_o_app(client):
 
     assert list(tiles) == ["purchase"]
     assert tiles["purchase"]["status_summary"] == "1 pedido a caminho"
+    # Pedido a caminho é estado calmo: não pede ninguém, e o ícone fica sem número.
+    assert tiles["purchase"]["attention_count"] == 0
 
-
-@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_a_fila_usa_o_nome_curto_do_app(client):
-    order = Order.objects.create(ref="WEB-CURTO-1", channel_ref="web", status="new", total_q=1000, data={})
-    admin = _admin("hub-b-curto")
-    client.force_login(admin)
-
-    hub = client.get(reverse("api-backstage-hub")).json()["hub"]
-
-    item = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["next_item"]
-    assert item["key"] == f"gestor:order:{order.ref}"
-    assert item["app_label"] == "Gestor"
-    # O bloco continua com o nome inteiro.
-    assert next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")["label"] == "Gestor de pedidos"

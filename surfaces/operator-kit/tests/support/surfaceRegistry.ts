@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 
 interface RegisteredSurface {
   dir: string;
-  kind: "customer" | "operator";
+  kind: "customer" | "operator" | "internal";
+  uses_operator_kit: boolean;
   deployment?: "preview";
 }
 
@@ -24,11 +25,11 @@ const registry = JSON.parse(readFileSync(registryPath, "utf8")) as {
   surfaces: Record<string, RegisteredSurface>;
 };
 
-/** Diretórios dos apps de operador (`pos-nuxt`, …), em ordem alfabética. */
-export const OPERATOR_SURFACES: readonly string[] = Object.values(
+/** Diretórios que consomem o operator-kit, inclusive o catálogo interno. */
+export const OPERATOR_KIT_SURFACES: readonly string[] = Object.values(
   registry.surfaces,
 )
-  .filter((surface) => surface.kind === "operator")
+  .filter((surface) => surface.uses_operator_kit)
   .map((surface) => surface.dir)
   .sort();
 

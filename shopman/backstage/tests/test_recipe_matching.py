@@ -157,6 +157,58 @@ def test_a_typed_prefix_ranks_like_a_match(materials):
     assert search_ingredients("ferm")[0].sku == "FERMENTO-BIOLOGICO-FRESCO"
 
 
+# Beta 05/11/2026, PROD-07: o autocomplete do editor completava a lista com itens sem
+# relação, e o Enter escolhia a água tônica no lugar da filtrada.
+
+
+@pytest.fixture
+def pantry(materials):
+    from decimal import Decimal
+
+    from shopman.craftsman.models import Recipe, RecipeItem
+
+    for sku, name, unit in [
+        ("AGUA-TONICA", "Água tônica", "l"),
+        ("SAL-GROSSO", "Sal grosso", "kg"),
+        ("SAL-MARINHO", "Sal marinho", "kg"),
+        ("CARAMELO-SALGADO", "Caramelo salgado", "kg"),
+        ("SALADA-CASA", "Salada da casa", "kg"),
+        ("FLOR-DE-SAL", "Flor de sal", "kg"),
+        ("OLEO-SOJA", "Óleo de soja", "l"),
+        ("AMIDO-MILHO", "Amido de milho", "kg"),
+        ("FARINHA-T65", "Farinha de trigo T65", "kg"),
+    ]:
+        Material.objects.create(sku=sku, name=name, unit=unit)
+    recipe = Recipe.objects.create(ref="baguete", name="Baguete", output_sku="BAGUETE", batch_size=Decimal("10"))
+    RecipeItem.objects.create(recipe=recipe, input_sku="AGUA-FILTRADA", quantity=Decimal("700"), unit="g")
+
+
+def test_search_with_no_word_in_common_says_nothing_matched(pantry):
+    assert search_ingredients("Farinha de Grilo Inexistente") == ()
+    assert search_ingredients("unicórnio") == ()
+
+
+def test_search_puts_the_whole_first_word_before_a_prefix_in_the_middle(pantry):
+    top = [c.sku for c in search_ingredients("sal")][:3]
+
+    assert set(top) == {"SAL-REFINADO", "SAL-GROSSO", "SAL-MARINHO"}
+
+
+def test_search_ties_go_to_the_material_the_house_uses(pantry):
+    assert search_ingredients("agua")[0].sku == "AGUA-FILTRADA"
+
+
+def test_search_does_not_pad_a_precise_hit_with_unrelated_items(pantry):
+    found = [c.sku for c in search_ingredients("farinha t65")]
+
+    assert found[0] == "FARINHA-T65"
+    assert not {"OLEO-SOJA", "AMIDO-MILHO", "FLOR-DE-SAL"} & set(found)
+
+
+def test_search_still_forgives_a_typo(pantry):
+    assert search_ingredients("fermneto")[0].sku == "FERMENTO-BIOLOGICO-FRESCO"
+
+
 # ── Normalização, sinônimos e papel (puros) ─────────────────────────────────
 
 

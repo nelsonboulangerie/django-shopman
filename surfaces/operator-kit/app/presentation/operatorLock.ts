@@ -64,6 +64,15 @@ export function isLikelyBadge(value: string): boolean {
  */
 export const PIN_MIN_DIGITS = 4;
 
+/**
+ * O PIN da casa tem EXATAMENTE 4 dígitos (dono, 22/11/2026, #3223: "já estava
+ * decidido"). Todo PIN novo ou trocado nasce assim, e a credencial que já é de 4
+ * fixos vem marcada no cartão de quem destrava (`pin_digits`): para ela o teclado
+ * envia sozinho no 4º dígito. O PIN antigo, de até 8, segue entrando com o
+ * Confirmar até a troca, que é obrigatória no próximo uso.
+ */
+export const PIN_DIGITS = 4;
+
 /** O PIN visível para no oitavo dígito (o teclado não cresce sem limite). */
 export const PIN_MAX_DIGITS = 8;
 
@@ -208,4 +217,49 @@ export function canSubmitPin(quem: number | string | null, pin: string): boolean
 export function appendPinDigit(pin: string, digit: string, max = PIN_MAX_DIGITS): string {
   if (!/^[0-9]$/.test(digit)) return pin;
   return pin.length >= max ? pin : pin + digit;
+}
+
+/**
+ * A pessoa identificada mudou FORA desta aba?
+ *
+ * A sessão é uma só no navegador (cookie compartilhado entre os apps): quem
+ * destrava o PDV vira quem opera a Cozinha aberta ao lado. A aba da Cozinha
+ * seguia mostrando a Joyce e gravava como a Fran (beta 07/11). Quando a aba volta
+ * ao foco ela relê a sessão, e esta função diz o que avisar: `null` quando é a
+ * mesma pessoa, quando antes não havia ninguém (foi um destrave, não uma troca) ou
+ * quando agora não há ninguém (a trava já cobre a tela).
+ */
+export function operatorChangeNotice(
+  before: OperatorSession | null,
+  after: OperatorSession | null,
+): string | null {
+  const was = before?.locked ? null : before?.operator;
+  const now = after?.locked ? null : after?.operator;
+  if (!was || !now || was.id === now.id) return null;
+  return `Agora quem opera aqui é ${operatorName(after)}. A troca foi feita em outro app deste navegador.`;
+}
+
+/**
+ * O operador que a tela mostra, para ir junto de cada GRAVAÇÃO no backstage
+ * (`X-Shopman-Operator`). O servidor recusa com 409 `operator_changed` quando a
+ * sessão já é de outra pessoa: o clique que devolve o foco à aba pode chegar antes
+ * da releitura, e o ato saía no nome de quem a tela não mostrava (beta 07/11).
+ * `""` = não manda: leitura, troca de pessoa (`/operator/`), fora do backstage, ou
+ * ninguém identificado na tela.
+ */
+export function expectedOperatorHeader(
+  url: string,
+  method: string | undefined,
+  session: OperatorSession | null,
+): string {
+  if (["GET", "HEAD", "OPTIONS"].includes((method || "GET").toUpperCase())) return "";
+  if (!url.includes("/api/v1/backstage/") || url.includes("/api/v1/backstage/operator/")) return "";
+  const operator = session?.locked ? null : session?.operator;
+  return operator ? String(operator.id) : "";
+}
+
+/** A recusa do servidor por troca de pessoa (ver `expectedOperatorHeader`). */
+export function isOperatorChanged(status: number | undefined, body: unknown): boolean {
+  const code = (body as { error?: { code?: unknown } } | null)?.error?.code;
+  return status === 409 && code === "operator_changed";
 }

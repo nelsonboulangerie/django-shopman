@@ -8,6 +8,7 @@ import {
   GESTOR_ALERT,
   gestorAttentionDecision,
   gestorAttentionStorageKey,
+  gestorSeenKeys,
   gestorServiceDayBoundaryDelay,
   useOrdersBoard,
 } from "../../app/composables/useOrdersBoard";
@@ -94,7 +95,7 @@ describe("useOrdersBoard — derivação da fila", () => {
 describe("useOrdersBoard — atenção diária", () => {
   const dueQueue = (ref_: string): TwoZoneQueueProjection => ({
     ...emptyZone(),
-    intake: [{ ref: ref_, can_confirm: true } as never],
+    intake: [{ ref: ref_, can_confirm: true, attention: "confirm" } as never],
     total_count: 1,
   });
 
@@ -138,12 +139,18 @@ describe("useOrdersBoard — atenção diária", () => {
     ).toBe(1_250);
   });
 
-  it("na virada do dia o mesmo pedido volta a ser unseen na nova memória diária", () => {
+  it("na virada do dia o pedido já visto ontem não toca de novo (WP-G02, P1-04)", () => {
     const queue = dueQueue("PRE-1");
     const yesterday = gestorAttentionDecision(queue, new Set(["PRE-1"]), "", "2026-09-15");
-    const today = gestorAttentionDecision(queue, new Set(), yesterday.signature, "2026-09-16");
+    // A memória do dia novo carrega a da véspera (`gestorSeenKeys`).
+    const seen = gestorSeenKeys(
+      (key) => (key === gestorAttentionStorageKey("2026-09-15") ? '["PRE-1"]' : null),
+      "2026-09-16",
+    );
+    const today = gestorAttentionDecision(queue, seen, yesterday.signature, "2026-09-16");
 
-    expect(today.firstUnseen).toBe("PRE-1");
+    expect(today.firstUnseen).toBe("");
+    expect(today.shouldStop).toBe(true);
     expect(today.signature).toBe("2026-09-16:PRE-1");
   });
 
@@ -288,14 +295,14 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(env.fetchMock.mock.calls[0]![1].headers["Idempotency-Key"]).toBeTruthy();
   });
 
-  it("reject envia reason + cancellation_code", async () => {
+  it("reject envia a chave da lista única e a nota interna, em qualquer canal (dono, 07/11)", async () => {
     env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "IFOOD-9", actions: fixtureActions({ can_confirm: true }) }] } };
     env.fetchMock.mockResolvedValueOnce({ outcome: "applied" });
     const board = useOrdersBoard();
-    await board.reject("IFOOD-9", "Sem estoque", "CODE_2");
+    await board.reject("IFOOD-9", { reasonKey: "high_demand", internalNote: "" });
     const [path, opts] = env.fetchMock.mock.calls[0]!;
     expect(String(path)).toBe("/api/v1/backstage/orders/IFOOD-9/reject/");
-    expect(opts.body).toMatchObject({ reason: "Sem estoque", cancellation_code: "CODE_2" });
+    expect(opts.body).toMatchObject({ reason_key: "high_demand", internal_note: "" });
   });
 
   it("falha na ação acende erro inline por-ref (um lugar só, sem toast), devolve false e reconcilia via refresh", async () => {
@@ -322,18 +329,19 @@ describe("useOrdersBoard — ações (act)", () => {
     expect(ok).toBe(false);
     const message = board.actionError("WEB-5");
     expect(message).toContain("Pedido não está mais aguardando confirmação");
-    expect(message).toContain("Atualizamos o quadro: confira o pedido antes de tentar de novo.");
+    expect(message).toContain("Atualizamos o painel: confira o pedido antes de tentar de novo.");
     expect(env.sonner.error).not.toHaveBeenCalled();
     expect(env.refresh).toHaveBeenCalledTimes(1);
   });
 
   it("falha sem motivo do servidor diz em que pé o pedido ficou e QUAL gesto não chegou (F8, frase do dono 09/10)", async () => {
     env.fetchMock.mockRejectedValueOnce({ status: 500 });
-    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-6", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-261118-K42", status_label: "Novo", actions: fixtureActions({ can_confirm: true }) }] } };
     const board = useOrdersBoard();
-    expect(await board.confirm("WEB-6")).toBe(false);
-    expect(board.actionError("WEB-6")).toBe("WEB-6 continua novo: o Aceitar não chegou. Tente de novo.");
-    expect(board.actionError("WEB-6")).not.toContain("Falha na ação");
+    expect(await board.confirm("WEB-261118-K42")).toBe(false);
+    // O pedido vai pelo código que o cartão mostra, não pela referência inteira.
+    expect(board.actionError("WEB-261118-K42")).toBe("K42 continua novo: o Aceitar não chegou. Tente de novo.");
+    expect(board.actionError("WEB-261118-K42")).not.toContain("Falha na ação");
   });
 
   it("sem a situação na projeção, a falha diz só o gesto que não chegou", async () => {
@@ -358,6 +366,23 @@ describe("useOrdersBoard — ações (act)", () => {
     const board = useOrdersBoard();
     expect(await board.confirm("WEB-8")).toBe(false);
     expect(board.actionError("WEB-8")).toBe("O pedido não foi atualizado. Tente de novo.");
+  });
+
+  // WP-G06: a recusa mora num diálogo, e o `field` do dialeto `{detail, field,
+  // errors}` precisa chegar a ele para marcar o campo.
+  it("a recusa do servidor guarda o campo que ela apontou, e a nova tentativa o limpa", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      status: 400,
+      data: { detail: "Escolha um dos motivos da lista.", field: "reason_key", errors: { reason_key: ["Escolha um dos motivos da lista."] } },
+    });
+    env.fetchData.value = { queue: { ...emptyZone(), intake: [{ ref: "WEB-4", actions: fixtureActions({ can_confirm: true }) }] } };
+    const board = useOrdersBoard();
+    expect(await board.reject("WEB-4", { reasonKey: "gone", internalNote: "" })).toBe(false);
+    expect(board.actionError("WEB-4")).toBe("Escolha um dos motivos da lista.");
+    expect(board.actionErrorField("WEB-4")).toBe("reason_key");
+    env.fetchMock.mockRejectedValueOnce({ status: 500 });
+    expect(await board.reject("WEB-4", { reasonKey: "other", internalNote: "" })).toBe(false);
+    expect(board.actionErrorField("WEB-4")).toBe("");
   });
 
   it("uma nova tentativa limpa o erro anterior do ref", async () => {
@@ -416,14 +441,6 @@ describe("useOrdersBoard — bulk + reasons", () => {
     const board = useOrdersBoard();
     expect(await board.confirmMany(["WEB-1", "WEB-2"])).toBe(2);
     expect(env.sonner.error).toHaveBeenCalledWith("2 pedidos ficaram como estavam. Cada cartão diz por quê.");
-  });
-
-  it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {
-    env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
-    const board = useOrdersBoard();
-    expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
-    env.fetchMock.mockRejectedValueOnce(new Error("net"));
-    await expect(board.fetchCancellationReasons("IFOOD-2")).rejects.toThrow("net");
   });
 });
 
@@ -572,7 +589,7 @@ it("SSE só toca depois do refresh tornar o pedido tratável", async () => {
     data.value = {
       queue: {
         ...emptyZone(),
-        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment } as never],
+        intake: [{ ref: "PIX-1", can_confirm: false, can_advance: releasePayment, attention: releasePayment ? "dispatch" : "" } as never],
       },
     };
   });
@@ -640,7 +657,7 @@ describe("useOrdersBoard — o aviso de pedido novo insiste até o operador reco
     env.reset();
     vi.useFakeTimers();
     const data = ref({
-      queue: { ...emptyZone(), intake: [{ ref: "WEB-NOVO", can_confirm: true } as never], total_count: 1 },
+      queue: { ...emptyZone(), intake: [{ ref: "WEB-NOVO", can_confirm: true, attention: "confirm" } as never], total_count: 1 },
     });
     const playbackCount = ref(0);
     const startAlert = vi.fn(() => { if (audible) playbackCount.value += 1; });

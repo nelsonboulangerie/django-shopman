@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import timedelta
 from decimal import Decimal
 
 from django.utils import timezone
@@ -78,6 +79,140 @@ def _session_customer_identity(session_key: str) -> dict:
     return {k: existing[k] for k in _CUSTOMER_IDENTITY_KEYS if existing.get(k)}
 
 
+#: O código da recusa de estoque no envio do pedido (``shop.services.stock``).
+STOCK_REFUSAL_CODE = "insufficient_supply"
+
+# Recusas do envio que falam da SACOLA, não do formulário (#3267). O Core recusa
+# com a frase dele ("Sessão foi abandonada", "Sessão não encontrada: web:…") ou
+# pede para conferir itens de uma sacola que já virou pedido em outra aba
+# (``revision_changed``). Quem decide a frase ao cliente é o estado atual da
+# sacola (``checkout_service.refused_cart``), não o código: o mesmo
+# ``revision_changed`` é "sua sacola mudou" numa sacola viva e "este pedido já foi
+# enviado" numa sacola selada. Pelo código, sem importar o Orderman.
+_BAG_REFUSAL_CODES = frozenset(
+    {"revision_changed", "already_committed", "already_abandoned", "abandoned", "not_found", "empty_session"}
+)
+#: O selo do Core ainda corre com esta mesma chave (o recibo da loja expirou antes).
+_CORE_SEAL_IN_PROGRESS = "in_progress"
+
+ORDER_ALREADY_SENT = "Este pedido já foi enviado."
+BAG_GONE = "Sua sacola ficou vazia antes do envio."
+SEAL_IN_PROGRESS = "Seu pedido ainda está sendo enviado. Aguarde a confirmação nesta tela."
+
+
+def _bag_gone_response() -> Response:
+    return Response(
+        {
+            "detail": BAG_GONE,
+            "error_code": "cart_empty",
+            "actions": [{"ref": "menu", "kind": "link", "label": "Ver o cardápio", "href": "/menu"}],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _order_already_sent_response(request, order_ref: str) -> Response:
+    # A mesma passagem do envio que deu certo: o acompanhamento abre neste
+    # navegador e a sacola enviada não volta a aparecer.
+    order_service.grant_order_access(request, order_ref)
+    request.session.pop("cart_session_key", None)
+    order_url = f"/pedido/{order_ref}"
+    return Response(
+        {
+            "detail": ORDER_ALREADY_SENT,
+            "error_code": "order_already_sent",
+            "next_url": order_url,
+            "actions": [{"ref": "view_order", "kind": "link", "label": "Ver o pedido", "href": order_url}],
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+def _refused_bag_response(request, *, session_key: str) -> Response | None:
+    """A frase da loja para a sacola que saiu ou sumiu; ``None`` se ela segue viva."""
+    bag = checkout_service.refused_cart(session_key, CHANNEL_REF)
+    if bag.sent_order_ref:
+        return _order_already_sent_response(request, bag.sent_order_ref)
+    if bag.gone:
+        return _bag_gone_response()
+    return None
+
+
+def _stock_refusal_payload(exc: Exception, *, session_key: str = "", request=None) -> dict | None:
+    """A recusa de estoque no envio, com o item (plano EXCELENCIA-STOREFRONT, P1-11).
+
+    A recusa nasce sabendo qual item faltou, mas o mapeamento de erro de
+    formulário guardava só a frase: a tela recebia um aviso sem item, com texto
+    que mandava "ajustar o carrinho", e não tinha para onde levar a cliente.
+    Aqui o código e o item seguem até a tela, no dialeto de erro da API
+    (``detail``, ``field``, ``errors``) mais ``error_code`` e ``context``, como
+    as outras recusas com destino (``total_changed``). A frase é da loja:
+    sacola, nunca carrinho.
+
+    ``stock_issue`` é a folha de alternativas pronta (#2687): o mesmo corpo do
+    409 da sacola, lido da linha recusada (o que ainda dá para levar, os
+    substitutos, o aviso de volta), para a tela abrir a folha sem sair do
+    checkout. Vem ``None`` quando a linha não pôde ser lida; a tela fica com o
+    caminho da sacola.
+    """
+    # Pelo código da recusa, sem importar o Orderman: a API da loja não fala com o
+    # Core direto (``test_import_boundaries``), e o código é o contrato da recusa.
+    if getattr(exc, "code", None) != STOCK_REFUSAL_CODE:
+        return None
+    context = dict(getattr(exc, "context", None) or {})
+    sku = str(context.get("sku") or "")
+    name = _product_name(sku) or sku
+    detail = (
+        f"{name} ficou indisponível antes de concluirmos o seu pedido."
+        if name
+        else "Um item ficou indisponível antes de concluirmos o seu pedido."
+    )
+    return {
+        "detail": detail,
+        "field": "checkout",
+        "errors": {"checkout": detail},
+        "error_code": STOCK_REFUSAL_CODE,
+        "context": {
+            "sku": sku,
+            "name": name,
+            "requested_qty": str(context.get("requested_qty") or ""),
+            "is_paused": str(context.get("error_code") or "") == "SKU_PAUSED",
+        },
+        "stock_issue": _stock_issue(sku, name=name, session_key=session_key, request=request),
+    }
+
+
+def _stock_issue(sku: str, *, name: str, session_key: str, request) -> dict | None:
+    """A folha de alternativas da linha que o envio recusou (``cart.line_shortage``)."""
+    if not sku or not session_key:
+        return None
+    try:
+        from shopman.shop.services.cart import line_shortage
+
+        from .surface import _stock_error_payload
+
+        shortage = line_shortage(session_key=session_key, channel_ref=CHANNEL_REF, sku=sku)
+        if shortage is None:
+            return None
+        return _stock_error_payload(shortage, request=request, name=name)
+    except Exception:
+        # A recusa já diz o item e leva à sacola; sem a folha, ela continua útil.
+        logger.warning("checkout_stock_issue_failed sku=%s", sku, exc_info=True)
+        return None
+
+
+def _product_name(sku: str) -> str:
+    if not sku:
+        return ""
+    try:
+        from shopman.shop.services import product_readiness
+
+        return str(product_readiness.product_names([sku]).get(sku) or "")
+    except Exception:
+        logger.debug("checkout_stock_refusal_product_name_failed", exc_info=True)
+        return ""
+
+
 # Rate-limit MANUAL (is_ratelimited): só a tentativa que chega ao commit
 # incrementa o contador — cliente corrigindo erro de formulário não pode
 # tomar 429 no momento mais crítico do pedido.
@@ -102,24 +237,15 @@ class CheckoutView(APIView):
             429: DetailSerializer,
         },
     )
-    def get(self, request):
-        from shopman.shop.services import remote_mutations
-        key = remote_mutations.idempotency_key_from_request(request, fallback="")
-        if not key and not _cart_data(request).is_empty:
-            return Response(status=204)
-        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
-        response = checkout_service.recover_checkout_response(browser_session=request.session.session_key or "", principal=principal, key=key)
-        if response is None:
-            return Response(status=204)
-        order_service.grant_order_access(request, response["order_ref"])
-        return Response(response)
-
     def post(self, request):
         from shopman.shop.services import remote_mutations
         from shopman.storefront.api.surface import _session_scope
 
         customer = getattr(request, "customer", None)
-        if customer is None or not customer.is_active or not customer.phone:
+        phone_handle = None
+        if customer is not None and customer.is_active:
+            phone_handle = customer.handle("phone") or customer.handle("whatsapp")
+        if phone_handle is None:
             return Response(
                 {"detail": "Entre por telefone para continuar.", "error_code": "authentication_required"},
                 status=status.HTTP_403_FORBIDDEN,
@@ -130,33 +256,42 @@ class CheckoutView(APIView):
         checkout_input = request.data
         if isinstance(checkout_input, Mapping):
             checkout_input = checkout_input.copy()
-            checkout_input["phone"] = customer.phone
+            checkout_input["phone"] = phone_handle.value
         serializer = CheckoutSerializer(data=checkout_input)
         serializer.is_valid(raise_exception=True)
         payload = dict(serializer.validated_data)
         payload.pop("idempotency_key", None)
         payload.pop("address_label", None)
-        principal = str(getattr(getattr(request, "customer", None), "uuid", "") or "")
+        principal = str(customer.subject_id)
         def execute():
             response = self._post(request, key=key, validated_data=serializer.validated_data)
             return dict(response.data), response.status_code
         try:
             receipt = remote_mutations.run_idempotent_mutation(
                 scope=checkout_service.checkout_receipt_scope(browser_session=_session_scope(request), principal=principal, cart_session=request.session.get("cart_session_key") or "", key=key),
-                key=key, payload=payload, execute=execute, local_atomic=True,
+                key=key, payload=payload, execute=execute, local_atomic=False,
+                in_progress_ttl=timedelta(seconds=30),
                 cache_response=lambda body, code: code == 201,
+                allow_changed_payload_after_rejection=True,
             )
         except remote_mutations.RemoteMutationInProgress:
             return Response({"detail": "A confirmação ainda está em consulta. Mantenha esta tentativa.", "error_code": "mutation_in_progress"}, status=409)
         if receipt.response_code == 201:
             order_service.grant_order_access(request, receipt.response_body["order_ref"])
-            order_service.mark_just_placed(request, receipt.response_body["order_ref"])
             request.session.pop("cart_session_key", None)
         logger.info("storefront.checkout result=%s", "recovered" if receipt.replayed else receipt.response_code)
         return Response(receipt.response_body, status=receipt.response_code)
 
     def _post(self, request, *, key, validated_data):
         from shopman.shop.projections import checkout_context
+
+        recovered = checkout_service.recover_committed_checkout(
+            session_key=str(request.session.get("cart_session_key") or ""),
+            channel_ref=CHANNEL_REF,
+            idempotency_key=key,
+        )
+        if recovered is not None:
+            return Response(self._success_data(recovered), status=status.HTTP_201_CREATED)
 
         if validated_data["payment_method"] not in checkout_context.payment_methods(CHANNEL_REF):
             return Response(
@@ -170,10 +305,29 @@ class CheckoutView(APIView):
         # Check cart has items
         cart = _cart_data(request)
         if cart.is_empty:
-            return Response(
-                {"detail": "Sua sacola está vazia."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            # Vazia AGORA, com a tela mostrando itens: outra aba já a enviou, ou ela
+            # foi encerrada/apagada. A recusa diz qual e leva à saída certa.
+            cart_session_key = str(request.session.get("cart_session_key") or "")
+            if not cart_session_key:
+                # Sem chave: o envio que deu certo a tira da sessão. A outra aba deste
+                # navegador, com a revisão ainda aberta, chega aqui; o pedido dela é o
+                # que este navegador acabou de enviar. Dizer "ficou vazia" mentiria.
+                sent_order_ref = checkout_service.recently_sent_order_ref(request, CHANNEL_REF)
+                if sent_order_ref:
+                    return _order_already_sent_response(request, sent_order_ref)
+            refused = _refused_bag_response(request, session_key=cart_session_key)
+            return refused or _bag_gone_response()
+
+        # Item de coleção exclusiva de grupo que o visitante não integra (pôs na sacola
+        # quando era do grupo, ou o grupo mudou): o pedido não fecha com ele. A decisão é
+        # a da sacola e do cardápio; custo fixo, qualquer que seja o número de itens.
+        from shopman.storefront.api.surface import cart_item_refused_response
+        from shopman.storefront.cart import CartItemRefused, refuse_group_exclusive
+
+        try:
+            refuse_group_exclusive(request, [line.sku for line in cart.lines if line.sku])
+        except CartItemRefused as refused:
+            return cart_item_refused_response(refused, field="items")
 
         session_key = cart.session_key
         # O nome impresso no ticket do KDS: sanitiza controle/bidi (a serializer
@@ -238,7 +392,11 @@ class CheckoutView(APIView):
                 _max_preorder_days, _ = checkout_context.preorder_config()
                 _max_date = _today_local + _timedelta(days=_max_preorder_days)
                 if _parsed_date > _max_date:
-                    message = f"Data máxima permitida: {_max_date.strftime('%d/%m/%Y')}."
+                    _window = "1 dia" if _max_preorder_days == 1 else f"{_max_preorder_days} dias"
+                    message = (
+                        f"Aceitamos encomendas com até {_window} de antecedência. "
+                        f"Data máxima: {_max_date.strftime('%d/%m/%Y')}."
+                    )
                     return Response(
                         {"detail": message, "field": "delivery_date", "errors": {"delivery_date": message}},
                         status=status.HTTP_400_BAD_REQUEST,
@@ -287,6 +445,11 @@ class CheckoutView(APIView):
             slot_error = (
                 delivery_window_error(_delivery_day, delivery_time_slot) if _delivery_day is not None else None
             )
+            if not slot_error and _delivery_day is not None:
+                # O prazo de aceite do canal, a mesma conta da grade que a tela riscou (#3266).
+                from shopman.storefront.services.pickup_slots import acceptance_slot_error
+
+                slot_error = acceptance_slot_error(_delivery_day, delivery_time_slot, CHANNEL_REF)
             if slot_error:
                 return Response(
                     {
@@ -300,15 +463,11 @@ class CheckoutView(APIView):
         if fulfillment_type == "pickup":
             from shopman.storefront.services.pickup_slots import validate_pickup_slot_selection
 
-            try:
-                now_local = timezone.localtime().time().replace(second=0, microsecond=0)
-            except (ValueError, KeyError):
-                now_local = None
             slot_error = validate_pickup_slot_selection(
                 delivery_time_slot,
                 delivery_date=delivery_date,
                 cart_skus=[str(line.sku) for line in cart.lines if line.sku],
-                now=now_local,
+                channel_ref=CHANNEL_REF,
             )
             if slot_error:
                 return Response(
@@ -448,8 +607,10 @@ class CheckoutView(APIView):
             payment_data = {"method": "cash"}
             change_for_q = parse_change_for(validated_data.get("change_for", ""))
             if fulfillment_type == "delivery":
-                # Marca canônica do pagamento na porta (a mesma do PDV). Ver o
-                # comentário gêmeo em ``storefront/intents/checkout.py``.
+                # Marca canônica do pagamento na porta (a mesma do PDV). Sem
+                # ela o Gestor não oferece o acerto (``settle_delivery_cash``
+                # recusa), o troco do entregador não sai da gaveta e o gate de
+                # pagamento não distingue "receber na porta" de "não pagou".
                 payment_data["collection"] = "on_delivery"
                 if change_for_q:
                     payment_data["change_for_q"] = change_for_q
@@ -485,7 +646,7 @@ class CheckoutView(APIView):
 
                 customer_info = getattr(request, "customer", None)
                 loyalty_balance_q = checkout_context.loyalty_balance(
-                    customer_info.uuid if customer_info else None
+                    customer_info.subject_id if customer_info else None
                 )
                 if loyalty_balance_q > 0:
                     checkout_data["loyalty"] = {"redeem_points_q": loyalty_balance_q}
@@ -504,11 +665,25 @@ class CheckoutView(APIView):
                 channel_ref=CHANNEL_REF,
                 data=checkout_data,
                 idempotency_key=idempotency_key,
-                expected_total_q=validated_data.get("expected_total_q"),
-                expected_revision=validated_data.get("expected_revision"),
+                expected_total_q=validated_data["expected_total_q"],
+                expected_revision=validated_data["expected_revision"],
             )
         except Exception as exc:
             logger.debug("views.post degraded; using fallback", exc_info=True)
+            stock_refusal = _stock_refusal_payload(exc, session_key=session_key, request=request)
+            if stock_refusal is not None:
+                return Response(stock_refusal, status=status.HTTP_400_BAD_REQUEST)
+            order_error = checkout_service.map_order_error(exc)
+            if order_error is not None and order_error.error_code in _BAG_REFUSAL_CODES:
+                refused = _refused_bag_response(request, session_key=session_key)
+                if refused is not None:
+                    return refused
+            if order_error is not None and order_error.error_code == _CORE_SEAL_IN_PROGRESS:
+                # O código que a tela já sabe esperar: confere até o pedido aparecer.
+                return Response(
+                    {"detail": SEAL_IN_PROGRESS, "error_code": "mutation_in_progress"},
+                    status=status.HTTP_409_CONFLICT,
+                )
             mapped = checkout_service.map_checkout_error(exc)
             if mapped:
                 field, message = next(iter(mapped.items()))
@@ -516,7 +691,6 @@ class CheckoutView(APIView):
                     {"detail": message, "field": field, "errors": mapped},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            order_error = checkout_service.map_order_error(exc)
             if order_error is not None:
                 return Response(
                     {
@@ -537,7 +711,6 @@ class CheckoutView(APIView):
 
         # Clear cart
         order_service.grant_order_access(request, result.order_ref)
-        order_service.mark_just_placed(request, result.order_ref)
         request.session.pop("cart_session_key", None)
         # PAYMENT-TRACKING-MERGE: pix/card não vão mais para uma tela de pagamento
         # à parte — o Pix/cartão aparecem inline no próprio acompanhamento.
@@ -547,17 +720,18 @@ class CheckoutView(APIView):
         # navegação ela dá 404 — e o `finalizar.vue` faz `navigateTo(next_url)`
         # com fallback que nunca dispara, porque este campo vem sempre preenchido.
         # Resultado observado no staging: pedido criado e cliente na tela de 404.
-        next_url = f"/pedido/{result.order_ref}"
+        return Response(self._success_data(result), status=status.HTTP_201_CREATED)
 
-        data = CheckoutResponseSerializer(
+    @staticmethod
+    def _success_data(result) -> dict:
+        return CheckoutResponseSerializer(
             {
                 "order_ref": result.order_ref,
                 "status": result.status,
-                "next_url": next_url,
+                "next_url": f"/pedido/{result.order_ref}",
                 "convenience_pending": list(result.convenience_pending),
             }
         ).data
-        return Response(data, status=status.HTTP_201_CREATED)
 
     @staticmethod
     def _rate_limited(request, *, increment: bool) -> bool:
@@ -585,6 +759,64 @@ class CheckoutView(APIView):
         )
 
 
+class CheckoutRecoverView(APIView):
+    """
+    POST /api/v1/checkout/recover/
+
+    Devolve o pedido que esta tentativa já confirmou (resposta perdida, aba
+    recarregada). É POST porque recuperar grava: dá ao navegador o acesso ao
+    pedido e refaz os efeitos pós-commit que ficaram para trás. Sem pedido
+    confirmado, 204 enquanto a tentativa ainda está em curso; 404
+    (``checkout_attempt_not_received``) quando ela nunca chegou ou falhou.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["checkout"],
+        summary="Recover an order this checkout attempt already committed",
+        request=None,
+        responses={200: CheckoutResponseSerializer, 204: None, 404: None},
+    )
+    def post(self, request):
+        from shopman.shop.services import remote_mutations
+
+        key = remote_mutations.idempotency_key_from_request(request, fallback="")
+        if not key and not _cart_data(request).is_empty:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        principal = str(getattr(getattr(request, "customer", None), "subject_id", "") or "")
+        response = checkout_service.recover_checkout_response(
+            browser_session=request.session.session_key or "", principal=principal, key=key
+        )
+        if response is None and key:
+            recovered = checkout_service.recover_committed_checkout(
+                session_key=str(request.session.get("cart_session_key") or ""),
+                channel_ref=CHANNEL_REF,
+                idempotency_key=key,
+            )
+            if recovered is not None:
+                response = CheckoutView._success_data(recovered)
+            # Tentativa que o servidor nunca recebeu (ou que falhou) não vai
+            # aparecer: dizer isso já na primeira conferência libera o reenvio,
+            # em vez de a tela esperar ~90 s pelo teto (beta SMS-17). O reenvio
+            # usa a mesma chave, e o mesmo pedido não entra duas vezes.
+            if response is None and not checkout_service.checkout_attempt_in_flight(
+                browser_session=request.session.session_key or "", principal=principal, key=key
+            ):
+                return Response(
+                    {
+                        "detail": "Este pedido não chegou até nós.",
+                        "error_code": "checkout_attempt_not_received",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        if response is None:
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        order_service.grant_order_access(request, response["order_ref"])
+        return Response(response)
+
+
 def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
     """Guarda o CPF da nota no cadastro porque a pessoa respondeu que sim.
 
@@ -605,7 +837,7 @@ def _save_fiscal_tax_id(request, tax_id: str, *, order_ref: str) -> None:
         logger.info("storefront.checkout save_fiscal_tax_id order=%s outcome=no_identified_customer", order_ref)
         return
     try:
-        outcome = customer_tax_id.save_to_customer(customer.uuid, tax_id)
+        outcome = customer_tax_id.save_to_customer(customer.subject_id, tax_id)
     except Exception:
         logger.warning("storefront.checkout save_fiscal_tax_id failed order=%s", order_ref, exc_info=True)
         return

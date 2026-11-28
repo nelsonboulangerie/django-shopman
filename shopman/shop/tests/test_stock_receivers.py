@@ -7,11 +7,13 @@ from unittest.mock import patch
 import pytest
 from django.test import override_settings
 from django.utils import timezone
+from shopman.guestman.contrib.consent import ConsentService
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
-from shopman.orderman.models import Session
+from shopman.orderman.models import Order, Session
 from shopman.stockman import HoldStatus
 from shopman.stockman.models import Hold
+from shopman.utils.formatting import format_clock
 
 from shopman.shop.handlers._stock_receivers import on_holds_materialized
 
@@ -24,6 +26,9 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
         first_name="Ana",
         phone="5543999990011",
     )
+    # O aviso só sai por canal com consentimento: sem ele não há backend, e
+    # ``notify(backend=None)`` fora de DEBUG grita (fallbacks perigosos, item 14).
+    ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
     product = Product.objects.create(
         sku="FERMATA-001",
         name="Croissant de fermentação longa",
@@ -46,7 +51,10 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
         metadata={"reference": session.session_key, "planned": True},
     )
 
-    with patch("shopman.shop.notifications.notify") as notify:
+    with (
+        patch("shopman.shop.notifications.notify") as notify,
+        patch("shopman.orderman.services.commit.CommitService.commit") as commit,
+    ):
         on_holds_materialized(
             sender=None,
             hold_ids=[hold.hold_id],
@@ -55,10 +63,12 @@ def test_holds_materialized_notifies_customer_with_deadline_and_cart_url():
         )
 
     notify.assert_called_once()
+    commit.assert_not_called()
+    assert not Order.objects.filter(session_key=session.session_key).exists()
     kwargs = notify.call_args.kwargs
     assert kwargs["event"] == "stock_arrived"
     assert kwargs["recipient"] == customer.phone
-    assert kwargs["backend"] is None
+    assert kwargs["backend"] == "manychat"
     assert kwargs["context"]["sku"] == product.sku
     assert kwargs["context"]["product_name"] == product.name
     assert kwargs["context"]["deadline_at"] == deadline.isoformat()
@@ -161,6 +171,7 @@ def test_stock_arrived_renders_a_real_message_in_every_channel():
     customer = Customer.objects.create(
         ref="CUS-RENDER", first_name="Ana", phone="5543999990033",
     )
+    ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
     product = Product.objects.create(
         sku="RENDER-001",
         name="Croissant de fermentação longa",
@@ -189,7 +200,7 @@ def test_stock_arrived_renders_a_real_message_in_every_channel():
         )
     context = notify.call_args.kwargs["context"]
 
-    local_deadline = timezone.localtime(deadline).strftime("%H:%M")
+    local_deadline = format_clock(deadline)
     for templates in (MANYCHAT_TEMPLATES, SMS_TEMPLATES, BODY_TEMPLATES):
         body = render_message("stock_arrived", context, templates)
         assert product.name in body

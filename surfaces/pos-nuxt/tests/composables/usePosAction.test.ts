@@ -45,6 +45,8 @@ describe("usePosAction", () => {
 
   it("re-gate: 401 (auth perdida) marca a sessão expirada e re-lança", async () => {
     useOperatorSession().reset();
+    // Só termina o que começou: a antessala já viu alguém identificado nesta carga.
+    useOperatorSession().markAuthenticated();
     fetchMock.mockRejectedValue({ status: 401, data: { detail: "expired" } });
     const { call } = usePosAction();
     await expect(call("/api/v1/backstage/pos/sale/close/")).rejects.toBeTruthy();
@@ -57,5 +59,28 @@ describe("usePosAction", () => {
     const { call } = usePosAction();
     await expect(call("/x/")).rejects.toBeTruthy();
     expect(useOperatorSession().expired.value).toBe(false);
+  });
+
+  it("toda chamada leva prazo (AbortSignal): o padrão e o pedido pelo chamador", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const { call } = usePosAction();
+    await call("/x/");
+    await call("/api/v1/backstage/pos/sale/close/", { timeoutMs: POS_CLOSE_SALE_TIMEOUT_MS });
+    expect(timeout).toHaveBeenNthCalledWith(1, POS_REQUEST_TIMEOUT_MS);
+    expect(timeout).toHaveBeenNthCalledWith(2, POS_CLOSE_SALE_TIMEOUT_MS);
+    expect(fetchMock.mock.calls[0]![1].signal).toBeInstanceOf(AbortSignal);
+    timeout.mockRestore();
+  });
+
+  it("sem resposta, o servidor fica fora do alcance; a próxima resposta o devolve", async () => {
+    resetReachability();
+    const { call } = usePosAction();
+    fetchMock.mockRejectedValueOnce(new TypeError("Failed to fetch"));
+    await expect(call("/x/")).rejects.toBeTruthy();
+    expect(useReachability().reachable.value).toBe(false);
+
+    await call("/x/");
+    expect(useReachability().reachable.value).toBe(true);
+    resetReachability();
   });
 });

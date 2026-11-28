@@ -1,0 +1,101 @@
+{
+  "source": "DigitalOcean Insights web-storefront Last 7 days, rendered SVG path (DOM), 2026-10-29",
+  "displayed_axis_local": [
+    "2026-10-22 14:41:06",
+    "2026-10-29 14:41:06"
+  ],
+  "timezone_conversion": "America/Sao_Paulo UTC-03:00, matching browser and host timezone",
+  "rendered_points": 1009,
+  "point_spacing_seconds": 600,
+  "method": "Posição ordinal dos três pontos no teto de 10000 ms da linha renderizada; horários derivados linearmente dos extremos do eixo, aproximados, não tooltip nem timestamp de request. Comparação temporal não estabelece causalidade. A duração do bucket de agregação não é conhecida.",
+  "peaks": [
+    {
+      "rendered_point_index": 135,
+      "approximate_point_utc": "2026-10-23T16:11:06+00:00",
+      "p95_ms": 10000,
+      "nearest_deploy_interval": {
+        "distance_seconds": 745.707704,
+        "deployment_id": "86f47d2c-0432-43c8-bda3-d6bdcd1fd37c",
+        "start": "2026-10-23T16:23:31.707704+00:00",
+        "end": "2026-10-23T16:27:17.706177+00:00"
+      },
+      "nearest_exported_resource_samples": [
+        {
+          "metric": "cpu_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-23T16:17:47+00:00",
+          "distance_seconds": 401.0,
+          "percentage": 2.981211384039088
+        },
+        {
+          "metric": "memory_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-23T16:17:47+00:00",
+          "distance_seconds": 401.0,
+          "percentage": 28.0242919921875
+        }
+      ]
+    },
+    {
+      "rendered_point_index": 620,
+      "approximate_point_utc": "2026-10-27T01:01:06+00:00",
+      "p95_ms": 10000,
+      "nearest_deploy_interval": {
+        "distance_seconds": 59740.299646,
+        "deployment_id": "17229044-19ce-4fda-98de-7b234f60c496",
+        "start": "2026-10-27T17:36:46.299646+00:00",
+        "end": "2026-10-27T17:41:09.653390+00:00"
+      },
+      "nearest_exported_resource_samples": [
+        {
+          "metric": "cpu_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-27T00:56:11+00:00",
+          "distance_seconds": 295.0,
+          "percentage": 4.6099046181039425
+        },
+        {
+          "metric": "memory_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-27T00:56:11+00:00",
+          "distance_seconds": 295.0,
+          "percentage": 31.10809326171875
+        }
+      ]
+    },
+    {
+      "rendered_point_index": 1008,
+      "approximate_point_utc": "2026-10-29T17:41:06+00:00",
+      "p95_ms": 10000,
+      "nearest_deploy_interval": {
+        "distance_seconds": 2096.111674,
+        "deployment_id": "872bd271-0ab9-4684-aa80-e15bd610b5e5",
+        "start": "2026-10-29T17:01:26.716580+00:00",
+        "end": "2026-10-29T17:06:09.888326+00:00"
+      },
+      "nearest_exported_resource_samples": [
+        {
+          "metric": "cpu_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-29T17:36:59+00:00",
+          "distance_seconds": 247.0,
+          "percentage": 4.051393632477112
+        },
+        {
+          "metric": "cpu_percentage",
+          "instance": "web-storefront-1",
+          "timestamp_utc": "2026-10-29T17:36:59+00:00",
+          "distance_seconds": 247.0,
+          "percentage": 6.455114125
+        },
+        {
+          "metric": "memory_percentage",
+          "instance": "web-storefront-0",
+          "timestamp_utc": "2026-10-29T17:36:59+00:00",
+          "distance_seconds": 247.0,
+          "percentage": 24.104690551757812
+        }
+      ]
+    }
+  ]
+}

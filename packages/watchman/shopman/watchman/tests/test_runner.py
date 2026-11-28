@@ -26,6 +26,25 @@ def test_check_exception_becomes_unknown_without_escaping():
 
 
 @override_settings(
+    WATCHMAN={
+        "CHECKS": [
+            "shopman.watchman.tests.fixtures.ErrorCheck",
+            "shopman.watchman.tests.fixtures.PassCheck",
+        ],
+        "PROFILES": {"infrastructure": ["error", "success"]},
+    }
+)
+def test_one_check_error_does_not_skip_later_check_families():
+    report = run_profile("infrastructure")
+
+    assert [(result.id, result.status) for result in report.results] == [
+        ("error", Status.UNKNOWN),
+        ("success", Status.PASS),
+    ]
+    assert report.exit_code == 1
+
+
+@override_settings(
     WATCHMAN=_settings("shopman.watchman.tests.fixtures.SlowCheck", "slow")
 )
 def test_declared_deadline_overrun_is_reported_as_unknown():

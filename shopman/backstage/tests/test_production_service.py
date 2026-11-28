@@ -161,6 +161,146 @@ def test_start_retry_uses_frozen_attempt_before_mutable_position_lookup(recipe):
 
 
 @pytest.mark.django_db
+def test_register_old_dough_creates_one_traceable_stock_lot_and_replays(recipe):
+    work_order = craft.plan(recipe, 10, date=date.today())
+    _apply_start(work_order_id=work_order.pk, quantity="10", actor="production:ana")
+    work_order.refresh_from_db()
+    request = {
+        "work_order_id": work_order.pk,
+        "quantity": "1.250",
+        "unit": "kg",
+        "expiry_date": date.today() + timedelta(days=1),
+        "actor": "production:ana",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "old-dough-timeout-retry",
+    }
+
+    first = production.register_old_dough(**request)
+    replay = production.register_old_dough(**request)
+
+    assert replay == {**first, "replayed": True}
+    assert first["sku"] == "MASSA-VELHA-SVC-PROD"
+    assert first["name"] == "Massa velha de Serviço Produção"
+    assert first["quantity_g"] == "1250"
+    batch = Batch.objects.get(ref=first["batch_ref"])
+    assert batch.metadata["source_work_order_ref"] == work_order.ref
+    assert batch.metadata["resource_kind"] == "old_dough"
+    quant = Quant.objects.get(sku=first["sku"], batch=batch.ref)
+    assert quant.quantity == Decimal("1250")
+    assert Move.objects.filter(quant=quant, kind=Move.Kind.MAKE).count() == 1
+
+
+@pytest.mark.django_db
+def test_register_old_dough_rejects_unopened_production(recipe):
+    work_order = craft.plan(recipe, 10, date=date.today())
+
+    with pytest.raises(ProductionConflict, match="durante ou depois"):
+        production.register_old_dough(
+            work_order_id=work_order.pk,
+            quantity="500",
+            unit="g",
+            expiry_date=date.today() + timedelta(days=1),
+            actor="production:ana",
+            expected_rev=work_order.rev,
+            idempotency_key="old-dough-before-start",
+        )
+
+
+@pytest.mark.django_db
+def test_manager_deviation_recalculates_included_composition_and_keeps_recipe_unchanged(monkeypatch):
+    from shopman.craftsman.services import recipe_book
+
+    # O desvio é o assunto aqui; a falta de insumo na abertura é outro teste (WP-F11).
+    monkeypatch.setattr(production, "check_start_materials", lambda work_order, quantity: [])
+
+    levain_entry = recipe_book.create_entry(ref="levain-desvio", name="Levain", kind="bread", output_sku="LEVAIN-DESVIO")
+    levain_version = recipe_book.create_version(
+        levain_entry,
+        formula={
+            "anchor": {"kind": "flour"},
+            "ingredients": [
+                {
+                    "ref": "farinha-levain", "sku": "FARINHA-DESVIO", "name": "Farinha", "role": "flour",
+                    "recipe_version_ref": "", "composition": "additional",
+                    "quantity": {"kind": "fixed", "minimum": 500, "target": 500, "maximum": 500, "unit": "g"},
+                },
+                {
+                    "ref": "agua-levain", "sku": "AGUA-DESVIO", "name": "Água", "role": "liquid",
+                    "recipe_version_ref": "", "composition": "additional",
+                    "quantity": {"kind": "fixed", "minimum": 500, "target": 500, "maximum": 500, "unit": "g"},
+                },
+            ],
+        },
+        yield_quantity=1000,
+        yield_unit="g",
+    )
+    recipe_book.publish_version(levain_version)
+    bread_entry = recipe_book.create_entry(
+        ref="pao-desvio", name="Pão com desvio", kind="bread", output_sku="PAO-DESVIO"
+    )
+    bread_formula = {
+        "anchor": {"kind": "flour"},
+        "ingredients": [
+            {
+                "ref": "farinha", "sku": "FARINHA-DESVIO", "name": "Farinha", "role": "flour",
+                "recipe_version_ref": "", "composition": "additional",
+                "quantity": {"kind": "fixed", "minimum": 1000, "target": 1000, "maximum": 1000, "unit": "g"},
+            },
+            {
+                "ref": "agua", "sku": "AGUA-DESVIO", "name": "Água", "role": "liquid",
+                "recipe_version_ref": "", "composition": "additional",
+                "quantity": {"kind": "fixed", "minimum": 700, "target": 700, "maximum": 700, "unit": "g"},
+            },
+            {
+                "ref": "levain", "sku": "LEVAIN-DESVIO", "name": "Levain", "role": "other",
+                "recipe_version_ref": levain_version.version_ref, "composition": "included",
+                "quantity": {
+                    "kind": "ratio", "minimum": 20, "target": 20, "maximum": 20,
+                    "basis": {"kind": "flour"},
+                },
+            },
+        ],
+    }
+    bread_version = recipe_book.create_version(
+        bread_entry, formula=bread_formula, yield_quantity=1700, yield_unit="g"
+    )
+    published = recipe_book.publish_version(bread_version)
+    work_order = craft.plan(published, 1700, date=date.today())
+    _apply_start(work_order_id=work_order.pk, quantity="1700", actor="production:ana")
+    work_order.refresh_from_db()
+    request = {
+        "work_order_id": work_order.pk,
+        "ingredient_ref": "levain",
+        "actual_quantity": "18",
+        "reason": "Levain disponível suficiente e fermentação ajustada pelo gerente.",
+        "actor": "production:gerente",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "formula-deviation-18",
+    }
+
+    result = production.authorize_formula_deviation(**request)
+    replay = production.authorize_formula_deviation(**request)
+
+    assert result["ingredient_ref"] == "levain"
+    assert result["ingredient_sku"] == "LEVAIN-DESVIO"
+    assert result["expected"] == {"minimum": "20", "target": "20", "maximum": "20"}
+    assert result["actual"] == "18"
+    assert replay == {**result, "replayed": True}
+    work_order.refresh_from_db()
+    effective = {item["input_sku"]: Decimal(item["quantity"]) for item in work_order.meta["_recipe_snapshot"]["items"]}
+    assert effective == {
+        "FARINHA-DESVIO": Decimal("910"),
+        "AGUA-DESVIO": Decimal("610"),
+        "LEVAIN-DESVIO": Decimal("180"),
+    }
+    assert work_order.meta["_ingredient_actuals"] == {"levain": "18"}
+    assert bread_version.formula == bread_formula
+    event = WorkOrderEvent.objects.get(work_order=work_order, kind=WorkOrderEvent.Kind.FORMULA_DEVIATION)
+    assert event.actor == "production:gerente"
+    assert event.payload["reason"].startswith("Levain disponível")
+
+
+@pytest.mark.django_db
 def test_apply_planned_requires_explicit_duplicate_target(recipe):
     first = craft.plan(recipe, 20, date=date.today())
     second = craft.plan(recipe, 12, date=date.today())
@@ -935,7 +1075,7 @@ def test_apply_finish_fails_closed_when_inventory_backend_is_unavailable(
     monkeypatch.setattr(
         production,
         "_material_needs_for_work_order",
-        lambda order: [object()],
+        lambda order, **_: [object()],
     )
     monkeypatch.setattr(
         "django.utils.module_loading.import_string",
@@ -1414,7 +1554,7 @@ def test_partition_declared_loss_becomes_waste_with_reason(recipe, monkeypatch):
     """Perda declarada (loss=True) vira WASTE com o motivo, sem grau e sem lote.
 
     A aritmética do quiosque: previsto = a preço cheio + com desconto + perda
-    (QC-FORNADA §4). A perda não passa por veto — é o que não saiu do forno,
+    (QC-FORNADA §4). A perda não passa por veto — é o que não ficou pronto,
     e pede motivo mesmo quando o defeito não é de segurança alimentar.
     """
     recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 1}
@@ -1539,6 +1679,145 @@ def test_finish_overshoot_requires_confirmation_and_reason_under_lock(recipe, mo
 
 
 @pytest.mark.django_db
+def test_finish_shortfall_requires_reason_and_records_cause(recipe, monkeypatch):
+    """Rendeu 7 de 10: sem o motivo e a confirmação, recusa; com eles, o evento
+    de fechamento guarda a diferença, a causa e quem fechou."""
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    work_order = craft.plan(recipe, 10, date=date.today())
+    craft.start(work_order, quantity=10, expected_rev=work_order.rev)
+    request = {
+        "work_order_id": work_order.pk,
+        "quantity": "7",
+        "actor": "production:op",
+        "expected_rev": work_order.rev,
+        "idempotency_key": "shortfall-confirmation",
+        "partition": [{"quantity": "7", "quality_grade_ref": "standard"}],
+    }
+
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
+        _apply_finish(**request)
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
+        _apply_finish(**request, yield_deviation_confirmed=True)
+
+    result = _apply_finish(
+        **request,
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Peças maiores que o padrão",
+    )
+
+    assert result == (work_order.ref, Decimal("7"))
+    event = WorkOrderEvent.objects.get(work_order=work_order, kind=WorkOrderEvent.Kind.FINISHED)
+    assert event.payload["context"]["yield_deviation"] == {
+        "kind": "yield_shortfall",
+        "anchor_qty": "10",
+        "reported_qty": "7",
+        "saleable_qty": "7",
+        "deviation_qty": "3",
+        "confirmed": True,
+        "reason": "Peças maiores que o padrão",
+        "actor": "production:op",
+    }
+
+
+@pytest.mark.django_db
+def test_no_yield_difference_goes_unrecorded(recipe, monkeypatch):
+    """Dono, 24/11: "Sua proposta não vai ocultar silenciosamente perdas?".
+
+    Toda diferença entre o previsto e o que se vende fica registrada, com
+    quantidade, causa, quem fechou e hora, e aparece onde a perda aparece: no
+    ledger de estoque (WASTE), no relatório do lote e na soma do dia por receita.
+    Dois lotes do mesmo dia: um rendeu menos (causa no evento), outro teve perda
+    declarada e ainda rendeu menos. Nenhuma unidade fica sem registro.
+    """
+    from shopman.backstage.projections.production import build_production_reports
+
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    today = date.today()
+
+    def lot(quantity: str):
+        _, wo_ref, _, _ = _apply_planned(
+            recipe_id=recipe.pk,
+            quantity=quantity,
+            target_date_value=today.isoformat(),
+            actor="production:op",
+        )
+        work_order = WorkOrder.objects.get(ref=wo_ref)
+        _apply_start(work_order_id=work_order.pk, quantity=quantity, actor="production:op")
+        return work_order
+
+    short = lot("10")
+    _apply_finish(
+        work_order_id=short.pk,
+        quantity="7",
+        actor="production:ana",
+        partition=[{"quantity": "7", "quality_grade_ref": "standard"}],
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Peças maiores que o padrão",
+    )
+    mixed = lot("10")
+    _apply_finish(
+        work_order_id=mixed.pk,
+        quantity="8",
+        actor="production:bia",
+        partition=[
+            {"quantity": "7", "quality_grade_ref": "standard"},
+            {"quantity": "1", "quality_defect_ref": "overbaked", "loss": True},
+        ],
+        yield_deviation_confirmed=True,
+        yield_deviation_reason="Massa perdida antes do forno",
+    )
+
+    expected = {short.ref: Decimal("3"), mixed.ref: Decimal("3")}
+    for work_order in (short, mixed):
+        work_order.refresh_from_db()
+        difference = work_order.started_qty - work_order.finished
+        assert difference == expected[work_order.ref]
+
+        # 1. Toda unidade da diferença tem causa: perda declarada (linha WASTE
+        #    com defeito) + rendeu menos (evento, com motivo).
+        declared = sum(
+            (
+                item.quantity
+                for item in WorkOrderItem.objects.filter(
+                    work_order=work_order, kind=WorkOrderItem.Kind.WASTE
+                )
+            ),
+            Decimal("0"),
+        )
+        event = WorkOrderEvent.objects.get(
+            work_order=work_order, kind=WorkOrderEvent.Kind.FINISHED
+        )
+        deviation = event.payload["context"]["yield_deviation"]
+        assert declared + Decimal(deviation["deviation_qty"]) == difference
+        assert deviation["reason"]
+        assert deviation["actor"] == event.actor != ""
+        assert event.created_at is not None
+
+        # 2. O ledger de estoque baixa a diferença inteira como perda.
+        written_off = sum(
+            (
+                -move.delta
+                for move in Move.objects.filter(
+                    quant__sku=recipe.output_sku,
+                    kind=Move.Kind.WASTE,
+                    reason__contains=work_order.ref,
+                )
+            ),
+            Decimal("0"),
+        )
+        assert written_off == difference
+
+    # 3. O relatório mostra a perda de cada lote e a soma do dia por receita.
+    reports = build_production_reports(
+        {"date_from": today.isoformat(), "date_to": today.isoformat()}
+    )
+    by_ref = {row.ref: row for row in reports.history_rows}
+    assert {ref: Decimal(by_ref[ref].qty_loss) for ref in expected} == expected
+    waste = {row.recipe_ref: row for row in reports.waste_rows}
+    assert Decimal(waste[recipe.ref].loss_total) == sum(expected.values())
+
+
+@pytest.mark.django_db
 def test_partition_with_only_loss_records_auditable_total_loss(recipe, monkeypatch):
     """Perda total conclui a produção sem fabricar estoque vendável."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
@@ -1587,7 +1866,7 @@ def test_total_loss_must_account_for_the_whole_started_batch(recipe, monkeypatch
     work_order = craft.plan(recipe, 4, date=date.today())
     craft.start(work_order, quantity=4, expected_rev=work_order.rev)
 
-    with pytest.raises(production.ProductionError, match="incluir toda perda"):
+    with pytest.raises(production.ProductionError, match="abaixo do previsto"):
         _apply_finish(
             work_order_id=work_order.pk,
             quantity="3",

@@ -11,11 +11,12 @@ pytestmark = pytest.mark.django_db
 
 
 def _login_as_customer(client: Client, customer: Customer):
-    from shopman.doorman.protocols.customer import AuthCustomerInfo
-    from shopman.doorman.services._user_bridge import get_or_create_user_for_customer
+    from shopman.doorman import get_or_create_user_for_customer
 
-    info = AuthCustomerInfo(
-        uuid=customer.uuid,
+    from shopman.storefront.tests.identity_fakes import make_identity_view
+
+    info = make_identity_view(
+        subject_id=customer.uuid,
         name=customer.name,
         phone=customer.phone,
         email=getattr(customer, "email", None) or None,
@@ -23,6 +24,9 @@ def _login_as_customer(client: Client, customer: Customer):
     )
     user, _ = get_or_create_user_for_customer(info)
     client.force_login(user, backend="shopman.doorman.backends.PhoneOTPBackend")
+    from shopman.storefront.tests.identity_fakes import grant_recent_step_up
+
+    grant_recent_step_up(client, customer.uuid, "email")
     return user
 
 
@@ -49,6 +53,8 @@ def test_account_summary_returns_customer_memory_contract(client: Client):
     assert data["loyalty"] is None
     assert isinstance(data["food_preferences"], list)
     assert isinstance(data["notification_preferences"], list)
+    assert all(not pref["enabled"] for pref in data["notification_preferences"])
+    assert all(pref["order_notifications_enabled"] for pref in data["notification_preferences"])
     assert data["stock_alert_subscriptions"] == []
 
 
@@ -71,7 +77,7 @@ def test_account_summary_exposes_specific_alert_controls_without_contact_data(cl
         "sku": sub.sku,
         "product_name": sub.sku,
         "event_type": "production_ready",
-        "event_label": "saiu do forno",
+        "event_label": "fornada pronta",
         "active": False,
         "requires_adult_confirmation": False,
         "expires_at": None,
@@ -364,3 +370,19 @@ def test_account_profile_patch_failure_does_not_mutate_customer(client: Client):
     customer.refresh_from_db()
     assert customer.first_name == "Clara"
     assert customer.email == "clara@example.com"
+
+
+def test_notification_preference_response_matches_explicit_block(client):
+    customer = Customer.objects.create(ref="CUS-SMS-BLOCK", first_name="Ana", phone="+5543999990399")
+    _login_as_customer(client, customer)
+    response = client.post(
+        "/api/v1/account/preferences/notifications/",
+        data=json.dumps({"channel": "sms", "enabled": False}),
+        content_type="application/json",
+    )
+    assert response.status_code == 200
+    sms = next(pref for pref in response.json()["notification_preferences"] if pref["key"] == "sms")
+    assert not sms["enabled"]
+    assert not sms["order_notifications_enabled"]
+    summary = client.get("/api/v1/account/summary/").json()
+    assert next(pref for pref in summary["notification_preferences"] if pref["key"] == "sms") == sms

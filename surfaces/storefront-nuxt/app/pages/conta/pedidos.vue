@@ -2,11 +2,13 @@
 import type { OrderHistoryResponse, ReorderConflictProjection } from '~/types/shopman'
 import {
   ORDER_FILTER_OPTIONS,
+  orderOpenIcon,
+  orderOpenLabel,
   orderRowEmphasisClass,
   ordersCountLabel,
+  ordersEmptyCopy,
   orderStatusAccentClass,
   orderStatusDotClass,
-  ordersEmptyCopy,
   reorderActionFrom,
   splitOrdersByActive
 } from '~/presentation/account'
@@ -132,13 +134,14 @@ useSeoMeta({ title: 'Pedidos' })
           <div class="min-w-0">
             <p class="flex items-center gap-2 font-semibold">
               <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
-              {{ order.status_label }}
-              <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>
+              <!-- Rótulo e valor num bloco só: o vão do flex fica entre o ponto e o texto, e o
+                   "·" tem um espaço de cada lado ("Devolvido · R$ 13,00"). -->
+              <span class="min-w-0" data-decisive="state">{{ order.status_label }}<span v-if="order.total_display" class="text-muted-foreground"> · {{ order.total_display }}</span></span>
             </p>
             <p class="mt-0.5 truncate shop-muted">{{ order.ref }} · {{ order.created_at_display }}</p>
           </div>
-          <div class="flex shrink-0 gap-2">
-            <UiButton :to="orderTrackingRoute(order.ref)" variant="outline" size="sm" icon="lucide:radar">Acompanhar</UiButton>
+          <div class="flex shrink-0 flex-wrap gap-2">
+            <UiButton :to="orderTrackingRoute(order.ref)" variant="outline" size="sm" :icon="orderOpenIcon(order)" data-order-open>{{ orderOpenLabel(order) }}</UiButton>
             <UiButton
               v-if="reorderActionFrom(order)"
               size="sm"
@@ -146,7 +149,7 @@ useSeoMeta({ title: 'Pedidos' })
               :loading="!!reorderPending[order.ref]"
               @click="performAction(reorderActionFrom(order)!)"
             >
-              Refazer
+              {{ reorderActionFrom(order)!.label }}
             </UiButton>
           </div>
           </li>

@@ -17,6 +17,7 @@ from typing import Any
 
 from django.http import HttpRequest
 from django.utils import timezone
+from shopman.utils.formatting import format_clock
 
 logger = logging.getLogger(__name__)
 
@@ -173,10 +174,7 @@ def _compute_shop_hint(moment: str, opens_at: str | None, closes_at: str | None,
 
 def _fmt(hhmm: str) -> str:
     """'07:00' → '7h'; '07:30' → '7h30'."""
-    parts = hhmm.split(":")
-    h = int(parts[0])
-    m = int(parts[1]) if len(parts) > 1 else 0
-    return f"{h}h{m:02d}" if m else f"{h}h"
+    return format_clock(hhmm if ":" in hhmm else f"{hhmm}:00")
 
 
 def _customer_signals(
@@ -198,11 +196,7 @@ def _customer_signals(
     fav_cat = None
     try:
         from shopman.guestman.models import Customer
-        customer = Customer.objects.filter(uuid=info.uuid).first()
-        # Phone fallback: UUID may not match in dev environments where the
-        # customer was created before the Doorman CustomerUser record existed.
-        if customer is None and info.phone:
-            customer = Customer.objects.filter(phone=info.phone).first()
+        customer = Customer.objects.filter(uuid=info.subject_id).first()
         if customer:
             is_birthday = _is_birthday(customer.birthday, today)
             days_since, fav_cat = _history_signals(customer)

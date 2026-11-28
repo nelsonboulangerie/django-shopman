@@ -12,8 +12,8 @@ A escolha do cliente viaja como ``[{group, ref}]`` e nada mais: preço, nome e
 insumo são relidos do catálogo aqui. A linha da sacola/comanda guarda o que foi
 escolhido em ``meta["options"]`` (``group, group_label, ref, name, qty,
 unit_price_q, consumes``), com o ``consumes`` CONGELADO no momento da venda: é o
-registro do que a opção gasta, gravado e mostrado, sem baixar estoque na venda
-(a baixa de insumo do item preparado na hora é decisão separada do dono).
+que a opção gasta, e é o que a venda baixa do estoque, na mesma directive da
+ficha do item feito na hora (ADR-040, ``shop/services/made_to_order.py``).
 
 O formato da linha é o mesmo que o iFood já grava (``ifood_orders._map_options``:
 ``name, group, qty, unit_price_q``), só que o iFood não tem ``ref``: opção sem

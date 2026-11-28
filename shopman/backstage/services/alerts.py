@@ -67,6 +67,7 @@ SYSTEM_TYPES = frozenset({
     "unhandled_exception",
     "webhook_failed",
     "integration_failed",
+    "login_code_volume",
     "integration_config_drift",
     "geoip_database_stale",
     "operator_capacity_critical",
@@ -331,12 +332,15 @@ def resolve_alerts_matching(
     *,
     message_contains: str,
     actor: str,
+    order_ref: str = "",
 ) -> int:
     """Resolve causas SEM pedido (um serviço, uma integração) pelo marcador de dedupe.
 
     Gêmea de ``resolve_alerts`` para os alertas cujo dono não é um pedido: o
     marcador que ``create_operator_alert`` grava na mensagem é a identidade da
-    causa. Mesmo lock, mesma trilha (quem/quando/revisão).
+    causa. Mesmo lock, mesma trilha (quem/quando/revisão). Com ``order_ref``, só
+    os avisos daquele pedido: um tipo genérico (``integration_failed``) pode ter
+    várias causas no mesmo pedido, e o trecho da frase separa a que acabou.
     """
     from shopman.backstage.models import OperatorAlert
 
@@ -349,7 +353,8 @@ def resolve_alerts_matching(
     with transaction.atomic():
         rows = list(
             OperatorAlert.objects.select_for_update()
-            .filter(type=type, resolved_at__isnull=True, message__contains=marker)
+            .filter(type=type, resolved_at__isnull=True, message__contains=marker,
+                    **({"order_ref": str(order_ref).strip()} if str(order_ref or "").strip() else {}))
             .order_by("pk")
         )
         resolved_at = timezone.now()
@@ -360,6 +365,29 @@ def resolve_alerts_matching(
             alert.rev += 1
             alert.save(update_fields=["acknowledged", "resolved_at", "resolved_by", "rev"])
         return len(rows)
+
+
+def resolve_alert_pk(pk: int, *, actor: str) -> int:
+    """Resolve um aviso aberto pelo ``pk``: o dono da causa guardou qual é o aviso dela.
+
+    Gêmea de ``resolve_alerts_matching`` para quem não carimba marcador na mensagem
+    (``create_operator_alert(stamp_dedupe=False)``). Mesmo lock, mesma trilha.
+    """
+    from shopman.backstage.models import OperatorAlert
+
+    resolved_actor = str(actor or "").strip()[:100]
+    if not resolved_actor:
+        raise AlertError("Identidade da resolução do alerta é obrigatória.")
+    with transaction.atomic():
+        alert = OperatorAlert.objects.select_for_update().filter(pk=int(pk), resolved_at__isnull=True).first()
+        if alert is None:
+            return 0
+        alert.acknowledged = True
+        alert.resolved_at = timezone.now()
+        alert.resolved_by = resolved_actor
+        alert.rev += 1
+        alert.save(update_fields=["acknowledged", "resolved_at", "resolved_by", "rev"])
+        return 1
 
 
 def resolve_alerts_ending_with(

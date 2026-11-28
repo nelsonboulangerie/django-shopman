@@ -50,6 +50,10 @@ class POSCommercialCompletionTests(TestCase):
             "client_request_id": "pos:test-commercial-001",
         }
         payload.update(overrides)
+        review = pos_service.review_sale(
+            channel_ref="pdv", payload=payload, operator_username="commercial-pos",
+        )
+        payload["expected_total_q"] = review.total_q
         return payload
 
     def test_split_tender_persists_mixed_payment(self) -> None:

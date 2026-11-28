@@ -70,7 +70,7 @@ def test_expected_only_versioned_key_is_not_drift():
 def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
     """As envs da Machine que só o arquivo tem são diferença declarada; o adapter não.
 
-    As seis GENERAL repetem o padrão do settings.py e as quatro SECRET vêm sem valor.
+    As quatro GENERAL repetem o padrão do settings.py e as quatro SECRET vêm sem valor.
     ``SHOPMAN_COURIER_ADAPTER`` não é declarada: ela liga o despacho, então arquivo
     e vivo têm que concordar nela, e qualquer lado sozinho acusa.
     """
@@ -80,8 +80,6 @@ def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
             ("MACHINE_API_BASE", "https://api.taximachine.com.br/api/integracao"),
             ("MACHINE_DETAILS_BASE", "https://api.taximachine.com.br/api/integracao/v1"),
             ("MACHINE_FORMA_PAGAMENTO", "F"),
-            ("MACHINE_CANCEL_REASON_ID", "1"),
-            ("MACHINE_RETORNO", "false"),
             ("MACHINE_TIMEOUT", "15"),
             ("MACHINE_API_USER", None),
             ("MACHINE_API_PASSWORD", None),
@@ -93,7 +91,7 @@ def test_machine_envs_born_from_the_file_are_declared_and_the_switch_is_not():
         {}, versioned, label="envs de app", expected_only_versioned=drift.EXPECTED_ONLY_VERSIONED
     )
     assert problems == []
-    assert len(expected) == 10
+    assert len(expected) == 8
     assert any("MACHINE_DETAILS_BASE" in line and "/api/integracao/v1" in line for line in expected)
 
     armed = {"SHOPMAN_COURIER_ADAPTER": _env("SHOPMAN_COURIER_ADAPTER", "shopman.shop.adapters.courier_machine")}

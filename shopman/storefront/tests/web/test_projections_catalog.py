@@ -24,7 +24,7 @@ from shopman.storefront.presentation.catalog import (
     CatalogProjection,
 )
 
-pytestmark = pytest.mark.django_db
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
 
 
 # Low-stock threshold lives on ChannelConfig.Stock. Tests assume the default
@@ -94,7 +94,8 @@ class TestBuildCatalogShape:
         assert isinstance(proj, CatalogProjection)
         assert proj.items == ()
         assert proj.sections == ()
-        assert proj.featured == ()
+        # #2361: o cardápio não leva mais ``featured`` (a loja nunca o leu).
+        assert not hasattr(proj, "featured")
         assert proj.has_items is False
         assert proj.active_category_ref is None
 
@@ -107,13 +108,25 @@ class TestBuildCatalogShape:
             proj.items = ()  # type: ignore[misc]
 
     def test_categories_exposed_with_icons(self, collection):
+        # O ícone é o do cadastro (``metadata.icon``, nome Lucide), não um palpite
+        # pelo ``ref`` (#3253).
+        collection.metadata = {**(collection.metadata or {}), "icon": "wheat"}
+        collection.save(update_fields=["metadata"])
         proj = build_catalog(channel_ref="web")
         assert proj.categories
         pao_cat = next((c for c in proj.categories if c.ref == "paes"), None)
         assert pao_cat is not None
         assert pao_cat.name == "Pães"
-        assert pao_cat.icon  # Material Symbols ligature
+        assert pao_cat.icon == "wheat"
         assert pao_cat.url == "/menu#paes"
+
+    def test_category_without_icon_in_the_cadastro_has_none(self, collection):
+        collection.metadata = {k: v for k, v in (collection.metadata or {}).items() if k != "icon"}
+        collection.save(update_fields=["metadata"])
+        proj = build_catalog(channel_ref="web")
+        pao_cat = next(c for c in proj.categories if c.ref == "paes")
+        # Sem ícone no cadastro, vazio: a tela escolhe o padrão dela.
+        assert pao_cat.icon == ""
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -130,11 +143,9 @@ class TestCatalogItemProjection:
         assert item.sku == product.sku
         assert item.slug == product.sku
         assert item.name == "Pão Francês"
-        assert item.base_price_q == 80
-        assert item.price_display == "R$ 0,80"
-        assert item.has_promotion is False
-        assert item.original_price_display is None
-        assert item.promotion_label is None
+        assert item.quote.final_unit_price_q == 80
+        assert item.quote.list_unit_price_q == 80
+        assert item.quote.adjustments == ()
         assert item.unit_weight_label is None
         assert item.category == "paes"
         # Builder should return the item even when stock was never seeded.
@@ -219,8 +230,7 @@ class TestCatalogItemProjection:
         proj = build_catalog(channel_ref="web")
         item = _find_item(proj, product.sku)
         assert item is not None
-        assert item.base_price_q == 90
-        assert item.price_display == "R$ 0,90"
+        assert item.quote.final_unit_price_q == 90
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -336,11 +346,10 @@ class TestPromotions:
         proj = build_catalog(channel_ref="web")
         item = _find_item(proj, product.sku)
         assert item is not None
-        assert item.has_promotion is True
-        assert item.original_price_display == "R$ 0,80"
-        assert item.base_price_q == 64  # 80 - 20%
-        assert item.price_display == "R$ 0,64"
-        assert item.promotion_label  # label comes from modifier metadata
+        assert item.quote.adjustments
+        assert item.quote.list_unit_price_q == 80
+        assert item.quote.final_unit_price_q == 64  # 80 - 20%
+        assert item.quote.adjustments[0].badge_label
 
 
 class TestVitrineCartPriceParity:
@@ -383,9 +392,9 @@ class TestVitrineCartPriceParity:
         )[0]
 
         # 80 - 25% = 60, identical on both surfaces.
-        assert vitrine.has_promotion is True
-        assert vitrine.base_price_q == 60
-        assert cart_line.unit_price_q == vitrine.base_price_q
+        assert vitrine.quote.adjustments
+        assert vitrine.quote.final_unit_price_q == 60
+        assert cart_line.unit_price_q == vitrine.quote.final_unit_price_q
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -482,7 +491,7 @@ class TestMultipleItemsInCollection:
         assert second.sku in skus
         second_item = _find_item(proj, second.sku)
         assert second_item is not None
-        assert second_item.price_display == "R$ 3,50"
+        assert second_item.quote.final_unit_price_q == 350
 
 
 class TestAvailabilityNotifiability:
@@ -502,6 +511,9 @@ class TestAvailabilityNotifiability:
         from unittest.mock import patch
 
         from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+        # Toda leitura do Stockman diz se o ledger conhece o SKU; estes casos
+        # são todos de SKU rastreado (sem ledger tem caso próprio na promessa).
+        raw_avail = {"is_tracked": True, **raw_avail}
         with patch(
             "shopman.storefront.presentation.catalog._batch_availability",
             return_value={sku: raw_avail},
@@ -517,7 +529,7 @@ class TestAvailabilityNotifiability:
 
     def test_paused_is_paused_but_not_notifiable(self, channel):
         self._product("NOTIF-PA")
-        item = self._build("NOTIF-PA", {"is_paused": True}, channel)
+        item = self._build("NOTIF-PA", {"is_tracked": True, "is_paused": True}, channel)
         assert item.availability == Availability.UNAVAILABLE
         assert item.is_paused is True
         assert item.is_notifiable is False
@@ -526,7 +538,7 @@ class TestAvailabilityNotifiability:
         self._product("NOTIF-SO")
         item = self._build(
             "NOTIF-SO",
-            {"availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False},
+            {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("0"), "is_planned": False},
             channel,
         )
         assert item.availability == Availability.UNAVAILABLE
@@ -539,6 +551,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-PLANNED",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("10"),
                 "ready_physical": Decimal("0"),
@@ -555,6 +568,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-PLANNED-FULL",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("0"),
                 "ready_physical": Decimal("0"),
@@ -571,6 +585,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             "NOTIF-READY-HELD",
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("10"),
                 "available": Decimal("0"),
@@ -595,6 +610,7 @@ class TestAvailabilityNotifiability:
                         "available": Decimal("5"),
                         "ready_physical": Decimal("5"),
                         "is_planned": True,
+                        "is_tracked": True,
                     },
                 )
             ]
@@ -613,7 +629,7 @@ class TestAvailabilityNotifiability:
         self._product("NOTIF-NS", sellable=False)
         item = self._build(
             "NOTIF-NS",
-            {"availability_policy": "planned_ok", "total_promisable": Decimal("0")},
+            {"is_tracked": True, "availability_policy": "planned_ok", "total_promisable": Decimal("0")},
             channel,
         )
         assert item.is_notifiable is False
@@ -630,6 +646,7 @@ class TestAvailabilityNotifiability:
         item = self._build(
             product.sku,
             {
+            "is_tracked": True,
                 "availability_policy": "planned_ok",
                 "total_promisable": Decimal("50"),
                 "is_planned": False,
@@ -663,6 +680,7 @@ class TestAvailabilityNotifiability:
             "availability_policy": "planned_ok",
             "total_promisable": Decimal("0"),  # zerado PELO hold desta sessão
             "is_planned": False,
+            "is_tracked": True,
         }
         with patch(
             "shopman.storefront.presentation.catalog._batch_availability",

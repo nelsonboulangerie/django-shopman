@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
   countdownLabel,
   elapsedLabel,
+  forecastTimeTone,
   fullDateLabel,
   isoForOffset,
   matchesRowQuery,
+  outsizedQuantityWarning,
   parseShortage,
   plannedWorkOrder,
   resolveDayRollover,
-  rowCommitments,
-  rowCommittedUnits,
   rowHasActivity,
   rowLabel,
   startableWorkOrder,
@@ -49,8 +49,6 @@ const wo = (
   started_at_display: "",
   created_at_display: "07:00",
   progress_pct: 0,
-  committed_qty: "0",
-  order_commitments: [],
   can_void: true,
   ...over,
 });
@@ -75,13 +73,20 @@ const row = (
 
 describe("timerTone / chips", () => {
   it("maps semantic timer status to urgency", () => {
-    expect(timerTone("on_time")).toBe("ok");
+    expect(timerTone("on_time")).toBe("neutral");
     expect(timerTone("warning")).toBe("warning");
     expect(timerTone("late")).toBe("late");
   });
+  it("reserva vermelho ao atraso do painel e não pinta Fechado de verde", () => {
+    expect(forecastTimeTone("delayed")).toBe("late");
+    expect(forecastTimeTone("scheduled")).toBe("neutral");
+    expect(forecastTimeTone("in_progress")).toBe("neutral");
+    expect(forecastTimeTone("arrived")).toBe("neutral");
+  });
   it("timerChip carries saturated meaning only when late/warning", () => {
     expect(timerChip("late")).toContain("red");
-    expect(timerChip("ok")).toContain("muted");
+    expect(timerChip("neutral")).toContain("muted");
+    expect(timerChip("ready")).toContain("success");
   });
 });
 
@@ -161,48 +166,6 @@ describe("grid helpers", () => {
     expect(matchesRowQuery(row({ planned_orders: [wo()] }), "wo-010")).toBe(
       true,
     );
-  });
-  it("rowCommitments dedupes order refs across open WOs", () => {
-    const commitment = (ref: string) => ({
-      ref,
-      status: "accepted",
-      status_label: "Confirmado",
-      qty_required: "5",
-    });
-    const r = row({
-      planned_orders: [
-        wo({ order_commitments: [commitment("O-1"), commitment("O-2")] }),
-      ],
-      started_orders: [
-        wo({ pk: 11, ref: "WO-011", order_commitments: [commitment("O-1")] }),
-      ],
-    });
-    expect(rowCommitments(r).map((c) => c.ref)).toEqual(["O-1", "O-2"]);
-    expect(rowCommitments(row())).toEqual([]);
-  });
-  it("rowCommittedUnits sums committed quantities across linked orders", () => {
-    const commitment = (ref: string, qty: string) => ({
-      ref,
-      status: "accepted",
-      status_label: "Confirmado",
-      qty_required: qty,
-    });
-    const r = row({
-      planned_orders: [
-        wo({
-          order_commitments: [commitment("O-1", "4"), commitment("O-2", "2,5")],
-        }),
-      ],
-      started_orders: [
-        wo({
-          pk: 11,
-          ref: "WO-011",
-          order_commitments: [commitment("O-1", "4")],
-        }),
-      ],
-    });
-    expect(rowCommittedUnits(r)).toBe(6.5);
-    expect(rowCommittedUnits(row())).toBe(0);
   });
   it("startableWorkOrder only resolves an unambiguous planned WO", () => {
     expect(startableWorkOrder(row())).toBeNull();
@@ -285,5 +248,21 @@ describe("kiosk day rollover", () => {
     const r = resolveDayRollover("2026-07-04", "2026-07-04", now);
     expect(r.rolled).toBe(false);
     expect(r.selectedDate).toBe("2026-07-04");
+  });
+});
+
+describe("outsizedQuantityWarning — um zero a mais se confere", () => {
+  it("até 3x a referência é rendimento, não pergunta", () => {
+    expect(outsizedQuantityWarning("126", "42")).toBeNull();
+    expect(outsizedQuantityWarning("40", "42")).toBeNull();
+  });
+  it("acima de 3x diz o número e quantas vezes", () => {
+    expect(outsizedQuantityWarning("4200", "42")).toBe(
+      "4.200 é 100 vezes o planejado (42). Confira o número antes de seguir.",
+    );
+  });
+  it("sem referência não inventa conferência", () => {
+    expect(outsizedQuantityWarning("4200", "0")).toBeNull();
+    expect(outsizedQuantityWarning("4200", null)).toBeNull();
   });
 });

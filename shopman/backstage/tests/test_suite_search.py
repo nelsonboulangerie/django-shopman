@@ -206,6 +206,18 @@ def test_screens_by_name_without_accent(client):
     assert screen["url"] == "https://prod.example.test/reports"
 
 
+@pytest.mark.parametrize(
+    ("query", "title", "path"),
+    [("preparacao", "Preparação", "/mise-en-place"), ("finalizacao", "Finalização", "/close")],
+)
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_production_stages_use_the_ui_vocabulary_in_suite_search(client, query, title, path):
+    screens = _group(_search(client, _admin(), query), "screens")
+    [screen] = [screen for screen in screens if screen["app"] == "production"]
+    assert screen["title"] == f"Produção › {title}"
+    assert screen["url"] == f"https://prod.example.test{path}"
+
+
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_groups_follow_the_type_order_and_count_per_app(client, maria_order):
     Customer.objects.create(ref="CLI-MARIA", first_name="Maria", last_name="Santos")
@@ -252,6 +264,23 @@ def test_products_need_the_catalog_permission(client):
     assert not _group(_search(client, gestor, "madeleine"), "products")
     catalog = _operator("catalogo", ("shop", "manage_orders"), ("shop", "manage_catalog"))
     assert _group(_search(client, catalog, "madeleine"), "products")
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_gestor_screens_follow_the_permission_of_each_screen(client):
+    """Beta 05/11 (CEN-05): a Caixa via "Gestor › Catálogo" e caía numa tela que não abre."""
+    caixa = _operator("caixa-gestor", ("shop", "manage_orders"))
+    titles = [r["title"] for r in _group(_search(client, caixa, "catalogo"), "screens")]
+    assert "Gestor › Catálogo" not in titles
+    titles = [r["title"] for r in _group(_search(client, caixa, "canais"), "screens")]
+    assert "Gestor › Canais" not in titles
+    titles = [r["title"] for r in _group(_search(client, caixa, "historico"), "screens")]
+    assert "Gestor › Histórico" in titles
+    catalogo = _operator("catalogo-gestor", ("shop", "manage_catalog"))
+    titles = [r["title"] for r in _group(_search(client, catalogo, "catalogo"), "screens")]
+    assert "Gestor › Catálogo" in titles
+    titles = [r["title"] for r in _group(_search(client, catalogo, "pedidos"), "screens")]
+    assert "Gestor › Pedidos" not in titles
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)

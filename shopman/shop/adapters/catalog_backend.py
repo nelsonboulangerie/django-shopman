@@ -3,7 +3,8 @@ Composed CatalogBackend — Offerman (vendáveis) + Buyman (insumos).
 
 Craftsman resolves a sku via this backend (RecipeItem unit cross-check etc.).
 A sellable output resolves through Offerman; an ingredient (Material) resolves
-through Buyman. Everything else delegates to the Offerman backend.
+through Buyman. O contrato é só ``get_product`` (``offerman.protocols.CatalogBackend``):
+preço não passa por aqui.
 
 Wired via CRAFTSMAN["CATALOG_BACKEND"] (config/settings.py). Resolution-only —
 does NOT touch stock availability; essa é a costura do SkuValidator, ligada em
@@ -20,7 +21,6 @@ A precedência é do produto; a incoerência que escapar do porteiro é
 from __future__ import annotations
 
 import logging
-import threading
 
 logger = logging.getLogger(__name__)
 
@@ -58,28 +58,3 @@ class ComposedCatalogBackend:
                     sku, product_unit or "?", ingredient_unit or "?",
                 )
         return product or ingredient
-
-    def __getattr__(self, name):
-        # Anything not overridden (get_price, expand, etc.) is an Offerman/sellable
-        # concern — delegate. (Called only for attrs missing on this instance.)
-        return getattr(self.__dict__["_offerman"], name)
-
-
-_lock = threading.Lock()
-_instance: ComposedCatalogBackend | None = None
-
-
-def get_composed_catalog_backend() -> ComposedCatalogBackend:
-    """Return the singleton ComposedCatalogBackend."""
-    global _instance
-    if _instance is None:
-        with _lock:
-            if _instance is None:
-                _instance = ComposedCatalogBackend()
-    return _instance
-
-
-def reset_composed_catalog_backend() -> None:
-    """Reset the singleton (for tests)."""
-    global _instance
-    _instance = None

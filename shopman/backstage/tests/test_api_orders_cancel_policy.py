@@ -27,6 +27,8 @@ from shopman.orderman.models import Order, OrderItem
 from shopman.shop.models import Shop
 from shopman.shop.services.operator_orders import operational_revision
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("pdv")]
+
 # A régua do canal de balcão: cancela na esteira, cancela depois de fechada, e
 # — com o conserto — cancela também com o pão pronto no balcão. `dispatched` e
 # `delivered` NÃO entram: quando o motoboy saiu, o fato é devolução.

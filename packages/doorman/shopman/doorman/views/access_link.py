@@ -14,8 +14,10 @@ from django.utils.translation import gettext_lazy as _
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from ..conf import get_customer_resolver, get_doorman_settings
+from ..conf import get_doorman_settings, get_identity_resolver, get_manychat_identity_bridge
+from ..error_codes import ErrorCode
 from ..models import AccessLink
+from ..protocols.identity import IdentityConflict
 from ..services.access_link import AccessLinkService
 from ..utils import normalize_phone, safe_redirect_url
 
@@ -102,8 +104,18 @@ class AccessLinkCreateView(View):
                 status=422,
             )
 
-        resolver = get_customer_resolver()
-        customer, error_response = self._resolve_customer(data, resolver)
+        resolver = get_identity_resolver()
+        try:
+            customer, error_response = self._resolve_customer(data, resolver)
+        except IdentityConflict:
+            logger.warning("Access-link identity ownership conflict")
+            return JsonResponse(
+                {
+                    "error": "Identity ownership is conflicting.",
+                    "error_code": ErrorCode.IDENTITY_CONFLICT,
+                },
+                status=409,
+            )
         if error_response:
             return error_response
         if not customer:
@@ -135,7 +147,7 @@ class AccessLinkCreateView(View):
             # variável carrega o texto da mensagem — nome que muda por canal e por
             # conta, e que já custou dias aqui —, perguntamos ao ManyChat. Assim o
             # request precisa carregar só o `subscriber_id`, que ninguém erra.
-            from_api = self._last_input_text_from_manychat(data, resolver)
+            from_api = self._last_input_text_from_manychat(data)
             if from_api and self._contains_code(from_api):
                 logger.info("access_link.code_from_manychat_api")
                 access_code = from_api
@@ -146,17 +158,20 @@ class AccessLinkCreateView(View):
                 handoff_attempted = True
                 state = pop_state(str(access_code))
                 if isinstance(state, dict):
-                    # A sessão de origem não viaja na metadata: ela é o endereço da
-                    # liberação (abaixo), não contexto do login.
-                    origin = str(state.pop("origin", "") or "")
-                    origin_label = str(state.pop("origin_label", "") or "")
-                    for key, value in state.items():
-                        if key == "next":
-                            if value:
-                                metadata["next"] = safe_redirect_url(str(value), request)
-                        elif value is not None and key not in metadata:
-                            metadata[key] = value
+                    from ..services.site_context import fold_state
+
+                    origin, origin_label = fold_state(
+                        state, metadata, request=request, code=str(access_code)
+                    )
                 else:
+                    from ..services.site_context import already_answered
+
+                    if already_answered(str(access_code), customer):
+                        # A mesma mensagem chegou também à Concierge da loja, que consumiu a
+                        # referência e criou o link (a mensagem de entrada já saiu com ele).
+                        # Um segundo link sairia com o aviso falso de "sacola não veio" (#3621).
+                        logger.info("access_link.already_answered")
+                        return JsonResponse({"already_answered": True, "handoff_attempted": True})
                     # Código veio mas não resolveu (expirou/já usado): um handoff do site foi
                     # TENTADO e falhou — distinto do login orgânico (sem access_code). Marcamos
                     # para o exchange avisar que a sacola não veio (omotenashi: nunca sumir com
@@ -169,9 +184,9 @@ class AccessLinkCreateView(View):
                 # `Last Text Input` devolvendo URL de mídia do Instagram passou dias sem
                 # ninguém ver: identidade certa, login certo, sacola no chão.
                 logger.warning(
-                    "access_link.access_code_invalid len=%d inicio=%r — a variável do "
+                    "access_link.access_code_invalid len=%d — a variável do "
                     "ManyChat não está trazendo o texto da mensagem do WhatsApp",
-                    len(str(access_code)), str(access_code)[:40],
+                    len(str(access_code)),
                 )
                 metadata["handoff_expired"] = True
 
@@ -197,18 +212,13 @@ class AccessLinkCreateView(View):
         # mensagem que o trouxe prova o número. Liberamos aquele navegador ANTES de
         # criar o link da mensagem, porque a mensagem sai junto com ele e vai dizer
         # "você já entrou" — ela não pode prometer o que ainda não aconteceu.
-        released = False
-        if origin:
-            revoke_ref = self._release_origin(
-                customer=customer, data=data, metadata=metadata,
-                origin=origin, origin_label=origin_label,
-            )
-            if revoke_ref:
-                released = True
-                metadata["released"] = True
-                metadata["revoke_ref"] = revoke_ref
-                if origin_label:
-                    metadata["origin_label"] = origin_label
+        from ..services.site_context import release_origin
+
+        released = release_origin(
+            customer=customer, metadata=metadata, origin=origin, origin_label=origin_label,
+            audience=data.get("audience", AccessLink.Audience.WEB_GENERAL),
+            source=data.get("source", AccessLink.Source.MANYCHAT),
+        )
 
         result = AccessLinkService.create_token(
             customer=customer,
@@ -240,47 +250,6 @@ class AccessLinkCreateView(View):
     @staticmethod
     def _next_url(data: dict) -> str | None:
         return data.get("next")
-
-    @staticmethod
-    def _release_origin(*, customer, data: dict, metadata: dict, origin: str, origin_label: str) -> str:
-        """Cria o token da aba de origem e o deixa esperando por ela.
-
-        É um access link como qualquer outro — a aba o troca pelo mesmo caminho do
-        link da mensagem, sem login paralelo. Ele não é entregue a ninguém (sem
-        ``deliver``): só a sessão cuja impressão digital é ``origin`` o encontra.
-        Devolve a referência de revogação, ou vazio se não deu para liberar.
-        """
-        from ..services.link_state import (
-            new_revoke_ref,
-            release_to_origin,
-            store_revocation,
-        )
-
-        settings = get_doorman_settings()
-        claim_metadata = {
-            key: value for key, value in metadata.items() if key not in ("deliver", "deliver_to")
-        }
-        claim_metadata["login_source"] = "site_release"
-        claim = AccessLinkService.create_token(
-            customer=customer,
-            audience=data.get("audience", AccessLink.Audience.WEB_GENERAL),
-            source=data.get("source", AccessLink.Source.MANYCHAT),
-            ttl_minutes=max(1, -(-settings.LINK_STATE_TTL_SECONDS // 60)),
-            metadata=claim_metadata,
-        )
-        if not claim.success or not claim.token:
-            logger.error("access_link.origin_release_failed error=%s", claim.error)
-            return ""
-
-        revoke_ref = new_revoke_ref()
-        release_to_origin(origin, token=claim.token, revoke_ref=revoke_ref)
-        store_revocation(revoke_ref, {
-            "origin": origin,
-            "customer_id": str(customer.uuid),
-            "origin_label": origin_label,
-        })
-        logger.info("access_link.origin_released")
-        return revoke_ref
 
     @staticmethod
     def _build_access_url(token: str | None) -> str:
@@ -320,12 +289,12 @@ class AccessLinkCreateView(View):
         return bool(value) and contains_code(str(value))
 
     @staticmethod
-    def _last_input_text_from_manychat(data: dict, resolver) -> str:
+    def _last_input_text_from_manychat(data: dict) -> str:
         """A última mensagem do assinante, pedida ao ManyChat pelo `subscriber_id`.
 
-        Capacidade OPCIONAL do resolver (mesmo padrão de `upsert_manychat_subscriber`):
-        sem ela, nada muda. Nunca derruba o login — o access link vale mesmo sem a
-        sacola, e uma API lenta não pode virar porta fechada.
+        Capacidade explícita da bridge ManyChat: sem bridge, nada muda. Nunca
+        derruba o login — o access link vale mesmo sem a sacola, e uma API lenta
+        não pode virar porta fechada.
         """
         if data.get("source", AccessLink.Source.MANYCHAT) != AccessLink.Source.MANYCHAT:
             return ""
@@ -335,14 +304,13 @@ class AccessLinkCreateView(View):
             or data.get("manychat_id")
             or data.get("subscriber_id")
         )
-        if not subscriber_id or not hasattr(resolver, "manychat_last_input_text"):
+        bridge = get_manychat_identity_bridge()
+        if not subscriber_id or bridge is None:
             return ""
         try:
-            return str(resolver.manychat_last_input_text(str(subscriber_id)) or "")
+            return str(bridge.last_input_text(str(subscriber_id)) or "")
         except Exception:
-            logger.warning(
-                "access_link.manychat_last_input_failed subscriber=%s", subscriber_id, exc_info=True
-            )
+            logger.warning("access_link.manychat_last_input_failed")
             return ""
 
     @staticmethod
@@ -415,15 +383,22 @@ class AccessLinkCreateView(View):
                 )
                 if error_response:
                     return None, error_response
-                if not hasattr(resolver, "upsert_access_link_customer"):
+                bridge = get_manychat_identity_bridge()
+                if bridge is None:
                     return None, JsonResponse({"error": "Access-link customer enrichment unsupported"}, status=400)
                 try:
-                    customer = resolver.upsert_access_link_customer(customer_id, payload)
-                except ValueError as exc:
-                    logger.warning("Access-link customer enrichment rejected: %s", exc)
-                    return None, JsonResponse({"error": str(exc)}, status=409)
+                    customer = bridge.upsert_access_link_subject(customer_id, payload)
+                except ValueError:
+                    logger.warning("Access-link customer enrichment rejected")
+                    return None, JsonResponse(
+                        {
+                            "error": "Customer enrichment conflict.",
+                            "error_code": ErrorCode.IDENTITY_CONFLICT,
+                        },
+                        status=409,
+                    )
                 return cls._guard_resolved_manychat_customer(data, source, customer)
-            customer = resolver.get_by_uuid(customer_id)
+            customer = resolver.get(customer_id, purpose="access_link")
             return cls._guard_resolved_manychat_customer(data, source, customer)
 
         subscriber = (
@@ -440,24 +415,23 @@ class AccessLinkCreateView(View):
                 subscriber["id"] = manychat_id
             if not subscriber.get("id"):
                 return None, JsonResponse({"error": "subscriber.id required"}, status=400)
-            if not hasattr(resolver, "upsert_manychat_subscriber"):
+            bridge = get_manychat_identity_bridge()
+            if bridge is None:
                 return None, JsonResponse({"error": "ManyChat subscriber resolution unsupported"}, status=400)
             try:
-                customer = resolver.upsert_manychat_subscriber(subscriber)
-            except ValueError as exc:
-                logger.warning("ManyChat subscriber resolution rejected: %s", exc)
-                return None, JsonResponse({"error": str(exc)}, status=409)
+                customer = bridge.upsert_subscriber(subscriber)
+            except ValueError:
+                logger.warning("ManyChat subscriber resolution rejected")
+                return None, JsonResponse({"error": "subscriber resolution conflict"}, status=409)
             return cls._guard_resolved_manychat_customer(data, source, customer)
 
         if source == AccessLink.Source.MANYCHAT and manychat_id:
-            if not hasattr(resolver, "get_by_identifier"):
-                return None, JsonResponse({"error": "ManyChat identifier resolution unsupported"}, status=400)
-            customer = resolver.get_by_identifier("manychat", manychat_id)
+            customer = resolver.resolve("manychat", manychat_id, purpose="access_link")
             return cls._guard_resolved_manychat_customer(data, source, customer)
 
         email = data.get("email")
         if email:
-            return resolver.get_by_email(email), None
+            return resolver.resolve("email", email, purpose="access_link"), None
 
         return None, JsonResponse(
             {"error": "customer_id, subscriber_id, manychat_id, whatsapp_id or email required"},
@@ -530,7 +504,7 @@ class AccessLinkCreateView(View):
             source == AccessLink.Source.MANYCHAT
             and cls._source_channel(data) != "instagram"
             and customer
-            and not customer.phone
+            and not (customer.handle("phone") or customer.handle("whatsapp"))
         ):
             return None, JsonResponse(
                 {"error": "ManyChat customer has no persisted phone."},

@@ -1,0 +1,112 @@
+{
+  "375-sheet-sem-casa": {
+    "checked": 16,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "375-entregadores-de-hoje": {
+    "checked": 3,
+    "fails": 0,
+    "min_contrast": 4.74,
+    "min_text": "Diego",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "375-sheet-taon": {
+    "checked": 21,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "375-sheet-diego": {
+    "checked": 20,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Enviar para Diego: A47 e C03",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "375-sheet-align": {
+    "chips": [
+      48
+    ],
+    "quote": [
+      48
+    ],
+    "stops": [
+      48
+    ]
+  },
+  "375-editing-letters": [
+    29,
+    29
+  ],
+  "375-editando": {
+    "checked": 76,
+    "fails": 4,
+    "min_contrast": 3.86,
+    "min_text": "1",
+    "overflow": 1,
+    "page_hscroll": false
+  },
+  "1366-sheet-sem-casa": {
+    "checked": 16,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "1366-entregadores-de-hoje": {
+    "checked": 3,
+    "fails": 0,
+    "min_contrast": 4.74,
+    "min_text": "Diego",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "1366-sheet-taon": {
+    "checked": 21,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Chamar a corrida C",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "1366-sheet-diego": {
+    "checked": 20,
+    "fails": 0,
+    "min_contrast": 4.95,
+    "min_text": "Enviar para Diego: A47 e C03",
+    "overflow": 0,
+    "page_hscroll": false
+  },
+  "1366-sheet-align": {
+    "chips": [
+      467
+    ],
+    "quote": [
+      467
+    ],
+    "stops": [
+      467
+    ]
+  },
+  "1366-editing-letters": [
+    828,
+    828
+  ],
+  "1366-editando": {
+    "checked": 75,
+    "fails": 4,
+    "min_contrast": 3.86,
+    "min_text": "1",
+    "overflow": 0,
+    "page_hscroll": false
+  }
+}

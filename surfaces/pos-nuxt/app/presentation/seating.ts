@@ -442,3 +442,27 @@ export function timeRule(original: DraftSpot | undefined, draft: DraftSpot, toda
   }
   return { title, note: `Mudar lugares ou a capacidade vale a partir de hoje; os dias de antes continuam contados com ${seats}.` };
 }
+
+/**
+ * O nome que a comanda e o operador leem de cada mesa, como o servidor confere:
+ * a sigla, ou o nome quando não há sigla. Comparado sem caixa ("m2" = "M2").
+ */
+export function spotNameKey(spot: Pick<DraftSpot, "short_label" | "label">): string {
+  return (spot.short_label.trim() || spot.label.trim()).toLocaleLowerCase("pt-BR");
+}
+
+/**
+ * O primeiro nome repetido no salão ("" = nenhum). Duas "M2" na planta faziam
+ * "leva para a M2" ter duas respostas, e o rodapé só dizia "renomeada" (beta
+ * 05/11, PDV-18). O servidor recusa o mesmo; a tela avisa antes do Salvar.
+ */
+export function repeatedSpotName(spots: ReadonlyArray<Pick<DraftSpot, "short_label" | "label">>): string {
+  const seen = new Set<string>();
+  for (const spot of spots) {
+    const key = spotNameKey(spot);
+    if (!key) continue;
+    if (seen.has(key)) return spot.short_label.trim() || spot.label.trim();
+    seen.add(key);
+  }
+  return "";
+}

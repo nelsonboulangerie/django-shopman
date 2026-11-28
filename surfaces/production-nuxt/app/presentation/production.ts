@@ -5,21 +5,46 @@
 // functional-color tone. No lifecycle arithmetic (the backend owns the
 // WorkOrder lifecycle).
 import type {
-  OrderCommitmentProjection,
+  ForecastStatus,
   ProductionMatrixRowProjection,
+  ProductionPromisedProjection,
+  PromisedOrderProjection,
   ProductionShortageError,
   ProductionTimerStatusCode,
   WorkOrderCardProjection,
 } from "~/types/production";
+import {
+  timeTone,
+  type TimeTone,
+} from "../../../operator-kit/app/presentation/timeTone";
+import { formatClock } from "../../../operator-kit/app/presentation/clock";
+import {
+  daysBetween,
+  shortDayMonth,
+  weekdayShort,
+} from "../../../operator-kit/app/presentation/dates";
+
+// O prometido por produto e data, lido da régua das reservas (WP-F08): o
+// planejado, o encomendado, o livre e os pedidos com nome, hora e retirada ou
+// entrega. É a única fonte do que a Produção diz sobre encomenda (WP-F10).
+export type {
+  ProductionPromisedProjection,
+  PromisedOrderProjection,
+} from "~/types/production";
 
 // ── Timer tone (urgency of the started clock) ──────────────────────────────
 
-export type TimerTone = "ok" | "warning" | "late";
+export type TimerTone = TimeTone;
 
 export function timerTone(status: ProductionTimerStatusCode): TimerTone {
-  if (status === "late") return "late";
-  if (status === "warning") return "warning";
-  return "ok";
+  if (status === "late") return timeTone("late");
+  if (status === "warning") return timeTone("warning");
+  return timeTone("on_time");
+}
+
+/** O painel mantém Planejado, Previsto e Fechado neutros; só Atrasado é tempo vermelho. */
+export function forecastTimeTone(status: ForecastStatus): TimerTone {
+  return timeTone(status === "delayed" ? "late" : "on_time");
 }
 
 /** Tonal chip classes for the live timer. Calm by default; only warning/late
@@ -30,6 +55,8 @@ export function timerChip(tone: TimerTone): string {
       return "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300";
     case "warning":
       return "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "ready":
+      return "border-success/40 bg-success/10 text-success";
     default:
       return "border-border bg-muted text-muted-foreground";
   }
@@ -86,7 +113,7 @@ const STORE_DATE_TIME = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
-  hour: "2-digit",
+  hour: "2-digit",  // hora-ok: cálculo no fuso da loja, não exibição
   hourCycle: "h23",
 });
 
@@ -220,7 +247,7 @@ export function startableWorkOrder(
 }
 
 /**
- * A fornada planejada que esta linha AJUSTARIA, a mesma confirmada na Abertura.
+ * A fornada planejada que esta linha AJUSTARIA, a mesma confirmada na Produção.
  *
  * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
  * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem
@@ -230,33 +257,6 @@ export function plannedWorkOrder(
   row: ProductionMatrixRowProjection,
 ): WorkOrderCardProjection | null {
   return row.planned_orders.length === 1 ? row.planned_orders[0]! : null;
-}
-
-/** Order commitments across a row's open WOs, deduped by order ref.
- *  The committed-units chip and its detail list render from this. */
-export function rowCommitments(
-  row: ProductionMatrixRowProjection,
-): OrderCommitmentProjection[] {
-  const seen = new Set<string>();
-  const out: OrderCommitmentProjection[] = [];
-  for (const wo of [...row.planned_orders, ...row.started_orders]) {
-    for (const commitment of wo.order_commitments ?? []) {
-      if (seen.has(commitment.ref)) continue;
-      seen.add(commitment.ref);
-      out.push(commitment);
-    }
-  }
-  return out;
-}
-
-/** UNIDADES da SKU comprometidas com pedidos (o que importa na bancada —
- *  "quantas dessas já têm dono"), somadas sobre os pedidos vinculados. */
-export function rowCommittedUnits(row: ProductionMatrixRowProjection): number {
-  return rowCommitments(row).reduce(
-    (total, commitment) =>
-      total + (parseFloat(commitment.qty_required.replace(",", ".")) || 0),
-    0,
-  );
 }
 
 // ── Números da bancada (V6-PROD R07) ─────────────────────────────────────────
@@ -315,7 +315,7 @@ export function dayContextLine(
 
 // ── Etiqueta do lote (R19) ───────────────────────────────────────────────────
 // A etiqueta de preparo leva um QR com `shopman-lote:<SKU>` (impressa pelo relay
-// em ESC/POS e pelo navegador). O Fechamento lê e abre o lote daquele produto.
+// em ESC/POS e pelo navegador). A Finalização lê e abre o lote daquele produto.
 // Aceita também o código do lote ("WO-2026-00020") e o SKU puro, digitados ou
 // lidos de outra etiqueta.
 export const LOT_LABEL_PREFIX = "shopman-lote:";
@@ -343,23 +343,114 @@ export function matchLotCode<T extends { ref: string; output_sku: string }>(
   );
 }
 
-/** A hora do primeiro compromisso da linha ("08:30"), ou "" sem hora marcada. */
-export function rowDueTime(row: ProductionMatrixRowProjection): string {
-  const times = rowCommitments(row)
-    .map((commitment) => commitment.due_time ?? "")
+// ── O prometido (WP-F10): a régua das reservas na tela ─────────────────────
+// Tudo o que a Produção diz sobre encomenda sai de `promised` (WP-F08): o produto
+// na data, das reservas dos pedidos abertos daquele dia. Uma grandeza por rótulo
+// (omotenashi-copy D4): o chip conta unidades e diz QUANDO; a hora só aparece
+// quando vale para todas elas. A Produção vê primeiro nome e hora, nunca dinheiro.
+
+function parseQty(value: string | null | undefined): number {
+  return Number.parseFloat(String(value ?? "0").replace(",", ".")) || 0;
+}
+
+/** Os pedidos da data que contam no prometido do produto, pela hora. */
+export function rowPromisedOrders(
+  row: Pick<ProductionMatrixRowProjection, "promised">,
+): PromisedOrderProjection[] {
+  return row.promised?.orders ?? [];
+}
+
+/** Unidades encomendadas do produto na data (0 sem encomenda). */
+export function orderedUnits(
+  promised: ProductionPromisedProjection | null | undefined,
+): number {
+  return parseQty(promised?.ordered_qty);
+}
+
+export function rowOrderedUnits(
+  row: Pick<ProductionMatrixRowProjection, "promised">,
+): number {
+  return orderedUnits(row.promised);
+}
+
+/** "1 un. encomendada", "6 un. encomendadas", "1,2 kg encomendados". */
+export function orderedLabel(units: number | string, unit = ""): string {
+  const amount = typeof units === "number" ? units : parseQty(units);
+  const quantity = formatQtyUnit(amount, unit);
+  // "un." é feminino (unidades); peso e volume são masculinos (quilos, litros).
+  if (!quantity.endsWith(" un.")) return `${quantity} encomendados`;
+  return `${quantity} ${amount === 1 ? "encomendada" : "encomendadas"}`;
+}
+
+/** O dia da encomenda, curto: "hoje", "amanhã", "sáb 29/11". */
+export function promisedDay(iso: string, today: string): string {
+  const offset = daysBetween(today, iso);
+  if (offset === 0) return "hoje";
+  if (offset === 1) return "amanhã";
+  return `${weekdayShort(iso)} ${shortDayMonth(iso)}`.trim();
+}
+
+/** Quando as encomendas da data são para: "amanhã 9h" (todas na mesma hora),
+ *  "amanhã, das 8h30 às 11h" (horas diferentes) ou só "amanhã" (algum pedido
+ *  sem hora marcada: a faixa mentiria sobre ele). */
+export function promisedWhen(
+  promised: ProductionPromisedProjection,
+  today: string,
+): string {
+  const day = promisedDay(promised.date, today);
+  const orders = promised.orders ?? [];
+  if (!orders.length || orders.some((order) => !order.due_time)) return day;
+  const times = [...new Set(orders.map((order) => order.due_time))].sort();
+  const first = formatClock(times[0]!);
+  if (times.length === 1) return `${day} ${first}`;
+  return `${day}, das ${first} às ${formatClock(times.at(-1)!)}`;
+}
+
+/** O chip da linha: "1 un. · amanhã 9h". Vazio sem encomenda na data. */
+export function promisedChipLabel(
+  row: Pick<ProductionMatrixRowProjection, "promised" | "output_unit">,
+  today: string,
+): string {
+  const promised = row.promised;
+  const units = orderedUnits(promised);
+  if (!promised || units <= 0) return "";
+  return `${formatQtyUnit(units, row.output_unit)} · ${promisedWhen(promised, today)}`;
+}
+
+const FULFILLMENT_LABEL: Record<string, string> = {
+  pickup: "retirada",
+  delivery: "entrega",
+};
+
+/** Uma encomenda em uma linha: "Clara · retirada · 9h · 1 un.". Sem nome, o
+ *  código do pedido; sem hora ou sem modo, a parte some (nunca um traço). */
+export function promisedOrderLine(
+  order: PromisedOrderProjection,
+  unit = "",
+): string {
+  return [
+    order.customer_first_name || order.ref,
+    FULFILLMENT_LABEL[order.fulfillment_type] ?? "",
+    order.due_time ? formatClock(order.due_time) : "",
+    formatQtyUnit(order.qty, unit),
+  ]
     .filter(Boolean)
-    .sort();
-  return times[0] ?? "";
+    .join(" · ");
 }
 
-/** O chip das encomendas: "6 un. para 08:30" (ou "6 un." sem hora marcada). */
-export function commitmentChipLabel(row: ProductionMatrixRowProjection): string {
-  const units = QTY_FORMAT.format(rowCommittedUnits(row));
-  const due = rowDueTime(row);
-  return due ? `${units} un. para ${due}` : `${units} un.`;
+/** O que o plano da data não cobre, em uma frase; vazio quando cobre. */
+export function promisedGap(
+  promised: ProductionPromisedProjection | null | undefined,
+  unit = "",
+): string {
+  const over = parseQty(promised?.over_plan_qty);
+  if (!promised || over <= 0) return "";
+  if (parseQty(promised.planned_qty) <= 0)
+    return "Nenhum lote planejado para esta data.";
+  return `O plano da data fica ${formatQtyUnit(over, unit)} abaixo das encomendas.`;
 }
 
-/** A hora do plano mais recente entre os planejados ("15:12"), ou "". */
+/** A hora do plano mais recente entre os planejados ("15h12"), ou "". */
 export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
   const times = rows
     .flatMap((row) => [
@@ -370,7 +461,7 @@ export function latestPlanTime(rows: ProductionMatrixRowProjection[]): string {
     .map((order) => order.created_at_time ?? "")
     .filter(Boolean)
     .sort();
-  return times.at(-1) ?? "";
+  return formatClock(times.at(-1) ?? "");
 }
 
 /** Planejou exatamente o que a sugestão dizia. */
@@ -427,4 +518,147 @@ export function parseShortage(
     return error as ProductionShortageError;
   }
   return null;
+}
+
+// ── Sanidade da quantidade (abrir ou planejar lote) ──────────────────────────
+
+/** Acima de quantas vezes o número de referência a tela pede para conferir. */
+export const OUTSIZED_FACTOR = 3;
+
+/**
+ * Um zero a mais vira um lote que ninguém consegue assar (beta 05/11: 42 virou
+ * 4.200). Diferença de rendimento continua sendo só um aviso; passar de três
+ * vezes a referência pede um segundo toque, com o número escrito na frase.
+ * Devolve a frase da conferência, ou null quando o número é plausível.
+ */
+export function outsizedQuantityWarning(
+  quantity: string | number,
+  reference: string | number | null | undefined,
+  referenceLabel = "o planejado",
+): string | null {
+  const parse = (value: string | number | null | undefined) =>
+    typeof value === "number"
+      ? value
+      : Number.parseFloat(String(value ?? "").replace(",", ".")) || 0;
+  const amount = parse(quantity);
+  const base = parse(reference);
+  if (amount <= 0 || base <= 0) return null;
+  if (amount <= base * OUTSIZED_FACTOR) return null;
+  const times = Math.round(amount / base);
+  return `${QTY_FORMAT.format(amount)} é ${QTY_FORMAT.format(times)} vezes ${referenceLabel} (${QTY_FORMAT.format(base)}). Confira o número antes de seguir.`;
+}
+
+// ── Letreiro (painel Solari) ─────────────────────────────────────────────────
+
+const MASS_TO_KG: Record<string, number> = { g: 1 / 1000, kg: 1 };
+
+/**
+ * A quantidade como a palheta escreve, com a unidade que a projeção traz:
+ * peça é "12 UN"; massa é sempre em quilo ("18,5 KG", "0,8 KG"), porque é
+ * assim que o padeiro lê a masseira; volume segue a régua da casa ("1,5 L").
+ */
+export function boardQtyLabel(qty: string, unit = ""): string {
+  const normalized = (unit ?? "").trim().toLowerCase();
+  const amount = Number.parseFloat(String(qty ?? "0").replace(",", ".")) || 0;
+  const toKg = MASS_TO_KG[normalized];
+  if (toKg !== undefined) return `${QTY_FORMAT.format(amount * toKg)} KG`;
+  if (COUNT_UNITS.has(normalized)) return `${QTY_FORMAT.format(amount)} UN`;
+  return formatQty(amount, normalized).toUpperCase();
+}
+
+/**
+ * Largura da coluna de quantidade, em palhetas: a maior quantidade do dia
+ * cabe inteira (beta 05/11: "4200 U" perdia o N). Nunca menos que "999 UN".
+ */
+export function boardQtyChars(
+  rows: readonly { qty: string; unit?: string }[],
+): number {
+  return Math.max(6, ...rows.map((row) => boardQtyLabel(row.qty, row.unit).length));
+}
+
+/** Largura máxima da coluna do nome, em palhetas por linha. Nome maior quebra em
+ *  duas linhas de palhetas em vez de encolher a letra de todo o Letreiro. */
+export const BOARD_NAME_MAX_CHARS = 22;
+const BOARD_NAME_MIN_CHARS = 12;
+const BOARD_NAME_MAX_LINES = 2;
+
+/**
+ * Largura da coluna do nome, em palhetas: o maior nome do dia, inteiro, até o
+ * teto (P2-15: a coluna fixa em 22 cortava o nome). Dia de nomes curtos ganha
+ * letra maior, porque a escala divide a largura pelo total de palhetas.
+ */
+export function boardNameChars(rows: readonly { recipe_name: string }[]): number {
+  const longest = Math.max(0, ...rows.map((row) => row.recipe_name.trim().length));
+  return Math.min(BOARD_NAME_MAX_CHARS, Math.max(BOARD_NAME_MIN_CHARS, longest));
+}
+
+/**
+ * O nome em linhas de palhetas: quebra entre palavras, até duas linhas. Só o que
+ * passa de duas linhas cheias termina em "…" ("Mini Focaccia Cebola," / "Bacon e
+ * Tomilho" cabe inteiro em 22).
+ */
+export function boardNameLines(name: string, width: number): string[] {
+  const size = Math.max(1, width);
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (let word of words) {
+    while (word.length > size) {
+      if (current) {
+        lines.push(current);
+        current = "";
+      }
+      lines.push(word.slice(0, size));
+      word = word.slice(size);
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length <= size) current = next;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (lines.length <= BOARD_NAME_MAX_LINES) return lines.length ? lines : [""];
+  const kept = lines.slice(0, BOARD_NAME_MAX_LINES);
+  const last = kept[BOARD_NAME_MAX_LINES - 1]!;
+  kept[BOARD_NAME_MAX_LINES - 1] = `${last.slice(0, size - 1).trimEnd()}…`;
+  return kept;
+}
+
+/** "Planejado", o maior rótulo de situação do painel. */
+export const BOARD_STATUS_CHARS = 9;
+/** "10h30", o maior horário da casa. */
+export const BOARD_ETA_CHARS = 5;
+
+/** O que a linha diz a quem não enxerga a palheta: "Croissant: 18,5 kg às 8h, Planejado". */
+export function boardRowSpoken(row: {
+  recipe_name: string;
+  qty: string;
+  unit?: string;
+  eta_display: string;
+  status_label: string;
+}): string {
+  const qty = boardQtyLabel(row.qty, row.unit)
+    .replace(/ UN$/, " unidades")
+    .replace(/ KG$/, " kg")
+    .replace(/ L$/, " l");
+  const eta = row.eta_display && row.eta_display !== "—" ? ` às ${row.eta_display}` : "";
+  return `${row.recipe_name}: ${qty}${eta}, ${row.status_label}`;
+}
+
+/**
+ * O aviso de conexão perdida, a maior coisa da tela: o quadro que fica é o da
+ * última leitura, e a pessoa precisa saber de quando ele é.
+ */
+export function boardStaleNotice(readAt: string): string {
+  return readAt ? `Sem conexão. Lido às ${readAt}` : "Sem conexão. Mostrando a última leitura";
+}
+
+/** O aviso nas palhetas do Letreiro: maiúsculas de painel, mas a hora da casa
+ *  guarda o "h" minúsculo ("SEM CONEXÃO. LIDO ÀS 6h42"). */
+export function boardStaleFlaps(readAt: string): string {
+  return boardStaleNotice(readAt)
+    .toUpperCase()
+    .replace(/(\d)H(\d{2})?\b/g, (_, hour: string, minute = "") => `${hour}h${minute}`);
 }

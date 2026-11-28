@@ -20,6 +20,8 @@ import {
   inboxAlertDescription,
   operatorAlertToInbox,
   urgentAlerts,
+  answerScreenAlerts,
+  inboxScreenAlerts,
   deadlineLeftLabel,
   respondInLabel,
   reminderIntervalMs,
@@ -78,7 +80,10 @@ describe("Alt 1…9 em todo app", () => {
 describe("a ajuda de atalhos", () => {
   it("o grupo comum sai das seções e não repete o que o app já disse", () => {
     const base = suiteShortcutGroup(SECTIONS.slice(0, 2), { appLabel: "Gestor" });
-    expect(base.title).toBe("Em todo o Gestor");
+    expect(base.title).toBe("Gestor: em qualquer tela");
+    // Sem artigo: vale para app feminino e masculino (beta 05/11, KDS-12).
+    expect(suiteShortcutGroup([], { appLabel: "Cozinha" }).title).toBe("Cozinha: em qualquer tela");
+    expect(suiteShortcutGroup([]).title).toBe("Em qualquer tela");
     expect(base.items.map((i) => i.keys.join(" "))).toEqual(["Alt+1", "Alt+2", "?"]);
     const merged = mergeShortcutGroups(base, [{ title: "Na venda", items: [{ keys: ["?"], label: "Esta ajuda" }, { keys: ["F9"], label: "Enviar à cozinha" }] }]);
     expect(merged[1]!.items.map((i) => i.keys[0])).toEqual(["F9"]);
@@ -284,6 +289,68 @@ describe("aviso com prazo: interrompe, depois lembra (dono, 07/10/2026)", () => 
     );
     expect(view.blocking?.key).toBe(1);
     expect(view.reminders.map((item) => item.key)).toEqual([2]);
+  });
+
+  it("a pergunta que espera resposta só vira janela quando o prazo vence", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const running = urgentAlerts([{ key: 1, respondByIso: at(7), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(running).toEqual({ blocking: null, reminders: [] });
+    const late = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: false, deadlineKind: "house", answer }], NOW);
+    expect(late.blocking?.key).toBe(1);
+    // Vista, não vira lembrete passageiro: a pílula é o lembrete dela.
+    const seen = urgentAlerts([{ key: 1, respondByIso: at(-1), seen: true, deadlineKind: "house", answer }], NOW);
+    expect(seen).toEqual({ blocking: null, reminders: [] });
+  });
+
+  it("a pergunta vira aviso de tela no topo: âmbar, vermelho no prazo vencido, a mais antiga primeiro", () => {
+    const answer = { label: "Responder", placeholder: "", maxLength: 300 };
+    const clock = (iso: string) => `${new Date(iso).getUTCHours()}h${String(new Date(iso).getUTCMinutes()).padStart(2, "0")}`;
+    const items = [
+      { key: 1, respondByIso: at(9), answer, subject: "Bia espera a resposta da equipe" },
+      { key: 2, respondByIso: at(-1), answer, subject: "Ana espera a resposta da equipe" },
+      { key: 3, respondByIso: at(1) },
+    ];
+    expect(answerScreenAlerts(items, NOW, clock)).toEqual([
+      { key: 2, id: "answer:2:late", title: "Ana espera a resposta da equipe\u00a0·\u00a0passou\u00a0do\u00a0prazo\u00a0há\u00a01\u00a0min", color: "error" },
+      { key: 1, id: "answer:1:open", title: "Bia espera a resposta da equipe\u00a0·\u00a0até\u00a015h09", color: "warning" },
+    ]);
+    expect(answerScreenAlerts([{ key: 3, respondByIso: at(1) }], NOW, clock)).toEqual([]);
+  });
+
+  it("o alerta da operação que pede o topo vira aviso do cabeçalho, na cor da gravidade", () => {
+    const view = operatorAlertToInbox({
+      pk: 77, type_label: "WhatsApp: Concierge sem modelo", severity: "error", severity_label: "Erro",
+      message: "A Concierge está atendendo sem modelo.", created_at_display: "hoje às 21h10",
+      subject: "Concierge sem modelo", origin_label: "WhatsApp", on_screen: true,
+      actions: [{ kind: "open_alert_context", enabled: true, label: "Abrir conexões de IA",
+        href: "https://admin.exemplo/admin/shop/aiconnection/" }],
+    });
+    expect(view.onScreen).toBe(true);
+    expect(inboxScreenAlerts([view, { key: 8, tone: "warning", message: "outro" }])).toEqual([
+      { key: 77, id: "alert:77", title: "Concierge sem modelo", description: "A Concierge está atendendo sem modelo.", color: "error",
+        action: { label: "Abrir conexões de IA", to: "https://admin.exemplo/admin/shop/aiconnection/" } },
+    ]);
+  });
+
+  it("o handoff traz o Live Chat como principal e a conversa no Admin como segunda saída", () => {
+    const view = operatorAlertToInbox({
+      pk: 81, type_label: "WhatsApp: atendimento", severity: "error", severity_label: "Erro",
+      message: "Atendimento humano, urgência: agora.", created_at_display: "hoje às 22h16",
+      subject: "Ana chamou a equipe", on_screen: true,
+      actions: [
+        { kind: "open_alert_context", enabled: true, label: "Responder no Live Chat",
+          href: "https://app.manychat.com/fb486126/chat/123" },
+        { kind: "open_alert_context", enabled: true, label: "Abrir conversa",
+          href: "https://admin.exemplo/admin/shop/conversation/9/change/" },
+      ],
+    });
+    expect([view.hrefLabel, view.secondaryHrefLabel]).toEqual(["Responder no Live Chat", "Abrir conversa"]);
+    expect(inboxScreenAlerts([view])).toEqual([
+      { key: 81, id: "alert:81", title: "Ana chamou a equipe", description: "Atendimento humano, urgência: agora.",
+        color: "error",
+        action: { label: "Responder no Live Chat", to: "https://app.manychat.com/fb486126/chat/123" },
+        secondaryAction: { label: "Abrir conversa", to: "https://admin.exemplo/admin/shop/conversation/9/change/" } },
+    ]);
   });
 
   it("o lembrete acompanha o prazo: um quarto do que falta, de 1 min a 1 dia", () => {

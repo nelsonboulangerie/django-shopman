@@ -81,6 +81,33 @@ cumulative count distinguishes "no breach" from "no measurement" without a
 timer, thread, I/O or database query on ordinary requests; the only additional
 hot-path work is an integer comparison.
 
+## Release identity
+
+`health/release/` answers what this process was built from:
+`{schema_version, component, release_id, build_sha}`, read from the image
+environment (`SHOPMAN_BUILD_SHA`, `SHOPMAN_RELEASE_ID`,
+`SHOPMAN_RELEASE_COMPONENT`). Constant, public, no database, never secret; an
+image without identity answers empty strings instead of inventing a version.
+
+`shopman.watchman.release.ReleaseIdentityCheck` (`release_identity`) asks each
+configured address and compares the served commit with the expected one:
+
+```python
+WATCHMAN = {
+    # ...
+    "RELEASE_IDENTITY": {
+        "expected_sha_env": "WATCHMAN_EXPECTED_RELEASE_SHA",
+        "equivalence": "myproject.release.component_unchanged",  # optional
+        "targets": [{"id": "web", "url_env": "WATCHMAN_RELEASE_URL_WEB"}],
+    },
+}
+```
+
+Settings hold only variable NAMES. The optional equivalence hook
+`(target_id, live_sha, expected_sha) -> bool | None` lets a host with selective
+deploys accept a component nothing touched since; `None` (no history) is
+`unknown`, never `pass`.
+
 ## Writing a check
 
 Checks perform their own bounded I/O. The runner provides a deadline but does

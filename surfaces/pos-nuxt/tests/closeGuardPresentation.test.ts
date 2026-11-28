@@ -33,6 +33,18 @@ describe("closeGuard — o aviso da trava contra cobrança duplicada", () => {
     expect(closeGuardNotice(base)?.title).toBe("Resultado da cobrança não confirmado");
   });
 
+  it("com o fechamento guardado, a primeira saída é Conferir agora (sem cobrar de novo)", () => {
+    const uncertain = closeGuardNotice({ ...base, replayable: true });
+    expect(uncertain?.canRecheck).toBe(true);
+    expect(uncertain?.body).toBe("A venda ficou sem resposta. Conferir agora pergunta por esta mesma venda, sem cobrar de novo.");
+    expect(closeGuardNotice({ ...base, pending: true, replayable: true })?.canRecheck).toBe(true);
+    // Sem o corpo guardado, só a conferência manual.
+    expect(closeGuardNotice(base)?.canRecheck).toBe(false);
+    // Outra aba cobrando ou navegador sem trava: nada a reenviar daqui.
+    expect(closeGuardNotice({ ...base, heldElsewhere: true, replayable: true })?.canRecheck).toBe(false);
+    expect(closeGuardNotice({ ...base, browserFailure: "x", replayable: true })?.canRecheck).toBe(false);
+  });
+
   it("falha do navegador diz a falha, não 'resultado não confirmado'", () => {
     const notice = closeGuardNotice({ ...base, browserFailure: "Este navegador não conseguiu ativar a proteção." });
     expect(notice?.situation).toBe("browser_unavailable");

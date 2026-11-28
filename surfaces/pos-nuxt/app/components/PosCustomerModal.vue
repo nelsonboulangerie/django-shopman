@@ -36,6 +36,8 @@ const props = withDefaults(defineProps<{
   customerLookup: POSCustomerLookupProjection | null;
   searchResults: POSCustomerSearchResult[];
   searchBusy: boolean;
+  /** A última busca de cliente falhou: a frase do porquê ("Não consegui buscar…"). */
+  searchError?: string;
   lookupBusy: boolean;
   /** O cliente associado foi CRIADO AGORA (resolve just-in-time): a confirmação
    *  visual distingue "cadastro novo" de "cadastro encontrado". */
@@ -185,6 +187,37 @@ const identityChips = computed(() =>
 
 // Reset the shared search field whenever the modal reopens fresh.
 watch(() => props.open, (open) => { if (!open) emit("search", ""); });
+
+// O X FECHA SEM SALVAR (beta test de 05/11/2026). Os campos escrevem direto na
+// comanda, então o rascunho de um cadastro que não aconteceu (recusado por CPF
+// inválido, ou só abandonado) ficava na venda como se fosse o cliente. Ao
+// fechar sem salvar, sem escolher e sem remover, o formulário volta a ser o
+// que era quando o modal abriu.
+type CustomerFields = { name: string; phone: string; taxId: string; email: string };
+const draftBaseline = ref<{ fields: CustomerFields; ref: string } | null>(null);
+const draftCommitted = ref(false);
+function currentFields(): CustomerFields {
+  return { name: props.customerName, phone: props.customerPhone, taxId: props.customerTaxId, email: props.customerEmail };
+}
+function markCommitted() { draftCommitted.value = true; }
+watch(() => props.open, (open) => {
+  if (open) {
+    draftBaseline.value = { fields: currentFields(), ref: props.customerLookup?.ref || "" };
+    draftCommitted.value = false;
+    return;
+  }
+  const baseline = draftBaseline.value;
+  draftBaseline.value = null;
+  if (!baseline || draftCommitted.value) return;
+  // Outro cliente associado enquanto o modal estava aberto (busca, decisão):
+  // o formulário agora é o dele, e não há rascunho a desfazer.
+  if ((props.customerLookup?.ref || "") !== baseline.ref) return;
+  const now = currentFields();
+  if (now.name !== baseline.fields.name) emit("update:customerName", baseline.fields.name);
+  if (now.phone !== baseline.fields.phone) emit("update:customerPhone", baseline.fields.phone);
+  if (now.taxId !== baseline.fields.taxId) emit("update:customerTaxId", baseline.fields.taxId);
+  if (now.email !== baseline.fields.email) emit("update:customerEmail", baseline.fields.email);
+}, { immediate: true });
 
 // A RECUSA TRAZ A TELA DE VOLTA. O "Concluir" fecha o modal e só depois a
 // resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
@@ -350,7 +383,47 @@ async function cancelDecision() {
   input.value?.inputRef?.focus();
 }
 
+// ESCOLHIDO O CADASTRO, O FOCO VAI AO GESTO QUE SEGUE (#2825). Pelo teclado (F6,
+// telefone, seta, Enter), o foco ficava na busca, e o "Concluir" estava a 11 Tabs,
+// atrás do formulário inteiro. O cadastro escolhido chega pelo lookup do shell: quando
+// ele chega, o foco vai ao "Concluir"; se chegou com uma pergunta (a decisão), vai à
+// pergunta, que se responde antes de fechar. O diálogo NÃO fecha sozinho: o operador
+// confere quem escolheu (o selo, o formulário, os alertas) e o Enter conclui.
+// Só move o foco que ainda está onde o gesto o deixou (a busca, ou lugar nenhum): se o
+// operador já foi a outro campo enquanto o cadastro chegava, o foco é dele.
+const { reveal } = useNextFocus();
+const pickedRef = ref("");
+const concludeRef = ref<{ $el?: HTMLElement } | null>(null);
+const decisionPanelRef = ref<HTMLElement | null>(null);
+function focusStillAtPick() {
+  const active = document.activeElement;
+  return !active || active === document.body || active.matches("input[aria-label='Buscar cliente']");
+}
+watch(
+  () => [pickedRef.value, props.lookupBusy, props.customerLookup?.ref, props.customerDecision] as const,
+  ([picked, busy, lookupRef, decision]) => {
+    if (!picked || busy) return;
+    if (!decision && lookupRef !== picked) return;
+    pickedRef.value = "";
+    if (!focusStillAtPick()) return;
+    if (decision) {
+      // A pergunta do documento tem o próprio foco (o título); a de contato, o primeiro gesto.
+      if (decision.kind !== "receipt_identity") {
+        reveal(() => decisionPanelRef.value?.querySelector<HTMLButtonElement>("button:not(:disabled)"), { align: "center" });
+      }
+      return;
+    }
+    reveal(() => {
+      const button = concludeRef.value?.$el as HTMLButtonElement | undefined;
+      return button && !button.disabled ? button : null;
+    }, { align: "center" });
+  },
+  { flush: "post" },
+);
+
 function onSelect(result: POSCustomerSearchResult) {
+  markCommitted();
+  pickedRef.value = result.ref;
   emit("selectResult", result);
 }
 const concludePending = ref(false);
@@ -365,7 +438,10 @@ function onConclude() {
   concludePending.value = true;
   emit("resolveCustomer", (saved) => {
     concludePending.value = false;
-    if (saved) emit("update:open", false);
+    if (saved) {
+      markCommitted();
+      emit("update:open", false);
+    }
   });
 }
 
@@ -396,6 +472,15 @@ const nameInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const phoneInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const emailInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
 const taxIdInputRef = ref<{ inputRef?: HTMLInputElement } | null>(null);
+// Ao FECHAR, quem diz para onde o foco vai é quem abriu (`PosTabHeader` devolve ao
+// chip e avisa a página, que leva o foco à etapa seguinte do assistente;
+// `PosPaymentWorkspace` volta à entrada do cliente). O Reka devolveria o foco,
+// DEPOIS da animação de saída, a quem estava com ele na abertura, e passaria por
+// cima dessa escolha: no assistente da encomenda, aberto pelo chip, o foco voltava
+// ao chip em vez de ir ao dia (#2778).
+function onCloseAutoFocus(event: Event) {
+  event.preventDefault();
+}
 function onOpenAutoFocus(event: Event) {
   event.preventDefault();
   void nextTick(() => {
@@ -423,7 +508,7 @@ const newCustomerNote = computed(() => {
     :open="open"
     :title="isReceiptDecision ? receiptTitle : 'Cliente'"
     :description="isReceiptDecision ? undefined : 'Busque por nome, telefone, CPF ou e-mail. Depois, escolha um cadastro ou crie um novo.'"
-    :content="{ onOpenAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
+    :content="{ onOpenAutoFocus, onCloseAutoFocus, ...({ onKeydownCapture: onReceiptKey } as object) }"
     :ui="{ content: isReceiptDecision ? 'w-[calc(100%-2rem)] max-w-[360px] sm:max-w-[360px]' : 'sm:max-w-lg', title: isReceiptDecision ? 'pr-4 text-left' : undefined }"
     data-pos-customer-modal
     @update:open="$emit('update:open', Boolean($event))"
@@ -433,7 +518,12 @@ const newCustomerNote = computed(() => {
     </template>
     <template #body>
       <div>
-        <div class="grid gap-5">
+        <!-- `grid-cols-1` (uma coluna `minmax(0, 1fr)`), não a coluna `auto` implícita:
+             coluna `auto` não fica menor que o conteúdo mínimo dos itens, e um texto que
+             corta com reticências (`truncate`) conta a frase inteira como mínimo. Com o
+             contato longo (telefone, CPF e e-mail) o diálogo do balcão crescia 124 px para
+             fora (#2885). A coluna fica na largura do diálogo; quem não cabe quebra ou corta. -->
+        <div class="grid grid-cols-1 gap-5">
           <!-- 1 · A PERGUNTA — e ela vem antes do resto porque é o que trava
                a venda. Duas situações, uma forma: o sistema NÃO decide sozinho.
 
@@ -465,22 +555,23 @@ const newCustomerNote = computed(() => {
                 <p v-if="customerDecision?.current" class="text-xs text-muted-foreground">Cliente do pedido: {{ customerDecision.current.name }}</p>
               </div>
               <div class="grid gap-2">
-                <UiButton v-for="(action, index) in receiptActions" :key="action.ref" type="button" variant="secondary" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 1)" @click="activateReceiptAction(index)">
+                <NuxtButton v-for="(action, index) in receiptActions" :key="action.ref" type="button" color="neutral" variant="outline" class="min-h-12 h-auto justify-between whitespace-normal py-3 text-left" :disabled="lookupBusy" :aria-keyshortcuts="String(index + 1)" @click="activateReceiptAction(index)">
                   {{ action.label }} <kbd aria-hidden="true" class="text-xs opacity-70">{{ index + 1 }}</kbd>
-                </UiButton>
+                </NuxtButton>
               </div>
             </template>
             <template v-else>
               <p class="text-xs text-muted-foreground">{{ selectedReceiptOwner === '__create__' ? 'Os dados serão salvos em um novo cadastro.' : selectedReceiptOwner.startsWith('__save') ? 'Os dados do cadastro serão alterados.' : receiptNewFieldsLabel ? `Salvar ${receiptNewFieldsLabel} no cadastro escolhido. Preços e benefícios serão revisados.` : 'Preços e benefícios serão revisados.' }}</p>
               <div class="grid gap-2">
-                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</UiButton>
-                <UiButton type="button" variant="secondary" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</UiButton>
+                <NuxtButton type="button" color="neutral" variant="outline" class="min-h-12" :disabled="lookupBusy" @click="$emit('decisionConfirm', selectedReceiptOwner)">Confirmar cliente</NuxtButton>
+                <NuxtButton type="button" color="neutral" variant="outline" class="min-h-12" :disabled="lookupBusy" @click="confirmingAttend = false">Voltar</NuxtButton>
               </div>
             </template>
             <p class="text-xs text-muted-foreground">{{ confirmingAttend ? '' : '1–' + receiptActions.length + ' escolher · ' }}Tab / ↑ ↓ navegar<br>Enter acionar · Esc voltar</p>
           </div>
           <div
             v-if="customerDecision && decisionCopy && !isReceiptDecision"
+            ref="decisionPanelRef"
             class="grid gap-3 rounded-md border border-warning/60 bg-warning/10 p-4"
             role="alertdialog"
             aria-live="assertive"
@@ -503,7 +594,7 @@ const newCustomerNote = computed(() => {
             >
               <p class="text-sm font-medium">{{ decisionCopy.release.prompt }}</p>
               <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton
+                <NuxtButton
                   type="button"
                   :disabled="customerReleaseBusy"
                   class="h-8 justify-center gap-2"
@@ -515,16 +606,16 @@ const newCustomerNote = computed(() => {
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
                   <span class="min-w-0">Sim, liberar</span>
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   type="button"
-                  variant="outline"
+                  color="neutral" variant="outline"
                   class="h-8 justify-center gap-2"
                   @click="confirmingRelease = null"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
                   <span class="min-w-0">Não liberar</span>
-                </UiButton>
+                </NuxtButton>
               </div>
             </div>
 
@@ -536,23 +627,23 @@ const newCustomerNote = computed(() => {
             >
               <p class="text-sm font-medium">{{ decisionCopy.confirmPrompt }}</p>
               <div class="grid gap-2 sm:grid-cols-2">
-                <UiButton
+                <NuxtButton
                   type="button"
                   class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false; $emit('decisionConfirm')"
                 >
                   <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                   <span class="min-w-0">Sim, tenho certeza</span>
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   type="button"
-                  variant="outline"
+                  color="neutral" variant="outline"
                   class="h-8 justify-center gap-2"
                   @click="confirmingAttend = false"
                 >
                   <Icon name="lucide:undo-2" class="size-4 shrink-0" />
                   <span class="min-w-0">Voltar</span>
-                </UiButton>
+                </NuxtButton>
               </div>
             </div>
 
@@ -584,10 +675,10 @@ const newCustomerNote = computed(() => {
                      busca. A linha ficava com um botão desabilitado e nada
                      mais — o nome de quem segura o contato, e zero saída.
                      Liberar é a saída que o merge não dá. -->
-                <UiButton
+                <NuxtButton
                   v-if="row.owner_inactive && decisionCopy.release"
                   type="button"
-                  size="sm"
+                  size="md"
                   :disabled="customerReleaseBusy"
                   class="h-9 shrink-0 gap-2"
                   @click="askRelease(candidateValue(row, customerDecision.field))"
@@ -598,16 +689,16 @@ const newCustomerNote = computed(() => {
                     :class="customerReleaseBusy ? 'animate-spin' : ''"
                   />
                   {{ decisionCopy.release.label }}
-                </UiButton>
+                </NuxtButton>
                 <!-- Linha SEM ROSTO: um dado guardado sozinho, não uma pessoa.
                      "Atender este" aqui trocaria o cliente do pedido por uma
                      ficha vazia e perderia quem está na comanda — o erro crasso
                      que a lista deixava a um toque de distância. O que se faz
                      com um dado solto é entregá-lo a quem é dele. -->
-                <UiButton
+                <NuxtButton
                   v-else-if="row.owner_unnamed && !row.is_current && customerDecision.current"
                   type="button"
-                  size="sm"
+                  size="md"
                   :disabled="customerMergeBusy"
                   class="h-9 shrink-0 gap-2"
                   @click="$emit('decisionMerge', row)"
@@ -618,19 +709,20 @@ const newCustomerNote = computed(() => {
                     :class="customerMergeBusy ? 'animate-spin' : ''"
                   />
                   É de {{ firstNameOf(customerDecision.current.name) }}
-                </UiButton>
-                <UiButton
+                </NuxtButton>
+                <NuxtButton
                   v-else
                   type="button"
-                  size="sm"
-                  :variant="row.is_current ? 'outline' : 'default'"
+                  size="md"
+                  :color="row.is_current ? 'neutral' : 'primary'"
+                  :variant="row.is_current ? 'outline' : 'solid'"
                   :disabled="row.owner_inactive || row.owner_unnamed"
                   class="h-9 shrink-0 gap-2"
                   @click="$emit('decisionPick', row)"
                 >
                   <Icon name="lucide:user-round-check" class="size-4 shrink-0" />
                   Atender este
-                </UiButton>
+                </NuxtButton>
               </li>
             </ul>
 
@@ -638,7 +730,7 @@ const newCustomerNote = computed(() => {
                  ação PRINCIPAL desse caso: atender não existe (o dono não
                  aparece na busca) e unificar o Core recusa. Na lista ela mora
                  na linha; aqui, em cima do par que fica. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
@@ -651,7 +743,7 @@ const newCustomerNote = computed(() => {
                 :class="customerReleaseBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.release.label }}</span>
-            </UiButton>
+            </NuxtButton>
 
             <!-- O par que fica, e a unificação. A ORDEM é a hierarquia.
                  Quando o par já tem um caminho para a frente ("Atender
@@ -666,7 +758,7 @@ const newCustomerNote = computed(() => {
                  leitor de tela anuncia. Um único botão reposicionado por classe
                  ficaria certo aos olhos e primeiro no teclado, justo no painel
                  em que o primeiro do teclado é o gesto grande. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.merge && !decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerMergeBusy"
@@ -679,14 +771,14 @@ const newCustomerNote = computed(() => {
                 :class="customerMergeBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
-            </UiButton>
+            </NuxtButton>
 
             <div
               v-if="confirmingRelease === null && !confirmingAttend"
               class="grid gap-2"
               :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''"
             >
-              <UiButton
+              <NuxtButton
                 v-if="isReceiptDecision"
                 ref="receiptActionRef"
                 type="button"
@@ -696,31 +788,32 @@ const newCustomerNote = computed(() => {
               >
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
-              </UiButton>
-              <UiButton
+              </NuxtButton>
+              <NuxtButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
                 :disabled="lookupBusy"
-                :variant="isReceiptDecision ? 'outline' : 'default'"
+                :color="isReceiptDecision ? 'neutral' : 'primary'"
+                :variant="isReceiptDecision ? 'outline' : 'solid'"
                 class="h-8 justify-center gap-2"
                 @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
-              </UiButton>
-              <UiButton v-if="!isReceiptDecision" type="button" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
+              </NuxtButton>
+              <NuxtButton v-if="!isReceiptDecision" type="button" color="neutral" variant="outline" class="h-8 justify-center gap-2" @click="cancelDecision">
                 <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- A TERCEIRA saída: os dois cadastros são a MESMA pessoa. Aqui o
                  par já tem um caminho para a frente ("Atender Bruno"), então
                  unificar vem por último e discreta — não é o caminho comum. -->
-            <UiButton
+            <NuxtButton
               v-if="decisionCopy.merge && decisionCopy.confirmLabel && confirmingRelease === null && !confirmingAttend"
               type="button"
-              variant="ghost"
+              color="neutral" variant="ghost"
               :disabled="customerMergeBusy"
               class="h-8 w-full justify-center gap-2"
               @click="$emit('decisionMerge')"
@@ -731,7 +824,7 @@ const newCustomerNote = computed(() => {
                 :class="customerMergeBusy ? 'animate-spin' : ''"
               />
               <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
-            </UiButton>
+            </NuxtButton>
           </div>
 
           <!-- 2 · the picker, SEMPRE no topo: prominent search + rich results
@@ -744,6 +837,7 @@ const newCustomerNote = computed(() => {
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
+            :error="searchError"
             :has-customer-ref="hasCustomer"
             :pending-name="hasCustomer ? '' : customerName"
             @search="$emit('search', $event)"
@@ -758,40 +852,45 @@ const newCustomerNote = computed(() => {
                existente e novo. O selo (e o tom) é a única diferença nítida —
                abas "buscar × cadastrar" faziam o operador escolher um modo
                antes de saber se a pessoa já tinha cadastro. -->
+          <!-- O cartão mede a si mesmo (`@container`), não a janela (#2885): no celular
+               o selo com o nome e o "Remover cliente" não cabem lado a lado, e a linha
+               que não quebrava empurrava o diálogo inteiro 90 px para fora da tela.
+               Estreito, o botão desce para baixo do selo e o selo quebra linha em vez
+               de cortar o nome; largo (o balcão), tudo como sempre foi. -->
           <div
             v-if="!isReceiptDecision"
-            class="grid gap-3 rounded-md border p-4"
+            class="@container grid grid-cols-1 gap-3 rounded-md border p-4"
             :class="hasCustomer ? 'border-primary bg-primary/5' : 'bg-muted/30'"
             data-customer-state
           >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0">
+            <div class="flex flex-col items-start gap-3 @sm:flex-row @sm:justify-between" data-customer-state-header>
+              <div class="min-w-0 self-stretch @sm:self-auto">
                 <p class="flex items-center gap-1.5 text-base font-semibold" role="status">
                   <Icon
                     :name="hasCustomer ? 'lucide:user-check' : 'lucide:user-round-plus'"
                     class="size-4 shrink-0"
                     :class="hasCustomer ? 'text-primary' : 'text-muted-foreground'"
                   />
-                  <span class="truncate">{{ stateBadge }}</span>
+                  <span class="min-w-0 wrap-anywhere @sm:truncate">{{ stateBadge }}</span>
                   <span
                     v-if="newCustomerNote"
-                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                    class="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-(--primary-ink)"
                   >
                     <Icon name="lucide:sparkles" class="size-3" />
                     {{ newCustomerNote }}
                   </span>
                 </p>
-                <p v-if="hasCustomer && identityChips.length" class="mt-0.5 truncate text-sm tabular-nums text-muted-foreground">
+                <p v-if="hasCustomer && identityChips.length" class="mt-0.5 text-sm tabular-nums text-muted-foreground wrap-anywhere @sm:truncate">
                   {{ identityChips.join(" · ") }}
                 </p>
                 <p v-else-if="!hasCustomer" class="mt-0.5 text-sm text-muted-foreground">
                   Preencha o que souber; só o nome já basta.
                 </p>
               </div>
-              <UiButton v-if="hasCustomer" type="button" variant="outline" size="sm" class="shrink-0 text-destructive" @click="$emit('clear')">
+              <NuxtButton v-if="hasCustomer" type="button" color="neutral" variant="outline" size="md" class="shrink-0 text-destructive" @click="markCommitted(); $emit('clear')">
                 <Icon name="lucide:user-x" class="size-4" />
                 Remover cliente
-              </UiButton>
+              </NuxtButton>
             </div>
             <!-- Guestman memory (warmer than Odoo's raw "All Orders"): favourite +
                  last order, one tap to apply. -->
@@ -799,12 +898,12 @@ const newCustomerNote = computed(() => {
               <span v-if="memory.total_orders" class="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 {{ memory.total_orders }} {{ memory.total_orders === 1 ? "pedido" : "pedidos" }}
               </span>
-              <UiButton v-if="memory.favorite_item?.sku" type="button" variant="outline" size="xs" @click="$emit('applyCustomerFavorite')">
+              <NuxtButton v-if="memory.favorite_item?.sku" type="button" color="neutral" variant="outline" size="md" @click="$emit('applyCustomerFavorite')">
                 <Icon name="lucide:heart" class="size-3.5" /> Favorito
-              </UiButton>
-              <UiButton v-if="memory.last_order_items?.length" type="button" variant="outline" size="xs" @click="$emit('repeatCustomerLastOrder')">
+              </NuxtButton>
+              <NuxtButton v-if="memory.last_order_items?.length" type="button" color="neutral" variant="outline" size="md" @click="$emit('repeatCustomerLastOrder')">
                 <Icon name="lucide:rotate-ccw" class="size-3.5" /> Último pedido
-              </UiButton>
+              </NuxtButton>
             </div>
 
             <!-- Alertas do balcão: só existem quando há dado (a tela não cresce à toa).
@@ -821,8 +920,11 @@ const newCustomerNote = computed(() => {
               >
                 <Icon name="lucide:tag" /> {{ customerLookup.group_discount_label }}
               </UiBadge>
-              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-full border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                🎂 Aniversário HOJE{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
+              <!-- Selo em latão: o texto escreve com a tinta `--primary-ink` (o latão puro
+                   sobre latão a 10%, no cartão já tingido, media 4,09:1; a tinta mede 4,75:1),
+                   e maiúscula só na primeira letra, como todo selo (#2894). -->
+              <span v-if="customerLookup?.is_birthday_today" class="inline-flex items-center gap-1 rounded-2xl border border-primary/50 bg-primary/10 px-2 py-0.5 text-xs font-medium text-(--primary-ink)" data-customer-birthday-today>
+                🎂 Aniversário hoje{{ customerLookup?.birthday_promo_label ? ` · ${customerLookup.birthday_promo_label}` : "" }}
               </span>
               <span v-else-if="customerLookup?.is_birthday_month" class="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                 🎂 Aniversariante do mês ({{ customerLookup?.birthday_display }})
@@ -897,7 +999,7 @@ const newCustomerNote = computed(() => {
                 </label>
                 <label class="grid gap-1 text-sm">
                   <span class="text-xs font-medium text-muted-foreground">Observações do balcão</span>
-                  <UiTextarea v-model="profileDraft.notes" :rows="2" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
+                  <NuxtTextarea v-model="profileDraft.notes" :rows="2" class="w-full" placeholder="Ex: prefere pão bem assado; busca às 17h" @blur="saveProfileText" />
                 </label>
               </template>
               <p v-else class="text-xs text-muted-foreground">Restrições e observações ficam disponíveis depois de cadastrar.</p>
@@ -909,6 +1011,7 @@ const newCustomerNote = computed(() => {
     </template>
     <template v-if="!isReceiptDecision" #footer>
       <NuxtButton
+        ref="concludeRef"
         size="xl"
         block
         color="primary"

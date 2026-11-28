@@ -3,11 +3,13 @@
 // página, o mesmo diagnóstico do painel do pé do rail (`PosTerminalHealth`), com
 // o caminho de conserto: testar o agente de novo, abrir a configuração do terminal
 // no Admin e atualizar a tela.
+import { terminalDeviceLine } from "~/presentation/settingsAccess";
 import { terminalHealthRows, terminalOverallStatus } from "~/presentation/terminalHealth";
 
 useHead({ title: "Terminal" });
 
-const { pos, refresh } = await usePosTerminal();
+const { pos, station, refresh } = await usePosTerminal();
+const deviceLine = computed(() => terminalDeviceLine(station.value));
 const { probe, checking, check, agentConfigured } = useAgentHealth(computed(() => pos.value!));
 const rows = computed(() => pos.value
   ? terminalHealthRows(
@@ -52,7 +54,7 @@ async function refreshScreen() {
         </span>
         <div class="min-w-0 flex-1">
           <h2 class="truncate op-title">{{ pos.terminal_label }}</h2>
-          <p class="op-micro text-muted-foreground">Este dispositivo</p>
+          <p class="op-micro text-muted-foreground" data-settings-terminal-device>{{ deviceLine }}</p>
         </div>
         <span class="inline-flex items-center gap-1.5 op-label font-semibold" :class="tone(overall).text">
           <span class="size-2 rounded-full" :class="tone(overall).dot" aria-hidden="true" />{{ tone(overall).label }}

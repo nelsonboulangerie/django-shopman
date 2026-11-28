@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { CustomerGroupMutationPayload, CustomerGroupProjection } from "~/types/customerGroups";
+import type {
+  CustomerGroupMembersResponse,
+  CustomerGroupMutationPayload,
+  CustomerGroupProjection,
+} from "~/types/customerGroups";
+import { groupMembersResultMessage } from "~/presentation/customerGroupMembers";
 import { mutationFieldErrors } from "~/utils/mutationFieldErrors";
 
 useHead({ title: "Grupos de clientes" });
@@ -82,6 +87,18 @@ async function save(payload: CustomerGroupMutationPayload) {
   } finally {
     busy.value = false;
   }
+}
+
+// Adicionar clientes ao grupo: os clientes estão fora desta tela, então é diálogo.
+const membersOpen = ref(false);
+const membersGroup = ref<{ ref: string; name: string } | null>(null);
+function openMembers(group: CustomerGroupProjection) {
+  membersGroup.value = { ref: group.ref, name: group.name };
+  membersOpen.value = true;
+}
+async function membersSaved(response: CustomerGroupMembersResponse) {
+  useSonner.success(groupMembersResultMessage(response));
+  await refresh();
 }
 
 const phoneHeaderActions = computed(() => [
@@ -185,7 +202,27 @@ const phoneHeaderActions = computed(() => [
           <span v-if="row.original.pickup_only && row.original.discount_type" class="block text-xs text-muted-foreground">Somente retirada</span>
         </template>
         <template #customers-cell="{ row }">
-          <NuxtBadge color="neutral" :label="row.original.customer_count_label" />
+          <div class="flex flex-col items-start gap-1">
+            <NuxtButton
+              :to="`/customers?group=${encodeURIComponent(row.original.ref)}`"
+              icon="i-lucide-users"
+              :label="row.original.customer_count_label"
+              color="neutral"
+              variant="ghost"
+              :aria-label="`Ver os clientes do grupo ${row.original.name}`"
+              :data-customer-group-members-link="row.original.ref"
+            />
+            <NuxtButton
+              type="button"
+              icon="i-lucide-user-round-plus"
+              label="Adicionar"
+              color="neutral"
+              variant="outline"
+              :aria-label="`Adicionar clientes ao grupo ${row.original.name}`"
+              :data-add-customer-group-members="row.original.ref"
+              @click="openMembers(row.original)"
+            />
+          </div>
         </template>
         <template #actions-cell="{ row }">
           <div class="flex flex-wrap items-center gap-2">
@@ -211,6 +248,12 @@ const phoneHeaderActions = computed(() => [
         </template>
       </OperatorTable>
     </section>
+
+    <CustomerGroupAddMembersDialog
+      v-model:open="membersOpen"
+      :group="membersGroup"
+      @saved="membersSaved"
+    />
 
     <CustomerGroupFormPanel
       v-model:open="panelOpen"

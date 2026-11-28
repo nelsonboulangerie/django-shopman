@@ -12,7 +12,9 @@ Read-only. Frozen dataclasses convertidos por ``backstage.api.projections.projec
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 
+from shopman.utils.formatting import format_local
 from shopman.utils.monetary import format_money
 
 from shopman.shop.projections.types import Action
@@ -75,11 +77,11 @@ def resync_action(product, targets: list[str], user):
             "expected_actor_id": getattr(user, "pk", None), "base_revision": resync_revision(product, targets), "targets": sorted(targets)})
 
 
-def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True):
+def cell_action(sku: str, surface_ref: str, user, *, item=None, display=None, available=True, unit=""):
     from shopman.backstage.services.catalog import cell_field_revisions
     from shopman.shop.services.remote_mutations import mutation_fingerprint
 
-    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display)
+    revisions = cell_field_revisions(sku, surface_ref, item=item, display=display, missing=available and item is None and display is None, unit=unit)
     allowed = bool(user and user.is_active and user.is_staff and user.has_perm("shop.manage_catalog"))
     reason = "" if allowed and available else "O produto não pertence a esta superfície." if not available else "Sem permissão para editar o catálogo."
     return Action(ref="edit-cell", kind="mutation", label="Alterar célula", enabled=allowed and available,
@@ -206,6 +208,8 @@ class SurfaceCellProjection:
     # Estado de sync por (produto × plataforma) — CatalogSyncState (Arc C). Só faz
     # sentido em superfície que é alvo de projeção (canal com backend na registry);
     # vazio quando nunca houve push ou a superfície não projeta (feed de pull).
+    valid_from: str = ""
+    valid_until: str = ""
     sync_status: str = ""  # synced | pending | error | retracted | skipped | "" (nunca)
     sync_error: str = ""  # última mensagem de erro (quando status=error)
     synced_at: str = ""  # ISO do último push OK (synced/retracted)
@@ -222,6 +226,7 @@ class CatalogRowProjection:
     image_url: str
     primary_collection: str  # ref
     primary_collection_name: str
+    is_active: bool  # cadastro presente na operação; falso = arquivado
     is_published: bool  # produto-level
     is_sellable: bool  # produto-level
     base_price_q: int
@@ -232,7 +237,7 @@ class CatalogRowProjection:
     stock_tracked: bool  # há controle de estoque para este SKU?
     stock_qty: int | None  # promissível agora (None = sem controle)
     sold_out: bool  # rastreado e sem estoque para vender
-    low_stock: bool  # rastreado, pouco estoque (≤ threshold do canal)
+    low_stock: bool  # rastreado e acabando: a % do SKU (shop/services/running_low.py)
     replenish_qty: int  # vindo por produção (planejado + em produção) — "fornada"
     keywords: tuple[str, ...]
     cells: tuple[SurfaceCellProjection, ...]  # alinhado à ordem de ``surfaces``
@@ -315,6 +320,13 @@ class CatalogMatrixProjection:
     has_next: bool = False
     order: str = "name"
     query: str = ""
+    date_from: str = ""
+    date_to: str = ""
+    # Quantos produtos o catálogo tem, com a mesma régua da contagem de cada
+    # coleção (ativos, ou arquivados no filtro de arquivados). É o número do chip
+    # "Todas": antes era o tamanho da página, e "Todas 50" convivia com "127
+    # produtos" no rodapé (beta 05/11, GES-08).
+    all_product_count: int = 0
 
 
 # ── builders ────────────────────────────────────────────────────────────────
@@ -329,7 +341,7 @@ _EMPTY_STOCK = {
 }
 
 
-def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int) -> dict:
+def _stock_view(info: dict | None, running_low: bool, replenish_qty: int) -> dict:
     """Deriva o estado de estoque da linha a partir do dict canônico de availability.
 
     Esgotado = rastreado e sem promissível AGORA. ``replenish_qty`` vem de uma consulta
@@ -343,7 +355,9 @@ def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int)
         "stock_tracked": True,
         "stock_qty": promisable,
         "sold_out": sold_out,
-        "low_stock": (not sold_out) and promisable <= max(int(low_stock_threshold or 0), 0),
+        # "Acabando" é a régua única do operador (DEV-2026-077): a % do SKU sobre o
+        # que o dia teve, a mesma do botão do PDV e do card da Cozinha.
+        "low_stock": (not sold_out) and running_low,
         "replenish_qty": max(int(replenish_qty or 0), 0),
     }
 
@@ -352,9 +366,9 @@ def _stock_view(info: dict | None, low_stock_threshold: int, replenish_qty: int)
 _STOCK_BUCKETS = ("ok", "low", "out")
 
 
-def _stock_bucket(info: dict | None, low_stock_threshold: int) -> str:
+def _stock_bucket(info: dict | None, running_low: bool) -> str:
     """Balde de UMA linha: esgotado vence estoque baixo; sem rastro, ``ok``."""
-    view = _stock_view(info, low_stock_threshold, 0)
+    view = _stock_view(info, running_low, 0)
     if view["sold_out"]:
         return "out"
     if view["low_stock"]:
@@ -362,14 +376,17 @@ def _stock_bucket(info: dict | None, low_stock_threshold: int) -> str:
     return "ok"
 
 
-def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, int]]:
-    """Availability-agora (canal representante) + threshold + suprimento planejado.
+def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], set[str], dict[str, int]]:
+    """Availability-agora (canal representante) + SKUs acabando + suprimento planejado.
+
+    "Acabando" é a % do SKU (DEV-2026-077, ``shop/services/running_low.py``),
+    medida sobre o promissível que a linha mostra: a mesma régua do PDV e da
+    Cozinha. O operador vê uma régua só.
 
     Estoque é físico/produto-level; usa o scope de UM canal representante (o de menor
     ``display_order``). ``planned`` é uma consulta separada (fornadas futuras próximas).
     Degrada em silêncio (sem Stockman → vazio → tudo untracked → como hoje).
     """
-    from shopman.shop.config import ChannelConfig
     from shopman.shop.models import Channel
 
     # Canal `display` não vende, logo não representa escopo de estoque.
@@ -381,14 +398,19 @@ def _stock_for(skus: list[str]) -> tuple[dict[str, dict | None], int, dict[str, 
         .first()
     )
     if rep is None or not skus:
-        return {}, 0, {}
-    threshold = int(getattr(ChannelConfig.for_channel(rep).stock, "low_stock_threshold", 0) or 0)
+        return {}, set(), {}
 
     from shopman.shop.projections import catalog_context
+    from shopman.shop.services.running_low import running_low_skus
 
     availability = catalog_context.availability_for_skus(skus, channel_ref=rep.ref)
     planned = catalog_context.planned_supply_for_skus(skus)
-    return availability, threshold, planned
+    shown = {
+        sku: int(info.get("total_promisable") or 0)
+        for sku, info in availability.items()
+        if info and info.get("is_tracked", True)
+    }
+    return availability, running_low_skus(shown), planned
 
 
 def _social_view(product) -> tuple[dict, bool]:
@@ -512,16 +534,17 @@ def _build_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
 
 
 # capability/ícone por formato de exibição. Formato VAZIO é quadro (rota nossa);
-# formato preenchido é feed de plataforma (dialeto de terceiro).
+# formato preenchido é feed de plataforma. O Google não tem saída para abrir: o canal
+# dele é escrito pela Merchant API.
 _DISPLAY_META = {
     "": {"capability": "display", "icon": "tv", "path": "/menuboard/{ref}/"},
-    "google_merchant": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
+    "google_merchant": {"capability": "feed", "icon": "rss", "path": ""},
     "meta_catalog": {"capability": "feed", "icon": "rss", "path": "/feed/{ref}.xml"},
 }
 
 
 def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]:
-    """Canais de EXIBIÇÃO como colunas + índice {ref: {"members", "paused"}}.
+    """Canais de EXIBIÇÃO como colunas + índice {ref: {"members", "paused", "hidden"}}.
 
     ``members`` = SKUs que o canal exibe (união dos produtos das suas coleções).
     ``paused`` = pausa LOCAL do item neste canal (a global é do produto, gate por cima).
@@ -575,6 +598,7 @@ def _build_display_surfaces() -> tuple[list[SurfaceProjection], dict[str, dict]]
         index[ch.ref] = {
             "members": members,
             "paused": {str(s) for s in (display.get("paused_skus") or [])},
+            "hidden": {str(s) for s in (display.get("hidden_skus") or [])},
             "pause_audit": display.get("pause_audit") or {},
             "channel": ch,
         }
@@ -606,6 +630,7 @@ _CATALOG_ORDERS: dict[str, tuple[str, ...]] = {
     "price": ("base_price_q", "name"),
     "-price": ("-base_price_q", "name"),
     "updated": ("-updated_at",),
+    "validity": ("_valid_from", "name", "sku"),
 }
 
 #: Teto de linhas por página. Acima disto a matriz volta a ser o que era.
@@ -614,12 +639,12 @@ MAX_CATALOG_PAGE_SIZE = 200
 
 def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = "",
     order: str = "name", page: int = 1, page_size: int = 50,
-    filters: dict | None = None) -> CatalogMatrixProjection:
+    filters: dict | None = None, date_from: date | None = None, date_to: date | None = None) -> CatalogMatrixProjection:
     """Monta a matriz produto × superfície com o eixo coleção, PAGINADA.
 
-    ``collection_ref`` (opcional) recorta os produtos daquela coleção
-    (``product_queryset()``, smart-aware). ``query`` busca em nome e SKU;
-    ``filters`` aceita ``is_published``/``is_sellable``/``has_vocation``/
+    ``collection_ref`` (opcional) recorta os produtos daquela coleção, inclusive
+    os arquivados quando esse é o filtro explícito. ``query`` busca em nome e SKU;
+    ``filters`` aceita ``archived``/``is_published``/``is_sellable``/``has_vocation``/
     ``surface``/``stock``/``pim_complete``/``sync_status``; ``order`` é uma das
     chaves de ``_CATALOG_ORDERS``; a página é do BANCO — só as linhas dela viram
     projection. As coleções e a vocação pendente continuam da casa inteira.
@@ -643,9 +668,14 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     from shopman.offerman.models import Collection, Product
 
     surfaces, cells_index = _build_surfaces()
-    from django.db.models import Max, Q, Subquery
-    from django.utils import timezone
+    from django.db.models import Max, Min, Q, Subquery
     from shopman.offerman.models import ListingItem
+    from shopman.offerman.smart_collection import resolve_products
+
+    def collection_products(collection):
+        if collection.is_smart:
+            return resolve_products(collection.rule)
+        return Product.objects.filter(collection_items__collection=collection).distinct()
 
     item_ids = [item.pk for cells in cells_index.values() for item in cells.values()]
     latest = ListingItem.history.filter(id__in=item_ids).values("id").annotate(last=Max("history_id")).values("last")
@@ -653,12 +683,14 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     for entry in ListingItem.history.filter(history_id__in=Subquery(latest), is_sellable=False,
             history_change_reason__endswith=":after").select_related("history_user"):
         actor = entry.history_user.get_username() if entry.history_user else "sistema"
-        pause_audit[entry.id] = f"Pausado por {actor} em {timezone.localtime(entry.history_date):%d/%m/%Y %H:%M}"
+        pause_audit[entry.id] = f"Pausado por {actor} em {format_local(entry.history_date, '%d/%m/%Y {clock}')}"
     display_surfaces, display_index = _build_display_surfaces()
     surfaces = surfaces + display_surfaces
 
     # A consulta é do BANCO: busca, filtros simples e ordenação acontecem antes
     # de materializar. A página é o único recorte que vira linha na resposta.
+    filters = filters or {}
+    archived = bool(filters.get("archived"))
     products = Product.objects.all()
     collection_smart = False
     if collection_ref:
@@ -667,11 +699,11 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             products = products.none()
         else:
             collection_smart = coll.is_smart
-            products = coll.product_queryset()
+            products = collection_products(coll)
     term = (query or "").strip()
     if term:
         products = products.filter(Q(name__icontains=term) | Q(sku__icontains=term))
-    filters = filters or {}
+    products = products.filter(is_active=not archived)
     if filters.get("is_published") is not None:
         products = products.filter(is_published=bool(filters["is_published"]))
     if filters.get("is_sellable") is not None:
@@ -697,6 +729,39 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         if feed_members:
             clauses |= Q(sku__in=feed_members)
         products = products.filter(clauses).distinct()
+    # A janela casa com ALGUM canal selecionado, com limites inclusivos. As
+    # duas pontas devem pertencer à MESMA listing, não a canais diferentes.
+    validity_items = ListingItem.objects.filter(listing__ref__in=[
+        surface.ref for surface in surfaces if surface.transactional
+        and (not surface_refs or surface.ref in surface_refs)
+    ])
+    if date_from is not None or date_to is not None:
+        if date_from is not None:
+            validity_items = validity_items.filter(
+                Q(listing__valid_until__isnull=True) | Q(listing__valid_until__gte=date_from))
+        if date_to is not None:
+            validity_items = validity_items.filter(
+                Q(listing__valid_from__isnull=True) | Q(listing__valid_from__lte=date_to))
+        # Feed não tem preço próprio: seu recorte de curadoria continua válido
+        # quando o operador o seleciona, inclusive junto de um canal de venda.
+        selected_feed_skus = set().union(*(
+            display_index[ref]["members"] for ref in surface_refs if ref in display_index
+        ))
+        # Produto sem vínculo em canal de venda nenhum não TEM vigência que o
+        # exclua: é o recém-criado ou duplicado, que nasce fora de venda e que a
+        # gerente precisa achar para conferir e publicar (beta 05/11, GES-04).
+        # Com recorte de canal, o filtro de superfície acima já decide.
+        unlisted = Q()
+        if not surface_refs:
+            unlisted = ~Q(pk__in=ListingItem.objects.filter(listing__ref__in=[
+                surface.ref for surface in surfaces if surface.transactional
+            ]).values("product_id"))
+        products = products.filter(
+            Q(pk__in=validity_items.values("product_id")) | Q(sku__in=selected_feed_skus) | unlisted
+        )
+    if order == "validity":
+        products = products.annotate(_valid_from=Min("listing_items__listing__valid_from",
+            filter=Q(listing_items__pk__in=validity_items.values("pk"))))
     # ── facetas de envio/estoque/PIM, EM LOTE ──────────────────────────────
     # Os candidatos são quem passou por coleção, busca, filtros simples e
     # superfície. Sobre eles, a leitura de cada faceta sai de uma vez (estoque,
@@ -708,9 +773,9 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     pim_filter = bool(pim_filter) if pim_filter is not None else None
 
     candidate_skus = list(dict.fromkeys(products.order_by().values_list("sku", flat=True)))
-    stock_info, low_stock_threshold, planned_by_sku = _stock_for(candidate_skus)
+    stock_info, running_low, planned_by_sku = _stock_for(candidate_skus)
     stock_buckets = {
-        sku: _stock_bucket(stock_info.get(sku), low_stock_threshold) for sku in candidate_skus
+        sku: _stock_bucket(stock_info.get(sku), sku in running_low) for sku in candidate_skus
     }
 
     # Estado de sync por (produto × plataforma) — uma consulta p/ todos os
@@ -793,23 +858,26 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
 
         cells: list[SurfaceCellProjection] = []
         for surface in surfaces:
-            # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções) e
-            # pausa local; sem preço/publicação. A pausa global do produto gateia por cima.
+            # Feed (menuboard/plataforma): célula = pertence ao feed (via coleções),
+            # pausa e ocultação locais; sem preço. Os gestos globais do produto gateiam por cima.
             sync_status, sync_error, synced_at = _cell_sync(sync_map, product.sku, surface.sync_key or surface.ref)
             if surface.ref in display_index:
                 sc = display_index[surface.ref]
                 in_feed = product.sku in sc["members"]
                 paused_here = product.sku in sc["paused"]
+                hidden_here = product.sku in sc["hidden"]
                 cells.append(
                     SurfaceCellProjection(
                         surface_ref=surface.ref,
                         in_listing=in_feed,
-                        is_published=in_feed,
+                        is_published=in_feed and not hidden_here,
                         is_sellable=in_feed and not paused_here,
                         pause_audit=sc["pause_audit"].get(product.sku, "") if paused_here else "",
                         available=(
                             in_feed
                             and not paused_here
+                            and not hidden_here
+                            and product.is_active
                             and product.is_published
                             and product.is_sellable
                         ),
@@ -841,7 +909,11 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                 )
                 continue
             available = (
-                product.is_published and product.is_sellable and item.is_published and item.is_sellable
+                product.is_active
+                and product.is_published
+                and product.is_sellable
+                and item.is_published
+                and item.is_sellable
             )
             cells.append(
                 SurfaceCellProjection(
@@ -852,6 +924,8 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                     available=available,
                     price_q=item.price_q,
                     price_display=_money(item.price_q),
+                    valid_from=item.listing.valid_from.isoformat() if item.listing.valid_from else "",
+                    valid_until=item.listing.valid_until.isoformat() if item.listing.valid_until else "",
                     pause_audit=pause_audit.get(item.pk, "") if not item.is_sellable else "",
                     action=cell_action(product.sku, surface.ref, user, item=item),
                     sync_status=sync_status,
@@ -861,7 +935,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             )
 
         stock = _stock_view(
-            stock_info.get(product.sku), low_stock_threshold, planned_by_sku.get(product.sku, 0)
+            stock_info.get(product.sku), product.sku in running_low, planned_by_sku.get(product.sku, 0)
         )
         social_view, pim_complete = _social_view(product)
         rows.append(
@@ -871,6 +945,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
                 image_url=product.image_url or "",
                 primary_collection=primary_ref,
                 primary_collection_name=primary_name,
+                is_active=product.is_active,
                 is_published=product.is_published,
                 is_sellable=product.is_sellable,
                 base_price_q=product.base_price_q,
@@ -899,7 +974,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
             ref=c.ref,
             name=c.name,
             is_smart=c.is_smart,
-            product_count=c.product_queryset().count(),
+            product_count=collection_products(c).filter(is_active=not archived).count(),
         )
         for c in Collection.objects.filter(is_active=True).order_by("sort_order", "name")
     )
@@ -908,7 +983,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
     # fora de venda não entra: classificar o que não se vende não informa o B.I.
     vocation_pending = tuple(
         VocationPendingProjection(sku=sku, name=name)
-        for sku, name in Product.objects.filter(is_sellable=True)
+        for sku, name in Product.objects.active().filter(is_sellable=True)
         .exclude(sku__in=tagged_skus)
         .order_by("name", "sku")
         .values_list("sku", "name")
@@ -935,4 +1010,7 @@ def build_catalog_matrix(collection_ref: str = "", *, user=None, query: str = ""
         vocation_pending=vocation_pending,
         total=total, page=current, page_size=size, has_next=start + len(products) < total,
         order=order_key, query=term,
+        date_from=date_from.isoformat() if date_from else "",
+        date_to=date_to.isoformat() if date_to else "",
+        all_product_count=Product.objects.filter(is_active=not archived).count(),
     )

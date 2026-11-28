@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from shopman.orderman.models import Directive
 
+pytestmark = [pytest.mark.django_db, pytest.mark.channels("web")]
+
 # ── helpers ──
 
 
@@ -219,6 +221,7 @@ class TestAvailabilityListingMembership:
             "is_paused": False,
             "is_planned": True,
             "breakdown": {},
+            "is_tracked": True,
             "positions": [{"position_ref": "vitrine"}],
         }
         catalog_adapter = MagicMock()
@@ -244,14 +247,23 @@ class TestAvailabilityListingMembership:
             allowed_positions=None,
             excluded_positions=None,
             # Gates de lote (C2) viajam com o scope; ausentes no scope, os
-            # defaults são permissivos (o canal é quem restringe).
-            expiry_margin_days=0,
+            # defaults são permissivos (o canal é quem restringe). A margem de
+            # validade é a do ALVO: canal sem margem (0) mais um dia, porque a
+            # data lida é futura e a sobra de hoje não lastreia encomenda
+            # (``policies/promise_expiry_margin``, #2693).
+            expiry_margin_days=1,
             include_nonconforming=True,
             allowed_quality_grade_refs=None,
         )
 
+    @pytest.mark.channels("ifood")
+    @patch("shopman.stockman.services.availability.decision_from_availability")
     @patch("shopman.shop.services.availability.get_adapter")
-    def test_check_reuses_loaded_availability_for_default_stock_adapter(self, mock_get_adapter):
+    def test_check_reuses_loaded_availability_for_stockman_decision(
+        self, mock_get_adapter, mock_decision
+    ):
+        from shopman.stockman.protocols.sku import PromiseDecision
+
         from shopman.shop.services import availability
 
         stock_adapter = SimpleNamespace(
@@ -271,17 +283,20 @@ class TestAvailabilityListingMembership:
                 "planned": Decimal("0"),
                 "positions": [{"position_ref": "vitrine"}],
             }),
-            promise_decision_from_availability=MagicMock(return_value=SimpleNamespace(
-                approved=True,
-                sku="PAO-001",
-                requested_qty=Decimal("1"),
-                available_qty=Decimal("5"),
-                reason_code=None,
-                is_paused=False,
-                is_planned=False,
-                target_date=None,
-            )),
-            get_promise_decision=MagicMock(),
+        )
+        mock_decision.return_value = PromiseDecision(
+            approved=True,
+            sku="PAO-001",
+            requested_qty=Decimal("1"),
+            available_qty=Decimal("5"),
+            available=Decimal("5"),
+            expected=Decimal("5"),
+            orderable_ceiling=Decimal("5"),
+            is_tracked=True,
+            reason_code=None,
+            is_paused=False,
+            is_planned=False,
+            target_date=None,
         )
         catalog_adapter = MagicMock()
         catalog_adapter.listing_exists.return_value = False
@@ -293,8 +308,7 @@ class TestAvailabilityListingMembership:
             result = availability.check("PAO-001", Decimal("1"), channel_ref="ifood")
 
         assert result["ok"] is True
-        stock_adapter.promise_decision_from_availability.assert_called_once()
-        stock_adapter.get_promise_decision.assert_not_called()
+        mock_decision.assert_called_once()
 
     @patch("shopman.shop.services.availability.get_adapter")
     @patch("shopman.shop.services.availability._sku_in_channel_listing", return_value=True)
@@ -326,7 +340,7 @@ class TestAvailabilityListingMembership:
         )
 
         assert result["ok"] is True
-        assert result["hold_id"] == "hold:cart-fast"
+        assert result["hold_ids"] == ["hold:cart-fast"]
         mock_check.assert_not_called()
         stock_adapter.create_hold.assert_called_once()
 
@@ -410,7 +424,7 @@ class TestStockService:
 
         # Adopted, not freshly created
         adapter.create_hold.assert_not_called()
-        mock_retag.assert_called_once_with("hold:42", order.ref)
+        mock_retag.assert_called_once_with("hold:42", order.ref, target_date=None)
         assert order.data["hold_ids"][0]["hold_id"] == "hold:42"
 
     @patch("shopman.shop.services.stock._retag_hold_for_order")
@@ -875,7 +889,8 @@ class TestNotificationService:
         assert directive.topic == "notification.send"
         assert directive.payload["order_ref"] == "ORD-001"
         assert directive.payload["template"] == "order_accepted"
-        assert directive.payload["requires_active_notification"] is False
+        # Crítico implica obrigatório (beta 06/11, W4).
+        assert directive.payload["requires_active_notification"] is True
         assert directive.dedupe_key == "notification.send:ORD-001:order_accepted"
 
     @pytest.mark.django_db
@@ -1382,7 +1397,26 @@ class TestNotificationSendHandler:
             resolved_at__isnull=True,
         )
         assert alerts.count() == 1
-        assert "'waitlist_available'" in alerts.get().message
+        # O operador lê o nome do aviso, nunca a chave (beta 06/11, W3).
+        assert '"Vaga da fila disponível"' in alerts.get().message
+        assert "waitlist_available" not in alerts.get().message
+
+    @pytest.mark.django_db
+    def test_escalation_names_the_generic_template_and_the_reason_in_portuguese(self):
+        """Beta 06/11 (W3): o sino dizia "O aviso 'order_ready' ... Último erro: no
+        active notification backend available"."""
+        from shopman.backstage.models import OperatorAlert
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        NotificationSendHandler()._escalate(
+            "ORD-W3", "order_ready", "no active notification backend available"
+        )
+
+        message = OperatorAlert.objects.get(type="notification_failed", order_ref="ORD-W3").message
+        assert '"Pedido pronto"' in message
+        assert "order_ready" not in message
+        assert "nenhum canal de envio está ligado" in message
+        assert "no active notification backend" not in message
 
     @pytest.mark.django_db
     def test_real_backend_failure_still_escalates(self):
@@ -1411,7 +1445,8 @@ class TestNotificationSendHandler:
             dedupe_key="notification.send:ORD-001:order_cancelled",
             payload={"order_ref": "ORD-001", "template": "order_cancelled",
                      "notification_delivery": {"status": "failed", "outcome": "not_applied"}},
-            attempts=5,
+            # Última tentativa da régua do handler (5 esperas + a primeira).
+            attempts=len(NotificationSendHandler.retry_delays_seconds) + 1,
         )
         with (
             patch(
@@ -2053,13 +2088,12 @@ class TestKDSService:
 
 class TestCheckoutService:
 
-    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
     @pytest.mark.django_db
     def test_process_applies_data_and_commits(
-        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+        self, mock_sessions, mock_cfg, mock_channel
     ):
         from shopman.orderman.services.commit import CommitResult
 
@@ -2067,25 +2101,28 @@ class TestCheckoutService:
         from shopman.shop.services.checkout import process
         mock_cfg.for_channel.return_value = ChannelConfig()
         mock_sessions.commit_session.return_value = CommitResult(order_ref="ORD-001", status="committed", total_q=1000, items_count=1)
+        mock_sessions.modify_session.return_value.items = [{"line_total_q": 1000}]
+        mock_sessions.modify_session.return_value.rev = 1
 
         result = process(
             session_key="sess-123",
             channel_ref="web",
             data={"fulfillment_type": "delivery", "customer": {"name": "João"}},
             idempotency_key="idem-123",
+            expected_total_q=1000,
+            expected_revision=0,
         )
 
         mock_sessions.modify_session.assert_called_once()
         mock_sessions.commit_session.assert_called_once()
         assert result.order_ref == "ORD-001"
 
-    @patch("shopman.shop.services.checkout.Session")
     @patch("shopman.shop.services.checkout.Channel")
     @patch("shopman.shop.services.checkout.ChannelConfig")
     @patch("shopman.shop.services.checkout.sessions")
     @pytest.mark.django_db
-    def test_process_skips_modify_with_no_data(
-        self, mock_sessions, mock_cfg, mock_channel, mock_session_model
+    def test_process_reprices_even_with_no_data(
+        self, mock_sessions, mock_cfg, mock_channel
     ):
         from shopman.orderman.services.commit import CommitResult
 
@@ -2093,15 +2130,19 @@ class TestCheckoutService:
         from shopman.shop.services.checkout import process
         mock_cfg.for_channel.return_value = ChannelConfig()
         mock_sessions.commit_session.return_value = CommitResult(order_ref="ORD-002", status="committed", total_q=500, items_count=1)
+        mock_sessions.modify_session.return_value.items = [{"line_total_q": 500}]
+        mock_sessions.modify_session.return_value.rev = 1
 
         process(
             session_key="sess-456",
             channel_ref="web",
             data={},
             idempotency_key="idem-456",
+            expected_total_q=500,
+            expected_revision=0,
         )
 
-        mock_sessions.modify_session.assert_not_called()
+        mock_sessions.modify_session.assert_called_once()
         mock_sessions.commit_session.assert_called_once()
 
 
@@ -2209,10 +2250,21 @@ class TestCustomerService:
 class TestAvailabilityBundles:
     """availability.check() expands bundles and validates each component."""
 
-    def _make_check_result(self, *, ok=True, available_qty=Decimal("100"), error_code=None, is_paused=False):
+    def _make_check_result(
+        self,
+        *,
+        ok=True,
+        available_qty=Decimal("100"),
+        orderable_ceiling=None,
+        is_tracked=True,
+        error_code=None,
+        is_paused=False,
+    ):
         return {
             "ok": ok,
             "available_qty": available_qty,
+            "orderable_ceiling": orderable_ceiling,
+            "is_tracked": is_tracked,
             "is_paused": is_paused,
             "is_planned": False,
             "breakdown": {},
@@ -2247,6 +2299,43 @@ class TestAvailabilityBundles:
         assert result["failed_sku"] is None
         assert result["available_qty"] == Decimal("25")
 
+    def test_mixed_bundle_preserves_tracked_component_limit(self):
+        """An untracked component neither erases nor fabricates tracked supply."""
+        from shopman.shop.services import availability
+
+        components = [
+            {"sku": "TRACKED", "qty": Decimal("2")},
+            {"sku": "UNTRACKED", "qty": Decimal("1")},
+        ]
+
+        def fake_check(sku, qty, *, channel_ref=None, target_date=None, as_component=False):
+            if sku == "TRACKED":
+                return self._make_check_result(
+                    available_qty=Decimal("8"),
+                    orderable_ceiling=Decimal("8"),
+                    is_tracked=True,
+                )
+            return self._make_check_result(
+                available_qty=None,
+                orderable_ceiling=None,
+                is_tracked=False,
+            )
+
+        with patch("shopman.shop.services.availability.check", side_effect=fake_check):
+            result = availability._check_bundle(
+                "MIXED", Decimal("1"), components,
+                channel_ref=None, target_date=None,
+            )
+
+        assert result["ok"] is True
+        assert result["available_qty"] == Decimal("4")
+        assert result["orderable_ceiling"] == Decimal("4")
+        assert result["is_tracked"] is True
+        assert result["_component_tracking"] == {
+            "TRACKED": True,
+            "UNTRACKED": False,
+        }
+
     def test_bundle_component_out_of_stock(self):
         """Bundle with 1 component insufficient stock → ok=False, failed_sku set."""
         from shopman.shop.services import availability
@@ -2262,7 +2351,7 @@ class TestAvailabilityBundles:
                 return {
                     "ok": False, "available_qty": Decimal("0"),
                     "is_paused": False, "is_planned": False,
-                    "breakdown": {}, "error_code": "insufficient_stock",
+                    "breakdown": {}, "error_code": "insufficient_supply",
                     "is_bundle": False, "failed_sku": None,
                 }
             return {
@@ -2278,7 +2367,7 @@ class TestAvailabilityBundles:
         assert result["ok"] is False
         assert result["is_bundle"] is True
         assert result["failed_sku"] == "FARINHA-001"
-        assert result["error_code"] == "insufficient_stock"
+        assert result["error_code"] == "insufficient_supply"
 
     def test_bundle_components_are_checked_as_components(self):
         """Componente é conferido com ``as_component=True``: fora da listagem
@@ -2422,7 +2511,7 @@ class TestAvailabilityReserveBundles:
         adapter = MagicMock()
         adapter.create_hold.side_effect = [
             {"success": True, "hold_id": "hold:1"},
-            {"success": False, "error_code": "insufficient_stock"},
+            {"success": False, "error_code": "insufficient_supply"},
         ]
         mock_get_adapter.return_value = adapter
         mock_substitutes.find.return_value = [{"sku": "ALT-001"}]
@@ -2434,9 +2523,39 @@ class TestAvailabilityReserveBundles:
         )
 
         assert result["ok"] is False
-        assert result["error_code"] == "insufficient_stock"
+        assert result["error_code"] == "insufficient_supply"
         # Rollback: released the hold already created
         adapter.release_holds.assert_called_once_with(["hold:1"])
+
+    @patch("shopman.shop.services.availability.substitutes")
+    @patch("shopman.shop.services.availability.get_adapter")
+    @patch("shopman.shop.services.availability._expand_if_bundle")
+    @patch("shopman.shop.services.availability.check")
+    def test_reserve_mixed_bundle_holds_only_tracked_components(
+        self, mock_check, mock_expand, mock_get_adapter, mock_substitutes
+    ):
+        from shopman.shop.services.availability import reserve
+
+        mock_check.return_value = {
+            **self._make_status_bundle_ok(),
+            "is_tracked": True,
+            "_component_tracking": {"TRACKED": True, "UNTRACKED": False},
+        }
+        mock_expand.return_value = [
+            {"sku": "TRACKED", "qty": Decimal("2")},
+            {"sku": "UNTRACKED", "qty": Decimal("1")},
+        ]
+        adapter = MagicMock()
+        adapter.create_hold.return_value = {"success": True, "hold_id": "hold:tracked"}
+        mock_get_adapter.return_value = adapter
+
+        result = reserve("MIXED", Decimal("1"), session_key="sess-abc")
+
+        assert result["ok"] is True
+        assert result["hold_ids"] == ["hold:tracked"]
+        assert result["untracked_skus"] == ["UNTRACKED"]
+        adapter.create_hold.assert_called_once()
+        assert adapter.create_hold.call_args.kwargs["sku"] == "TRACKED"
 
 
 # ══════════════════════════════════════════════════════════════════════

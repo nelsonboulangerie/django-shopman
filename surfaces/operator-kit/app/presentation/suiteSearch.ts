@@ -83,6 +83,25 @@ export function surfaceRefForKitApp(kitApp: string | undefined | null): string {
   return SURFACE_BY_KIT_APP[kitApp] ?? kitApp;
 }
 
+/**
+ * Para onde o resultado leva. No próprio app, o caminho, e não o endereço absoluto de
+ * `SHOPMAN_SURFACE_URLS`: quem entrou por outro hostname (o roteador de grupo, o
+ * `*.localhost` do dev) ia parar noutra origem, sem a sessão, em "Entre para operar"
+ * (beta 05/11, PROD-10). Outro app continua pelo endereço dele.
+ */
+export function suiteResultHref(result: Pick<SuiteSearchResult, "app" | "url">, appRef: string, baseURL = "/"): string {
+  if (!appRef || result.app !== appRef || !/^https?:\/\//.test(result.url)) return result.url;
+  let parsed: URL;
+  try {
+    parsed = new URL(result.url);
+  } catch {
+    return result.url;
+  }
+  const path = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  const base = baseURL.endsWith("/") ? baseURL : `${baseURL}/`;
+  return base !== "/" && path.startsWith(base) ? path.slice(base.length - 1) : path;
+}
+
 /** A cor do app de destino (o selo do resultado), a mesma do ícone do PWA dele. */
 export function suiteResultColor(app: string): string {
   const kitApp = (KIT_APP_BY_SURFACE[app] ?? app) as OperatorAppRef;

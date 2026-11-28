@@ -34,5 +34,20 @@
       "Bash(gh pr checks:*)",
       "Bash(gh run view:*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/preflight_merge_guard.py\"; if [ -r \"$f\" ]; then python3 \"$f\"; else exit 0; fi",
+            "timeout": 30,
+            "statusMessage": "gh pr merge: conferindo o preflight do HEAD"
+          }
+        ]
+      }
+    ]
   }
 }

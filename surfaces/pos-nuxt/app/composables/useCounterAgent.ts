@@ -93,7 +93,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * sobra o caso de o terminal não ter mandado nada.
    */
   const unavailableReason = computed(
-    () => config.value?.reason || "Gaveta não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+    () => config.value?.reason || "Gaveta não configurada neste balcão. Chame o gerente.",
   );
   /**
    * A frase da IMPRESSORA. Nunca a da gaveta: quem tem bobina e abre a gaveta
@@ -101,7 +101,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * errado — o defeito nem existia.
    */
   const printUnavailableReason = computed(
-    () => printer.value?.reason || "Impressora não configurada neste terminal. Configure em Terminais do PDV, no gestor.",
+    () => printer.value?.reason || "Impressora não configurada neste balcão. Chame o gerente.",
   );
   /** O dono quer que a gaveta abra sozinha ao fechar venda em dinheiro? */
   const opensOnCashSale = computed(() => canKick.value && Boolean(config.value?.open_on_cash_sale));
@@ -133,14 +133,20 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * abriu e ninguém avisou é o operador procurando defeito na chave enquanto a
    * fila cresce.
    */
-  async function kick(reason: string): Promise<boolean> {
+  /**
+   * `onFailure` leva a falha para quem tem um diálogo aberto (a gaveta sem venda,
+   * na antessala): ali o toast nasceria atrás do véu (#2726). Sem ele, toast.
+   */
+  async function kick(reason: string, opts: { onFailure?: (detail: string) => void } = {}): Promise<boolean> {
     if (!import.meta.client || !canKick.value) return false;
     try {
       const payload = await callAgent("/kick", { reason, pulse: config.value?.pulse });
       if (payload?.ok === false) throw new Error(payload?.error || "O agente recusou o comando.");
       return true;
     } catch (error) {
-      toast.error(`A gaveta não abriu: ${messageOf(error)}`);
+      const detail = messageOf(error);
+      if (opts.onFailure) opts.onFailure(/[.!?]$/.test(detail) ? detail : `${detail}.`);
+      else toast.error(`A gaveta não abriu: ${detail}`);
       return false;
     }
   }

@@ -378,6 +378,7 @@ class AnnouncementNotifyHandler:
             wave,
             sku=sku,
             available_wave_keys=payload.get("wave_keys"),
+            announcement=announcement,
         )
         only_refs = payload.get("only_customer_refs")
         if isinstance(only_refs, list):

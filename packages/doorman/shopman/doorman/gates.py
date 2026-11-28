@@ -10,6 +10,7 @@ G12: AccessLinkRateLimit - Rate limiting for access link requests
 G13: CodeFailureLimit - Wrong codes per target across codes (resends don't reset it)
 """
 
+import math
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -172,8 +173,8 @@ class Gates:
     def ip_rate_limit(
         cls,
         ip_address: str,
-        max_requests: int = 20,
-        window_minutes: int = 60,
+        max_requests: int,
+        window_minutes: int,
     ) -> GateResult:
         """
         G10: Rate limiting by IP address.
@@ -233,13 +234,21 @@ class Gates:
             .first()
         )
 
+        # A code killed by wrong guesses no longer works: the person has nothing
+        # to type and must ask for a new one now. Holding them for the rest of
+        # the cooldown only makes them wait for nothing. Abuse stays bounded by
+        # G13, which sums wrong guesses across codes.
+        if last_code and last_code.attempts >= last_code.max_attempts:
+            return GateResult(True, "G11_CodeCooldown", "Last code exhausted by attempts")
+
         if last_code:
             elapsed = (timezone.now() - last_code.created_at).total_seconds()
             if elapsed < cooldown_seconds:
-                remaining = int(cooldown_seconds - elapsed)
+                remaining = max(1, math.ceil(cooldown_seconds - elapsed))
                 raise GateError(
                     "G11_CodeCooldown",
                     f"Please wait {remaining}s before requesting a new code.",
+                    retry_after=remaining,
                 )
 
         return GateResult(True, "G11_CodeCooldown")
@@ -317,9 +326,12 @@ class Gates:
         """
         window_start = timezone.now() - timedelta(minutes=window_minutes)
 
+        import hashlib
+
+        target_digest = hashlib.sha256(email.encode("utf-8")).hexdigest()
         count = AccessLink.objects.filter(
             metadata__method="access_link",
-            metadata__email=email,
+            metadata__target_digest=target_digest,
             created_at__gte=window_start,
         ).count()
 

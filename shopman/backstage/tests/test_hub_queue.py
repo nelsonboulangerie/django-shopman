@@ -10,7 +10,7 @@ O que se trava aqui:
 - a fila inteira vira só ``total_count`` no JSON (os itens vão na linha de cada app);
 - uma fonte que quebra não derruba a Central;
 - a linha de estado de cada bloco concorda com a fila;
-- cada app carrega a sua pendência mais urgente (``next_item``), tirada da fila inteira.
+- nenhum item viaja no JSON da Central: a linha do app é um número só (#2134, #2362).
 """
 
 from __future__ import annotations
@@ -33,6 +33,15 @@ from shopman.backstage.projections import hub, hub_queue
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.fixture(autouse=True)
+def _canal_web(db):
+    """O canal dos pedidos destes testes, materializado como no ar: a Central lê a
+    configuração dele para saber se o pedido novo só espera o pagamento (DEV-2026-091)."""
+    from shopman.shop.models import Channel
+
+    Channel.objects.update_or_create(ref="web", defaults={"name": "Loja online", "config": {}})
 
 SURFACE_URLS = {
     "pos": "https://pdv.example.test/",
@@ -205,6 +214,32 @@ def test_superuser_ve_o_item_exato_de_cada_fila_com_o_gesto_do_lugar_certo(clien
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_o_numero_do_icone_conta_so_o_que_espera_um_gesto_de_quem_opera(client):
+    """O critério do número da Central (dono, 04/11/2026): o que está parado esperando um
+    gesto de quem opera. A encomenda de retirada espera o cliente e fica fora, mesmo com a
+    frase "para retirar na próxima hora" no bloco do PDV."""
+    _order_to_accept()
+    _late_ticket()
+    _late_work_order()
+    _pending_announcement()
+    _preorder_due_now()
+    admin = User.objects.create_superuser("hub-q-numero", "a@b.c", "pw")
+
+    tiles = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}
+
+    assert tiles["pos"]["status_attention"] == "1 para retirar na próxima hora"
+    assert tiles["pos"]["attention_count"] == 0
+    assert tiles["gestor"]["attention_count"] == 1
+    assert tiles["kds"]["attention_count"] == 1
+    assert tiles["production"]["attention_count"] == 1
+    assert tiles["marketing"]["attention_count"] == 1
+    # Movimento e informação nunca viram número.
+    for ref in ("purchase", "bi", "loja"):
+        if ref in tiles:
+            assert tiles[ref]["attention_count"] == 0
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_a_ordem_e_por_urgencia_entre_apps(client):
     """O pedido 15 minutos além da meta da estação vem antes do pedido novo de 1 minuto."""
     _order_to_accept(minutes_ago=1)
@@ -298,13 +333,13 @@ def test_app_sem_url_nao_gera_item(client):
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     alert = OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
-        message="Cliente pediu para cancelar o pedido WEB-1.",
+        message="O cliente cancelou o pedido WEB-1 antes do preparo.",
         order_ref="WEB-1",
     )
     OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
         message="Já visto.",
         order_ref="WEB-2",
@@ -318,17 +353,21 @@ def test_aviso_nao_visto_de_pedido_leva_ao_pedido_no_gestor(client):
     assert len(alerts) == 1
     assert alerts[0]["key"] == f"gestor:alert:{alert.pk}"
     assert alerts[0]["url"] == "https://gestor.example.test/WEB-1"
-    assert alerts[0]["title"] == "Cliente solicitou cancelamento"
+    assert alerts[0]["title"] == "Cliente cancelou antes do preparo"
     gestor_tile = next(tile for tile in hub["tiles"] if tile["ref"] == "gestor")
     assert "1 aviso" in gestor_tile["status_attention"]
+    # O aviso soma no número do ícone com o que mais o bloco pede (as partes da frase).
+    assert gestor_tile["attention_count"] == sum(
+        int(part.split()[0]) for part in gestor_tile["status_attention"].split(" · ")
+    )
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_aviso_de_pedido_nao_chega_a_quem_so_opera_a_producao(client):
     OperatorAlert.objects.create(
-        type="customer_cancellation_requested",
+        type="customer_self_cancelled",
         severity="error",
-        message="Cliente pediu para cancelar.",
+        message="O cliente cancelou o pedido WEB-1 antes do preparo.",
         order_ref="WEB-1",
     )
     padeiro = _operator("hub-q-padeiro", ("backstage", "operate_production"))
@@ -342,7 +381,7 @@ def test_aviso_de_pedido_nao_chega_a_quem_so_opera_a_producao(client):
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
 def test_a_fila_inteira_vira_so_a_contagem_no_json(client):
     """A Central não lista a fila (dono, 09/10/2026: "Precisa de você" saiu): o JSON leva
-    só quantas pendências há, e o item de cada app vai em ``next_item``."""
+    só quantas pendências há, e a linha de cada app não leva item (#2362)."""
     for index in range(8):
         _order_to_accept(f"WEB-20261003-P{index:02d}")
     admin = User.objects.create_superuser("hub-q-mais", "a@b.c", "pw")
@@ -353,25 +392,6 @@ def test_a_fila_inteira_vira_so_a_contagem_no_json(client):
     assert queue["total_count"] == 8 == len(_queue_items(admin))
 
 
-@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
-def test_cada_app_carrega_a_sua_pendencia_mais_urgente_mesmo_fora_do_foco(client):
-    """A linha do app na Central traz a pendência mais urgente DELE (dono, 09/10/2026:
-    "Precisa de você" saiu). Ela vem da fila inteira: a Cozinha com o único item atrás de
-    seis pedidos mais urgentes ainda mostra o seu."""
-    for index in range(6):
-        _order_to_accept(f"WEB-20261003-U{index:02d}", minutes_ago=30 + index)
-    _late_ticket(minutes_ago=11)  # 1 min além da meta: atrás dos pedidos de 30+ min
-    admin = User.objects.create_superuser("hub-q-next", "a@b.c", "pw")
-
-    hub = _hub(client, admin)
-    tiles = {tile["ref"]: tile for tile in hub["tiles"]}
-
-    assert [item["app"] for item in _queue_items(admin)][:6] == ["gestor"] * 6
-    assert tiles["kds"]["next_item"]["kind"] == "ticket_late"
-    assert tiles["kds"]["next_item"]["url"] == "https://kds.example.test/forno"
-    # A mais urgente do Gestor é o pedido que espera há mais tempo.
-    assert tiles["gestor"]["next_item"]["url"].endswith("WEB-20261003-U05")
-    assert tiles["bi"]["next_item"] is None
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
@@ -422,9 +442,42 @@ def test_a_linha_de_estado_do_bloco_concorda_com_a_fila(client):
     # Sem pedido de compra: o estado calmo, nunca um número inventado (todo bloco tem estado).
     assert tiles["purchase"]["status_attention"] == ""
     assert tiles["purchase"]["status_summary"] == "Nenhum pedido em andamento"
+    # O número no canto do ícone (Central) conta o mesmo que a frase de cada bloco.
+    assert {ref: tiles[ref]["attention_count"] for ref in ("gestor", "kds", "production", "purchase")} == {
+        "gestor": 1,
+        "kds": 1,
+        "production": 1,
+        "purchase": 0,
+    }
 
 
 @override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_encomenda_de_hoje_antes_da_hora_da_cozinha_nao_conta_como_ativa(client, monkeypatch):
+    """A Central usa a régua do quadro do Gestor: quem espera a hora da Cozinha não é trabalho do dia."""
+    from shopman.shop.lifecycle import KITCHEN_RELEASED_AT_KEY
+
+    today = timezone.localdate()
+    morning = timezone.make_aware(datetime.combine(today, time(10, 0)))
+    monkeypatch.setattr(timezone, "now", lambda: morning)
+    order = Order.objects.create(
+        ref="WEB-20261118-ENC17", channel_ref="web", status="accepted", total_q=3600,
+        data={
+            "customer": {"name": "Café Parisiense"}, "fulfillment_type": "pickup", "is_preorder": True,
+            "delivery_date": today.isoformat(), "delivery_time_slot": "17:00-17:30",
+        },
+    )
+    admin = User.objects.create_superuser("hub-q-espera", "a@b.c", "pw")
+
+    tile = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}["gestor"]
+    assert tile["status_summary"] == "0 ativos"
+
+    # A hora chegou (o despertador carimbou a chegada à Cozinha): agora é trabalho do dia.
+    order.data = {**order.data, KITCHEN_RELEASED_AT_KEY: morning.isoformat()}
+    order.save(update_fields=["data", "updated_at"])
+    tile = {tile["ref"]: tile for tile in _hub(client, admin)["tiles"]}["gestor"]
+    assert tile["status_summary"] == "1 ativo"
+
+
 def test_staff_sem_app_recebe_fila_vazia(client):
     _order_to_accept()
     plain = _operator("hub-q-plain")
@@ -451,3 +504,31 @@ def test_aviso_de_lote_nunca_vira_abrir_o_pedido_no_gestor(client):
     items = _queue_items(padeiro)
     assert [item["app"] for item in items] == ["production"]
     assert items[0]["url"].startswith("https://prod.example.test/plan?q=WO-001")
+
+
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_encomenda_nova_espera_aceite_na_central_pelo_prazo_dela():
+    """A encomenda nova tem 60 min de aceite (dono, 09/11): entra na fila da Central
+    como pedido para aceitar, e aos 10 min ainda não estourou a meta."""
+    from shopman.orderman.models import Directive
+
+    order = _order_to_accept("WEB-20261003-ENC2", minutes_ago=10)
+    order.data["delivery_date"] = (timezone.localdate() + timedelta(days=2)).isoformat()
+    order.save(update_fields=["data"])
+    started = timezone.now() - timedelta(minutes=10)
+    Directive.objects.create(
+        topic="confirmation.timeout",
+        status="queued",
+        payload={
+            "order_ref": order.ref,
+            "action": "cancel",
+            "expires_at": (started + timedelta(minutes=60)).isoformat(),
+            "timeout_minutes": 60,
+        },
+    )
+    admin = User.objects.create_superuser("hub-q-enc", "e@b.c", "pw")
+
+    item = next(item for item in _queue_items(admin) if item["kind"] == "order_to_accept")
+    assert item["title"] == "Pedido ENC2 para aceitar"
+    assert item["attention"] is False
+    assert item["slack_seconds"] > 30 * 60

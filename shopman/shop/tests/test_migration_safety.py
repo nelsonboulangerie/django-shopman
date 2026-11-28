@@ -12,6 +12,7 @@ no lugar do ponto de restauração não conta como declaração.
 
 from __future__ import annotations
 
+import datetime
 import importlib.util
 import json
 from pathlib import Path
@@ -124,6 +125,73 @@ def test_operacoes_destrutivas_sao_reconhecidas():
     assert migration_safety.destructive_operation_names(migration) == ["AlterField", "RemoveField"]
 
 
+def _state_with_order():
+    from django.db.migrations.state import ModelState, ProjectState
+
+    state = ProjectState()
+    state.add_model(
+        ModelState(
+            "shop",
+            "order",
+            [
+                ("id", models.AutoField(primary_key=True)),
+                ("status", models.CharField(max_length=16, choices=[("a", "A")], help_text="antes")),
+                ("total_q", models.IntegerField(default=0)),
+            ],
+        )
+    )
+    return state
+
+
+def test_alterfield_so_de_choices_help_text_e_verbose_name_nao_e_destrutivo():
+    """Laudo O1: mudar o rótulo de um campo não gera SQL e não segura o deploy."""
+    migration = _migration(
+        migrations.AlterField(
+            "order",
+            "status",
+            models.CharField(
+                max_length=16,
+                choices=[("a", "A"), ("b", "B")],
+                help_text="depois",
+                verbose_name="situação",
+            ),
+        ),
+    )
+    assert migration_safety.destructive_operation_names(migration, _state_with_order()) == []
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        models.CharField(max_length=8, choices=[("a", "A")], help_text="antes"),
+        models.CharField(max_length=16, null=True, choices=[("a", "A")], help_text="antes"),
+        models.TextField(),
+        models.CharField(max_length=16, db_column="situacao"),
+    ],
+    ids=["max_length", "null", "tipo", "db_column"],
+)
+def test_alterfield_que_muda_a_coluna_e_destrutivo(field):
+    migration = _migration(migrations.AlterField("order", "status", field))
+    assert migration_safety.destructive_operation_names(migration, _state_with_order()) == ["AlterField"]
+
+
+def test_alterfield_sem_estado_de_antes_conta_como_destrutivo():
+    """Campo que o estado não conhece: na dúvida, falha fechada."""
+    migration = _migration(migrations.AlterField("order", "inexistente", models.IntegerField()))
+    assert migration_safety.destructive_operation_names(migration, _state_with_order()) == ["AlterField"]
+
+
+def test_estado_avanca_operacao_a_operacao():
+    """AddField seguido de AlterField de rótulo na mesma migração: nada destrutivo."""
+    migration = _migration(
+        migrations.AddField("order", "note", models.TextField(blank=True, default="")),
+        migrations.AlterField("order", "note", models.TextField(blank=True, default="", help_text="nota")),
+    )
+    state = _state_with_order()
+    assert migration_safety.destructive_operation_names(migration, state) == []
+    assert "note" in state.models["shop", "order"].fields
+
+
 def test_migracao_aditiva_nao_tem_operacao_destrutiva():
     migration = _migration(
         migrations.AddField("order", "observation", models.TextField(blank=True, default="")),
@@ -161,6 +229,62 @@ def test_armada_destrutiva_com_backup_declarado_passa():
     report = _report(backup_ref="PITR 2026-09-23T14:05:00Z")
     assert report.blocking is False
     assert "PITR 2026-09-23T14:05:00Z" in "\n".join(migration_safety.human_lines(report))
+
+
+# ---------------------------------------------------------------------------
+# A declaração vence (laudo O2)
+# ---------------------------------------------------------------------------
+
+_NOW = datetime.datetime(2026, 10, 23, 12, 0, tzinfo=datetime.UTC)
+
+
+def test_declaracao_recente_vale():
+    assert migration_safety.backup_ref_problem("PITR 2026-10-23T08:00:00Z, cluster", now=_NOW) == ""
+
+
+def test_declaracao_com_offset_vale():
+    assert migration_safety.backup_ref_problem("PITR 2026-10-23T06:00:00-03:00", now=_NOW) == ""
+
+
+def test_declaracao_vencida_volta_a_armar():
+    problem = migration_safety.backup_ref_problem("PITR 2026-10-21T08:00:00Z", now=_NOW)
+    assert "vencida" in problem
+    assert migration_safety.BACKUP_REF_MAX_AGE_ENV in problem
+
+
+def test_validade_configuravel(monkeypatch):
+    monkeypatch.setenv(migration_safety.BACKUP_REF_MAX_AGE_ENV, "2")
+    assert "vencida" in migration_safety.backup_ref_problem("PITR 2026-10-23T08:00:00Z", now=_NOW)
+
+
+@pytest.mark.parametrize(
+    "ref",
+    ["backup de ontem", "PITR 2026-10-23", "PITR 2026-10-23T08:00:00 (sem fuso)"],
+)
+def test_declaracao_sem_instante_com_fuso_nao_vale(ref):
+    assert "ISO 8601" in migration_safety.backup_ref_problem(ref, now=_NOW)
+
+
+def test_instante_no_futuro_nao_vale():
+    """Data no futuro seria um jeito de a declaração nunca vencer."""
+    problem = migration_safety.backup_ref_problem("PITR 2030-01-01T00:00:00Z", now=_NOW)
+    assert "futuro" in problem
+
+
+def test_armada_destrutiva_com_backup_vencido_recusa_e_diz_o_que_fazer():
+    report = _report(backup_ref="PITR 2026-09-23T14:05:00Z", backup_ref_problem="declaração vencida: x")
+    assert report.blocking is True
+    texto = "\n".join(migration_safety.human_lines(report))
+    assert "NÃO vale" in texto
+    assert "anote um ponto novo" in texto
+    assert report.as_dict()["backup_ref_valid"] is False
+
+
+def test_build_report_mede_a_validade(monkeypatch):
+    monkeypatch.setenv(migration_safety.BACKUP_REF_ENV, "PITR 2020-01-01T00:00:00Z")
+    monkeypatch.setattr(migration_safety, "collect_pending", lambda _c: [])
+    report = migration_safety.build_report(connection=object())
+    assert "vencida" in report.backup_ref_problem
 
 
 def test_armada_so_com_migracao_aditiva_passa():

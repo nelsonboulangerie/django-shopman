@@ -27,17 +27,33 @@
 >   `pedido_saiu_entrega`, `pedido_entregue` (⚠️ reclassificado como Marketing),
 >   `nota_fiscal_disponivel`, `pedido_cancelado`, `pedido_nao_confirmado`,
 >   `pedido_agendado_lembrete`, `pedido_nova_data`, `pedido_atualizado`, `pagamento_solicitado`.
+> - **Aprovado depois desta leitura (1):** `pedido_encomenda_confirmada`, aprovado pela
+>   Meta em 20/10/2026 (Utility), flow `content20261020201824_274658`, ligado no
+>   `MANYCHAT_FLOW_MAP` como `order_accepted_preorder`.
 > - **Aprovados fora deste pacote (5):** `AutoReply`, `LateResponse`, `OrderConfirmation`,
 >   `product_available_alert`, `Unsold Bread` (os dois últimos Marketing).
 > - **Faltam submeter, texto já revisado pelo dono em 25/09 (11):** `pagamento_confirmado`,
 >   `pedido_em_preparo`, `link_pagamento_enviado`, `pagamento_lembrete`, ~~`pagamento_expirado`~~ (aposentado 14/10, ver abaixo),
->   `pagamento_falhou`, `fila_vaga_disponivel`, `fila_vaga_liberada`, `produto_chegou`,
->   `reembolso_processado`, `pontos_fidelidade`.
-> - **Fora do go-live (Marketing) ou sem revisão de voz:** `saiu_do_forno`, `anuncio_novidade`,
+>   `pagamento_falhou`, ~~`fila_vaga_disponivel`~~, ~~`fila_vaga_liberada`~~ (aprovados, ver
+>   a leitura de 20/11 abaixo), `produto_chegou`, `reembolso_processado`, `pontos_fidelidade`.
+> - **Aprovados pela Meta em 21/11/2026 (WP-G07, 3, Utility, pt_BR):** `pedido_atrasado`,
+>   `pedido_item_em_falta`, `pedido_remarcar`, submetidos em 20/11 com o texto aprovado pelo
+>   dono. Os flows foram criados e publicados no ManyChat em 21/11. Ver a seção "Os três
+>   avisos do Avisar o cliente".
+> - **Fora do go-live (Marketing) ou sem revisão de voz:** `ficou_pronto`, `anuncio_novidade`,
 >   `pedido_compra` (fornecedor).
 >
 > No ManyChat a variável do corpo é um campo personalizado: `customer_name` é `cuf_14859629`,
 > `order_ref_short` é `cuf_15003507`, `status_note` é `cuf_15003511` (lidos nos aprovados).
+
+> ## Leitura do ManyChat em 20/11/2026 (pela coordenação)
+>
+> - **Aprovados:** `fila_vaga_disponivel`, `fila_vaga_disponivel_v2` e `fila_vaga_liberada`.
+>   Este documento os dava como não submetidos; estavam aprovados.
+> - **Recusado:** o `OTP`, como em 01/10. Não faz falta: o código vai por SMS (ver "OTP").
+> - **Em revisão:** `pedido_atrasado`, `pedido_item_em_falta`, `pedido_remarcar`,
+>   submetidos em 20/11 por volta das 16h. Aprovados em 21/11 (leitura da coordenação no
+>   ManyChat: "Aprovado", Utility, PT-BR).
 
 > Textos pt-BR dos templates transacionais da Nelson, **estruturados para maximizar aprovação**
 > da Meta. Não é "burlar regra" — é **conformar ao formato** que a Meta exige.
@@ -80,19 +96,28 @@ acompanha. **Todo template novo nasce com `www.`.**
 (`storefront_links.path_order_tracking`). Acompanhar e pagar são a MESMA tela: o Pix e o
 cartão vivem inline no acompanhamento (PAYMENT-TRACKING-MERGE). Não há tela de pagamento.
 
-**3. O magic link NÃO pode ser o botão — e não é escolha, é impossibilidade.**
-No caminho de flow, as variáveis do template aprovado saem dos **campos personalizados** do
-assinante (`_push_custom_fields`). E `notification_manychat._safe_field_value` recusa, por
-construção, gravar link de acesso pessoal como campo personalizado: o token passaria a viver
-em texto claro no perfil do cliente dentro de uma ferramenta SaaS de marketing, legível por
-qualquer pessoa com acesso à conta e utilizável enquanto o cliente não clicasse.
+**3. O aviso de pedido não leva credencial de login nem de conta.** Desde a decisão D5 do
+dono (23/11/2026, OC-01), em todo canal: mensagem se encaminha, e um link que entrasse na
+conta entregaria a conta a quem recebesse o encaminhamento.
 
-> ⚠️ Essa recusa nascera olhando só o `action_url` (campanha/estoque) e **não via** os três
-> links que todo aviso de pedido carrega — `tracking_url`, `payment_url`, `reorder_url` saíam
-> com o token inteiro. Era inerte apenas porque nenhum flow estava mapeado; **mapear o
-> primeiro flow é que ligava o vazamento**. Corrigido em 02/09: a recusa passou a ser do
-> VALOR (qualquer chave com `?t=`), com gêmea pública `<nome>_public` informada pelo emissor.
-> Guardado por `test_the_order_links_do_not_leak_either`.
+**Atualização de 25/11/2026 (DEV-2026-093).** O link comum (`/pedido/{ref}`) abria no
+navegador embutido do WhatsApp, que não tem a sessão do site, e o cliente que acabara de
+entrar pelo WhatsApp tinha de entrar de novo. O dono: "Tem que ter uma forma de resolver
+isso!!!". A Coordenação decidiu por ele: o aviso leva a **capacidade do pedido**,
+`/pedido/{ref}~{selo}` (`shop/services/order_view_link.py`), um HMAC do `SECRET_KEY` sobre o
+ref e a revisão do link (`Order.data.view_link_rev`). Ela abre AQUELE pedido e nada mais: não
+loga, não abre conta, sacola, histórico nem tempo real; paga, fala com a loja e confirma o
+recebimento; cancelar, avaliar e pedir de novo pedem a entrada; o endereço sai abreviado.
+Vale com o pedido aberto e mais 7 dias depois de concluído ou cancelado, e revogar é trocar a
+revisão. `tracking_url` e `payment_url` levam o link com o selo; `reorder_url` é
+`/conta/pedidos`, sem nada.
+
+A trava do ManyChat continua por desenho: `notification_manychat._safe_field_value` recusa
+gravar link de acesso pessoal (qualquer valor com `?t=`, como `/a?t=`) como campo
+personalizado; a capacidade do pedido não é link de acesso e passa, porque o
+token passaria a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
+marketing. Hoje só o `action_url` de campanha carrega link pessoal, e a gêmea pública
+`<nome>_public` informada pelo emissor é o que sai no lugar dele.
 
 ### Decisão: o botão leva a REF, não o link
 
@@ -103,17 +128,23 @@ https://www.nelsonboulangerie.com.br/pedido/{{1}}
 ```
 
 A variável `{{1}}` do botão mapeia para o campo personalizado **`order_ref`** — não para
-`tracking_url`. Assim nenhuma URL precisa virar campo personalizado, e o token não tem por
-onde vazar nem por acidente.
+`tracking_url`. Assim nenhuma URL precisa virar campo personalizado.
 
-Quem clica sem sessão no aparelho **não bate num 404**: `/pedido/{ref}` é fechado por sessão
-(`customer_orders.request_can_access_order`), e a loja responde com "Ele pode estar em outra
-conta ou em outro aparelho — entre com seu telefone" e um botão **Entrar** que volta para o
-mesmo pedido (`storefront-nuxt/app/presentation/orderAccess.ts`). O link é honesto e se
-recupera sozinho. O preço é um toque a mais; o troco é nenhum segredo fora de casa.
+**Desde 25/11/2026 (DEV-2026-093) o VALOR que o adapter grava em `order_ref` é
+`{ref}~{selo}`** (a chave `order_link_ref` do contexto, ver
+`notification_manychat._shareable_context`). O prefixo do botão aprovado na Meta não muda,
+então **nenhum modelo precisa ser re-submetido**: `https://www.nelsonboulangerie.com.br/pedido/{{1}}`
+vira `/pedido/WEB-261125-A17~<selo>`, e a página troca o selo pelo acesso àquele pedido
+(`POST /api/v1/tracking/{ref}/access/`) e limpa a URL. O campo `order_ref` só vai em botão,
+nunca no corpo, então nenhum texto muda.
 
-Os canais que interpolam o texto na hora — SMS e e-mail — **seguem recebendo o magic link**.
-Eles não gravam nada em lugar nenhum.
+Quem abre `/pedido/{ref}` SEM selo e sem sessão continua vendo "Ele pode estar em outra
+conta ou em outro aparelho, entre com seu telefone" e o botão **Entrar** que volta para o
+mesmo pedido (`storefront-nuxt/app/presentation/orderAccess.ts`).
+
+SMS e e-mail levam o mesmo link com o selo. Nenhum canal recebe link de entrada (`/a?t=`)
+em aviso de pedido desde a OC-01; a trava é
+`storefront/tests/security/test_aviso_de_pedido_sem_credencial.py`.
 
 ---
 
@@ -139,7 +170,7 @@ Eles não gravam nada em lugar nenhum.
 9. **Nada auto-suprimível atravessa.** A Meta não aceita parâmetro vazio, então todo pedaço
    que o código apaga sozinho quando não há dado **não pode virar variável**: `{eta_note}`,
    `{courier_tracking_suffix}`, `{reserve_note}`, `{deadline_note}`, `{pix_suffix}`,
-   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`. Eles continuam saindo inteiros
+   `{reason_note}`, `{tracking_suffix}`, `{reorder_suffix}`, `{commitment_suffix}`, `{cancellation_reason_suffix}`. Eles continuam saindo inteiros
    por SMS e e-mail, que interpolam na hora. No template, ou a informação é fixa no texto,
    ou fica de fora.
 
@@ -183,7 +214,8 @@ Eles não gravam nada em lugar nenhum.
 
 O ManyChat **não tem a categoria Authentication** (só Marketing e Utility), então WhatsApp-OTP
 é impossível por ali. **O código de verificação vai por SMS (Comtele)** — decidido, não é
-pergunta aberta. Não há template de OTP a submeter.
+pergunta aberta. Não há template de OTP a submeter. O modelo `OTP` que existe no ManyChat
+está **Recusado** pela Meta (lido em 01/10 e de novo em 20/11/2026) e não faz falta.
 
 ---
 
@@ -235,9 +267,40 @@ Formato: **Nome · Corpo · Variáveis · Botão**. Idioma `pt_BR`, categoria **
 - Vars: `{{1}}`=`A47` (`order_ref_short`) · `{{2}}`=`R$ 38,00` (`total`)
 - Botão URL: `Acompanhar pedido` → `/pedido/{{1}}` (`order_ref`)
 
+> ℹ️ **Só o pedido do dia sai por este modelo** quando a variante da encomenda está
+> ligada. O texto do SMS, do e-mail e do WhatsApp dentro da janela diz "confirmado para
+> retirada amanhã, a partir das 9h" (`{commitment_suffix}`, auto-suprimível, regra 9); este
+> modelo não tem a data. A encomenda fora da janela sai pelo
+> `pedido_encomenda_confirmada` (abaixo), ligado desde 20/10/2026; este modelo fica só
+> com o pedido do dia.
+>
 > ⚠️ **Sem cumprimento e sem `customer_name`** — a numeração andou, `{{1}}` é o código do
 > pedido. Este texto passou por três versões em dois dias (24/09 sem agradecimento, 25/09
 > com "Oi, Ana!" e "Obrigado por nos prestigiar", e a revisão final); esta é a que vale.
+
+### `pedido_encomenda_confirmada` — evento `order_accepted_preorder` 🆕 · ✅ aprovado pela Meta em 20/10/2026 (Utility), flow `content20261020201824_274658`
+Variante do `order_accepted` com a data combinada. Não é evento emitido: o adapter
+(`notification_manychat._preorder_accepted_variant`) a escolhe quando o pedido é
+encomenda (`is_preorder` ou data depois de hoje, a mesma condição do texto livre) e o
+flow dela está ligado (está, desde 20/10/2026). Pedido do dia segue no `pedido_confirmado`.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Sua encomenda {{1}} está confirmada para {{2}}. O total é {{3}}. Vamos preparar com todo carinho. ✨`
+- Vars: `{{1}}`=`A47` (`order_ref_short`, `cuf_15003507`) · `{{2}}`=`retirada amanhã, a partir das 9h` (`status_note`, `cuf_15003511`, SEM ponto final) · `{{3}}`=`R$ 38,00` (`order_total_display`, `cuf_15003510`, o antigo `total`)
+- Botão URL: `Acompanhar pedido` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`, `cuf_15003508`)
+
+> ℹ️ **`{{2}}` sai da mesma frase do texto livre.** `services/notification._commitment_note`
+> monta "retirada amanhã, a partir das 9h" / "entrega no sábado, 24/10, …"; o texto livre
+> usa a mesma frase com " para " na frente (`_commitment_suffix`). Uma fonte só. No pedido
+> do dia a frase é vazia, e é isso que mantém o `pedido_confirmado` (a Meta não aceita
+> variável vazia, regra 9).
+>
+> ✅ **Ligado em 20/10/2026.** O flow "Aviso: encomenda confirmada (order_accepted_preorder)"
+> envia o modelo aprovado, e o namespace dele está em
+> `MANYCHAT_FLOW_MAP["order_accepted_preorder"]` (`config/settings.py`), como
+> `pedido_nova_data` e `pedido_atualizado`. Sem flow para a variante (por exemplo, se a
+> chave sair do mapa), a encomenda volta a sair pelo `pedido_confirmado`, sem a data, e o
+> adapter registra `manychat.preorder_accepted_flow_pending` (info). O
+> `NotificationTemplate` do evento `order_accepted_preorder`, se existir, tem precedência.
 
 ### `pedido_em_preparo` — evento `order_preparing`
 - Corpo: `Estamos preparando seu pedido {{1}} com todo carinho. {{2}}. Qualquer dúvida, estamos à disposição.`
@@ -377,6 +440,67 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 - Botão URL: `Acompanhar pedido`
 - 11 palavras literais para 3 variáveis.
 
+### Os três avisos do "Avisar o cliente" (WP-G07) · texto aprovado pelo dono em 20/11/2026 · ✅ **APROVADOS na Meta em 21/11/2026**
+
+O Caixa avisa o cliente com um toque no detalhe do pedido, pela API (decisão 4 do plano do
+Gestor, 17/11/2026). São mensagens que a casa inicia, então cada uma precisa de modelo
+aprovado. A voz é a do diálogo "Resolver" (aprovada em 19/11): "Aqui é da Nelson
+Boulangerie 💛 … e sinto muito por isso", primeira pessoa, sem travessão. O dono aprovou os
+três em 20/11 ("1 (depois revisamos mais detalhadamente…)"), com a troca do item B para
+"vai faltar o item …". Os três foram submetidos no ManyChat em 20/11, por volta das 16h, e
+a Meta os aprovou em 21/11 (Utility, pt_BR). Os eventos existem desde o #2895, e as linhas
+do `NotificationTemplate` desde a migração `shop.0127`.
+
+**Como o flow se liga ao evento.** Cada modelo tem um flow publicado no ManyChat (21/11), com
+um passo só: o modelo aprovado, `{{1}}`=`customer_name`, `{{2}}`=`order_ref_short`,
+`{{3}}`=`status_note` e a URL do botão "Acompanhar pedido" ligada a `order_ref`. O
+namespace se grava no `whatsapp_flow_ns` do evento pelo app de Marketing: Configurações →
+Plataformas → WhatsApp → "Avisos automáticos", escolhendo a mensagem ("Vai atrasar",
+"Faltou um item", "Precisamos remarcar") e o modelo aprovado da lista. O comando revalida o
+flow no catálogo vivo e pede versão, confirmação, TOTP e auditoria (ADR-042: configuração
+de loja não entra por `settings`). Sem o `whatsapp_flow_ns`, o aviso sai em texto livre,
+que a Meta só entrega dentro da janela de 24 h.
+
+Quando o cliente responde, abre a janela de 24 h e a conversa segue em texto livre. Feita a
+troca ou a remarcação no PDV, saem sozinhos o `pedido_atualizado` e o `pedido_nova_data`
+(aprovados em 29/09).
+
+#### `pedido_atrasado` — evento `order_delayed` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063856_606640` ("Aviso: vai atrasar (order_delayed)")
+O Caixa toca "Vai atrasar" no pedido e escolhe a nova hora.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Seu pedido {{2}} vai atrasar um pouco: a nova previsão é {{3}}, e sinto muito por isso. Qualquer dúvida, é só responder aqui.`
+- Vars: `{{1}}`=`Ana` (`customer_name`, `cuf_14859629`) · `{{2}}`=`A17` (`order_ref_short`, `cuf_15003507`) · `{{3}}`=`hoje, às 16h30` (`status_note`, `cuf_15003511`, nunca vazio, sem ponto final)
+- Botão URL: `Acompanhar pedido` → `https://www.nelsonboulangerie.com.br/pedido/{{1}}` (`order_ref`, `cuf_15003508`)
+
+#### `pedido_item_em_falta` — evento `order_item_missing` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063922_615944` ("Aviso: faltou um item (order_item_missing)")
+O Caixa toca "Faltou um item" e marca qual, e quanto.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 No seu pedido {{2}}, vai faltar o item {{3}}, e sinto muito por isso. Posso trocar por outro produto ou devolver esse valor. Me responde aqui como fica melhor para você.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`Focaccia (2 unidades)` (`status_note`, nunca vazio; com mais de um item, o código junta: `Focaccia (2 unidades) e Brioche (1 unidade)`)
+- Botão URL: `Acompanhar pedido`
+
+> ℹ️ **"o item", e não "a".** A troca aprovada foi "vai faltar a Focaccia (2 unidades)",
+> mas um artigo fixo erra o gênero de metade do catálogo ("a Croissant"), e o catálogo não
+> guarda o gênero do nome. O dono escolheu "vai faltar o item Focaccia (2 unidades)" em
+> 20/11; o item e a quantidade continuam variáveis.
+
+#### `pedido_remarcar` — evento `order_reschedule_needed` · ✅ APROVADO na Meta (21/11/2026) · flow `content20261121063910_235375` ("Aviso: precisamos remarcar (order_reschedule_needed)")
+O Caixa toca "Precisamos remarcar": o pedido inteiro não fica pronto na data combinada.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! Aqui é da Nelson Boulangerie 💛 Não vamos conseguir aprontar seu pedido {{2}} para {{3}}, como combinamos, e sinto muito por isso. Posso remarcar para outro dia ou cancelar e devolver o valor. Me responde aqui como fica melhor para você.`
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A17` (`order_ref_short`) · `{{3}}`=`retirada amanhã, a partir das 9h` (`status_note`, a mesma frase do `pedido_encomenda_confirmada`, `services/notification._commitment_note`, sem ponto final)
+- Botão URL: `Acompanhar pedido`
+
+> ℹ️ **Os três pedem o nome do cliente** (`{{1}}`): a Meta não aceita variável vazia. Na
+> encomenda o nome sempre existe (o PDV e a loja o pedem). O iFood fica de fora do gesto.
+>
+> ℹ️ **O que é editável no Admin, e o que não é.** O `NotificationTemplate` do evento
+> (Admin, por evento) guarda o assunto, o corpo que sai por SMS, e-mail e WhatsApp dentro
+> da janela de 24 h, e o `whatsapp_flow_ns` (qual modelo aprovado o WhatsApp usa fora da
+> janela). Tudo isso o lojista edita e vale na hora. **O corpo do modelo aprovado na Meta
+> não se edita:** mudar uma palavra é submeter de novo e esperar a reaprovação (24-48 h),
+> e então trocar o `whatsapp_flow_ns` no Admin para o flow novo.
+
 ### `pagamento_solicitado` — evento `payment_requested`
 - Corpo: `Oi, {{1}}! Seu pedido {{2}} está reservado. Falta só o pagamento.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
@@ -384,6 +508,28 @@ A encomenda foi editada no balcão (`services/order_edit`): itens, recebimento, 
 
 > ℹ️ O código Pix copia-e-cola **não** viaja no template (é longo e opcional). Fica no
 > SMS/e-mail; aqui a pessoa chega pela tela do pedido, onde o Pix e o cartão estão inline.
+
+### `pagamento_cartao_falhou` — evento `payment_requested_card_repayment` 🆕 · ✅ aprovado pela Meta em 07/11/2026 (Utility), flow `content20261107173252_896774`
+Variante do `payment_requested` no NOVO pagamento: a cobrança do cartão não passou
+depois do aceite, a reserva antiga foi anulada e o cliente paga de novo (decisão do
+dono, 07/11/2026). Não é evento emitido: o adapter
+(`notification_manychat._card_repayment_variant`) a escolhe quando o pedido tem
+`payment.repayment`, o canal aceita Pix, o método ainda é cartão e há prazo.
+- Categoria: **Utility** · Idioma: **pt_BR**
+- Corpo: `Oi, {{1}}! A cobrança no cartão do seu pedido {{2}} falhou, e nada foi cobrado. Seu pedido segue reservado até {{3}}: dá para pagar com Pix ou com outro cartão. 💛`
+  (o prazo saiu do fim com o sim do dono, 07/11/2026: o ManyChat recusa corpo que termina em
+  variável, e o `. 💛` depois dela não conta como texto, a mesma recusa do `pagamento_falhou`)
+- Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`) · `{{3}}`=`hoje às 18h30` (`payment_deadline`)
+- Botão URL: `Pagar pedido` → `/pedido/{{1}}` (`order_ref`)
+
+> ✅ **Ligado em 07/11/2026.** O flow "Aviso: cartão falhou, novo pagamento
+> (payment_requested_card_repayment)" (`content20261107173252_896774`) está em
+> `MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` (`config/settings.py`).
+>
+> ⛔ **Falha fechada.** Enquanto o modelo não estiver aprovado e o flow ligado
+> (`MANYCHAT_FLOW_MAP["payment_requested_card_repayment"]` ou o `NotificationTemplate`
+> do evento), o aviso sai pelo `pagamento_solicitado` aprovado, e o adapter registra
+> `manychat.card_repayment_flow_pending` (info). Nunca sai texto que a Meta não aprovou.
 
 ### `link_pagamento_enviado` — evento `payment_link_sent`
 Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
@@ -461,21 +607,62 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 > ⚠️ **Não submetido** (P1-9, 13/10/2026). Até existir, o aviso sai pelo texto livre
 > do ManyChat e pelos fallbacks (SMS/e-mail).
 
-### `fila_vaga_disponivel` — evento `waitlist_available`
-- Corpo: `Oi, {{1}}! A fornada que você esperava saiu. Confirme o pedido {{2}} para garantir o seu.`
-  ⚠️ **Corpo aprovado pelo dono em 02/10/2026** (a Meta reclassificou o de 25/09 como Marketing; nasce `fila_vaga_disponivel_v2`, Utility, mesmo botão `Confirmar pedido`). O de 25/09 fica só como histórico.
+### `fila_vaga_disponivel` — evento `waitlist_available` · `_v2` aprovado (leitura de 20/11/2026)
+- Corpo: `Oi, {{1}}! A fornada que você esperava ficou pronta. Confirme seu pedido {{2}} para garantir a sua vaga.`
+  ⚠️ **Corpo revisto em 19/11/2026** pela regra do dono de 16/11 ("ficar pronto", nunca "sair do forno") e pela palavra da fila ("vaga"). O corpo aprovado em 02/10/2026 dizia "…que você esperava saiu. Confirme o pedido {{2}} para garantir o seu."; na leitura do ManyChat de 20/11/2026 aparecem **aprovados** os dois: `fila_vaga_disponivel` (o corpo antigo) e `fila_vaga_disponivel_v2`. O que vale é o `_v2`, Utility, com o mesmo botão `Confirmar pedido`; o antigo diz "saiu" e não deve ser ligado.
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Confirmar pedido` → `/pedido/{{1}}` (`order_ref`)
 
 > ⚠️ Não ligar `waitlist.enabled` antes do #392 estar no ar — ver a política de fila.
 
-### `fila_vaga_liberada` — evento `waitlist_released`
+### `fila_vaga_liberada` — evento `waitlist_released` · aprovado (leitura de 20/11/2026)
 - Corpo: `Oi, {{1}}. O prazo para confirmar o pedido {{2}} acabou e liberamos a reserva. Nada foi cobrado.`
 - Vars: `{{1}}`=`Ana` (`customer_name`) · `{{2}}`=`A47` (`order_ref_short`)
 - Botão URL: `Pedir de novo` → `https://www.nelsonboulangerie.com.br/conta/pedidos` (link **fixo**, sem variável)
 
 > ℹ️ Tinha a mesma forma do `pagamento_expirado`, aposentado em 14/10/2026 (o Pix vencido
 > agora sai pelo `pedido_cancelado`).
+
+### `concierge_resposta_pronta` — evento `concierge_answer_ready` 🆕 · texto aprovado pelo dono em 21/11/2026 · ⏳ submetido em 21/11/2026 (ManyChat, Utility, pt_BR, corpo exato), em análise na Meta (#3004)
+- Corpo (WP-16 da Concierge): `A equipe respondeu a sua pergunta. Responda esta mensagem para eu te mostrar a resposta 💛`
+- Vars: nenhuma. Botão: nenhum (a resposta do cliente reabre a janela de 24 horas).
+- Categoria: Utility.
+- Uso: a equipe respondeu uma verificação da Concierge ("vou verificar") depois da janela de 24 horas;
+  a resposta fica guardada (`verification.STORED`) e sai na próxima mensagem do cliente.
+- Ligar só depois de aprovado pela Meta: o flow vai em `MANYCHAT_FLOW_MAP["concierge_answer_ready"]` (ou no
+  `NotificationTemplate` do Admin), e `manage.py manychat_flows --check` confere. Sem o flow, a Concierge
+  não promete resposta fora da janela (falha fechada, WP-05).
+
+### `confirmar_numero` — evento `phone_confirmation_requested` 🆕 · ⏳ submetido na Meta em 24/11/2026 (Utility, pt_BR, botão `Sim, é meu`), em revisão
+
+Decisão do dono D4 (23/11/2026): quando a equipe grava um telefone (PDV, ficha do Gestor,
+pedido anotado por telefone), o cliente recebe no WhatsApp "Confirme que este número é seu"
+e confirma com um toque. Até confirmar, o número não resolve para a conta pela loja
+(`guestman.adapters.auth.IdentityResolver.resolve`). Decisão D (24/11/2026): o código
+certo do SMS também confirma, porque prova a posse do número; quem entra pelo código no
+número do balcão confirma e entra no mesmo gesto (`IdentityResolver.create` entrega o
+cadastro sem prova a quem acabou de provar o contato; prova `otp_sms`). Quem pede é
+`shop/services/phone_confirmation.py`; o registro do pedido mora em
+`Customer.metadata["phone_confirmation"]` (`data-schemas.md`).
+
+- Corpo proposto: `Oi! Este número acabou de ser cadastrado na Nelson Boulangerie. Se ele é seu, confirme no botão abaixo. Se não foi você, é só ignorar esta mensagem.`
+- Vars: nenhuma. **Sem nome de propósito**: se a equipe errou um dígito, quem recebe não
+  lê o nome de outra pessoa (e a regra da variável vazia não se aplica).
+- Botão de **resposta rápida** (não de URL): `Sim, é meu`.
+- Categoria: Utility (confirmação de cadastro, sem oferta).
+- Como o toque confirma: a resposta rápida é uma mensagem do próprio número para a loja.
+  Ela chega pelo ManyChat, e a Concierge, ao identificar quem escreveu
+  (`ManychatIdentityBridge.upsert_subscriber` → `ManychatService.sync_subscriber`), grava o
+  contato como verificado pelo canal (`channel_asserted`). É o caminho que já existe; não
+  há link nem token. No flow do modelo, o botão `Sim, é meu` deve entregar a mensagem ao
+  mesmo webhook da Concierge (ou responder "Obrigada! Número confirmado 💛" e acionar o
+  mesmo webhook). ⚠️ Toda mensagem do número confirma, por isso o corpo pede que quem não
+  fez o cadastro **não** responda, e o modelo não tem botão "Não sou eu".
+- Ligar só depois de aprovado: o flow vai no `NotificationTemplate` do evento (Admin) ou em
+  `MANYCHAT_FLOW_MAP["phone_confirmation_requested"]`. Até lá o pedido fica registrado como
+  `awaiting_template` e nada sai (falha fechada, como a `concierge_resposta_pronta`).
+- Dentro da janela de 24h, sem modelo, o texto livre é o de `notification_copy.CUSTOMER_COPY`
+  (sem botão: pede que a pessoa responda `Sim, é meu`).
 
 ### `pontos_fidelidade` — evento `loyalty_earned` 🆕
 - Corpo: `Parabéns, {{1}}! 💛✨ Você ganhou pontos de fidelidade com o pedido {{2}}. Obrigada por nos prestigiar!`
@@ -516,7 +703,7 @@ campo personalizado**. Sobram dois formatos:
 | Botão | Onde | Destino |
 |---|---|---|
 | `Acompanhar pedido` · `Ver pedido` · `Ver detalhes` · `Pagar pedido` · `Tentar de novo` · `Confirmar pedido` · `Confirmar recebimento` · `Ver nota fiscal` | a maioria | `…/pedido/{{n}}` + `order_ref` |
-| `Garantir já` | `produto_chegou`, `saiu_do_forno` | `…/produto/{{n}}` + **`product_sku`** |
+| `Garantir já` | `produto_chegou`, `ficou_pronto` | `…/produto/{{n}}` + **`product_sku`** |
 | `Pedir de novo` | `fila_vaga_liberada` | `…/conta/pedidos` — **estático** |
 | `Ver saldo` | `pontos_fidelidade` | `…/conta` — **estático** |
 | `Como chegar` | `pedido_pronto_retirada` | Google Maps da loja — **estático** |
@@ -529,9 +716,9 @@ para isto ("o sufixo que o template gruda no fim do link do botão", diz o comen
 `storefront/services/stock_alerts.py`), e está em `_ALERT_FLOW_FIELDS` para os dois eventos.
 Ligar o botão ao `sku` produz um botão em branco, em silêncio.
 
-⚠️ **`Pedir de novo` é estático de propósito.** O `reorder_url` do contexto é link pessoal e
-não pode virar campo personalizado. `…/conta/pedidos` (`storefront_links.path_order_history`)
-resolve sem token: sem sessão, a loja pede o telefone e devolve a pessoa para lá.
+⚠️ **`Pedir de novo` é estático de propósito.** O botão aponta para `…/conta/pedidos`
+(`storefront_links.path_order_history`), o mesmo destino do `reorder_url` do contexto, e por
+isso não precisa de variável: sem sessão, a loja pede o telefone e devolve a pessoa para lá.
 
 ### O que falta decidir: `Ver novidade`
 
@@ -582,12 +769,13 @@ Audiência diferente: quem recebe é o contato comercial do fornecedor, não um 
 
 Categoria e custo diferentes. **Não misture com Utility** — nem "para passar".
 
-### `saiu_do_forno` — evento `production_ready`
-- Corpo: `Olha só o que acabou de sair do forno: {{1}}! {{2}}.`
+### `ficou_pronto` — evento `production_ready`
+- Corpo: `Olha só a fornada que acabou de ficar pronta: {{1}}! {{2}}.`
+  ("Fornada pronta", e não "{{1}} ficou pronto": o nome do produto pode ser feminino. O nome do modelo era `saiu_do_forno`; nunca foi submetido e mudou com a regra de 16/11/2026.)
 - Vars: `{{1}}`=`Croissant` (`product_name`) · `{{2}}`=`No momento temos 12 un. disponíveis` (`availability_note`)
 - Botão URL: `Garantir já` → `https://www.nelsonboulangerie.com.br/produto/{{1}}` (`product_sku`)
 
-> ℹ️ A quantidade **sempre existe** quando a fornada sai, então é variável fixa do template,
+> ℹ️ A quantidade **sempre existe** quando a fornada fica pronta, então é variável fixa do template,
 > sem frase condicional. Com zero disponível o aviso não sai.
 >
 > ⚠️ **O ponto final é FIXO, fora da variável**, como no `pedido_em_preparo`: o
@@ -643,7 +831,8 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 |---|---|---|
 | `order_received` | `pedido_recebido` | Utility |
 | `order_received_outside_hours` | `pedido_recebido_fora_horario` | Utility 🆕 |
-| `order_accepted` | `pedido_confirmado` | Utility |
+| `order_accepted` (pedido do dia) | `pedido_confirmado` | Utility |
+| `order_accepted` na encomenda (`order_accepted_preorder`) | `pedido_encomenda_confirmada` | Utility 🆕 (aprovado 20/10/2026, flow `content20261020201824_274658`) |
 | `order_rejected` | `pedido_nao_confirmado` | Utility |
 | `order_preparing` | `pedido_em_preparo` | Utility |
 | `order_ready_pickup` | `pedido_pronto_retirada` | Utility |
@@ -657,18 +846,20 @@ cabeçalho anterior dizia 25 embora a própria tabela já tivesse 26; depois ent
 | `order_rescheduled` | `pedido_nova_data` | Utility |
 | `order_updated` | `pedido_atualizado` | Utility |
 | `payment_requested` | `pagamento_solicitado` | Utility |
+| `payment_requested_card_repayment` (novo pagamento após cartão recusado) | `pagamento_cartao_falhou` | Utility 🆕 (aprovado 07/11/2026, flow `content20261107173252_896774`) |
 | `payment_link_sent` | `link_pagamento_enviado` | Utility |
 | `payment_confirmed` | `pagamento_confirmado` | Utility |
 | `payment_reminder` | `pagamento_lembrete` | Utility |
 | `payment_failed` | `pagamento_falhou` | Utility |
 | `payment_refunded` | `reembolso_processado` | Utility 🆕 (emitido desde 13/10; corpo novo a submeter) |
 | `order_returned` | `pedido_devolvido` | Utility 🆕 (a submeter) |
-| `waitlist_available` | `fila_vaga_disponivel` | Utility |
-| `waitlist_released` | `fila_vaga_liberada` | Utility |
+| `waitlist_available` | `fila_vaga_disponivel_v2` | Utility ✅ (aprovado; o `fila_vaga_disponivel` antigo também, mas diz "saiu") |
+| `waitlist_released` | `fila_vaga_liberada` | Utility ✅ (aprovado) |
 | `loyalty_earned` | `pontos_fidelidade` | Utility 🆕 (não emitido ainda) |
+| `phone_confirmation_requested` | `confirmar_numero` | Utility 🆕 (OC-08; submetido em 24/11/2026, em revisão) |
 | `stock_arrived` | `produto_chegou` | Utility |
 | `purchase_request` | `pedido_compra` | Utility (fornecedor) |
-| `production_ready` | `saiu_do_forno` | Marketing |
+| `production_ready` | `ficou_pronto` | Marketing |
 | `announcement_published` | `anuncio_novidade` | Marketing |
 | `access_link` | — (janela aberta, mensagem livre) | — |
 | `stock_alert` | — (interno) | — |
@@ -701,16 +892,16 @@ nome**, senão a variável sai em branco e nada falha.
 
 | `{{n}}` | Campo personalizado | Onde |
 |---|---|---|
-| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco) |
+| Nome do cliente | `customer_name` | os de cliente, **menos** `pedido_confirmado`, `pedido_encomenda_confirmada`, `pedido_em_preparo`, `pedido_pronto_retirada`, `pedido_pronto_entrega` e `pedido_saiu_entrega` (a voz de 24-25/09 tirou o cumprimento desses cinco; a variante da encomenda nasceu sem) |
 | Pedido, no corpo | `order_ref_short` | todos os de pedido (o final do ref: `A17`) |
-| Ref do pedido | `order_ref` | **todo botão de URL** — nunca no corpo |
-| Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `link_pagamento_enviado` |
+| Ref do pedido | `order_ref` (valor `{ref}~{selo}` desde 25/11/2026, DEV-2026-093) | **todo botão de URL** — nunca no corpo |
+| Total | **`order_total_display`** (nome atual no código; conferir no ManyChat) | `pedido_confirmado`, `pedido_encomenda_confirmada`, `link_pagamento_enviado` |
 | Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
 | URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Resto do link do entregador | `courier_tracking_path` (**a criar**) | `pedido_saiu_entrega_rastreio`, primeiro botão |
-| Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado` |
-| Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
-| Frase de disponibilidade | `availability_note` | `saiu_do_forno` |
+| Frase que nunca fica vazia | `status_note` | `pedido_em_preparo`, `pedido_cancelado`, `pedido_nao_confirmado`, `pedido_encomenda_confirmada` (a data, sem ponto final; só existe na encomenda) |
+| Nome do produto | `product_name` | `produto_chegou`, `ficou_pronto` |
+| Frase de disponibilidade | `availability_note` | `ficou_pronto` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
 | Material | `material_name` | `pedido_compra` |
@@ -763,6 +954,15 @@ fallback). Inverter antes troca "SMS que chega em 76%" por "WhatsApp que não ch
 - Nunca mova status de pedido para Marketing "pra passar" — passa, mas cobra caro e quebra a janela grátis.
 
 ## Referências
-- [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
+- [WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN](../plans/completed/WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md)
 - Meta: [template fundamentals](https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview)
 - ManyChat: [usar Message Templates](https://help.manychat.com/hc/en-us/articles/14281326740124-How-to-use-WhatsApp-Messages-Templates-in-Manychat)
+
+### Cancelamento solicitado pelo cliente (revisão de 06/11/2026)
+
+O texto livre passa a dizer "Seu pedido V55 foi cancelado, conforme sua solicitação.".
+`{cancellation_reason_suffix}` une o motivo à frase do cancelamento no texto livre;
+nos outros motivos, preserva a frase completa de `{status_note}`. O modelo já aprovado
+na Meta mantém sua pontuação fixa e recebe "Conforme sua solicitação." em `status_note`,
+sem repetir "Cancelamos". A unificação da frase também nesse modelo depende de uma
+nova aprovação da Meta; o deploy não altera modelos externos aprovados.

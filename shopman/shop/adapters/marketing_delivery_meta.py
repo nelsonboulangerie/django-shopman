@@ -7,6 +7,7 @@ from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 
+from shopman.shop.adapters._external import inert
 from shopman.shop.adapters.marketing_delivery_http import (
     HTTPFailure,
     TransportFailure,
@@ -24,7 +25,7 @@ _PROVIDER_ID = re.compile(r"^[A-Za-z0-9_.-]{1,110}$")
 def instagram_available() -> bool:
     config = _config()
     return bool(
-        _external_allowed()
+        not inert()
         and getattr(settings, "SHOPMAN_MARKETING_INSTAGRAM_PUBLICATION_ENABLED", False)
         and config["ig_user_id"]
         and config["page_access_token"]
@@ -34,7 +35,7 @@ def instagram_available() -> bool:
 def facebook_available() -> bool:
     config = _config()
     return bool(
-        _external_allowed()
+        not inert()
         and getattr(settings, "SHOPMAN_MARKETING_FACEBOOK_PUBLICATION_ENABLED", False)
         and config["page_id"]
         and config["page_access_token"]
@@ -245,12 +246,6 @@ def _config() -> dict:
         "page_access_token": str(raw.get("page_access_token") or ""),
         "timeout": max(1, int(raw.get("timeout") or 30)),
     }
-
-
-def _external_allowed() -> bool:
-    return not settings.DEBUG or bool(
-        getattr(settings, "SHOPMAN_ALLOW_EXTERNAL_IN_DEBUG", False)
-    )
 
 
 def _graph_url(config: dict, object_id: str, edge: str = "") -> str:

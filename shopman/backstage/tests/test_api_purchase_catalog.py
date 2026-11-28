@@ -144,6 +144,36 @@ def test_create_material_refuses_duplicate_sku_ignoring_case(client, purchase_op
 
 
 @pytest.mark.django_db
+def test_create_material_in_lowercase_meets_the_unit_guard_of_the_product(client, purchase_operator):
+    """Beta 05/11, CMP-05: 'bich' passava ao lado do produto BICH (un) em g."""
+    from shopman.offerman.models import Product
+
+    Product.objects.create(sku="BICH", name="Bichon", unit="un", base_price_q=1200)
+    client.force_login(purchase_operator)
+
+    response = _post(
+        client,
+        "api-backstage-purchase-materials",
+        {"sku": " bich ", "name": "Bichon teste duplicado", "unit": "g"},
+    )
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["field"] == "unit"
+    assert not Material.objects.filter(sku__iexact="BICH").exists()
+
+
+@pytest.mark.django_db
+def test_create_material_stores_the_sku_in_uppercase(client, purchase_operator):
+    client.force_login(purchase_operator)
+
+    response = _post(client, "api-backstage-purchase-materials", {"sku": "alecrim-fresco", "name": "Alecrim", "unit": "g"})
+
+    assert response.status_code == 200, response.json()
+    assert response.json()["resource"] == {"kind": "material", "ref": "ALECRIM-FRESCO"}
+    assert Material.objects.filter(sku="ALECRIM-FRESCO").exists()
+
+
+@pytest.mark.django_db
 def test_create_material_requires_sku_and_name(client, purchase_operator):
     client.force_login(purchase_operator)
 
@@ -286,6 +316,31 @@ def test_duplicate_material_refuses_the_same_sku(client, purchase_operator, mate
 
 
 @pytest.mark.django_db
+def test_create_supplier_refuses_a_phone_that_is_not_a_number(client, purchase_operator):
+    """Beta 05/11, CMP-14: 'abc' entrava como telefone da central."""
+    client.force_login(purchase_operator)
+
+    response = _post(client, "api-backstage-purchase-suppliers", {"name": "Espaço Gastronômico", "phone": "abc"})
+
+    assert response.status_code == 400, response.json()
+    assert response.json()["field"] == "phone"
+    assert not Supplier.objects.exists()
+
+
+@pytest.mark.django_db
+def test_supplier_projection_says_whether_the_order_has_where_to_go(client, purchase_operator):
+    """Beta 05/11, CMP-09: sem e-mail nem telefone o envio só falhava depois de confirmar."""
+    Supplier.objects.create(ref="espaco", name="Espaço Gastronômico")
+    Supplier.objects.create(ref="tamura", name="Tamura", email="pedidos@tamura.example")
+    client.force_login(purchase_operator)
+
+    rows = {row["ref"]: row for row in client.get(reverse("api-backstage-purchase")).json()["purchase"]["activeSuppliers"]}
+
+    assert rows["espaco"]["canReceiveOrder"] is False
+    assert rows["tamura"]["canReceiveOrder"] is True
+
+
+@pytest.mark.django_db
 def test_create_supplier_derives_ref_from_the_name(client, purchase_operator):
     client.force_login(purchase_operator)
 
@@ -309,6 +364,8 @@ def test_create_supplier_derives_ref_from_the_name(client, purchase_operator):
     assert supplier.trade_name == "Tamura"
     assert supplier.metadata["purchase"]["lead_time_days"] == 3
     assert supplier.metadata["purchase"]["payment_term"] == "21 dias"
+    assert "send_directly" not in supplier.metadata["purchase"]
+    assert response.json()["purchase"]["suppliers"][0]["sendDirectly"] is False
     assert response.json()["message"] == "Fornecedor cadastrado."
     assert response.json()["resource"] == {"kind": "supplier", "ref": "tamura"}
 
@@ -387,7 +444,12 @@ def test_update_supplier_changes_commercial_terms(client, purchase_operator, sup
     response = _post(
         client,
         "api-backstage-purchase-supplier",
-        {"tradeName": "Moinho SP", "leadTimeDays": 5, "paymentTerm": "28 dias"},
+        {
+            "tradeName": "Moinho SP",
+            "leadTimeDays": 5,
+            "paymentTerm": "28 dias",
+            "sendDirectly": True,
+        },
         args=[supplier.ref],
     )
 
@@ -396,6 +458,9 @@ def test_update_supplier_changes_commercial_terms(client, purchase_operator, sup
     assert supplier.trade_name == "Moinho SP"
     assert supplier.metadata["purchase"]["lead_time_days"] == 5
     assert supplier.metadata["purchase"]["payment_term"] == "28 dias"
+    assert supplier.metadata["purchase"]["send_directly"] is True
+    projected = next(row for row in response.json()["purchase"]["suppliers"] if row["ref"] == supplier.ref)
+    assert projected["sendDirectly"] is True
     # O de-para de nota continua sendo história daquele fornecedor.
     assert supplier.metadata["purchase"]["invoice_product_map"] == {"FAR-25": "FARINHA-NOVARA-T55"}
 
@@ -426,6 +491,8 @@ def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, p
         supplier=supplier, name="Cláudia Ramos", role="sales",
         email="claudia@moinho.example", is_primary=True,
     )
+    supplier.metadata["purchase"]["send_directly"] = True
+    supplier.save(update_fields=["metadata", "updated_at"])
     client.force_login(purchase_operator)
 
     response = _post(
@@ -442,6 +509,7 @@ def test_duplicate_supplier_copies_contacts_and_terms_but_not_document(client, p
     assert copy.document == ""
     assert copy.metadata["purchase"]["lead_time_days"] == 2
     assert "invoice_product_map" not in copy.metadata["purchase"]
+    assert "send_directly" not in copy.metadata["purchase"]
     contacts = list(copy.contacts.all())
     assert len(contacts) == 1
     assert contacts[0].name == "Cláudia Ramos"

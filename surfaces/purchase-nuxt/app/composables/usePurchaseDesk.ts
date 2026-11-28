@@ -1,3 +1,4 @@
+import { usePurchaseGridFields } from "~/composables/usePurchaseGridFields";
 import type {
   PurchaseContactUpsertPayload,
   PurchaseConversionUpsertPayload,
@@ -14,6 +15,7 @@ import type {
   PurchaseRequestStatus,
   PurchaseActionResponse,
   PurchaseProjection,
+  PurchaseList,
   PurchaseResponse,
   ConversionKind,
   CountItem,
@@ -28,19 +30,28 @@ import type {
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
-import { matchesMaterialFilters } from "~/presentation/purchaseUi";
+import {
+  RECEIPT_DRAFT_STORAGE_KEY,
+  materialBySku,
+  purchaseWorkSet,
+  supplierByRef,
+  receiptDraftFromStore,
+  receiptDraftToStore,
+} from "~/presentation/purchaseWorkSet";
 import type { ActiveFilters } from "../../../operator-kit/app/types/filters";
 import {
   costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
-  costPerBaseUnitQ,
+  costPerReadingUnitQ,
   countConfirmPayload,
   countRows,
   countSummary,
   enrichMaterial,
+  formatMoney,
   invoiceProbe,
   isApproximateCost,
   parseMoneyInput,
+  purchaseSuggestionLabel,
   quotePreview as buildQuotePreview,
   receiptConferenceTally,
   receiptDefaultConversionId,
@@ -54,11 +65,17 @@ import {
   reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
   supplierCostRows,
+  receiptPreferredCostChanges as buildReceiptPreferredCostChanges,
+  receiptPriceCheck as buildReceiptPriceCheck,
 } from "~/presentation/purchase";
+import { formatDateClock } from "../../../operator-kit/app/presentation/clock";
 
 function copy<T>(items: T[]): T[] {
   return items.map((item) => ({ ...item }));
 }
+
+/** O que muda o preço de um item: mexer nisso desfaz a resposta sobre o custo preferencial. */
+const PRICE_FIELDS: ReadonlyArray<keyof ReceiptLine> = ["costInput", "purchaseQty", "conversionId", "materialSku"];
 
 function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
   return lines.map((line) => ({
@@ -80,13 +97,7 @@ function receiptLineCopy(lines: ReceiptLine[]): ReceiptLine[] {
 }
 
 function todayStamp(): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date());
+  return formatDateClock(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
 function centsInput(cents: number): string {
@@ -98,6 +109,7 @@ function newMutationKey(): string {
 }
 
 export function usePurchaseDesk() {
+  const route = useRoute();
   const view = useState<PurchaseView>("purchase-view", () => "panel");
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
@@ -144,6 +156,12 @@ export function usePurchaseDesk() {
   // primeiro número nunca fora real. Dado inventado não é estado de partida.
   const materials = useState<Material[]>("purchase-materials", () => []);
   const suppliers = useState<Supplier[]>("purchase-suppliers", () => []);
+  const materialList = useState<PurchaseList<Material>>("purchase-material-list", () => ({
+    items: [], total: 0, has_next: false, page: 1, page_size: 30, query: "", order: "name",
+  }));
+  const supplierList = useState<PurchaseList<Supplier>>("purchase-supplier-list", () => ({
+    items: [], total: 0, has_next: false, page: 1, page_size: 30, query: "", order: "name",
+  }));
   const conversions = useState<MaterialConversion[]>("purchase-conversions", () => []);
   const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => []);
   // Contagem: a posição vem CRUA do ledger (endpoint próprio, restrito ao
@@ -168,15 +186,37 @@ export function usePurchaseDesk() {
   // insumo nunca vira sugestão. Declarar o mínimo é o que o destrava.
   const minStockInputs = useState<Record<string, string>>("purchase-min-stock-inputs", () => ({}));
   const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
+  const costGrid = usePurchaseGridFields(batchInputs, "cost");
+  const minimumGrid = usePurchaseGridFields(minStockInputs, "minimum");
+  const costGridErrors = computed(() => costGrid.errorsFor(batchRows.value));
+  const minimumGridErrors = computed(() => minimumGrid.errorsFor(filteredMaterials.value));
+  const canUndoCost = costGrid.canUndo;
+  const canUndoMinimum = minimumGrid.canUndo;
+  const undoCost = () => { costGrid.undo(); batchLineErrors.value = {}; };
+  const undoMinimum = () => { minimumGrid.undo(); minStockLineErrors.value = {}; };
+  const pasteCost = (event: ClipboardEvent, sku: string) => { costGrid.paste(event, sku, batchRows.value); batchLineErrors.value = {}; };
+  const pasteMinimum = (event: ClipboardEvent, sku: string) => { minimumGrid.paste(event, sku, filteredMaterials.value); minStockLineErrors.value = {}; };
   const countPending = ref(false);
   const api = usePurchaseApi();
   const confirm = useConfirm();
   const actionPending = ref(false);
   const actionError = ref("");
   const { flagIfStationLocked } = useStationLock();
+  const projectionQuery = computed(() => ({
+    q: query.value.trim() || undefined,
+    page: Number(route.query.page) > 0 ? Number(route.query.page) : 1,
+    page_size: 30,
+    order: typeof route.query.order === "string" ? route.query.order : "name",
+    material_archive: materialFilters.value.archive,
+    category: materialFilters.value.category,
+    tone: materialFilters.value.tone,
+    supplier_archive: supplierFilters.value.archive,
+    contact: supplierFilters.value.contact,
+  }));
   const { data, pending, error, refresh } = useFetch<PurchaseResponse>(PURCHASE_API_ENDPOINTS.projection, {
     key: "purchase-projection",
     server: false,
+    query: projectionQuery,
     onResponseError: operatorSessionOnError,
   });
   const backendReady = computed(() => Boolean(data.value?.purchase));
@@ -197,29 +237,30 @@ export function usePurchaseDesk() {
     return "Insumos, fornecedores e custos não carregaram.";
   });
 
+  // A ordem já vem da consulta paginada. Reordenar esta página no navegador
+  // faria a mesma coluna significar coisas diferentes entre páginas.
+  // `enrichedMaterials` é a base de trabalho inteira (todos os ativos);
+  // `filteredMaterials` é a página da tabela da Base. Ver `purchaseWorkSet`.
   const enrichedMaterials = computed(() =>
-    materials.value
-      .map((material) => enrichMaterial(material, costs.value, conversions.value))
-      .sort((a, b) => {
-        const toneOrder = { urgent: 0, watch: 1, ok: 2 };
-        return toneOrder[a.tone] - toneOrder[b.tone] || a.sku.localeCompare(b.sku);
-      }),
+    materials.value.map((material) => enrichMaterial(material, costs.value, conversions.value)),
   );
 
-  const filteredMaterials = computed(() => {
-    const term = query.value.trim().toLowerCase();
-    return enrichedMaterials.value.filter((material) => {
-      const matches =
-        !term ||
-        material.sku.toLowerCase().includes(term) ||
-        material.name.toLowerCase().includes(term) ||
-        material.category.toLowerCase().includes(term);
-      return matches && matchesMaterialFilters(material, materialFilters.value);
-    });
-  });
+  const filteredMaterials = computed(() =>
+    materialList.value.items.map((material) => enrichMaterial(material, costs.value, conversions.value)),
+  );
+
+  /** O insumo pelo SKU, na base de trabalho ou na página (arquivado aberto pela tabela). */
+  function findMaterial(sku: string) {
+    return materialBySku(sku, enrichedMaterials.value, filteredMaterials.value);
+  }
+
+  /** O fornecedor pelo ref, na base de trabalho ou na página (arquivado aberto pela tabela). */
+  function findSupplier(ref: string) {
+    return supplierByRef(ref, suppliers.value, supplierList.value.items);
+  }
 
   const selectedMaterial = computed(() =>
-    enrichedMaterials.value.find((material) => material.sku === selectedMaterialSku.value) ??
+    findMaterial(selectedMaterialSku.value) ??
     enrichedMaterials.value[0] ??
     null,
   );
@@ -332,6 +373,16 @@ export function usePurchaseDesk() {
   const receiptHasRejectionReason = computed(
     () => Boolean(receiptNote.value.trim()) || receiptLines.value.some((line) => Boolean(line.lineNote.trim())),
   );
+  // O preço desta entrada difere do custo preferencial: confirmar pergunta antes
+  // se o custo muda (CMP-06). Não é pendência do item: a pergunta vem no gesto.
+  const receiptPreferredCostChanges = computed(() =>
+    buildReceiptPreferredCostChanges(receiptLinePreviews.value, costs.value, receiptSupplierRef.value, conversions.value),
+  );
+  // O preço medido contra o mesmo custo: é o fato que a conferência por exceção
+  // pode dizer sem inventar ("Preço igual ao custo preferencial em 11 de 12 itens").
+  const receiptPriceCheck = computed(() =>
+    buildReceiptPriceCheck(receiptLinePreviews.value, costs.value, receiptSupplierRef.value, conversions.value),
+  );
   const receiptReady = computed(
     () =>
       receiptLinePreviews.value.length > 0 &&
@@ -435,7 +486,7 @@ export function usePurchaseDesk() {
   }
 
   function setBatchInput(materialSku: string, value: string) {
-    batchInputs.value = { ...batchInputs.value, [materialSku]: value };
+    costGrid.set(materialSku, value);
     // Editar a linha apaga o erro dela: o aviso descreve o que foi enviado, e o
     // que está na tela já não é isso.
     if (batchLineErrors.value[materialSku]) {
@@ -459,7 +510,7 @@ export function usePurchaseDesk() {
   const minStockFilledCount = computed(() => minStockRows.value.length);
 
   function setMinStockInput(materialSku: string, value: string) {
-    minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
+    minimumGrid.set(materialSku, value);
     if (minStockLineErrors.value[materialSku]) {
       minStockLineErrors.value = Object.fromEntries(
         Object.entries(minStockLineErrors.value).filter(([sku]) => sku !== materialSku),
@@ -468,13 +519,13 @@ export function usePurchaseDesk() {
   }
 
   function clearMinStock() {
-    minStockInputs.value = {};
+    minimumGrid.clear();
     minStockLineErrors.value = {};
   }
 
   /** Declara os mínimos digitados. Mesmo contrato do lote de custos. */
   async function saveMinStock() {
-    if (!minStockFilledCount.value) return;
+    if (!minStockFilledCount.value || Object.keys(minimumGridErrors.value).length) return;
     if (!requireBackend("salvar os mínimos")) return;
     if (actionPending.value) return;
 
@@ -489,7 +540,7 @@ export function usePurchaseDesk() {
       const response = await api.setMinStock({ minimums });
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);
-      clearMinStock();
+      minimumGrid.clear(minimums.map((row) => row.materialSku));
       await refresh();
     } catch (err) {
       minStockLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
@@ -554,7 +605,7 @@ export function usePurchaseDesk() {
   }
 
   function clearCostBatch() {
-    batchInputs.value = {};
+    costGrid.clear();
     batchConversionIds.value = {};
     batchLineErrors.value = {};
   }
@@ -567,7 +618,7 @@ export function usePurchaseDesk() {
    * campos preenchidos. Os erros voltam em `error.lines` e vão para o campo.
    */
   async function saveCostBatch() {
-    if (!batchReady.value) return;
+    if (!batchReady.value || Object.keys(costGridErrors.value).length) return;
     if (!requireBackend("salvar os custos")) return;
     if (actionPending.value) return;
 
@@ -584,7 +635,9 @@ export function usePurchaseDesk() {
       const response = await api.upsertCostBatch(payload);
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);
-      clearCostBatch();
+      const saved = new Set(payload.costs.map((row) => row.materialSku));
+      costGrid.clear([...saved]);
+      batchConversionIds.value = Object.fromEntries(Object.entries(batchConversionIds.value).filter(([sku]) => !saved.has(sku)));
       await refresh();
     } catch (err) {
       batchLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
@@ -597,7 +650,7 @@ export function usePurchaseDesk() {
   }
 
   const supplierSummaries = computed(() =>
-    suppliers.value.map((supplier) => {
+    supplierList.value.items.map((supplier) => {
       const supplierCosts = costs.value.filter((cost) => cost.supplierRef === supplier.ref);
       const preferredCount = supplierCosts.filter((cost) => cost.isPreferred).length;
       const materialsCovered = new Set(supplierCosts.map((cost) => cost.materialSku)).size;
@@ -629,7 +682,7 @@ export function usePurchaseDesk() {
   function normalizeSelections() {
     const firstMaterialSku = materials.value[0]?.sku ?? "";
     const firstSupplierRef = suppliers.value[0]?.ref ?? "";
-    if (!materials.value.some((material) => material.sku === selectedMaterialSku.value)) {
+    if (!findMaterial(selectedMaterialSku.value)) {
       selectedMaterialSku.value = firstMaterialSku;
     }
     if (!materials.value.some((material) => material.sku === noteMaterialSku.value)) {
@@ -641,8 +694,10 @@ export function usePurchaseDesk() {
     if (!suppliers.value.some((supplier) => supplier.ref === noteSupplierRef.value)) {
       noteSupplierRef.value = firstSupplierRef;
     }
+    // Fornecedor ou item que sumiu da base volta a "Definir", nunca vira o
+    // primeiro da lista em silêncio.
     if (receiptSupplierRef.value && !suppliers.value.some((supplier) => supplier.ref === receiptSupplierRef.value)) {
-      receiptSupplierRef.value = firstSupplierRef;
+      receiptSupplierRef.value = "";
     }
     if (
       noteConversionId.value &&
@@ -664,7 +719,7 @@ export function usePurchaseDesk() {
     receiptLines.value = receiptLines.value.map((line) => {
       const materialSku = !line.materialSku || materials.value.some((material) => material.sku === line.materialSku) ?
         line.materialSku
-      : firstMaterialSku;
+      : "";
       const conversionAllowed =
         line.conversionId &&
         conversions.value.some(
@@ -688,9 +743,12 @@ export function usePurchaseDesk() {
   // primeiro carregamento e as ações que falam do recibo (scan/confirmar/
   // recusar) podem sobrescrevê-lo — senão qualquer refresh apaga as linhas
   // que o operador acabou de receber ou digitar.
-  function applyProjection(next: PurchaseProjection, options: { receipt?: boolean } = {}) {
-    materials.value = copy(next.materials);
-    suppliers.value = copy(next.suppliers);
+  function applyProjection(next: PurchaseProjection, options: { receipt?: boolean; restoreDraft?: boolean } = {}) {
+    const workSet = purchaseWorkSet(next);
+    materialList.value = { ...workSet.materialPage, items: copy(workSet.materialPage.items) };
+    supplierList.value = { ...workSet.supplierPage, items: copy(workSet.supplierPage.items) };
+    materials.value = copy(workSet.materials);
+    suppliers.value = copy(workSet.suppliers);
     conversions.value = copy(next.conversions);
     costs.value = copy(next.costs);
     purchaseRequestStatuses.value = { ...next.purchaseRequestStatuses };
@@ -706,15 +764,66 @@ export function usePurchaseDesk() {
       // dispositivo já chega contada.
       receiptVolumesCounted.value = next.activeReceipt.volumesCounted ?? null;
       receiptOutcome.value = null;
+      // Primeira carga sem rascunho no servidor: volta o que ficou neste
+      // dispositivo antes da recarga, da queda ou do login (CMP-04).
+      if (options.restoreDraft && receiptIsBlankDraft(receiptLines.value, invoiceInput.value, receiptNote.value)) {
+        restoreReceiptDraft();
+      }
       receiptHydrated.value = true;
     }
     normalizeSelections();
   }
 
+  function restoreReceiptDraft() {
+    if (!import.meta.client) return;
+    let raw: string | null;
+    try {
+      raw = window.localStorage.getItem(RECEIPT_DRAFT_STORAGE_KEY);
+    } catch {  // silêncio-deliberado: armazenamento bloqueado, não há rascunho a restaurar
+      return;
+    }
+    const draft = receiptDraftFromStore(raw, Date.now());
+    if (!draft) return;
+    receiptMode.value = draft.mode;
+    receiptSupplierRef.value = draft.supplierRef;
+    invoiceInput.value = draft.invoiceInput;
+    receiptNote.value = draft.note;
+    receiptLines.value = receiptLineCopy(draft.lines);
+    receiptInvoiceVolumes.value = draft.invoiceVolumes;
+  }
+
+  if (import.meta.client) {
+    watch(
+      [receiptMode, receiptSupplierRef, invoiceInput, receiptNote, receiptLines, receiptInvoiceVolumes, receiptHydrated],
+      () => {
+        // Antes da primeira carga o estado ainda é o vazio inicial: gravar
+        // agora apagaria o rascunho que a carga vai restaurar.
+        if (!receiptHydrated.value) return;
+        const stored = receiptDraftToStore(
+          {
+            mode: receiptMode.value,
+            supplierRef: receiptSupplierRef.value,
+            invoiceInput: invoiceInput.value,
+            note: receiptNote.value,
+            lines: receiptLines.value,
+            invoiceVolumes: receiptInvoiceVolumes.value,
+          },
+          Date.now(),
+        );
+        try {
+          if (stored) window.localStorage.setItem(RECEIPT_DRAFT_STORAGE_KEY, stored);
+          else window.localStorage.removeItem(RECEIPT_DRAFT_STORAGE_KEY);
+        } catch {  // silêncio-deliberado: armazenamento cheio ou bloqueado, o rascunho segue só na memória
+        }
+      },
+      { deep: true },
+    );
+  }
+
   watch(
     () => data.value?.purchase,
     (next) => {
-      if (next) applyProjection(next, { receipt: !receiptHydrated.value });
+      if (next) applyProjection(next, { receipt: !receiptHydrated.value, restoreDraft: !receiptHydrated.value });
     },
     { immediate: true },
   );
@@ -807,8 +916,11 @@ export function usePurchaseDesk() {
   function setReceiptMode(mode: ReceiptMode) {
     receiptMode.value = mode;
     receiptOutcome.value = null;
-    receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
-    receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
+    // Fornecedor e referência nascem vazios: quem diz é a NF ou o operador, nunca
+    // o primeiro da ordem alfabética nem uma frase que afirma uma conferência
+    // que ninguém fez (CMP-06, CMP-15).
+    receiptSupplierRef.value = "";
+    receiptNote.value = "";
     receiptLines.value = [];
     receiptInvoiceVolumes.value = 0;
     receiptVolumesCounted.value = null;
@@ -830,13 +942,25 @@ export function usePurchaseDesk() {
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
     receiptOutcome.value = null;
-    receiptLines.value = receiptLines.value.map((line) => (line.id === lineId ? { ...line, ...patch } : line));
+    // A resposta sobre o custo preferencial vale para o preço que ela viu: mudou
+    // preço, quantidade, embalagem ou item, a pergunta volta.
+    const repriced = PRICE_FIELDS.some((field) => field in patch) && !("preferredCost" in patch);
+    receiptLines.value = receiptLines.value.map((line) =>
+      line.id === lineId ? { ...line, ...patch, ...(repriced ? { preferredCost: "" as const } : {}) } : line,
+    );
+  }
+
+  /** Responde a pergunta do custo preferencial de um item (CMP-06). */
+  function setReceiptPreferredCost(lineId: string, decision: "update" | "keep") {
+    updateReceiptLine(lineId, { preferredCost: decision });
   }
 
   function setReceiptSupplier(ref: string) {
     receiptSupplierRef.value = ref;
     receiptOutcome.value = null;
-    receiptLines.value = receiptLines.value.map((line) => {
+    // Outro fornecedor, outro custo preferencial: a resposta anterior não vale.
+    receiptLines.value = receiptLines.value.map((current) => {
+      const line: ReceiptLine = { ...current, preferredCost: "" };
       const currentConversion =
         line.conversionId ? conversions.value.find((conversion) => conversion.id === line.conversionId) : null;
       const currentIsAllowed =
@@ -934,8 +1058,10 @@ export function usePurchaseDesk() {
   }
 
   function addReceiptLine() {
-    const materialSku = materials.value[0]?.sku ?? "";
-    const conversionId = defaultReceiptConversionId(materialSku);
+    // O item nasce vazio, com "Definir insumo" pendente: o primeiro da lista
+    // entrava sozinho e passava por escolha de alguém (CMP-06).
+    const materialSku = "";
+    const conversionId = null;
     receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.concat({
       id: `receipt-${Date.now()}`,
@@ -1116,9 +1242,9 @@ export function usePurchaseDesk() {
   }
 
   watch(
-    [view, baseView, backendReady],
-    ([currentView, currentBase, ready]) => {
-      if (currentView === "base" && currentBase === "count" && ready && !countLoaded.value) {
+    [view, backendReady],
+    ([currentView, ready]) => {
+      if (currentView === "count" && ready && !countLoaded.value) {
         void loadCount();
       }
     },
@@ -1174,7 +1300,24 @@ export function usePurchaseDesk() {
     const status = purchaseRequestStatus(sku);
     if (status === "sent") return;
     if (!requireBackend("enviar o pedido ao fornecedor")) return;
-    await runBackendAction(() => api.sendRequest({ materialSku: sku }));
+    const row = reorderRows.value.find((item) => item.material.sku === sku);
+    const supplier = row?.supplier ?? null;
+    if (!row || !supplier) return;
+
+    let reviewed = false;
+    if (!supplier.sendDirectly) {
+      const estimated = row.estimatedCostQ == null ? "sem custo estimado" : formatMoney(row.estimatedCostQ);
+      reviewed = await confirm({
+        title: `Revisar pedido de ${row.material.name}?`,
+        description:
+          `${supplier.displayName}: ${purchaseSuggestionLabel(row.material, row.suggestedQty)}, ` +
+          `${estimated}. Confirme para enviar ao fornecedor agora.`,
+        confirmLabel: "Enviar ao fornecedor",
+        cancelLabel: "Continuar revisando",
+      });
+      if (!reviewed) return;
+    }
+    await runBackendAction(() => api.sendRequest({ materialSku: sku, reviewed }));
   }
 
   // O recebimento do insumo já fecha o pedido sozinho. Cancelar é para o pedido
@@ -1239,12 +1382,12 @@ export function usePurchaseDesk() {
     () => ({ open: false, mode: "create", ref: "", mutationKey: newMutationKey() }),
   );
 
-  const materialFormSource = computed(
-    () => materials.value.find((material) => material.sku === materialForm.value.sku) ?? null,
+  // Na base de trabalho E na página: editar um arquivado (aberto pelo filtro
+  // "Arquivados") precisa do cadastro dele, que não está entre os ativos.
+  const materialFormSource = computed(() =>
+    materialBySku(materialForm.value.sku, materials.value, materialList.value.items),
   );
-  const supplierFormSource = computed(
-    () => suppliers.value.find((supplier) => supplier.ref === supplierForm.value.ref) ?? null,
-  );
+  const supplierFormSource = computed(() => findSupplier(supplierForm.value.ref));
   const materialCategories = computed(() =>
     [...new Set(enrichedMaterials.value.map((material) => material.category).filter(Boolean))].sort((a, b) =>
       a.localeCompare(b, "pt-BR"),
@@ -1405,10 +1548,14 @@ export function usePurchaseDesk() {
     noteCostInput,
     materials,
     suppliers,
+    materialList,
+    supplierList,
     conversions,
     costs,
     enrichedMaterials,
     filteredMaterials,
+    findMaterial,
+    findSupplier,
     selectedMaterial,
     selectedSupplier,
     selectedCostRows,
@@ -1421,6 +1568,14 @@ export function usePurchaseDesk() {
     integrityQueue,
     reorderRows,
     reorderBlockers,
+    costGridErrors,
+    minimumGridErrors,
+    canUndoCost,
+    canUndoMinimum,
+    undoCost,
+    undoMinimum,
+    pasteCost,
+    pasteMinimum,
     batchSupplierRef,
     batchInputs,
     batchConversionIds,
@@ -1474,6 +1629,9 @@ export function usePurchaseDesk() {
     receiptTotalCostQ,
     receiptHasRejectionReason,
     receiptReady,
+    receiptPreferredCostChanges,
+    receiptPriceCheck,
+    setReceiptPreferredCost,
     purchaseRequestStatuses,
     pending,
     error,
@@ -1522,7 +1680,7 @@ export function usePurchaseDesk() {
     cancelPurchaseRequest,
     setPreferredCost,
     saveQuote,
-    costPerBaseUnitQ,
+    costPerReadingUnitQ,
     materialForm,
     supplierForm,
     materialFormSource,

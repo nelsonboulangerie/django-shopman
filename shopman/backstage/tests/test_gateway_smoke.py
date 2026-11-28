@@ -28,7 +28,7 @@ def test_gateway_smoke_local_fixtures_pass_and_rollback():
     )
 
     assert report.status == "passed"
-    assert report.counts["passed"] == 5
+    assert report.counts["passed"] == 4
     assert not report.failed
     assert Order.objects.count() == before["orders"]
     assert PaymentIntent.objects.count() == before["intents"]
@@ -54,7 +54,7 @@ def test_gateway_smoke_local_fixtures_do_not_call_real_payment_adapters():
     )
 
     assert report.status == "passed"
-    assert report.counts["passed"] == 5
+    assert report.counts["passed"] == 4
 
 
 @pytest.mark.django_db
@@ -66,8 +66,8 @@ def test_gateway_smoke_command_outputs_json_for_local_contract():
     data = json.loads(stdout.getvalue())
     assert data["status"] == "passed"
     assert data["rolled_back"] is True
-    assert data["counts"]["passed"] == 5
-    assert {check["provider"] for check in data["checks"]} == {"efi", "stripe", "ifood"}
+    assert data["counts"]["passed"] == 4
+    assert {check["provider"] for check in data["checks"]} == {"efi", "stripe"}
 
 
 @pytest.mark.django_db
@@ -77,7 +77,7 @@ def test_gateway_smoke_command_outputs_json_for_local_contract():
     SHOPMAN_STRIPE={"secret_key": "", "webhook_secret": ""},
     SHOPMAN_FISCAL_ADAPTER=None,
     SHOPMAN_FOCUS_NFE={"environment": "homologacao", "token": "", "cnpj_emitente": "", "base_url": ""},
-    SHOPMAN_IFOOD={"webhook_token": "", "merchant_id": ""},
+    SHOPMAN_IFOOD={"merchant_id": ""},
     MANYCHAT_API_TOKEN="",
     MANYCHAT_WEBHOOK_SECRET="",
     DOORMAN={"ACCESS_LINK_API_KEY": ""},

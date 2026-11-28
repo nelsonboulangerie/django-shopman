@@ -145,5 +145,5 @@ O backstage traduz `CashError` para `POSError` (dialeto `{detail, field, errors}
 
 O caixa legado (`backstage.POSTerminal`/`CashShift`/`CashMovement`, ADR-011) entrou no livro uma
 vez e sumiu na migração `backstage/0030_cashman_backfill_and_cut` (WP-5 do
-[CASHMAN-PLAN](../plans/CASHMAN-PLAN.md)); as linhas nascidas dali levam `payload.legacy`.
-Diagnóstico e desenho: [CASH-LEDGER-ARCHITECTURE.md](../plans/CASH-LEDGER-ARCHITECTURE.md).
+[CASHMAN-PLAN](../plans/completed/CASHMAN-PLAN.md)); as linhas nascidas dali levam `payload.legacy`.
+Diagnóstico e desenho: [CASH-LEDGER-ARCHITECTURE.md](../plans/completed/CASH-LEDGER-ARCHITECTURE.md).
