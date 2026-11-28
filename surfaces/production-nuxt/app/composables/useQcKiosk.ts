@@ -36,7 +36,7 @@ export interface QcActResult {
 
 export function useQcKiosk(initialDate = "") {
   // "" = hoje (default do backend). Outra data serve à fornada esquecida de
-  // ontem — a finalização aceita qualquer dia com ordem aberta.
+  // ontem — a finalização aceita qualquer dia com lote em produção.
   const selectedDate = ref(initialDate);
 
   const { data, pending, error, refresh } = useFetch<ProductionQCResponse>(
@@ -80,7 +80,7 @@ export function useQcKiosk(initialDate = "") {
       idempotencyKey: string,
       metadata: ProductionMutationMetadata,
     ) => Promise<unknown>,
-    fallbackError = "Não deu para fechar o lote. Tente de novo.",
+    fallbackError = "Não deu para finalizar o lote. Tente de novo.",
   ): Promise<QcActResult> {
     if (submitting.value) return { ok: false };
     const authorization = mutationGuard.authorizeMutation(attemptRef);
@@ -98,7 +98,7 @@ export function useQcKiosk(initialDate = "") {
       if (shortage) return { ok: false, shortage };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, fallbackError));
-      // Conflito de estado (lote fechado/cancelado em outra tela): o painel
+      // Conflito de estado (lote finalizado/cancelado em outra tela): o painel
       // está mentindo — atualiza na hora em vez de esperar o poll de 30s.
       if (httpErrorCode(err) === "conflict") await refresh();
       return { ok: false };

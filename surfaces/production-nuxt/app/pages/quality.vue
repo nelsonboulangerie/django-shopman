@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Qualidade = a revisão do gestor sobre o lote já fechado (quality_reviewed /
+// Qualidade = a revisão do gestor sobre o lote já finalizado (quality_reviewed /
 // quality_corrected). A classificação continua acontecendo na Finalização
 // (ADR-017 §9): o lote fica pronto já classificado, e aqui o gestor confere por
 // exceção (QualityGatePanel), confirma o conjunto sem exceção num ato só ou
@@ -78,13 +78,13 @@ const period = computed<PeriodSelection>({
   },
 });
 
-// "sáb 03/10 · lotes fechados hoje" sob o título (v4); a hora vem do ponto ao vivo.
+// "sáb 03/10 · lotes finalizados hoje" sob o título (v4); a hora vem do ponto ao vivo.
 const qualitySubtitle = computed(() => {
   const iso = selectedDate.value || todayISO;
   const label = shortDay(iso);
   return selectedDate.value === ""
-    ? `${label} · lotes fechados hoje`
-    : `${label} · lotes fechados no dia`;
+    ? `${label} · lotes finalizados hoje`
+    : `${label} · lotes finalizados no dia`;
 });
 function shortDay(iso: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -104,8 +104,8 @@ function shiftDay(delta: number) {
 
 // O portão vê TODOS os lotes do dia, sem o filtro da busca: o cartão "N lotes
 // sem exceção" precisa contar exatamente o conjunto que o ato confirma (o
-// servidor assina esse conjunto). Ele mesmo separa os fechados (sem exceção /
-// exceções / confirmados) dos abertos.
+// servidor assina esse conjunto). Ele mesmo separa os finalizados (sem exceção /
+// exceções / confirmados) dos em produção.
 const qualityOrders = computed(() => kiosk.value?.orders ?? []);
 const batchAvailable = computed(
   () =>
@@ -151,7 +151,7 @@ const dayActions = computed(() => [
     : []),
   { label: "Relatórios de qualidade", icon: "i-lucide-chart-column", to: "/reports" },
 ]);
-// O selo da Qualidade no rail: os lotes fechados esperando a revisão. Fora desta
+// O selo da Qualidade no rail: os lotes finalizados esperando a revisão. Fora desta
 // tela o selo some (o número sem a leitura viva mentiria).
 const productionRail = useProductionRail();
 watch(
@@ -197,7 +197,7 @@ async function confirmQualityBatch() {
     );
 }
 
-// O atalho dos lotes ainda abertos leva à Finalização, no mesmo dia.
+// O atalho dos lotes ainda em produção leva à Finalização, no mesmo dia.
 function goClose() {
   navigateTo({
     path: "/close",
@@ -205,7 +205,7 @@ function goClose() {
   });
 }
 
-// ── Correção da partição de um lote fechado ─────────────────────────────────
+// ── Correção da partição de um lote finalizado ─────────────────────────────────
 // O lote em correção mora na URL (`?lot=<pk>`, com o dia e a busca), como no
 // Finalização: o voltar do navegador volta ao portão, e o anterior e o próximo
 // andam entre os lotes que o portão mostra com Corrigir.
@@ -361,7 +361,7 @@ const screenStarted = computed(() => {
       :actions="dayActions"
       @refresh="refresh"
     >
-      <!-- Anterior e próximo DENTRO do portão de onde a pessoa veio. Aberto por
+      <!-- Anterior e próximo DENTRO do portão de onde a pessoa veio. Vindo por
            link, sem trilha: o par não aparece. -->
       <template v-if="correcting" #status>
         <OperatorRecordNav

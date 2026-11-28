@@ -1,8 +1,8 @@
 // Production planning read-side. Single source for the planning matrix:
 //   - useFetch the production board projection (GET /api/v1/backstage/production/);
 //   - SSE first (ADR-016): o canal `backstage-production` (BFF /sse/production)
-//     avisa a cada lote planejado, aberto, ajustado ou fechado, e a tela refaz o
-//     GET canônico. Antes ninguém ouvia o canal e o lote aberto no tablet do forno
+//     avisa a cada lote planejado, em produção, ajustado ou finalizado, e a tela refaz o
+//     GET canônico. Antes ninguém ouvia o canal e o lote confirmado no tablet do forno
 //     levava até 60 s para aparecer no do planejamento (mapa de cenários, P2-18);
 //   - o poll de 60 s fica só de reserva (stream caído, deploy).
 // Writes (plan / start / void) go through the django proxy (CSRF handled there) and
@@ -286,8 +286,8 @@ export function useProductionBoard(
   }
 
   // Cancelar o lote da matriz: a ação `void:<pk>` vem DESTA projeção, que traz o lote
-  // planejado e o aberto do dia escolhido (hoje ou outro). Antes o diálogo pedia a
-  // ação ao quadro dos lotes abertos de hoje (`production/kds/`), que nunca tem o
+  // planejado e o em produção do dia escolhido (hoje ou outro). Antes o diálogo pedia a
+  // ação ao quadro dos lotes em produção de hoje (`production/kds/`), que nunca tem o
   // planejado, e o "Confirmar cancelamento" voltava sem cancelar nada (#2957).
   function voidOrder(
     key: string,

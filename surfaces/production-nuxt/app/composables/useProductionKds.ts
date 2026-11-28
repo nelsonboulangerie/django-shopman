@@ -162,7 +162,7 @@ export function useProductionKds() {
     }
   }
 
-  // O finish não vive mais aqui: fechar o lote é a Finalização (quiosque de
+  // O finish não vive mais aqui: finalizar o lote é a Finalização (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
     post(pk, "void", (idempotencyKey, metadata) =>

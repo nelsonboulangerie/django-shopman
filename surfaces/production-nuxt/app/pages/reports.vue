@@ -182,7 +182,7 @@ const SUPPORT_NUM = REPORT_SUPPORT_NUM;
 const lateColumns = [
   { id: "ref", header: "Lote", enableHiding: false },
   { id: "product", header: "Produto" },
-  { accessorKey: "elapsed_minutes", header: "Aberto há", meta: NUM },
+  { accessorKey: "elapsed_minutes", header: "Em produção há", meta: NUM },
   { accessorKey: "target_minutes", header: "Meta", meta: SUPPORT_NUM },
   { id: "operator", header: "Quem abriu", meta: { supporting: true } },
 ];
@@ -215,7 +215,7 @@ const dayLossLotColumns = [
 const historyColumns = REPORT_HISTORY_COLUMNS;
 // O realizado numa coluna por grandeza: peça e massa nunca dividem uma célula.
 const operatorColumns = computed(() => [
-  { accessorKey: "operator_name", header: "Fechado por", enableHiding: false },
+  { accessorKey: "operator_name", header: "Finalizado por", enableHiding: false },
   { accessorKey: "wo_count", header: "Lotes", meta: NUM },
   { accessorKey: "qty_count_display", header: "Peças", meta: NUM },
   { accessorKey: "qty_mass_display", header: "Massa", meta: NUM },
@@ -325,8 +325,8 @@ function refreshAll() {
       <div class="mb-4 grid grid-cols-2 gap-3 xl:grid-cols-4" data-reports-kpis>
         <OperatorMetric
           title="Aproveitamento médio"
-          :value="management?.average_yield_rate || 'Sem lote fechado'"
-          :hint="`Realizado ÷ previsto em ${management?.finished_orders ?? 0} lotes fechados`"
+          :value="management?.average_yield_rate || 'Sem lote finalizado'"
+          :hint="`Realizado ÷ previsto em ${management?.finished_orders ?? 0} lotes finalizados`"
         />
         <OperatorMetric
           title="Capacidade"
@@ -342,7 +342,7 @@ function refreshAll() {
           :value="management?.planned_display || '0'"
           :hint="management?.planned_hint || ''"
         />
-        <!-- Grandezas por unidade, em pt-BR, e a frase só dos lotes fechados:
+        <!-- Grandezas por unidade, em pt-BR, e a frase só dos lotes finalizados:
              o servidor escreve (beta 05/11: 159966.487 somava g com peças). -->
         <OperatorMetric
           title="Perda"
@@ -530,7 +530,7 @@ function refreshAll() {
             color="warning"
             class="ml-1"
             label="assumido"
-            title="Fechado sem confirmação do previsto: previsto assumido igual ao planejado"
+            title="Finalizado sem confirmação do previsto: previsto assumido igual ao planejado"
           />
         </template>
         <template #finished-cell="{ row }">{{ row.original.qty_finished_display || REPORT_EMPTY.finished }}</template>
@@ -543,7 +543,7 @@ function refreshAll() {
         <template #duration-cell="{ row }">{{ row.original.duration_display || REPORT_EMPTY.duration }}</template>
         <template v-if="historyRows.some((row) => row.started_assumed) || (pagination && pagination.total)" #footer>
           <p v-if="historyRows.some((row) => row.started_assumed)" class="mb-2 text-xs text-muted-foreground">
-            <b class="font-medium text-warning">assumido</b>: o lote foi fechado sem confirmação do previsto, e o
+            <b class="font-medium text-warning">assumido</b>: o lote foi finalizado sem confirmação do previsto, e o
             previsto foi assumido igual ao planejado. Ninguém o declarou.
           </p>
           <ReportPagination
@@ -637,7 +637,7 @@ function refreshAll() {
           :columns="blindColumns"
           :row-key="(row) => row.code"
           empty-icon="i-lucide-tag"
-          empty-title="Nenhum preparo aberto nesta data, então não há códigos para correlacionar."
+          empty-title="Nenhum preparo nesta data, então não há códigos para correlacionar."
           caption="Código do dia e preparo correspondente"
         >
           <template #code-cell="{ row }">

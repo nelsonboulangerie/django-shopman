@@ -306,6 +306,18 @@ const byText = (w: ReturnType<typeof mountGrid>, sel: string, txt: string) =>
   w.findAll(sel).find((el) => el.text().includes(txt));
 
 /** Uma ação do menu de um produto planejado (o `NuxtDropdownMenu` do item). */
+// KISS (dono, 28/11): o que já foi feito é uma linha só. Os planejados abrem no Ver
+// e o lote em produção sai da lista do que falta (o recorte "Em produção" o traz).
+async function showPlanned(w: ReturnType<typeof mountGrid>) {
+  await w.get("[data-planned-toggle]").trigger("click");
+}
+async function showStarted(w: ReturnType<typeof mountGrid>) {
+  await w
+    .findAll('[data-open-filters] [role="tab"]')
+    .find((tab) => tab.text().startsWith("Em produção"))!
+    .trigger("click");
+}
+
 const plannedAction = (w: ReturnType<typeof mountGrid>, label: string) =>
   w
     .findAll('[data-planned-item] [role="menuitem"]')
@@ -558,8 +570,9 @@ describe("ProductionStageGrid — planning authority", () => {
     const w = mountGrid("plan");
 
     expect(w.find("[data-plan-row]").exists()).toBe(false);
-    const planned = w.find("[data-planned-line]");
-    expect(planned.text()).toContain("Planejado");
+    expect(w.get("[data-planned-toggle]").text()).toContain("1 planejado");
+    expect(w.find("[data-planned-line]").exists()).toBe(false);
+    await showPlanned(w);
     expect(w.find("[data-planned-row]").text()).toContain("Pão 20");
 
     await plannedAction(w, "Corrigir quantidade")!.trigger("click");
@@ -617,6 +630,7 @@ describe("ProductionStageGrid — planning authority", () => {
       }),
     ];
     const w = mountGrid("plan");
+    await showPlanned(w);
     await plannedAction(w, "Corrigir quantidade")!.trigger("click");
     expect(w.text()).not.toContain("Zero remove");
     const input = w.find('input[aria-label="Quantidade planejada"]');
@@ -651,6 +665,7 @@ describe("ProductionStageGrid — planning authority", () => {
       }),
     ];
     const w = mountGrid("plan");
+    await showPlanned(w);
     await plannedAction(w, "Corrigir quantidade")!.trigger("click");
     await w.find('input[aria-label="Quantidade planejada"]').setValue("0");
 
@@ -674,9 +689,10 @@ describe("ProductionStageGrid — planning authority", () => {
       }),
     ];
     const w = mountGrid("plan");
+    await showPlanned(w);
 
-    // O estado (aberto/fechado) mora no menu do item, não na linha (v4 pino 8).
-    expect(w.find("[data-planned-row]").text()).not.toContain("(aberto)");
+    // O estado (em produção/finalizado) mora no menu do item, não na linha (v4 pino 8).
+    expect(w.find("[data-planned-row]").text()).not.toContain("produção");
     expect(plannedAction(w, "Corrigir quantidade")).toBeUndefined();
     await plannedAction(w, "Planejar novo lote")!.trigger("click");
     expect(w.text()).toContain("Soma ao dia");
@@ -715,13 +731,10 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
 
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
     const set = w.find("[data-plan-clean]");
-    expect(set.text()).toContain("+5 produtos sem ressalva");
-    expect(set.text()).toContain(
-      "Pain de Campagne 34, Kuro Pan 12, Baguete 30, Focaccia 10 e mais 1",
-    );
-    expect(w.find("[data-plan-clean-all]").text()).toBe(
-      "Planejar os 5 como sugerido",
-    );
+    // KISS (dono, 28/11): o número e o gesto, sem a frase do critério nem os nomes.
+    expect(set.text()).toContain("5 no padrão");
+    expect(set.text()).not.toContain("Pain de Campagne");
+    expect(w.find("[data-plan-clean-all]").text()).toBe("Planejar os 5");
   });
 
   it("Ver um a um abre o conjunto em linhas", async () => {
@@ -787,9 +800,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
     const w = mountGrid("plan");
 
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO"]);
-    expect(w.find("[data-plan-manual]").text()).toContain(
-      "+4 produtos sem sugestão para o dia",
-    );
+    expect(w.find("[data-plan-manual]").text()).toContain("4 sem sugestão");
     await w.find("[data-plan-manual-expand]").trigger("click");
     expect(w.find("[data-plan-manual]").exists()).toBe(false);
     expect(skus(w, "[data-plan-row]")).toEqual(["CRO", "MOLHO", "RECHEIO", "CREME", "BASE"]);
@@ -825,6 +836,7 @@ describe("ProductionStageGrid — Planejamento: conjunto sem ressalva e recortes
 
     await chip("Planejados").trigger("click");
     expect(w.find("[data-plan-row]").exists()).toBe(false);
+    await showPlanned(w);
     expect(skus(w, "[data-planned-row]")).toEqual(["BRI"]);
   });
 });
@@ -835,7 +847,8 @@ describe("ProductionStageGrid — Produção", () => {
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
     ];
     const w = mountGrid();
-    expect(w.text()).toContain("PAO-001");
+    // KISS (dono, 28/11): sem o SKU na linha; o código fica na busca e no menu.
+    expect(w.find("[data-open-row]").text()).not.toContain("PAO-001");
     expect(w.text()).toContain("Planejado");
     expect(w.text()).toContain("Previsto");
     // "Produzido" não rotula started nem finished (parecer do dono, 03/10/2026).
@@ -846,7 +859,7 @@ describe("ProductionStageGrid — Produção", () => {
     expect(w.text()).not.toContain("em processo");
   });
 
-  it("nomeia a linha pelo produto e deixa o SKU na segunda linha", () => {
+  it("nomeia a linha pelo produto, e a segunda linha é o planejado, sem o SKU", () => {
     boardRows.value = [
       row({
         recipe_name: "Pão de fermentação natural",
@@ -857,7 +870,8 @@ describe("ProductionStageGrid — Produção", () => {
     const w = mountGrid();
     const lines = w.find("[data-row-product]").findAll("p");
     expect(lines[0]!.text()).toBe("Pão de fermentação natural");
-    expect(lines[1]!.text()).toContain("PAO-001");
+    expect(lines[1]!.text()).toContain("30 planejadas");
+    expect(lines[1]!.text()).not.toContain("PAO-001");
   });
 
   it("o nome quebra em duas linhas em vez de cortar no tablet (beta 05/11)", () => {
@@ -1060,7 +1074,7 @@ describe("ProductionStageGrid — Produção", () => {
     expect(w.text()).not.toContain("em processo");
   });
 
-  it("com um lote aberto e outro planejado, mostra o número e Confirmar", () => {
+  it("com um lote em produção e outro planejado, mostra o número e Confirmar", () => {
     boardRows.value = [
       row({
         planned_qty: "20",
@@ -1076,7 +1090,7 @@ describe("ProductionStageGrid — Produção", () => {
     );
   });
 
-  it("linha aberta oferece Detalhes do lote somente no menu", async () => {
+  it("o lote em produção vira uma linha só, e o recorte o traz com o menu", async () => {
     boardRows.value = [
       row({
         started_qty: "30",
@@ -1086,12 +1100,17 @@ describe("ProductionStageGrid — Produção", () => {
       }),
     ];
     const w = mountGrid();
+    expect(w.find("[data-open-row]").exists()).toBe(false);
+    expect(w.get("[data-open-started-toggle]").text()).toContain("1 em produção");
+    await w.get("[data-open-started-toggle]").trigger("click");
+    expect(w.get("[data-open-started-list]").text()).toContain("Pão");
+    await showStarted(w);
     expect(w.find("[data-open-view-launch]").exists()).toBe(false);
     expect(w.find("[data-open-row-menu]").exists()).toBe(true);
   });
 });
 
-describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", () => {
+describe("ProductionStageGrid — lote em produção (conferência e cancelamento)", () => {
   it("abre os detalhes pelo menu e cancela com motivo", async () => {
     boardRows.value = [
       row({
@@ -1100,12 +1119,13 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       }),
     ];
     const w = mountGrid();
+    await showStarted(w);
 
     // O menu abre a conferência sem repetir a ação na linha.
     await byText(w, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(w.get("[data-lot-quantity]").text()).toBe("30 un. previstas");
-    expect(w.get("[data-lot-summary]").text()).toContain("Lote aberto");
-    expect(w.get("[data-lot-summary]").text()).toContain("Aberto em 29/10 às 09:17");
+    expect(w.get("[data-lot-summary]").text()).toContain("Lote em produção");
+    expect(w.get("[data-lot-summary]").text()).toContain("Em produção desde 29/10 às 09:17");
     expect(w.text()).toContain("Finalização");
     expect(w.text()).not.toContain("Avançar");
 
@@ -1114,7 +1134,7 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     await w.find("[data-lot-void-reason] textarea").setValue("queimou");
     await byText(w, "button", "Confirmar cancelamento")!.trigger("click");
     expect(voidSpy).toHaveBeenCalledWith("PAO-001", 7, 2, "queimou");
-    // Nunca pelo quadro dos lotes abertos de hoje, que não traz o planejado.
+    // Nunca pelo quadro dos lotes em produção de hoje, que não traz o planejado.
     expect(kdsVoidSpy).not.toHaveBeenCalled();
   });
 
@@ -1149,6 +1169,7 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
       }),
     ];
     const w = mountGrid();
+    await showStarted(w);
     await byText(w, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(byText(w, "button", "Cancelar lote")).toBeUndefined();
     expect(w.get("[data-void-hint]").text()).toBe("Cancelar lote é com o gerente.");
@@ -1186,12 +1207,14 @@ describe("ProductionStageGrid — lote aberto (conferência e cancelamento)", ()
     ];
     kdsActions.set("authorize_formula_deviation:7", { enabled: false });
     let wrapper = mountGrid();
+    await showStarted(wrapper);
     await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(byText(wrapper, "button", "Autorizar desvio")).toBeUndefined();
 
     wrapper.unmount();
     kdsActions.set("authorize_formula_deviation:7", { enabled: true });
     wrapper = mountGrid();
+    await showStarted(wrapper);
     await byText(wrapper, '[role="menuitem"]', "Detalhes do lote")!.trigger("click");
     expect(byText(wrapper, "button", "Autorizar desvio")).toBeDefined();
   });
@@ -1656,7 +1679,7 @@ describe("ProductionStageGrid — o painel de abertura (WP-F20)", () => {
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "1.250");
   });
 
-  it("o lote fechado fica na lista com o previsto que teve (P2-13)", () => {
+  it("o lote finalizado fica na lista com o previsto que teve (P2-13)", async () => {
     boardRows.value = [
       row({
         output_sku: "PAO-001",
@@ -1666,18 +1689,23 @@ describe("ProductionStageGrid — o painel de abertura (WP-F20)", () => {
       row({
         output_sku: "CHOCO",
         recipe_name: "Pain au chocolat",
-        // Como o servidor manda: o lote fechado não soma no started_qty da linha.
+        // Como o servidor manda: o lote finalizado não soma no started_qty da linha.
         started_qty: "0",
         finished_qty: "36",
         finished_orders: [wo({ pk: 9, status: "finished", started_qty: "36", finished_qty: "36" })],
       }),
     ];
     const w = mountGrid();
+    // Fora da lista do que falta: a linha "✓ 1 em produção" o conta e o Ver o mostra.
+    expect(w.find('[data-open-row][data-sku="CHOCO"]').exists()).toBe(false);
+    await w.get("[data-open-started-toggle]").trigger("click");
+    expect(w.get("[data-open-started-list]").text()).toContain("Pain au chocolat 36");
+    await showStarted(w);
     const closed = w.get('[data-open-row][data-sku="CHOCO"]');
     expect(closed.text()).toContain("Pain au chocolat");
-    expect(closed.text()).toContain("Fechado");
+    expect(closed.text()).toContain("Finalizado");
     expect(closed.text()).toContain("36");
-    // O progresso conta o fechado: "Todos 2", não "Todos 1".
+    // O recorte conta o finalizado: "Todos 2", não "Todos 1".
     expect(byText(w, '[role="tab"]', "Todos")!.text()).toContain("2");
   });
 
@@ -1701,12 +1729,11 @@ describe("ProductionStageGrid — o painel de abertura (WP-F20)", () => {
     await w.find('button[aria-label="Confirmar Croissant de manteiga"]').trigger("click");
 
     expect(w.find("[data-open-confirm-panel]").exists()).toBe(true);
-    const header = w.get("[data-open-table] > div[aria-hidden]");
-    // Some a Situação (vira ponto) e o Planejado (desce para a linha do SKU).
-    expect(header.text()).not.toContain("Situação");
-    expect(header.text()).not.toContain("Planej");
+    // Encaixado, sem cabeçalho de colunas (KISS, 28/11): a Situação fica para o
+    // leitor de tela e o Planejado desce para a segunda linha.
+    expect(w.find("[data-open-table] > div[aria-hidden]").exists()).toBe(false);
     const line = w.get("[data-open-row]");
-    expect(line.find("[data-open-situation-dot]").text()).toBe("A confirmar");
+    expect(line.find("[data-open-situation]").text()).toBe("A confirmar");
     expect(line.get("[data-open-planned-compact]").text()).toContain("42 planejadas");
     // A 1024 px a ação da linha é só o ícone; o nome fica com a largura.
     expect(line.get("[data-open-confirming]").text().trim()).toBe("");

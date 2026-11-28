@@ -161,7 +161,7 @@ watch(
 );
 
 // Com âncora, Normal é saldo e não exige digitação. Sem âncora, o padrão é um
-// bucket editável como os demais para que um lote avulso possa ser fechado.
+// bucket editável como os demais para que um lote avulso possa ser finalizado.
 const activeTarget = ref<QuantityTarget | null>(
   anchor.anchor === null && defaultRef.value
     ? { kind: "grade", gradeRef: defaultRef.value }
@@ -666,7 +666,7 @@ function discardQuestion(action: "leave" | "switch") {
     : {
         title: "Descartar as quantidades e os motivos informados?",
         description:
-          "O lote continua aberto na Finalização, sem nada do que você digitou.",
+          "O lote continua na Finalização, sem nada do que você digitou.",
         confirmLabel,
       };
 }
@@ -740,7 +740,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 const fieldCard =
   "flex h-24 flex-col justify-between rounded-md border bg-card p-3 text-left transition";
 
-// A ação da tela é UMA: fechar o lote (ou salvar a correção). Na mesa ela fica sob o
+// A ação da tela é UMA: finalizar o lote (ou salvar a correção). Na mesa ela fica sob o
 // teclado, como sempre; no celular desce para a base (`OperatorActionBar`), com o
 // realizado na linha de contexto. A folha de motivos continua sendo o passo seguinte
 // do mesmo gesto: a barra só a abre, e a folha, modal, cobre a barra enquanto pergunta.

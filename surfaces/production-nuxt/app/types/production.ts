@@ -96,7 +96,7 @@ export interface ProductionBoardResponse {
 }
 
 // ── O PAINEL — previsão da produção (estilo aeroporto) ──────────────────────
-// O status É a escada de confiança: Planejado → Previsto → Fechado.
+// O status É a escada de confiança: Planejado → Previsto → Finalizado.
 
 export type ForecastStatus =
   "scheduled" | "in_progress" | "delayed" | "arrived";

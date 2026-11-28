@@ -9,13 +9,13 @@ import type {
 import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export interface QualityGate {
-  /** Fechados, sem revisão e sem exceção: o conjunto de UM ato. */
+  /** Finalizados, sem revisão e sem exceção: o conjunto de UM ato. */
   clean: QCOrderCardProjection[];
-  /** Fechados, sem revisão, com exceção: um a um. */
+  /** Finalizados, sem revisão, com exceção: um a um. */
   exceptions: QCOrderCardProjection[];
   /** Já revisados (confirmados ou corrigidos). */
   reviewed: QCOrderCardProjection[];
-  /** Ainda não fechados: fora do portão. */
+  /** Ainda não finalizados: fora do portão. */
   openCount: number;
 }
 

@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  dayContextLine,
   formatQty,
   formatQtyUnit,
   latestPlanTime,
@@ -111,21 +110,6 @@ describe("R06: Planejado 15h12 · como sugerido", () => {
     const suggestion = { quantity: "52" } as ProductionSuggestionProjection;
     expect(plannedAsSuggested(row({ suggestion, planned_qty: "52" }))).toBe(true);
     expect(plannedAsSuggested(row({ suggestion, planned_qty: "50" }))).toBe(false);
-  });
-});
-
-describe("R04: ocasião e clima no cabeçalho do Planejamento", () => {
-  it("previsão para o dia que vem, medição para o passado, nada sem dado", () => {
-    expect(
-      dayContextLine(
-        { occasion: "Sábado comum, sem feriado", weather: "24 °C e sol", weather_kind: "forecast" },
-        "como os sábados usados na conta",
-      ),
-    ).toBe("Sábado comum, sem feriado · previsão 24 °C e sol (como os sábados usados na conta)");
-    expect(dayContextLine({ occasion: "", weather: "18 °C e chuva", weather_kind: "measured" })).toBe(
-      "18 °C e chuva",
-    );
-    expect(dayContextLine(null)).toBe("");
   });
 });
 

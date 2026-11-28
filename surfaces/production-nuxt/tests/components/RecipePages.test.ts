@@ -443,7 +443,7 @@ describe("Receita: anterior e próxima no cabeçalho", () => {
     await flushPromises();
 
     expect(wrapper.find("[data-version-usage]").exists()).toBe(false);
-    expect(wrapper.find("[data-version-batches]").text()).toContain("Nenhum lote fechado com esta versão.");
+    expect(wrapper.find("[data-version-batches]").text()).toContain("Nenhum lote finalizado com esta versão.");
   });
 
   it("puts OperatorRecordNav in the header status with the recipe trail and recipe addresses", async () => {

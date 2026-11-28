@@ -56,7 +56,7 @@ const props = withDefaults(
     pollMs?: number | null;
     /** Selo ao lado do título (ex.: o dia que a tela mostra). */
     eyebrow?: string;
-    /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes fechados hoje"). */
+    /** O que a tela diz em uma frase, ao lado do selo ao vivo ("lotes finalizados hoje"). */
     subtitle?: string;
     searchPlaceholder?: string;
     /** O que a busca filtra nesta tela ("filtrando os lotes"). */

@@ -84,8 +84,8 @@ test("J-P7: falta de insumo, do aviso à assinatura", async ({
   await expect(warning.getByRole("link", { name: "Pedir no Compras" })).toHaveCount(0);
   await capture(tablet, testInfo, "abertura-falta-e-aviso");
   await warning.getByRole("button", { name: "Abrir assim mesmo" }).click();
-  await expect(tablet.getByText(`Lote aberto: ${PRODUCT} × ${OPEN_WITH}`)).toBeVisible();
-  await capture(tablet, testInfo, "abertura-lote-aberto");
+  await expect(tablet.getByText(`Em produção: ${PRODUCT} × ${OPEN_WITH}`)).toBeVisible();
+  await capture(tablet, testInfo, "producao-lote-confirmado");
 
   // ── Finalização: a falta trava, e a saída é a assinatura da lista ───────────
   await tablet.goto("/close");
@@ -102,7 +102,7 @@ test("J-P7: falta de insumo, do aviso à assinatura", async ({
     .click();
   const block = tablet.getByRole("dialog");
   await steady(block);
-  await expect(block.getByText("Falta insumo para fechar")).toBeVisible();
+  await expect(block.getByText("Falta insumo para finalizar")).toBeVisible();
   await expect(block.locator("[data-shortage-item] span").first()).toHaveText(SHORT);
   await expect(block.getByRole("textbox"), "o 'quem autorizou' em texto livre morreu").toHaveCount(0);
   await capture(tablet, testInfo, "finalizacao-falta-trava");
@@ -124,6 +124,6 @@ test("J-P7: falta de insumo, do aviso à assinatura", async ({
   await expect(
     tablet.getByRole("button", { name: `Finalizar o lote de ${PRODUCT}` }),
   ).toHaveCount(0);
-  await capture(tablet, testInfo, "finalizacao-lote-fechado-com-assinatura");
+  await capture(tablet, testInfo, "finalizacao-lote-finalizado-com-assinatura");
   await tabletContext.close();
 });

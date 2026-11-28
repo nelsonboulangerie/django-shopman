@@ -170,7 +170,7 @@ export const REPORT_HISTORY_COLUMNS = [
   { id: "finished", header: "Realizado", meta: REPORT_NUM },
   { id: "loss", header: "Perda", meta: { class: { th: "text-left", td: "align-top" } } },
   { id: "yield", header: "Aproveitamento", meta: REPORT_SUPPORT_NUM },
-  { id: "operator", header: "Fechado por", meta: { supporting: true } },
+  { id: "operator", header: "Finalizado por", meta: { supporting: true } },
   { id: "duration", header: "Duração", meta: REPORT_SUPPORT_NUM },
 ];
 
@@ -199,9 +199,9 @@ export function sortedLossParts(parts: readonly LossPartProjection[]): LossPartP
  * nunca um zero escondido: cada vazio tem a sua razão escrita.
  */
 export const REPORT_EMPTY = {
-  started: "Não aberto",
-  finished: "Em aberto",
-  yield: "Em aberto",
+  started: "Não confirmado",
+  finished: "Em produção",
+  yield: "Em produção",
   operator: "Sem registro",
   position: "Sem posto",
   duration: "Sem medida",

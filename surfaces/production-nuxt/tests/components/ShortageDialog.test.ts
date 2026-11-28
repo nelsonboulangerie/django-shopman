@@ -185,7 +185,7 @@ describe("ShortageDialog — falta de insumo no fechamento (assinatura)", () => 
     const wrapper = mountDialog(materialShortage("finish"));
     const modal = wrapper.findComponent({ name: "NuxtModal" });
 
-    expect(modal.props("title")).toBe("Falta insumo para fechar");
+    expect(modal.props("title")).toBe("Falta insumo para finalizar");
     expect(modal.props("description")).toContain("Compras");
     expect(wrapper.find("textarea").exists()).toBe(false);
     expect(wrapper.find("[data-shortage-authorize]").exists()).toBe(false);
@@ -246,7 +246,7 @@ describe("ShortageDialog — falta de insumo no fechamento (assinatura)", () => 
     await wrapper.setProps({ shortage: null });
     await nextTick();
 
-    expect(modal.props("title")).toBe("Falta insumo para fechar");
+    expect(modal.props("title")).toBe("Falta insumo para finalizar");
     expect(modal.props("description")).not.toContain("undefined");
   });
 });

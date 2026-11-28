@@ -1,7 +1,9 @@
 // Trava do vocabulário do ciclo do lote (parecer do dono, 03/10/2026).
 //
 // O kernel modela planned → started → finished, e a camada pt-BR fala
-// Planejada · Aberta · Fechada · Cancelada; quantidades planejado · previsto ·
+// Planejada · Em produção · Finalizada · Cancelada (dono, 28/11: "Aberto/Fechado é
+// nomenclatura vencida... o que era fechamento virou Finalização"; o lote que passou
+// pelo Confirmar está em produção); quantidades planejado · previsto ·
 // realizado; indicadores perda e aproveitamento. "Produzido" chegou a
 // significar `started` no quadro e `finished` no Admin; "Estornado" nomeava o
 // `void`; "Expedição" era o nome da tela de finalização e colidia com o posto da
@@ -32,8 +34,23 @@ const FORBIDDEN: Array<{ word: RegExp; why: string }> = [
   { word: /produzid[oa]s?/i, why: "previsto (started) ou realizado (finished)" },
   { word: /estorn/i, why: "cancelar / cancelamento (void)" },
   { word: /expedi[cç][aã]o|expedite/i, why: "Finalização (/close)" },
-  { word: /iniciad[oa]s?/i, why: "aberto / aberta (started)" },
-  { word: /conclu[ií]d[oa]s?/i, why: "fechado / fechada (finished)" },
+  { word: /iniciad[oa]s?/i, why: "em produção (started)" },
+  { word: /conclu[ií]d[oa]s?/i, why: "finalizado / finalizada (finished)" },
+  // Aberto/Fechado como estado do lote (28/11). "Canal aberto", "diálogo aberto" e
+  // "antes de fechar" (a loja) seguem livres: a trava olha o lote, a fornada, a
+  // contagem ("25 abertos") e o rótulo que começa com a palavra.
+  {
+    word: /\blotes?\s+(ainda\s+)?(n[aã]o\s+|j[aá]\s+)?(abert|fechad)[oa]s?\b|\bfornadas?\s+(abert|fechad)[oa]s?\b|\bordem\s+abert/i,
+    why: "lote em produção / lote finalizado",
+  },
+  {
+    word: /\b(abert|fechad)[oa]s?\s+(às|há|em|por|desde)\b|\bem aberto\b|["'`>]\s*(Abert|Fechad)[oa]s?\b|(\}\}|\d)\s*(abert|fechad)[oa]s?\b/i,
+    why: "em produção desde / finalizado por",
+  },
+  {
+    word: /\b(abrir|fechar)\s+((o|os|a|as)\s+)?(lotes?|fornadas?)\b|\bsem\s+fechar\b/i,
+    why: "confirmar / finalizar o lote",
+  },
 ];
 
 describe("vocabulário do ciclo do lote no app de Produção", () => {

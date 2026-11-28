@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// O lote aberto (ou planejado) abre para conferência e cancelamento, sem etapas e
+// O lote em produção (ou planejado) abre para conferência e cancelamento, sem etapas e
 // sem gestão. O estado (qual linha, qual lote, se está confirmando o cancelamento)
 // mora na grade (`ProductionStageGrid`); aqui só se mostra e se avisa.
 import LotVoidStakes from "./LotVoidStakes.vue";
@@ -38,7 +38,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <!-- lote aberto: conferência e cancelamento, sem etapas, sem gestão -->
+  <!-- lote em produção: conferência e cancelamento, sem etapas, sem gestão -->
   <NuxtModal
     :open="row != null"
     :title="title"
@@ -85,10 +85,10 @@ const emit = defineEmits<{
           <p class="op-body text-muted-foreground">
             {{
               selectedOrder.started_qty
-                ? "Lote aberto"
+                ? "Lote em produção"
                 : "Lote planejado"
             }}<template v-if="selectedOrder.started_at_display">
-              · Aberto em
+              · Em produção desde
               {{ selectedOrder.started_at_display }}</template
             >
           </p>
