@@ -464,11 +464,11 @@ export interface UnbackedOrder {
 
 const GESTOR_TAKES_IT = "A encomenda aparece como Promessa em risco no Gestor.";
 
-/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou fechado. */
+/** Acima do plano, sem lote ainda planejado: o lote do dia já está em produção ou finalizado. */
 function lockedNote(row: ProductionMatrixRowProjection): string {
   if (row.planned_orders.length) return "";
   if (row.started_orders.length) return `Lote já em produção. ${GESTOR_TAKES_IT}`;
-  if (row.finished_orders.length) return `Lote já fechado. ${GESTOR_TAKES_IT}`;
+  if (row.finished_orders.length) return `Lote já finalizado. ${GESTOR_TAKES_IT}`;
   return "";
 }
 

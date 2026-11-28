@@ -118,7 +118,7 @@ describe("unbackedOrders: o que o plano da data não cobre", () => {
     expect(bandOrders([item!])).toHaveLength(1);
   });
 
-  it("acima do plano sem lote planejado: aberto diz 'em produção', fechado diz 'fechado', sem gesto", () => {
+  it("acima do plano sem lote planejado: em produção diz 'em produção', finalizado diz 'finalizado', sem gesto", () => {
     const over = promised({ planned_qty: "42", ordered_qty: "60", over_plan_qty: "18" });
     const lot = [{ pk: 1 }] as unknown as ProductionMatrixRowProjection["started_orders"];
     const [started] = unbackedOrders([row({ started_orders: lot, promised: over })]);
@@ -128,8 +128,8 @@ describe("unbackedOrders: o que o plano da data não cobre", () => {
     });
     expect(bandOrders([started!])).toHaveLength(1);
     const [closed] = unbackedOrders([row({ finished_orders: lot, promised: over })]);
-    expect(closed!.lockedNote).toBe("Lote já fechado. A encomenda aparece como Promessa em risco no Gestor.");
-    // Com um lote ainda planejado ao lado do aberto, há o que crescer.
+    expect(closed!.lockedNote).toBe("Lote já finalizado. A encomenda aparece como Promessa em risco no Gestor.");
+    // Com um lote ainda planejado ao lado do em produção, há o que crescer.
     const [mixed] = unbackedOrders([row({ started_orders: lot, planned_orders: lot, promised: over })]);
     expect(mixed!.lockedNote).toBe("");
     // Sem lote nenhum não há trava.

@@ -1868,7 +1868,7 @@ describe("ProductionStageGrid — pedidos à Produção", () => {
   // Coordenação, 28/11: com o lote do dia já aberto, não há o que crescer (o `adjust`
   // só aceita lote planejado, e um lote novo passaria da massa batida, #3681). A faixa
   // diz o fato e quem fala com o cliente, sem "Planejar mais".
-  it("acima do plano com o lote já aberto: diz que está em produção e não oferece Planejar mais", async () => {
+  it("acima do plano com o lote já em produção: diz que está em produção e não oferece Planejar mais", async () => {
     boardRows.value = [
       promisedRow(
         {
