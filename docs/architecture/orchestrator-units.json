@@ -17214,6 +17214,8 @@
             "_qty_text",
             "plan_backing_on",
             "unplanned_on",
+            "over_plan_approved_skus",
+            "plan_locked_skus",
             "over_plan_lines",
             "hold",
             "fulfill",

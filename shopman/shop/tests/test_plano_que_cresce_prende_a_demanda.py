@@ -36,22 +36,11 @@ def hoje(request):
 
 
 def _encomenda(ref: str, qty: int, target, *, channel: str = "web") -> Order:
-    """Encomenda acima do plano LIBERADA pelo gerente no PDV (D-041).
-
-    Desde 28/11/2026 o plano da data é o teto: sem a liberação, o excedente não
-    vira demanda (``stock.plan_locked_skus``). A demanda que este teste prende
-    nasce só do caminho que a regra deixa aberto.
-    """
     data = {"delivery_date": target.isoformat()}
-    released = {
-        "reason": "preorder_over_plan",
-        "lines": [{"date": target.isoformat(), "sku": BAGUETE}],
-        "approved_by": "gerente",
-    }
     order = Order.objects.create(
         ref=ref, channel_ref=channel, status=Order.Status.ACCEPTED, total_q=qty * 1600, data=data,
         snapshot={"items": [{"sku": BAGUETE, "name": "Baguette de Tradition", "qty": qty, "line_id": "l1", "meta": {}}],
-                  "data": {**data, "preorder_over_plan": released}},
+                  "data": dict(data)},
     )
     stock_service.hold(order, require_all=False)
     order.save(update_fields=["data"])

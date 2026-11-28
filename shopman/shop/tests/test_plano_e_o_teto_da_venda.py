@@ -178,21 +178,42 @@ def _pedido(ref: str, qty: int, day, *, released_for=None) -> Order:
     )
 
 
-def test_pedido_que_chega_a_reserva_sem_liberacao_nao_vira_demanda(balcao):  # noqa: F811
-    """Caminho brando (pedido já existe): o excedente vira falta acusada, não demanda."""
+def test_portao_de_commit_sem_liberacao_recusa(balcao):  # noqa: F811
     _plano("22")
     order = _pedido("SEM-LIBERACAO", 30, _amanha())
 
-    stock_service.hold(order, require_all=False)
+    with pytest.raises(ValidationError) as exc:
+        stock_service.hold(order, require_all=True)
 
-    assert _backed_and_demand(order) == (Decimal("22"), Decimal("0"))
-    assert order.data["hold_gaps"][0]["sku"] == "CR"
+    assert exc.value.code == "insufficient_supply"
+
+
+def test_portao_de_commit_com_a_liberacao_da_data_aceita_o_excedente_como_demanda(balcao):  # noqa: F811
+    _plano("22")
+    order = _pedido("LIBERADA", 30, _amanha(), released_for=_amanha())
+
+    stock_service.hold(order, require_all=True)
+
+    assert _backed_and_demand(order) == (Decimal("22"), Decimal("8"))
 
 
 def test_liberacao_de_outra_data_nao_libera_esta(balcao):  # noqa: F811
     _plano("22")
     order = _pedido("OUTRA-DATA", 30, _amanha(), released_for=_amanha() + timedelta(days=1))
 
+    with pytest.raises(ValidationError):
+        stock_service.hold(order, require_all=True)
+
+
+def test_venda_ja_consumada_fora_do_portao_segue_como_demanda(balcao):  # noqa: F811
+    """PDV e iFood chegam consumados: recusar cancelaria uma venda real.
+
+    O PDV já travou antes, no gerente (D-041). O excedente vira demanda, que a
+    Produção planeja e o Gestor vê como Promessa em risco.
+    """
+    _plano("22")
+    order = _pedido("CONSUMADA", 30, _amanha())
+
     stock_service.hold(order, require_all=False)
 
-    assert _backed_and_demand(order) == (Decimal("22"), Decimal("0"))
+    assert _backed_and_demand(order) == (Decimal("22"), Decimal("8"))

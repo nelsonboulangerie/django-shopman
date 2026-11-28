@@ -27,6 +27,7 @@ from unittest.mock import MagicMock
 import pytest
 from django.utils import timezone
 from shopman.offerman.models import Product
+from shopman.orderman.exceptions import ValidationError
 from shopman.stockman import stock
 from shopman.stockman.models import Batch, Hold, Position, PositionKind, Quant
 
@@ -46,6 +47,8 @@ DAY = timedelta(days=1)
 NELSON_DESCRIPTOR = Path(__file__).resolve().parents[3] / "config" / "instances" / "nelson.json"
 CHANNELS = ("pdv", "web", "whatsapp", "ifood")
 REMOTE = ("web", "whatsapp", "ifood")
+# Canais com portão de commit (``lifecycle`` chama ``stock.hold(require_all=True)``).
+GATED = ("web", "whatsapp")
 
 BAGUETE = "TRADI"  # pão de um dia
 QUEIJO = "CAMEMBERT"  # 20 dias de validade
@@ -350,14 +353,24 @@ class TestTheHoldForAFutureDate:
 @pytest.mark.parametrize("channel", CHANNELS)
 class TestTheOrderAboveThePlan:
     def test_holds_the_batch_and_only_the_rest_is_demand(self, casa, channel):
-        """30 baguetes para amanhã contra 22 planejadas: 22 presas, 8 de demanda."""
+        """30 baguetes para amanhã contra 22 planejadas: 22 presas, 8 de demanda.
+
+        Só na venda já consumada (balcão, iFood). No portão de commit (loja,
+        WhatsApp) o plano da data é o teto e a encomenda é recusada (dono,
+        28/11/2026; ``test_plano_e_o_teto_da_venda``).
+        """
         from shopman.backstage.models import OperatorAlert
 
         amanha = casa + DAY
         # O portão de commit é da loja e do WhatsApp; balcão e iFood chegam consumados.
         order = _order(channel, BAGUETE, 30, amanha, ref=f"ENC-{channel.upper()}-30")
 
-        stock_service.hold(order, require_all=channel in ("web", "whatsapp"))
+        if channel in GATED:
+            with pytest.raises(ValidationError) as exc:
+                stock_service.hold(order, require_all=True)
+            assert exc.value.code == "insufficient_supply"
+            return
+        stock_service.hold(order, require_all=False)
 
         holds = _order_holds(order)
         backed = [h for h in holds if h.quant_id is not None]
@@ -418,7 +431,12 @@ class TestTheOrderAboveThePlan:
         )
         order = _order(channel, BAGUETE, 30, amanha, ref=f"ENC-{channel.upper()}-SPLIT")
 
-        stock_service.hold(order, require_all=channel in ("web", "whatsapp"))
+        if channel in GATED:
+            # O portão de commit: as 27 das duas posições não cobrem 30, e o plano é o teto.
+            with pytest.raises(ValidationError):
+                stock_service.hold(order, require_all=True)
+            return
+        stock_service.hold(order, require_all=False)
 
         holds = _order_holds(order)
         assert sum(h.quantity for h in holds if h.quant_id is not None) == Decimal("27")

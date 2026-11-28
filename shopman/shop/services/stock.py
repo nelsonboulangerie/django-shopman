@@ -637,11 +637,18 @@ def hold(order, *, require_all: bool = False) -> None:
                         unmet_qty -= part_qty
                     if unmet_qty <= 0:
                         continue
-                    if comp_sku in plan_locked_skus(order, [comp_sku], target_date):
+                    if require_all and comp_sku in plan_locked_skus(order, [comp_sku], target_date):
                         # A data TEM lote planejado e ele acabou: o plano é o teto
-                        # da venda (dono, 28/11/2026). O que passa dele não vira
-                        # demanda; a recusa é a mesma do Stockman. Só a encomenda
-                        # que o gerente liberou no PDV passa (``preorder_over_plan``).
+                        # da venda (dono, 28/11/2026). No portão de commit (loja,
+                        # WhatsApp, remarcação) o que passa dele não vira demanda;
+                        # a recusa é a mesma do Stockman. Só passa a encomenda que
+                        # o gerente liberou no PDV (``preorder_over_plan``).
+                        #
+                        # Fora do portão (``require_all=False``) a venda já está
+                        # consumada (PDV, iFood): recusar cancelaria uma venda real,
+                        # e o PDV já trava antes, no gerente (D-041). Ali o excedente
+                        # segue como demanda, que é o que a Produção planeja e o que
+                        # o Gestor vê como Promessa em risco: a exceção da exceção.
                         result = {"success": False, "error_code": ReserveRefusal.INSUFFICIENT_SUPPLY}
                     else:
                         result = adapter.create_hold(
