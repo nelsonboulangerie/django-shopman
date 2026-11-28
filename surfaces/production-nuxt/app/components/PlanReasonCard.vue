@@ -9,6 +9,7 @@
 import {
   DAY_DOT_TONE,
   fittingAlternative,
+  lotPlanLine,
   shortageLine,
   suggestionBasisLine,
   suggestionHistory,
@@ -37,6 +38,8 @@ const props = defineProps<{
   promised?: ProductionPromisedProjection | null;
   unit?: string;
   today?: string;
+  /** Os lotes do dia, para "Sugerido 42, planejado 36" (WP-F17). */
+  lots?: { ref: string; planned_qty: string; suggested_qty?: string }[];
 }>();
 
 const emit = defineEmits<{
@@ -65,6 +68,11 @@ const promisedHeading = computed(() =>
 );
 const promisedShortfall = computed(() =>
   promisedGap(props.promised, props.unit ?? ""),
+);
+const lotLines = computed(() =>
+  (props.lots ?? [])
+    .map((lot) => ({ ref: lot.ref, text: lotPlanLine(lot) }))
+    .filter((lot) => lot.text),
 );
 const alternative = computed(() =>
   props.canPlanManual ? fittingAlternative(props.suggestion) : null,
@@ -153,6 +161,17 @@ const HISTORY_TONE = {
         Margem: {{ math.marginNote }}
       </p>
     </section>
+
+    <!-- O que o plano do lote gravou (WP-F17): a sugestão de quando planejou. -->
+    <ul
+      v-if="lotLines.length"
+      class="flex flex-col gap-0.5 px-4 text-sm"
+      data-testid="reason-lot-plan"
+    >
+      <li v-for="lot in lotLines" :key="lot.ref" data-reason-lot-plan>
+        {{ lot.text }}
+      </li>
+    </ul>
 
     <!-- As encomendas da data (WP-F13), pela régua das reservas. -->
     <section

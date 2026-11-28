@@ -321,3 +321,18 @@ export function fittingAlternative(
   if (fits <= 0 || fits >= asNumber(s.quantity)) return null;
   return s.fits_quantity;
 }
+
+// ── O porquê que ficou com o lote (WP-F17) ────────────────────────────────
+
+/**
+ * "Sugerido 42, planejado 36": a sugestão vigente quando o lote foi planejado
+ * pela última vez, ao lado do planejado. Vazio quando o lote não gravou sugestão
+ * (planejado antes do WP-F17, ou numa data sem sugestão para o produto).
+ */
+export function lotPlanLine(lot: {
+  planned_qty: string;
+  suggested_qty?: string;
+}): string {
+  if (!lot.suggested_qty) return "";
+  return `Sugerido ${display(lot.suggested_qty)}, planejado ${display(lot.planned_qty)}`;
+}

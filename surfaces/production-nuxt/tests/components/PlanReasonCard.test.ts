@@ -56,6 +56,7 @@ function mountCard(
     purchaseUrl: string;
     canPlanSuggested: boolean;
     canPlanManual: boolean;
+    lots: { ref: string; planned_qty: string; suggested_qty?: string }[];
   }> = {},
 ) {
   return mount(PlanReasonCard, {
@@ -238,5 +239,28 @@ describe("PlanReasonCard", () => {
 
     expect(w.emitted("plan")).toEqual([["52", "suggested"]]);
     expect(w.emitted("close")).toHaveLength(2);
+  });
+});
+
+// WP-F17: a conta fica no "Por quê" (nada de texto novo na linha da grade), e o
+// lote diz o que foi sugerido quando ele foi planejado.
+describe("PlanReasonCard — o porquê que ficou com o lote", () => {
+  it("cada lote que gravou a sugestão diz sugerido e planejado", () => {
+    const w = mountCard(suggestion({ quantity: "42" }), {
+      lots: [
+        { ref: "WO-1", planned_qty: "36", suggested_qty: "42" },
+        { ref: "WO-2", planned_qty: "10", suggested_qty: "" },
+      ],
+    });
+
+    expect(
+      w.findAll("[data-reason-lot-plan]").map((el) => el.text()),
+    ).toEqual(["Sugerido 42, planejado 36"]);
+  });
+
+  it("sem lote planejado, o bloco não aparece", () => {
+    const w = mountCard(suggestion());
+
+    expect(w.find("[data-testid=reason-lot-plan]").exists()).toBe(false);
   });
 });
