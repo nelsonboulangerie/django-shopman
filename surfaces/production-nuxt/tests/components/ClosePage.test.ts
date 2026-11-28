@@ -290,6 +290,14 @@ describe("Finalização", () => {
     expect(header.props("countLabel")).toBe("para finalizar");
   });
 
+  it("a lista Para finalizar é uma coluna só, em todo tamanho (dono, 28/11)", () => {
+    const wrapper = mountPage();
+    const list = wrapper.find("[data-close-open-list]");
+
+    expect(list.exists()).toBe(true);
+    expect(list.classes().some((name) => /grid-cols-/.test(name))).toBe(false);
+  });
+
   it("o lote ainda não aberto diz isso, sem chamar de produzido", () => {
     const wrapper = mountPage();
 
