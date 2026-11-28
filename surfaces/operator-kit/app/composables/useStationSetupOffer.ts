@@ -86,9 +86,15 @@ export function useStationSetupOffer(state: {
   // Só a navegação de verdade, depois de montar: o `useRoute` do app.vue troca de
   // caminho na hidratação e apagava a oferta antes de alguém vê-la.
   let stopAfterEach: (() => void) | undefined;
+  // O caminho anterior é guardado aqui, não lido do `from`: no roteador mínimo do Nuxt
+  // (app sem pages) o `from` chega igual ao `to`.
   onMounted(() => {
-    stopAfterEach = useRouter().afterEach((to, from) => {
-      if (to.path !== from.path && offer.value && !requested.value) dismiss({ remember: false });
+    const router = useRouter();
+    let lastPath = router.currentRoute.value.path;
+    stopAfterEach = router.afterEach((to) => {
+      const changed = to.path !== lastPath;
+      lastPath = to.path;
+      if (changed && offer.value && !requested.value) dismiss({ remember: false });
     });
   });
   onBeforeUnmount(() => stopAfterEach?.());

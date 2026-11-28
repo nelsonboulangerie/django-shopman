@@ -89,24 +89,22 @@ const sortItems = [
   { value: "name", label: "Nome" },
   { value: "kind", label: "Tipo e nome" },
 ];
+// KISS (28/11): a barra tem no máximo 5 controles. Ficam à vista os dois recortes de
+// toda hora; "Sem SKU" e "Com rascunho" moram no painel de Filtros. "Não conferidas"
+// e "Receitas a conferir" eram o MESMO conjunto em dois controles: o recorte fica, e a
+// passada uma a uma (/recipes/review) aparece só com ele ligado.
 const quickItems = [
   { key: "favorites", label: "Favoritas", icon: "i-lucide-star" },
   { key: "unreviewed", label: "Não conferidas", icon: "i-lucide-badge-alert" },
-  { key: "without_sku", label: "Sem SKU", icon: "i-lucide-tag" },
-  { key: "with_draft", label: "Com rascunho", icon: "i-lucide-file-pen-line" },
 ] satisfies QuickFilterItem[];
 const quickSelection = computed<string[]>({
   get: () => [
     ...(onlyFavorites.value ? ["favorites"] : []),
     ...(onlyUnreviewed.value ? ["unreviewed"] : []),
-    ...(onlyWithoutSku.value ? ["without_sku"] : []),
-    ...(onlyWithDraft.value ? ["with_draft"] : []),
   ],
   set: (next) => {
     onlyFavorites.value = next.includes("favorites");
     onlyUnreviewed.value = next.includes("unreviewed");
-    onlyWithoutSku.value = next.includes("without_sku");
-    onlyWithDraft.value = next.includes("with_draft");
   },
 });
 const panelDimensions = computed<FilterDimension[]>(() => [
@@ -117,17 +115,23 @@ const panelDimensions = computed<FilterDimension[]>(() => [
     type: "single-select",
     options: modeItems.filter((option) => option.value !== PRODUCTION_MODE_ALL),
   },
+  { id: "without_sku", label: "Sem SKU", type: "boolean", options: [] },
+  { id: "with_draft", label: "Com rascunho", type: "boolean", options: [] },
   { id: "archived", label: "Arquivadas", type: "boolean", options: [] },
 ]);
 const panelFilters = computed<ActiveFilters>({
   get: () => ({
     ...(kind.value ? { kind: [kind.value] } : {}),
     ...(mode.value !== PRODUCTION_MODE_ALL ? { mode: [mode.value] } : {}),
+    ...(onlyWithoutSku.value ? { without_sku: ["true"] } : {}),
+    ...(onlyWithDraft.value ? { with_draft: ["true"] } : {}),
     ...(archived.value ? { archived: ["true"] } : {}),
   }),
   set: (next) => {
     kind.value = next.kind?.[0] ?? "";
     mode.value = next.mode?.[0] ?? PRODUCTION_MODE_ALL;
+    onlyWithoutSku.value = next.without_sku?.[0] === "true";
+    onlyWithDraft.value = next.with_draft?.[0] === "true";
     archived.value = next.archived?.[0] === "true";
   },
 });
@@ -148,6 +152,16 @@ const activeFilters = computed(() => {
     key: "mode",
     label: modeItems.find((option) => option.value === mode.value)?.label ?? mode.value,
     remove: () => { mode.value = PRODUCTION_MODE_ALL; },
+  });
+  if (onlyWithoutSku.value) filters.push({
+    key: "without_sku",
+    label: "Sem SKU",
+    remove: () => { onlyWithoutSku.value = false; },
+  });
+  if (onlyWithDraft.value) filters.push({
+    key: "with_draft",
+    label: "Com rascunho",
+    remove: () => { onlyWithDraft.value = false; },
   });
   if (archived.value) filters.push({
     key: "archived",
@@ -220,11 +234,13 @@ watch(
       </template>
       <template #filters>
         <NuxtButton
+          v-if="onlyUnreviewed"
           to="/recipes/review"
           color="neutral"
           variant="outline"
           icon="i-lucide-badge-check"
-          label="Receitas a conferir"
+          label="Conferir uma a uma"
+          data-recipe-review-pass
         />
         <NuxtSelect
           v-model="sort"
@@ -308,12 +324,14 @@ watch(
         <div
           v-for="entry in visible"
           :key="entry.ref"
-          class="relative grid h-full grid-rows-[1fr_auto] overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 focus-within:border-primary/40"
+          class="relative h-full overflow-hidden rounded-xl border border-border bg-card transition hover:border-primary/40 focus-within:border-primary/40"
           :class="!entry.is_active ? 'opacity-70' : ''"
           data-recipe-card
         >
-          <!-- A estrela mora AO LADO do link, na mesma faixa: nenhuma parte do link fica sob ela. -->
-          <div class="flex min-w-0 items-start">
+          <!-- A estrela e o Editar moram AO LADO do link, numa coluna à direita: nenhuma
+               parte do link fica sob eles, e o Editar divide a linha das etiquetas em vez
+               de ganhar um rodapé (KISS, 28/11: o dobro de receitas na tela). -->
+          <div class="flex h-full min-w-0 items-stretch">
             <NuxtLink
               :to="`/recipes/${entry.ref}`"
               class="grid min-w-0 flex-1 grid-cols-1 content-start gap-2 self-stretch p-3 transition hover:bg-accent/30"
@@ -369,8 +387,8 @@ watch(
                   :title="entry.provenance_label"
                 />
               </div>
-
             </NuxtLink>
+            <div class="flex shrink-0 flex-col items-end justify-between gap-1 p-1">
             <NuxtButton
               color="neutral"
               variant="ghost"
@@ -378,7 +396,7 @@ watch(
               :active="entry.is_favorite"
               active-color="primary"
               active-variant="ghost"
-              class="mr-1 mt-1 shrink-0 pointer-coarse:size-control pointer-coarse:justify-center"
+              class="shrink-0 pointer-coarse:size-control pointer-coarse:justify-center"
               :aria-pressed="entry.is_favorite"
               :aria-label="favoriteToggleLabel(entry.name)"
               :title="favoriteActionHint(entry.is_favorite)"
@@ -387,9 +405,8 @@ watch(
             >
               <Icon name="lucide:star" class="size-5" :class="entry.is_favorite ? 'fill-current' : ''" />
             </NuxtButton>
-          </div>
-          <div v-if="canEdit && entry.is_active" class="flex justify-end border-t border-border px-2 py-1.5">
             <NuxtButton
+              v-if="canEdit && entry.is_active"
               :to="`/recipes/${entry.ref}/edit`"
               color="neutral"
               variant="ghost"
@@ -398,6 +415,7 @@ watch(
               :aria-label="`Editar ${entry.name}`"
               data-recipe-edit
             />
+            </div>
           </div>
         </div>
       </div>

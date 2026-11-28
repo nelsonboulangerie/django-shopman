@@ -6,7 +6,6 @@ import type {
   QCGradeProjection,
   QCOrderCardProjection,
 } from "~/types/production";
-import { formatClock } from "../../../operator-kit/app/presentation/clock";
 
 export interface QualityGate {
   /** Finalizados, sem revisão e sem exceção: o conjunto de UM ato. */
@@ -107,67 +106,9 @@ export function lotQuantityLabel(quantity: number | string, unit: string): strin
   return quantityMeasure(quantity, unit);
 }
 
-function listJoin(parts: string[]): string {
-  if (parts.length <= 1) return parts.join("");
-  return `${parts.slice(0, -1).join(", ")} e ${parts[parts.length - 1]}`;
-}
-
-/**
- * O resumo do conjunto limpo, agrupado por grandeza: "84 peças, todas no
- * padrão" quando só há peças; "312 peças e 38,9 kg, tudo no padrão" quando há
- * lote medido em peso. Todo o conjunto está no grau padrão, por definição.
- */
-export function cleanSummary(clean: QCOrderCardProjection[]): string {
-  const totals = new Map<string, { dimension: Dimension | null; total: number }>();
-  for (const order of clean) {
-    const info = unitInfo(order.output_unit);
-    const key = info ? info[0] : `other:${order.output_unit}`;
-    const amount = num(order.full_price_qty) * (info ? info[1] : 1);
-    const entry = totals.get(key) ?? { dimension: info ? info[0] : null, total: 0 };
-    entry.total += amount;
-    totals.set(key, entry);
-  }
-  const order: Record<string, number> = { count: 0, mass: 1, volume: 2 };
-  const parts = [...totals.entries()]
-    .sort(([a], [b]) => (order[a] ?? 3) - (order[b] ?? 3))
-    .map(([key, { dimension, total }]) => {
-      if (dimension === "count") return lotQuantityLabel(total, "un");
-      if (dimension === "mass") return quantityMeasure(total, "g", { largeDecimals: 1 });
-      if (dimension === "volume") return quantityMeasure(total, "ml", { largeDecimals: 1 });
-      return quantityMeasure(total, key.slice("other:".length));
-    });
-  const onlyPieces = totals.size === 1 && totals.has("count");
-  const tail = onlyPieces ? "todas no padrão" : "tudo no padrão";
-  return `${listJoin(parts)}, ${tail} · perda 0 · desconto 0`;
-}
-
-/** O rótulo do ato, com o fato escrito: "6 lotes, nenhuma exceção · Confirmar". */
+/** O botão do conjunto: o título já diz "16 lotes sem exceção" (KISS, 28/11). */
 export function batchConfirmLabel(count: number): string {
-  return `${plural(count, "lote", "lotes")}, nenhuma exceção · Confirmar`;
-}
-
-/** Quem fechou os lotes e a janela de horário ("entre 06:10 e 13:40"). */
-export function closersSummary(orders: QCOrderCardProjection[]): {
-  names: string;
-  window: string;
-} {
-  const names = [
-    ...new Set(orders.map((order) => order.closed_by).filter(Boolean)),
-  ];
-  const times = orders
-    .map((order) => order.closed_at_display)
-    .filter(Boolean)
-    .sort();
-  const first = times[0] ?? "";
-  const last = times[times.length - 1] ?? "";
-  return {
-    names: names.join(" · "),
-    window: !first
-      ? ""
-      : first === last
-        ? `às ${formatClock(first)}`
-        : `entre ${formatClock(first)} e ${formatClock(last)}`,
-  };
+  return count === 1 ? "Confirmar o lote" : `Confirmar os ${count}`;
 }
 
 /**

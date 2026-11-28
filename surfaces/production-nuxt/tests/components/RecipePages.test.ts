@@ -245,18 +245,29 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
   });
 
   it("combines multiple quick filters without losing the active cut", async () => {
-    entries.value = [card("sem-sku", { is_favorite: true, output_sku: "" }), card("com-sku", { is_favorite: true })];
+    entries.value = [
+      card("nao-conferida", { is_favorite: true, review_status: "unreviewed" }),
+      card("conferida", { is_favorite: true, review_status: "confirmed" }),
+    ];
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
+    // KISS (28/11): dois recortes à vista; Sem SKU e Com rascunho moram no painel.
+    expect(wrapper.findAll("[data-quick-filter-item]").map((item) => item.attributes("data-quick-filter-item"))).toEqual([
+      "favorites",
+      "unreviewed",
+    ]);
+    expect(wrapper.find("[data-recipe-review-pass]").exists()).toBe(false);
     await wrapper.find('[data-quick-filter-item="favorites"]').trigger("click");
-    await wrapper.find('[data-quick-filter-item="without_sku"]').trigger("click");
+    await wrapper.find('[data-quick-filter-item="unreviewed"]').trigger("click");
     await nextTick();
 
-    expect(remember).toHaveBeenLastCalledWith(["sem-sku"], {
-      from: "/recipes?without_sku=1&favorites=1",
+    expect(remember).toHaveBeenLastCalledWith(["nao-conferida"], {
+      from: "/recipes?favorites=1&unreviewed=1",
       label: "Favoritas",
     });
+    // A passada uma a uma é o mesmo conjunto: aparece só com o recorte ligado.
+    expect(wrapper.get("[data-recipe-review-pass]").attributes("href")).toBe("/recipes/review");
   });
 
   it("the star is a pressed-state toggle button, not a native control in the card link", async () => {
@@ -299,7 +310,7 @@ describe("Receitas: a lista grava a trilha que a receita percorre", () => {
     const wrapper = mount(RecipeListPage, { global: { stubs } });
     await flushPromises();
 
-    expect(wrapper.find("[data-filter-panel='kind,mode,archived']").exists()).toBe(true);
+    expect(wrapper.find("[data-filter-panel='kind,mode,without_sku,with_draft,archived']").exists()).toBe(true);
     expect(wrapper.find('[data-screen-state="empty"]').text()).toContain("Nenhuma receita cadastrada");
     expect(wrapper.findAll('[role="checkbox"]')).toHaveLength(0);
   });
